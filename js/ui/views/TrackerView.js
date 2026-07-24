@@ -1,24 +1,35 @@
 /**
  * ui/views/TrackerView.js
  *
- * Class Mode: the tracker is now the primary working screen during a
- * lesson. Tap a student to award a star, swipe left to deduct a point,
- * press and hold for Quick Actions (Award Badge / Add Note / Change
- * Bucket / Open Full Profile) — see ClassModeStudentRow.js and
- * QuickActionsSheet.js.
+ * Class Mode — a deliberately narrow, focused workspace for actively
+ * teaching, not a general classroom-management screen. Tap a student
+ * to award a star, swipe left to deduct a point, press and hold for
+ * Quick Actions (Award Badge / Add Note / Change Bucket / Open Full
+ * Profile) — see ClassModeStudentRow.js and QuickActionsSheet.js.
+ *
+ * Header actions are limited to what a teacher would realistically
+ * press with students in front of them: Undo (instant correction),
+ * Notebook Tracker (a real in-class rhythm — marking notebooks while
+ * students work independently), Reset Session (rare, but still a
+ * live-teaching moment when the same session spans back-to-back
+ * periods), and Review Session (the wrap-up gateway out of teaching
+ * mode). Settings and Learning Activities were deliberately removed
+ * from this screen — neither has a demonstrated in-class use case,
+ * and both now live on the Classroom Dashboard instead, reached only
+ * via "Exit Class." See this project's CHANGELOG for the full
+ * information-architecture review this reflects.
  *
  * Class Session model: every action still mutates the in-memory
  * classroom object immediately (so the UI stays live), but NOTHING is
  * written to Firestore per-action anymore — see
  * services/classSessionService.js. A session starts automatically the
- * first time this view renders for a classroom; "End Class" shows a
- * Session Review screen (counts of what happened this session), and
- * only "Save Session" there performs the one, single permanent write.
- * "Discard Session" throws every draft change away by re-fetching the
- * classroom from Firestore. Undo still reverses the single most recent
- * action of any kind (see services/classModeService.js) — it no
- * longer triggers its own save, since nothing is saved until the
- * session ends.
+ * first time this view renders for a classroom; "Review Session" shows
+ * a summary of what happened this session, and only "Save Session"
+ * there performs the one, single permanent write. "Discard Session"
+ * throws every draft change away by re-fetching the classroom from
+ * Firestore. Undo still reverses the single most recent action of any
+ * kind (see services/classModeService.js) — it no longer triggers its
+ * own save, since nothing is saved until the session ends.
  */
 
 import { createTeamCardElement } from '../components/TeamCard.js';
@@ -38,7 +49,7 @@ import { getTeamScore } from '../../services/teamService.js';
 import { getDisplayName, getDisplaySubtitle } from '../../services/classroomService.js';
 
 export function renderTrackerView(container, props) {
-  const { classroom, onBack, onSettings, onActivities, onNotebooks, onSelectStudent } = props;
+  const { classroom, onBack, onNotebooks, onSelectStudent } = props;
   const highlight = props._highlight || {};
 
   if (!classSessionService.isSessionActive(classroom)) {
@@ -78,7 +89,7 @@ export function renderTrackerView(container, props) {
   const backButton = document.createElement('button');
   backButton.type = 'button';
   backButton.className = 'btn btn--text';
-  backButton.textContent = '← Back';
+  backButton.textContent = '\u2190 Exit Class';
   backButton.addEventListener('click', () => {
     const { totalActions } = classSessionService.getSessionSummary(classroom);
     if (totalActions === 0) {
@@ -143,6 +154,26 @@ export function renderTrackerView(container, props) {
     }
   });
 
+  // Notebook Tracker is the one administration-adjacent tool kept in
+  // Class Mode — walking the room marking notebooks during independent
+  // work time is a real, common in-class rhythm, not a management
+  // task done at a desk. Settings and Learning Activities were removed
+  // entirely (see this project's information-architecture review):
+  // neither has a demonstrated in-class use case, and both now live on
+  // the Classroom Dashboard instead, reached only after Exit Class.
+  const notebooksButton = document.createElement('button');
+  notebooksButton.type = 'button';
+  notebooksButton.className = 'btn btn--ghost btn--icon-only';
+  notebooksButton.textContent = '\ud83d\udcd2';
+  notebooksButton.setAttribute('aria-label', 'Notebook Tracker');
+  notebooksButton.title = 'Notebook Tracker';
+  notebooksButton.addEventListener('click', onNotebooks);
+
+  // Kept, but deliberately placed after Notebook Tracker rather than
+  // beside Undo — it's a real in-lesson action (zeroing scores for a
+  // new period's students while the previous period's are still on
+  // screen), just a much rarer one than an instant tap-correction, and
+  // shouldn't sit at the same visual weight as Undo.
   const resetButton = document.createElement('button');
   resetButton.type = 'button';
   resetButton.className = 'btn btn--danger btn--icon-only';
@@ -161,30 +192,6 @@ export function renderTrackerView(container, props) {
     rerender();
   });
 
-  const settingsButton = document.createElement('button');
-  settingsButton.type = 'button';
-  settingsButton.className = 'btn btn--ghost btn--icon-only';
-  settingsButton.textContent = '\u2699\ufe0f';
-  settingsButton.setAttribute('aria-label', 'Settings');
-  settingsButton.title = 'Settings';
-  settingsButton.addEventListener('click', onSettings);
-
-  const activitiesButton = document.createElement('button');
-  activitiesButton.type = 'button';
-  activitiesButton.className = 'btn btn--ghost btn--icon-only';
-  activitiesButton.textContent = '\ud83d\udcda';
-  activitiesButton.setAttribute('aria-label', 'Learning Activities');
-  activitiesButton.title = 'Learning Activities';
-  activitiesButton.addEventListener('click', onActivities);
-
-  const notebooksButton = document.createElement('button');
-  notebooksButton.type = 'button';
-  notebooksButton.className = 'btn btn--ghost btn--icon-only';
-  notebooksButton.textContent = '\ud83d\udcd2';
-  notebooksButton.setAttribute('aria-label', 'Notebook Tracker');
-  notebooksButton.title = 'Notebook Tracker';
-  notebooksButton.addEventListener('click', onNotebooks);
-
   const endClassButton = document.createElement('button');
   endClassButton.type = 'button';
   endClassButton.className = 'btn btn--primary';
@@ -193,7 +200,7 @@ export function renderTrackerView(container, props) {
     renderTrackerView(container, { ...props, _showSessionReview: true });
   });
 
-  actions.append(undoButton, resetButton, activitiesButton, notebooksButton, settingsButton, endClassButton);
+  actions.append(undoButton, notebooksButton, resetButton, endClassButton);
   header.append(backButton, titleBlock, actions);
 
   const grid = document.createElement('section');

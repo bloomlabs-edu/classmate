@@ -2339,6 +2339,42 @@ button.wizard-checklist__row:hover {
   vertical-align: middle;
 }
 
+/*
+ * The clickable-date pattern, shared by NotebookRegisterView.js and
+ * NotebookTimelineView.js — a native <input type="date"> sits
+ * invisibly on top of the visible formatted label (via absolute
+ * positioning filling the wrapper), so the existing custom date text
+ * ("24 Jul 2026") is what's seen, but clicking anywhere on it opens
+ * the browser's own native date picker. A small calendar icon and
+ * underline-on-hover signal that the (otherwise plain-looking) text is
+ * interactive.
+ */
+.notebook-date-bar__label-wrapper {
+  position: relative;
+  display: inline-block;
+  cursor: pointer;
+}
+.notebook-date-bar__label-wrapper:hover .notebook-date-bar__label {
+  text-decoration: underline;
+}
+.notebook-date-bar__label-wrapper::after {
+  content: '\ud83d\udcc5';
+  margin-left: 0.4rem;
+  font-size: 0.85rem;
+  opacity: 0.6;
+}
+.notebook-date-bar__picker-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
 /* Timeline strip (student-first: one row per student) */
 
 .notebook-timeline-row {
@@ -3829,4 +3865,99 @@ button.wizard-checklist__row:hover {
 .student-picker__name {
   font-size: 1.1rem;
   font-weight: var(--font-weight-bold);
+}
+
+/* Student Access — connection-status-first onboarding dashboard */
+.student-access-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.student-access-row {
+  padding: 0.85rem 1.25rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+}
+.student-access-row__main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.student-access-row__name {
+  font-weight: var(--font-weight-bold);
+  margin: 0;
+}
+.student-access-row__status {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-warning);
+  margin: 0;
+}
+.student-access-row__status--linked {
+  color: var(--color-success);
+}
+.student-access-row__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+  padding-top: 0.5rem;
+}
+.student-access-row__details {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border);
+}
+.student-access-row__pin {
+  font-family: 'Courier New', monospace;
+  font-size: 1.1rem;
+  font-weight: var(--font-weight-black);
+  letter-spacing: 0.1em;
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: 0.3rem 0.75rem;
+}
+
+/* Parent Access status (per-student profile tab) */
+.access-status-row {
+  margin-bottom: 1rem;
+}
+.access-status-badge {
+  display: inline-block;
+  font-weight: var(--font-weight-bold);
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--radius-pill);
+  background-color: var(--color-bg);
+  color: var(--color-muted);
+}
+.access-status-badge--linked {
+  background-color: color-mix(in srgb, var(--color-success, #2e7d32) 15%, white);
+  color: var(--color-success, #2e7d32);
+}
+.access-status-badge--pending {
+  background-color: color-mix(in srgb, var(--color-warning) 20%, white);
+  color: color-mix(in srgb, var(--color-warning) 70%, black);
+}
+
+/* Clickable student name links, used consistently anywhere a name
+   isn't already spoken for by a competing gesture (e.g. Class Mode's
+   tap-to-award — see that screen's own documented exception). */
+.student-name-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-weight: var(--font-weight-bold);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.student-name-link:hover {
+  text-decoration: underline;
 }

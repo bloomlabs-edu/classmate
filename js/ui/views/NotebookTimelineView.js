@@ -97,8 +97,26 @@ export function renderNotebookTimelineView(container, props) {
   prevButton.className = 'btn btn--text';
   prevButton.textContent = '\u2190';
 
+  // Same pattern as NotebookRegisterView.js's date, for consistency —
+  // a native <input type="date"> overlaid invisibly on the formatted
+  // label, so the visible text ("13 Jul \u2013 19 Jul 2026" / "July 2026")
+  // stays exactly as it was, but clicking it opens the native picker.
+  // Selecting any date jumps to the week/month that date falls in.
+  const dateLabelWrapper = document.createElement('label');
+  dateLabelWrapper.className = 'notebook-date-bar__label-wrapper';
+
   const dateLabel = document.createElement('span');
   dateLabel.className = 'notebook-date-bar__label';
+
+  const datePickerInput = document.createElement('input');
+  datePickerInput.type = 'date';
+  datePickerInput.className = 'notebook-date-bar__picker-input';
+  datePickerInput.setAttribute('aria-label', 'Jump to a date');
+  datePickerInput.addEventListener('change', (event) => {
+    if (event.target.value) rerender({ referenceDateKey: event.target.value });
+  });
+
+  dateLabelWrapper.append(dateLabel, datePickerInput);
 
   const nextButton = document.createElement('button');
   nextButton.type = 'button';
@@ -113,6 +131,7 @@ export function renderNotebookTimelineView(container, props) {
     rangeStart = start;
     rangeEnd = end;
     dateLabel.textContent = formatWeekRangeLabel(start, end);
+    datePickerInput.value = referenceDateKey;
     prevButton.setAttribute('aria-label', 'Previous week');
     prevButton.addEventListener('click', () => rerender({ referenceDateKey: shiftDateKey(referenceDateKey, -7) }));
     nextButton.setAttribute('aria-label', 'Next week');
@@ -122,6 +141,7 @@ export function renderNotebookTimelineView(container, props) {
     rangeStart = `${yearMonth}-01`;
     rangeEnd = `${yearMonth}-${String(getDaysInYearMonth(yearMonth)).padStart(2, '0')}`;
     dateLabel.textContent = formatYearMonth(yearMonth);
+    datePickerInput.value = rangeStart;
     prevButton.setAttribute('aria-label', 'Previous month');
     prevButton.addEventListener('click', () =>
       rerender({ referenceDateKey: `${shiftYearMonth(yearMonth, -1)}-01` })
@@ -132,7 +152,7 @@ export function renderNotebookTimelineView(container, props) {
     );
   }
 
-  dateBar.append(prevButton, dateLabel, nextButton);
+  dateBar.append(prevButton, dateLabelWrapper, nextButton);
   wrapper.appendChild(dateBar);
 
   const legend = document.createElement('p');
@@ -165,7 +185,13 @@ export function renderNotebookTimelineView(container, props) {
         cursor = shiftDateKey(cursor, 1);
       }
 
-      content.appendChild(createNotebookTimelineElement({ label: student.name, days }));
+      content.appendChild(
+        createNotebookTimelineElement({
+          label: student.name,
+          days,
+          onLabelClick: onSelectStudent ? () => onSelectStudent(student.id) : null,
+        })
+      );
     });
   }
 

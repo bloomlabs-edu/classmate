@@ -40,6 +40,7 @@ import { renderTrackerView } from './ui/views/TrackerView.js';
 import { renderSettingsView } from './ui/views/SettingsView.js';
 import { renderSetupWizardView } from './ui/views/SetupWizardView.js';
 import { renderStudentProfileView } from './ui/views/StudentProfileView.js';
+import { renderStudentAccessView } from './ui/views/StudentAccessView.js';
 import { renderActivitiesListView, renderActivityRosterView } from './ui/views/ActivitiesView.js';
 import { renderNotebookTrackerView } from './ui/views/NotebookTrackerView.js';
 import { renderNotebookRegisterView } from './ui/views/NotebookRegisterView.js';
@@ -167,6 +168,7 @@ const CLASSROOM_ROUTE_NAMES = [
   'settings',
   'setup',
   'studentProfile',
+  'studentAccess',
   'activitiesList',
   'activityRoster',
   'notebookTracker',
@@ -275,6 +277,7 @@ function renderRoute(route) {
         classroom,
         currentUser,
         onOpenSettings: () => router.navigate(`/classroom/${classroom.id}/settings`),
+        onOpenStudentAccess: () => router.navigate(`/classroom/${classroom.id}/student-access`),
         onOpenNotebookTracker: () => router.navigate(`/classroom/${classroom.id}/notebooks`),
         onOpenGroups: () => router.navigate(`/classroom/${classroom.id}/settings/groups`),
         onStartClassMode: () => router.navigate(`/classroom/${classroom.id}/class-mode`),
@@ -305,8 +308,6 @@ function renderRoute(route) {
       renderTrackerView(appContainer, {
         classroom,
         onBack: () => router.navigate(`/classroom/${classroom.id}`),
-        onSettings: () => router.navigate(`/classroom/${classroom.id}/settings`),
-        onActivities: () => router.navigate(`/classroom/${classroom.id}/activities`),
         onNotebooks: () => router.navigate(`/classroom/${classroom.id}/notebooks`),
         onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
       });
@@ -336,6 +337,12 @@ function renderRoute(route) {
         tab: route.tab,
         onBack: () => router.navigate(`/classroom/${classroom.id}`),
         onNavigateTab: (tab) => router.navigate(`/classroom/${classroom.id}/student/${route.studentId}/${tab}`),
+        onOpenStudentAccess: () => router.navigate(`/classroom/${classroom.id}/student-access`),
+      });
+    } else if (route.name === 'studentAccess') {
+      renderStudentAccessView(appContainer, {
+        classroom,
+        onBack: () => router.navigate(`/classroom/${classroom.id}`),
       });
     } else if (route.name === 'activitiesList') {
       renderActivitiesListView(appContainer, {
@@ -374,6 +381,7 @@ function renderRoute(route) {
           router.navigate(`/classroom/${classroom.id}/notebooks/${route.subjectId}/${route.notebookTypeId}/${dateKey}`),
         onOpenTimeline: () =>
           router.navigate(`/classroom/${classroom.id}/notebooks/${route.subjectId}/${route.notebookTypeId}/timeline`),
+        onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
       });
     } else {
       renderNotebookTimelineView(appContainer, {

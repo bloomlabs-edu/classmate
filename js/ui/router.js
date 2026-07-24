@@ -61,6 +61,9 @@ function resolvePathParts(parts) {
     if (parts[2] === 'settings') {
       return { name: 'settings', classroomId: parts[1], section: parts[3] || 'general' };
     }
+    if (parts[2] === 'student-access') {
+      return { name: 'studentAccess', classroomId: parts[1] };
+    }
     if (parts[2] === 'setup') {
       return { name: 'setup', classroomId: parts[1], step: parts[3] || null };
     }

@@ -43,6 +43,26 @@ export class StudentLinkRepository {
     throw new Error('StudentLinkRepository.getLinkedStudents() must be implemented by a subclass');
   }
 
+  /** Whether ANY parent account is currently linked to this specific student — powers Student Access's "which parents have already connected?" status view, the reverse direction of getLinkedStudents(). */
+  // eslint-disable-next-line no-unused-vars
+  async isStudentLinked(classroomId, studentId) {
+    throw new Error('StudentLinkRepository.isStudentLinked() must be implemented by a subclass');
+  }
+
+  /**
+   * The reverse of getLinkedStudents() — given a student, has *any*
+   * parent linked to them yet? Needed for the Student Access page's
+   * "which parents have connected" question, which is a genuinely
+   * different query than anything this interface exposed before: every
+   * other method here is keyed by provider user id (who is this
+   * parent linked to), not by student (has this student been claimed
+   * by anyone).
+   */
+  // eslint-disable-next-line no-unused-vars
+  async isStudentLinked(classroomId, studentId) {
+    throw new Error('StudentLinkRepository.isStudentLinked() must be implemented by a subclass');
+  }
+
   /** Resolves a PIN to the student it belongs to (or null if invalid/unknown), without linking anything yet — linking is a separate, explicit step below. */
   // eslint-disable-next-line no-unused-vars
   async resolvePin(pin) {

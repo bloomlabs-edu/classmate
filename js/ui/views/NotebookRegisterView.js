@@ -44,7 +44,7 @@ function saveOrRecordDraft(classroom) {
 }
 
 export function renderNotebookRegisterView(container, props) {
-  const { classroom, subjectId, notebookTypeId, currentUser, onBack, onNavigateDate, onOpenTimeline } = props;
+  const { classroom, subjectId, notebookTypeId, currentUser, onBack, onNavigateDate, onOpenTimeline, onSelectStudent } = props;
   const dateKey = props.dateKey || getTodayDateKey();
 
   container.innerHTML = '';
@@ -102,6 +102,16 @@ export function renderNotebookRegisterView(container, props) {
   prevButton.setAttribute('aria-label', 'Previous day');
   prevButton.addEventListener('click', () => onNavigateDate(shiftDateKey(dateKey, -1)));
 
+  // The visible "24 Jul 2026" text stays exactly as it was — a native
+  // <input type="date"> is overlaid invisibly on top of it (see
+  // .notebook-date-bar__label's CSS), so clicking anywhere on the
+  // formatted text opens the browser's own native date picker. Chosen
+  // over a custom calendar widget: every phone and browser already
+  // teaches this exact affordance, so it's the most intuitive
+  // interaction by construction, not by design effort.
+  const dateLabelWrapper = document.createElement('label');
+  dateLabelWrapper.className = 'notebook-date-bar__label-wrapper';
+
   const dateLabel = document.createElement('span');
   dateLabel.className = 'notebook-date-bar__label';
   dateLabel.textContent = formatDateKey(dateKey);
@@ -112,6 +122,17 @@ export function renderNotebookRegisterView(container, props) {
     dateLabel.appendChild(todayBadge);
   }
 
+  const datePickerInput = document.createElement('input');
+  datePickerInput.type = 'date';
+  datePickerInput.className = 'notebook-date-bar__picker-input';
+  datePickerInput.value = dateKey;
+  datePickerInput.setAttribute('aria-label', 'Choose a date');
+  datePickerInput.addEventListener('change', (event) => {
+    if (event.target.value) onNavigateDate(event.target.value);
+  });
+
+  dateLabelWrapper.append(dateLabel, datePickerInput);
+
   const nextButton = document.createElement('button');
   nextButton.type = 'button';
   nextButton.className = 'btn btn--text';
@@ -119,7 +140,7 @@ export function renderNotebookRegisterView(container, props) {
   nextButton.setAttribute('aria-label', 'Next day');
   nextButton.addEventListener('click', () => onNavigateDate(shiftDateKey(dateKey, 1)));
 
-  dateBar.append(prevButton, dateLabel, nextButton);
+  dateBar.append(prevButton, dateLabelWrapper, nextButton);
   wrapper.appendChild(dateBar);
 
   const summary = notebookService.getRegisterSummary(classroom, subjectId, notebookTypeId, dateKey);
@@ -141,6 +162,7 @@ export function renderNotebookRegisterView(container, props) {
       createNotebookRosterElement({
         students: allStudents,
         getEntryForStudent: (studentId) => notebookService.getEntry(classroom, subjectId, notebookTypeId, dateKey, studentId),
+        onSelectStudent,
         onSetSubmission: (studentId, value) => {
           notebookService.setEntry(classroom, subjectId, notebookTypeId, dateKey, studentId, { submission: value }, actingUid);
           saveOrRecordDraft(classroom);

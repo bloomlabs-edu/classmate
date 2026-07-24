@@ -18,7 +18,6 @@
 
 import * as workspaceService from '../../services/workspaceService.js';
 import * as studentIdentityService from '../../services/studentIdentityService.js';
-import { showToast } from '../components/Toast.js';
 import * as studentService from '../../services/studentService.js';
 import * as bucketService from '../../services/bucketService.js';
 import * as badgeService from '../../services/badgeService.js';
@@ -39,17 +38,18 @@ import { openAwardBadgeModal } from '../components/AwardBadgeModal.js';
 import { openAddNoteModal } from '../components/AddNoteModal.js';
 import { openLogParticipationModal } from '../components/LogParticipationModal.js';
 
-const TABS = ['overview', 'achievements', 'learning', 'notebooks', 'activity', 'notes'];
+const TABS = ['overview', 'achievements', 'learning', 'notebooks', 'activity', 'access', 'notes'];
 const TAB_LABELS = {
   overview: 'Overview',
-  achievements: 'Achievements',
+  achievements: 'Recognition',
   learning: 'Learning',
   notebooks: 'Notebooks',
-  activity: 'Activity',
+  activity: 'Timeline',
+  access: 'Parent Access',
   notes: 'Notes',
 };
 
-export function renderStudentProfileView(container, { classroom, studentId, tab, onBack, onNavigateTab }) {
+export function renderStudentProfileView(container, { classroom, studentId, tab, onBack, onNavigateTab, onOpenStudentAccess }) {
   container.innerHTML = '';
 
   const found = studentService.findStudentInClassroom(classroom, studentId);
@@ -60,7 +60,7 @@ export function renderStudentProfileView(container, { classroom, studentId, tab,
 
   const { student, team } = found;
   const activeTab = TABS.includes(tab) ? tab : 'overview';
-  const rerender = () => renderStudentProfileView(container, { classroom, studentId, tab: activeTab, onBack, onNavigateTab });
+  const rerender = () => renderStudentProfileView(container, { classroom, studentId, tab: activeTab, onBack, onNavigateTab, onOpenStudentAccess });
 
   const wrapper = document.createElement('div');
   wrapper.className = 'profile-view';
@@ -77,9 +77,10 @@ export function renderStudentProfileView(container, { classroom, studentId, tab,
     learning: renderLearningTab,
     notebooks: renderNotebooksTab,
     activity: renderActivityTab,
+    access: renderAccessTab,
     notes: renderNotesTab,
   };
-  tabRenderers[activeTab](content, classroom, student, team, rerender);
+  tabRenderers[activeTab](content, classroom, student, team, rerender, onOpenStudentAccess);
 
   wrapper.appendChild(content);
   container.appendChild(wrapper);
@@ -243,106 +244,69 @@ function renderOverviewTab(content, classroom, student, team, rerender) {
   groupSection.appendChild(groupCard);
   content.appendChild(groupSection);
 
-  content.appendChild(createPortalAccessSection(classroom, student, rerender));
+  // Portal Access (PIN/invitation-link management) used to live here,
+  // one student at a time. Moved to a dedicated Student Access page
+  // (reached from the Classroom Dashboard) instead — the realistic
+  // workflow is onboarding a whole class's parents in one sitting, not
+  // visiting each student's profile individually. See this project's
+  // CHANGELOG for the full reasoning, and ui/views/StudentAccessView.js.
 }
 
+// ---------------------------------------------------------------------
+// Parent Access
+// ---------------------------------------------------------------------
+
 /**
- * "Portal Access" — Generate/Reset/Copy/Share the Student PIN used to
- * link this student to a parent's Google account in the Student
- * Portal (see services/studentIdentityService.js). Teachers never
- * choose or type a PIN themselves — only Generate/Reset exist. Share
- * builds a one-time invitation link (see
- * generateInvitationTokenForStudent()) and uses the device's native
- * share sheet when available, falling back to copying the link.
- *
- * Uses studentIdentityService.listDemoRoster() to find this student's
- * current PIN — a demo-only lookup, since the fixture repository
- * doesn't index PINs by this app's real classroom/student ids. A
- * production repository would read the PIN directly off the student
- * object instead (see repositories/identity/StudentLinkRepository.js's
- * own doc comment on where a PIN actually lives in that model).
+ * Status only — "is this student's parent linked yet?" — not PIN
+ * management. That stays canonically on the dedicated Student Access
+ * page (see ui/views/StudentAccessView.js and its own CHANGELOG entry
+ * on why bulk management shouldn't be duplicated across two screens).
+ * This tab answers a different, narrower question: someone already
+ * looking at *this* student's own profile ("understand a student," in
+ * the four-workflow framing) can see their parent-link status without
+ * leaving, and jump to the bulk page only if they actually need to
+ * take an action.
  */
-function createPortalAccessSection(classroom, student, rerender) {
+function renderAccessTab(content, classroom, student, team, rerender, onOpenStudentAccess) {
   const section = document.createElement('div');
   section.className = 'profile-section';
 
   const heading = document.createElement('h2');
   heading.className = 'profile-section__heading';
-  heading.textContent = 'Portal Access';
+  heading.textContent = 'Parent Access';
   section.appendChild(heading);
 
-  const note = document.createElement('p');
-  note.className = 'profile-section__meta';
-  note.textContent = 'Share this PIN (or an invitation link) so a parent can link their Google account to this student in the Student Portal.';
-  section.appendChild(note);
+  const statusRow = document.createElement('div');
+  statusRow.className = 'access-status-row';
 
   const demoEntry = studentIdentityService.listDemoRoster().find((entry) => entry.studentName === student.name);
-  const pinRow = document.createElement('div');
-  pinRow.className = 'join-code-display';
+  const statusBadge = document.createElement('span');
 
-  const pinValue = document.createElement('span');
-  pinValue.className = 'join-code-display__value';
-  pinValue.textContent = demoEntry ? demoEntry.pin : 'Not available in this demo roster';
-  pinRow.appendChild(pinValue);
+  if (!demoEntry) {
+    statusBadge.className = 'access-status-badge access-status-badge--unknown';
+    statusBadge.textContent = 'Not available in this demo roster';
+  } else {
+    // Resolved async below, since isStudentLinked() is a real (if
+    // demo-backed) lookup — shown as "Checking..." only for the
+    // instant before it resolves, not a meaningful loading state.
+    statusBadge.className = 'access-status-badge';
+    statusBadge.textContent = 'Checking\u2026';
+    studentIdentityService.isStudentLinked(classroom.id, demoEntry.studentId).then((linked) => {
+      statusBadge.className = 'access-status-badge' + (linked ? ' access-status-badge--linked' : ' access-status-badge--pending');
+      statusBadge.textContent = linked ? '\u2705 Linked' : '\u23f3 Not Linked';
+    });
+  }
+  statusRow.appendChild(statusBadge);
+  section.appendChild(statusRow);
 
-  const generateButton = document.createElement('button');
-  generateButton.type = 'button';
-  generateButton.className = 'btn btn--ghost';
-  generateButton.textContent = demoEntry ? 'Reset' : 'Generate';
-  generateButton.disabled = !demoEntry;
-  generateButton.addEventListener('click', async () => {
-    await studentIdentityService.generatePinForStudent(classroom.id, demoEntry.studentId);
-    showToast('New PIN generated');
-    rerender();
-  });
-  pinRow.appendChild(generateButton);
+  const manageButton = document.createElement('button');
+  manageButton.type = 'button';
+  manageButton.className = 'btn btn--ghost';
+  manageButton.textContent = 'Manage in Student Access';
+  manageButton.addEventListener('click', () => onOpenStudentAccess?.());
+  section.appendChild(manageButton);
 
-  const copyButton = document.createElement('button');
-  copyButton.type = 'button';
-  copyButton.className = 'btn btn--ghost';
-  copyButton.textContent = 'Copy';
-  copyButton.disabled = !demoEntry;
-  copyButton.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(demoEntry.pin);
-      copyButton.textContent = 'Copied!';
-      setTimeout(() => { copyButton.textContent = 'Copy'; }, 1500);
-    } catch (error) {
-      console.error('[StudentProfileView] Failed to copy PIN:', error);
-      window.alert(`Student PIN: ${demoEntry.pin}`);
-    }
-  });
-  pinRow.appendChild(copyButton);
-
-  const shareButton = document.createElement('button');
-  shareButton.type = 'button';
-  shareButton.className = 'btn btn--primary';
-  shareButton.textContent = 'Share';
-  shareButton.disabled = !demoEntry;
-  shareButton.addEventListener('click', async () => {
-    const token = await studentIdentityService.generateInvitationTokenForStudent(classroom.id, demoEntry.studentId, 7);
-    const link = `${window.location.origin}${window.location.pathname}#/student?token=${token}`;
-    const shareText = `Link your Google account to ${student.name} on Bloom Labs: ${link}`;
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: 'Bloom Labs Student Portal', text: shareText, url: link });
-        return;
-      } catch (error) {
-        // User cancelled the native share sheet, or it's unavailable — fall through to copy.
-      }
-    }
-    try {
-      await navigator.clipboard.writeText(link);
-      showToast('Invitation link copied \u2014 expires in 7 days, single use');
-    } catch (error) {
-      console.error('[StudentProfileView] Failed to copy invitation link:', error);
-      window.alert(shareText);
-    }
-  });
-  pinRow.appendChild(shareButton);
-
-  section.appendChild(pinRow);
-  return section;
+  content.appendChild(section);
 }
 
 function createStatCard(label, value) {

@@ -10,13 +10,21 @@
  * component a plain array — no service calls happen in here.
  */
 
-export function createNotebookTimelineElement({ days, label }) {
+export function createNotebookTimelineElement({ days, label, onLabelClick }) {
   const wrapper = document.createElement('div');
   wrapper.className = 'notebook-timeline-row';
 
   if (label) {
-    const labelEl = document.createElement('span');
-    labelEl.className = 'notebook-timeline-row__label';
+    let labelEl;
+    if (onLabelClick) {
+      labelEl = document.createElement('button');
+      labelEl.type = 'button';
+      labelEl.className = 'notebook-timeline-row__label student-name-link';
+      labelEl.addEventListener('click', onLabelClick);
+    } else {
+      labelEl = document.createElement('span');
+      labelEl.className = 'notebook-timeline-row__label';
+    }
     labelEl.textContent = label;
     wrapper.appendChild(labelEl);
   }

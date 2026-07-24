@@ -1473,3 +1473,99 @@ None to application behavior — every route, service, and component works ident
 
 ### Future TODOs
 - (Carried over, unchanged): note-undo gap in `classModeService`; Session Lock and Session History from the Class Mode UX phase; production `GoogleIdentityProvider`/`ConsentProvider` pending AI Working Committee review; consolidate avatar implementations; `firestore.rules` review; Learning Hub; role-based routing; all previously-listed items.
+
+---
+
+## Information Architecture: Separating "Running a Lesson" from "Managing the Classroom"
+
+**Context:** Class Mode had accumulated tools for two genuinely different activities — teaching and administration — into one screen. Reviewed every current Class Mode action individually against a single test: would a teacher realistically press this with students in front of them? Full analysis, recommendations, and reasoning were presented before any code was touched, per explicit request not to simply preserve the current layout.
+
+### The Review
+- **Undo** — kept. Constant, in-the-moment correction; the clearest possible example of a teaching action.
+- **Notebook Tracker** — kept, deliberately defended rather than cut by default. Walking the room marking notebooks during independent work is a real in-class rhythm, and the Class Session model already treats notebook updates as a draft category alongside stars and behaviour — this is the "demonstrated in-class use case" the brief asked to require before keeping anything administration-adjacent.
+- **Reset Session** — kept, but demoted (moved after Notebook Tracker, away from Undo). Still a genuine live-teaching moment (zeroing scores for a new period's students standing in front of you *right now*), just a much rarer one than Undo, and shouldn't carry the same visual weight.
+- **Settings** — removed entirely. Never a mid-lesson action; already fully reachable from the Classroom Dashboard.
+- **Learning Activities** — removed entirely. Checking submission status is a grading/planning task done at a desk, not mid-lesson.
+- **Back** — kept, renamed to **"Exit Class"** — not a removal, a reframing. "Back" implies undoing navigation; "Exit Class" names what's actually happening: stepping out of focused teaching mode.
+- **Review Session** — unchanged. Already exactly the wrap-up gateway this architecture wants.
+
+Timer and Class Notes (suggested as possible additions) were deliberately not built — neither has a demonstrated need in this app today, consistent with this project's standing discipline against building speculative features.
+
+### Student Access — a placement recommendation that changed what was already built
+Evaluated three options (buried in each student's Profile — the existing placement; a Dashboard section; a dedicated page) against the realistic first-use workflow: onboarding an entire class's parents in one sitting, not visiting 30 individual profile pages one at a time. Recommended, and built, a **dedicated Student Access page** reached from the Classroom Dashboard — the only option that matches the actual bulk workflow rather than optimizing for the wrong frequency.
+
+### Teacher Access — evaluated, left unchanged
+Considered relocating co-teacher invitation/PIN management out of Settings → Teachers, and concluded it shouldn't move. The volume here (a handful of co-teachers, not a full roster) and frequency (rare, not ongoing) don't create the same bulk-workflow mismatch Student Access had — the trade-offs that justified moving one don't apply to the other.
+
+### Features Added
+- **`ui/views/StudentAccessView.js`** (new) — lists every student with PIN/Generate/Reset/Copy/Share in one scannable page, reusing the exact same `studentIdentityService` functions the old per-profile section called — only *where* a teacher manages this changed, not how PINs or invitation links work.
+- **A "Student Access" button** added to the Classroom Dashboard, alongside Settings.
+- **`#/classroom/{id}/student-access`** route added.
+
+### Files Modified
+- `js/ui/views/TrackerView.js` — Settings and Learning Activities buttons removed entirely (with their now-unused `onSettings`/`onActivities` props); Reset Session reordered after Notebook Tracker; "Back" renamed to "Exit Class"; module doc comment rewritten to describe the new, deliberately narrow header and why.
+- `js/ui/views/StudentProfileView.js` (teacher-side) — the per-student "Portal Access" section removed (consolidated into the new dedicated page, not duplicated); now-unused imports (`studentIdentityService`, `showToast`) removed.
+- `js/ui/views/DashboardView.js` — `createStudentAccessButton()` added.
+- `js/ui/router.js` — `student-access` route added.
+- `js/main.js` — `studentAccess` added to `CLASSROOM_ROUTE_NAMES`; route dispatch and Dashboard wiring added; `tracker` route's now-unused `onSettings`/`onActivities` props removed.
+- `css/styles.css` — `.student-access-list`/`.student-access-row` and its children.
+
+### Breaking Changes
+None to data or existing functionality — Settings and Learning Activities remain fully reachable, just from the Dashboard instead of Class Mode (where they were already reachable from, in parallel, before this change — nothing was made harder to find, only removed from a screen it didn't belong on).
+
+### Regression Verification
+Confirmed directly: Settings, Learning Activities, and Notebook Tracker are no longer present in Class Mode's header (checked for their absence, not just the presence of what remains); Undo, Notebook Tracker, and Reset Session are still present and functional; "Exit Class" appears where "Back" used to; the new Student Access page shows the correct PIN pulled from the same underlying service; a full regression pass (Settings' Groups/Students/Notebooks/Teachers tabs, Class Mode award/Undo/Notebook-navigation/Review/Save, Exit Class returning to the Dashboard, Recognition Screen) confirmed zero impact elsewhere.
+
+### Architectural Decisions Made During Implementation
+- **Notebook Tracker was defended, not just spared** — every other administration-adjacent tool was removed by default unless a real in-class use case justified keeping it; Notebook Tracker is the one case that met that bar, and the reasoning for why is recorded here rather than it just quietly surviving the cut.
+- **Student Access was consolidated into one location, not duplicated across two** — keeping both the old per-profile section and the new bulk page would have created two places to manage the same PIN, with no guarantee they'd stay in sync in a future production implementation. One canonical location was chosen deliberately.
+
+### Future TODOs
+- (Carried over, unchanged): note-undo gap in `classModeService`; Session Lock and Session History from the Class Mode UX phase; production `GoogleIdentityProvider`/`ConsentProvider` pending AI Working Committee review; consolidate avatar implementations; `firestore.rules` review; Learning Hub; role-based routing; all previously-listed items.
+
+---
+
+## Teacher Workflow Reorganization (Phase 1: Notebook Date Navigation + Student Access) — Student Workspace Evaluation Included
+
+**Context:** a request to organize Bloom Labs around four teacher intentions (prepare a classroom, teach a lesson, understand a student, review progress) rather than technical features, with an explicit evaluation required before any building. This entry covers the full evaluation plus two bounded, fully-implemented pieces; the Student Workspace expansion and the clickable-names audit are the larger, more open-ended pieces and are recorded honestly as not yet done — see Future TODOs.
+
+### Evaluation: Student Workspace
+**Verdict: yes, but as an expansion of the per-student profile that already exists, organized around genuine per-student questions — not a wholesale new concept, and not a blind adoption of every item in the proposed tab list.** The key distinction: several of the proposed tabs (Notebook Tracker, Recognition) aren't actually per-student concepts today — they're classroom-wide screens that happen to contain student data. Notebook Tracker answers *"which of my 30 students submitted today?"*; that stays put, reachable from Class Mode. *"Has this one student's notebook completion been consistent over time?"* is a different, genuinely per-student question, and belongs in the workspace as a **Notebook History** tab — same underlying data, different screen, because it's a different question. Recognition follows the identical split (the Wall stays classroom-wide; a per-student recognition history is new). Behaviour needs no new screen, just a filtered tab over existing timeline data. Learning Progress is a genuine gap — the computation exists, feeding aggregate displays, but no per-student view of it exists yet.
+
+**Parent/Student Access — evaluated as a real tension, not smoothed over:** the previous phase moved Student Access *out* of the per-student profile specifically because bulk onboarding (30 parents in one sitting) was the realistic workflow, and per-profile access optimized for the wrong frequency. Re-adding it as a workspace tab isn't reversing that — it answers a different question (*"while I'm already looking at this student for another reason, what's their link status"* vs. *"which of my parents still need onboarding"*). Recommendation: keep the bulk page primary and discoverable; the workspace tab reads the same underlying data as a convenience view, not a second source of truth.
+
+### Evaluation: Clickable Student Names — Two Genuine Exceptions
+1. **Class Mode.** Explicitly listed as a place names should navigate to the Workspace — but a name there sits inside a row whose entire surface already has a job: tap to award a star. A second, competing meaning for the same text during live teaching is exactly the ambiguity the cognitive-load work has been removing. The existing long-press → Quick Actions → "Open Full Profile" remains the correct, *deliberately different* gesture for reaching the Workspace from here.
+2. **Session Review's Top Contributors.** A transient decision screen (Save/Discard) — a clickable name inviting navigation away risks an accidentally abandoned review. Names here stay static.
+Everywhere else, a name should behave identically — this audit itself is recorded as a Future TODO, not yet performed across every screen.
+
+### Features Implemented — Notebook Date Navigation
+Applied the identical clickable-date pattern to both `NotebookRegisterView.js` (a single day) and `NotebookTimelineView.js` (a week/month range), per the explicit instruction that inconsistent date-navigation between two screens of the same kind would be exactly the one-off-interaction problem being asked to eliminate. A native `<input type="date">` is layered invisibly (via absolute positioning) directly over the existing formatted text ("24 Jul 2026" / "13 Jul – 19 Jul 2026"), so the custom display is unchanged but the whole label is now clickable, opening the browser's own native date picker — chosen over a custom calendar widget specifically because it's the most intuitive interaction *by construction*: every phone and browser already teaches this exact affordance. Previous/Next are untouched on either side, confirmed still functional after a picker-driven jump, not just before it.
+
+### Features Implemented — Student Access Reorganized Around Connection Status
+Reordered the page to lead with **connection status** (✅ Linked / ⏳ Not Linked) rather than the PIN, per the explicit framing that this should feel like an onboarding dashboard, not a credential manager. Not-yet-linked students surface "Share Invitation" as the primary action — the actual bottleneck a teacher is trying to clear — with PIN/Generate/Reset tucked behind an expandable "PIN" toggle. Already-linked students get a single, low-key "Manage" action instead. Rows are sorted with not-yet-linked students first, since those are the ones needing attention. Required a genuinely new capability, not just a UI reorder: `isStudentLinked()` added to the `StudentLinkRepository` interface and its demo implementation — the reverse direction of the existing `getLinkedStudents()` (which is keyed by provider/parent, not by student), needed to answer "is anyone linked to *this* student" at all.
+
+### A Real Bug Caught and Fixed
+Adding `isStudentLinked()` to `studentIdentityService.js` resulted in the function being defined **twice** in the same file (two near-identical versions with slightly different doc comments), which is a hard syntax error in JavaScript — `Identifier 'isStudentLinked' has already been declared`. This broke the entire application on load, not just the new feature; caught immediately by actually loading the app in a real browser (the landing page itself failed to render), not by a syntax checker alone, since the duplicate declaration is syntactically valid JavaScript in isolation and would not have been caught by `node --check` running on a diff in isolation — it surfaced specifically because the *whole file* was checked and loaded end-to-end.
+
+### Files Modified
+- `js/ui/views/NotebookRegisterView.js`, `NotebookTimelineView.js` — clickable date label added to both, Previous/Next unchanged.
+- `js/ui/views/StudentAccessView.js` — rewritten around connection-status-first rows with expandable PIN details.
+- `js/repositories/identity/StudentLinkRepository.js`, `DemoStudentLinkRepository.js` — `isStudentLinked()` added.
+- `js/services/studentIdentityService.js` — `isStudentLinked()` exposed (duplicate declaration found and fixed during testing).
+- `css/styles.css` — the shared date-label-overlay pattern; Student Access's new row/status/details structure.
+
+### Breaking Changes
+None. Every existing date-navigation button, PIN, and invitation-link action still works exactly as before — confirmed directly, including that Previous/Next continue to function correctly *after* a picker-driven date jump, not just independently of it.
+
+### Regression Verification
+Confirmed the Register's date picker jumps to an arbitrary selected date and that Previous Day still functions afterward from the new position. Confirmed the Timeline's picker jumps to the week containing an arbitrary selected date and that Previous Week still functions afterward. Confirmed Student Access shows "Not Linked" by default for an unlinked student, that "Share Invitation" (not the PIN) is the primary visible action, that PIN details are hidden until explicitly expanded, and that expanding reveals the correct PIN. A full regression pass (Settings, Class Mode through Session Review and Save, Exit Class, Recognition Screen) confirmed zero impact elsewhere.
+
+### Architectural Decisions Made During Implementation
+- **The overlay-input technique was chosen over replacing the label with a native date input outright** — a bare native date input can't be styled to show custom text like "24 Jul 2026"; overlaying an invisible one preserves the exact existing visual design while gaining the native picker's interaction for free.
+- **`isStudentLinked()` was added as a genuinely new repository method, not inferred from existing data client-side** — reverse-lookup ("who is linked to this student") is a fundamentally different query shape than the existing forward-lookup ("which students is this provider linked to"), and a production implementation would likely need its own index for exactly the same reason; modeling that distinction now avoids awkwardly retrofitting it later.
+
+### Future TODOs
+- Student Workspace tab expansion (Notebook History, Recognition History, Behaviour, Learning Progress, and the Parent/Student Access convenience tab) — evaluated and recommended above, not yet built.
+- Clickable-student-names audit across Notebook Tracker, Recognition, Reports, and Timeline, applying the two identified exceptions (Class Mode, Session Review) consistently everywhere else.
+- (Carried over, unchanged): note-undo gap in `classModeService`; Session Lock and Session History from the Class Mode UX phase; production `GoogleIdentityProvider`/`ConsentProvider` pending AI Working Committee review; consolidate avatar implementations; `firestore.rules` review; Learning Hub; role-based routing; all previously-listed items.

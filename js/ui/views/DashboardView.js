@@ -57,6 +57,7 @@ export function renderDashboardView(container, props) {
     classroom,
     currentUser,
     onOpenSettings,
+    onOpenStudentAccess,
     onOpenNotebookTracker,
     onOpenGroups,
     onStartClassMode,
@@ -138,7 +139,12 @@ export function renderDashboardView(container, props) {
   // 4. How is my classroom organized?
   content.appendChild(
     createClassroomSectionElement({
-      children: [createGroupsWidgetElement({ classroom, onOpenGroups }), createReportsPlaceholder(), createSettingsButton(onOpenSettings)],
+      children: [
+        createGroupsWidgetElement({ classroom, onOpenGroups }),
+        createReportsPlaceholder(),
+        createStudentAccessButton(onOpenStudentAccess),
+        createSettingsButton(onOpenSettings),
+      ],
     })
   );
 
@@ -177,6 +183,15 @@ function createReportsPlaceholder() {
   button.textContent = 'Reports';
   button.disabled = true;
   button.title = 'Coming soon';
+  return button;
+}
+
+function createStudentAccessButton(onOpenStudentAccess) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn btn--ghost';
+  button.textContent = 'Student Access';
+  button.addEventListener('click', onOpenStudentAccess);
   return button;
 }
 

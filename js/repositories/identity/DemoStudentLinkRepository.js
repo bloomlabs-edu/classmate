@@ -67,6 +67,17 @@ export class DemoStudentLinkRepository extends StudentLinkRepository {
       .map(({ classroomId, studentId, studentName }) => ({ classroomId, studentId, studentName }));
   }
 
+  /** The reverse direction of getLinkedStudents() — checks every provider user's link list for this one student, since the demo store is keyed by provider user, not by student. A production repository (see StudentLinkRepository.js's own doc comment on the proposed identityLinks/{providerUserId} shape) would likely need a small denormalized index for this same reason — reverse-lookups against a mapping keyed the other way are exactly why. */
+  async isStudentLinked(classroomId, studentId) {
+    const links = readLinks();
+    return Object.values(links).some((studentIds) => studentIds.includes(studentId));
+  }
+
+  async isStudentLinked(classroomId, studentId) {
+    const links = readLinks();
+    return Object.values(links).some((studentIds) => studentIds.includes(studentId));
+  }
+
   async resolvePin(pin) {
     const student = DEMO_STUDENTS.find((s) => s.pin === pin);
     if (!student) return null;

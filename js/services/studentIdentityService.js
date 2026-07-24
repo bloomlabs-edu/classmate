@@ -136,3 +136,8 @@ export async function generateInvitationTokenForStudent(classroomId, studentId, 
 export function listDemoRoster() {
   return linkRepository.listDemoRoster();
 }
+
+/** Whether any parent account is currently linked to this student — powers Student Access's connection-status-first view. */
+export async function isStudentLinked(classroomId, studentId) {
+  return linkRepository.isStudentLinked(classroomId, studentId);
+}
