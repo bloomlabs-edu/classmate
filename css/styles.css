@@ -420,6 +420,15 @@ select:focus-visible,
   gap: 1rem;
 }
 
+.landing-view__eyebrow {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 0.25rem;
+}
+
 .landing-view__title {
   font-size: 2rem;
   font-weight: var(--font-weight-black);
@@ -925,7 +934,52 @@ select:focus-visible,
 .settings-view {
   max-width: 800px;
   margin: 0 auto;
+  /*
+   * Bloom Labs design-system palette, scoped to Settings specifically
+   * per this phase's request ("apply consistently to the redesigned
+   * Settings experience") rather than changed globally — the rest of
+   * the app hasn't been reviewed against this palette yet, and a
+   * global token change risks visual regressions on screens not
+   * touched this phase. Deliberately does NOT override
+   * --color-primary-deep (the header's background): that token is the
+   * teacher's own personalized accent color choice, a separate,
+   * pre-existing feature this redesign shouldn't quietly undo.
+   */
+  --settings-bg: #f8fafc;
+  --settings-card: #ffffff;
+  --settings-primary-button: #5ba8e5;
+  --settings-accent: #a8d5ba;
+  --settings-text-secondary: #64748b;
+  --settings-heading: #1e293b;
+  background-color: var(--settings-bg);
+  min-height: 100vh;
 }
+
+.settings-view .settings-section,
+.settings-view .settings-team-block,
+.settings-view .settings-empty-state,
+.settings-view .settings-editable-list__item {
+  background-color: var(--settings-card);
+}
+
+.settings-view h1:not(.settings-header__title),
+.settings-view h2,
+.settings-view h3,
+.settings-view .settings-team-block__heading,
+.settings-view .settings-empty-state__title {
+  color: var(--settings-heading);
+}
+
+.settings-view .settings-section__meta,
+.settings-view .settings-empty-state__message {
+  color: var(--settings-text-secondary);
+}
+
+.settings-view .btn--primary {
+  background-color: var(--settings-primary-button);
+  border-color: var(--settings-primary-button);
+}
+
 
 .settings-header {
   display: flex;
@@ -967,18 +1021,19 @@ select:focus-visible,
 }
 
 .settings-content {
-  padding: 1.5rem;
+  padding: 2rem 1.5rem;
 }
 
-.settings-section {
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  padding: 1.5rem;
+.settings-view .settings-section {
+  border: none;
+  box-shadow: 0 1px 3px rgba(30, 41, 59, 0.06);
+  border-radius: 16px;
+  padding: 1.75rem;
+  margin-bottom: 1.5rem;
 }
 
 .settings-section--danger {
-  border-color: var(--color-danger);
+  border-left: 3px solid var(--color-danger);
 }
 
 .settings-section__divider {
@@ -3960,4 +4015,182 @@ button.wizard-checklist__row:hover {
 }
 .student-name-link:hover {
   text-decoration: underline;
+}
+
+/*
+ * Teaching Assistant — self-contained, mounted once above the
+ * dashboard's own single content path (see
+ * ui/components/TeachingAssistant.js). Two variants driven by the
+ * same recommendation priority that picks which one applies, not a
+ * separate tier concept: --full for priority >= 80 (the prominent,
+ * title+description+primary-button treatment), --compact for lower
+ * priority (a quieter single-line strip). Nothing renders at all when
+ * no recommendation applies.
+ */
+.teaching-assistant--full {
+  background-color: var(--color-surface);
+  border: 1px solid transparent;
+  border-top: 3px solid var(--color-accent);
+  box-shadow: var(--elevation-card);
+  border-radius: var(--radius-card);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  max-width: 480px;
+  margin-left: auto;
+  margin-right: auto;
+  text-align: center;
+}
+.teaching-assistant--full .teaching-assistant__title {
+  font-size: 1.2rem;
+  font-weight: var(--font-weight-black);
+  margin: 0 0 0.5rem;
+}
+.teaching-assistant--full .teaching-assistant__description {
+  color: var(--color-muted);
+  margin: 0 0 1rem;
+}
+.teaching-assistant--full .teaching-assistant__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.teaching-assistant--compact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: 0.6rem 1rem;
+  margin-bottom: 1.5rem;
+}
+.teaching-assistant--compact .teaching-assistant__title {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-bold);
+  margin: 0;
+}
+.teaching-assistant--compact .teaching-assistant__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Pre-roster welcome — the entire screen shown before a classroom has any students. Deliberately minimal: no header, no widgets, just this heading plus whatever the Teaching Assistant renders below it. */
+.pre-roster-welcome {
+  max-width: 480px;
+  margin: 4rem auto 0;
+  text-align: center;
+  padding: 0 1.5rem;
+}
+.pre-roster-welcome__emoji {
+  font-size: 2.5rem;
+  display: block;
+  margin-bottom: 0.75rem;
+}
+.pre-roster-welcome__title {
+  font-size: 1.4rem;
+  font-weight: var(--font-weight-black);
+  margin: 0 0 1.5rem;
+}
+
+/* Settings' richer empty state - icon + title + message, used where a plain one-line message (see .empty-state) isn't enough, e.g. the Students tab before any students exist */
+.settings-empty-state {
+  max-width: 420px;
+  margin: 0 auto 1.5rem;
+  text-align: center;
+  padding: 1.5rem;
+}
+.settings-empty-state__icon {
+  font-size: 2rem;
+  display: block;
+  margin-bottom: 0.5rem;
+}
+.settings-empty-state__title {
+  font-size: 1.1rem;
+  font-weight: var(--font-weight-black);
+  margin: 0 0 0.5rem;
+}
+.settings-empty-state__message {
+  color: var(--color-muted);
+  margin: 0;
+}
+
+/* Settings' action-first bar (Add Student / Upload Student List) and post-import success screen */
+.settings-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding-bottom: 1.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.settings-action-bar__divider {
+  color: var(--settings-text-secondary, var(--color-muted));
+  font-size: var(--text-sm);
+}
+
+.settings-import-success {
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+}
+.settings-import-success__checkmark {
+  font-size: 1.4rem;
+  font-weight: var(--font-weight-black);
+  color: var(--settings-heading, var(--color-ink));
+  margin: 0 0 0.5rem;
+}
+.settings-import-success__next-step {
+  color: var(--settings-text-secondary, var(--color-muted));
+  margin: 0 0 1.5rem;
+}
+.settings-import-success .btn--large {
+  margin-bottom: 0.75rem;
+}
+
+/* Settings 3-section redesign: page-level sub-headings (Students/Groups/Teachers on one page), the Danger Zone's visual separation, and the "click instead of type" chip picker */
+.settings-page-heading {
+  font-size: 1.1rem;
+  font-weight: var(--font-weight-black);
+  color: var(--settings-heading, var(--color-ink));
+  margin: 2rem 0 1rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--color-border);
+}
+.settings-page-heading:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.settings-danger-divider {
+  margin: 2.5rem 0 1.5rem;
+  border-top: 2px dashed var(--color-danger);
+  opacity: 0.4;
+}
+
+.settings-chip-picker__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.settings-chip {
+  background-color: var(--settings-card, var(--color-surface));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: 0.5rem 1rem;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--settings-heading, var(--color-ink));
+  cursor: pointer;
+}
+.settings-chip:hover {
+  border-color: var(--settings-primary-button, var(--color-primary));
+}
+.settings-chip--other {
+  color: var(--settings-text-secondary, var(--color-muted));
+  border-style: dashed;
 }

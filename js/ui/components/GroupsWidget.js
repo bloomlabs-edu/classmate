@@ -33,7 +33,13 @@ export function createGroupsWidgetElement({ classroom, onOpenGroups }) {
   heading.textContent = '\ud83d\udc65 Groups';
   widget.appendChild(heading);
 
-  if (classroom.teams.length === 0) {
+  // Same reasoning as Settings' Groups tab: the automatic Ungrouped
+  // team (see classroomService.js's getOrCreateUngroupedTeam) isn't a
+  // group the teacher created, so it's excluded from this "how is my
+  // classroom organized" widget entirely.
+  const realTeams = classroom.teams.filter((team) => !team.isUngrouped);
+
+  if (realTeams.length === 0) {
     widget.appendChild(createEmptyStateElement({ message: 'Add a group in Settings to bring your class together.' }));
     return widget;
   }
@@ -41,7 +47,7 @@ export function createGroupsWidgetElement({ classroom, onOpenGroups }) {
   const list = document.createElement('div');
   list.className = 'huddle-list';
 
-  classroom.teams.forEach((team) => {
+  realTeams.forEach((team) => {
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'huddle-list__row';

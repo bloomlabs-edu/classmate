@@ -73,9 +73,8 @@ export class DemoStudentLinkRepository extends StudentLinkRepository {
     return Object.values(links).some((studentIds) => studentIds.includes(studentId));
   }
 
-  async isStudentLinked(classroomId, studentId) {
-    const links = readLinks();
-    return Object.values(links).some((studentIds) => studentIds.includes(studentId));
+  async hasAnyInvitationForClassroom(classroomId) {
+    return Array.from(invitationTokens.values()).some((entry) => entry.classroomId === classroomId);
   }
 
   async resolvePin(pin) {

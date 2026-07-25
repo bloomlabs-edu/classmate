@@ -1,19 +1,35 @@
 /**
  * ui/views/LandingView.js
  *
- * Bloom Labs' own entry point — shown at the bare root (#/), before any
- * product-specific screen or auth check. Purely a product picker: two
- * journeys, "Continue as Teacher" (into the existing Classroom Tracker
- * app, unchanged) and "Continue as Student" (a placeholder for now —
- * see ui/student-portal/). No Google sign-in happens here; each
- * product's own auth flow (today, just Classroom Tracker's) still runs
- * exactly as it always has, once a visitor has picked a journey.
+ * Classroom Tracker's own entry point — shown at the bare root (#/),
+ * before any product-specific screen or auth check. "Bloom Labs" is
+ * the umbrella ecosystem this product lives under, not the product
+ * itself, so it appears here only as a small secondary label above
+ * the real title: Classroom Tracker. The two journeys below are
+ * Classroom Tracker's own Teacher Portal and Student Portal — two
+ * experiences within this one product, not two modes of "Bloom Labs"
+ * itself. The hierarchy this screen communicates is:
+ *
+ *   Bloom Labs
+ *     -> Classroom Tracker
+ *          -> Teacher Portal / Student Portal
+ *
+ * "Continue as Teacher" leads into the existing Classroom Tracker app,
+ * unchanged; "Continue as Student" leads into the Student Portal (see
+ * ui/student-portal/). No Google sign-in happens here; each portal's
+ * own auth flow still runs exactly as it always has, once a visitor
+ * has picked one.
  *
  * Deliberately not auth-gated and not classroom-aware — this screen
- * exists one level above both, at the platform layer described in the
- * Bloom Labs product direction (Classroom Tracker / Student Portal /
- * Learning Hub as siblings under one platform, not Classroom Tracker
- * with a login screen bolted in front of it).
+ * exists one level above both, at the platform layer. Framing it this
+ * way (one product's own entry point, with the umbrella brand kept
+ * small) is specifically what makes it straightforward to introduce
+ * Learning Hub later as a sibling product under the same Bloom Labs
+ * umbrella, without needing to redesign this screen's hierarchy again
+ * — a future version of this page would show Classroom Tracker and
+ * Learning Hub as two *products* to choose between, each still small-
+ * labeled under Bloom Labs, rather than retrofitting a third "mode"
+ * into what today reads as one product's own two portals.
  */
 
 export function renderLandingView(container, { onContinueAsTeacher, onContinueAsStudent }) {
@@ -22,32 +38,36 @@ export function renderLandingView(container, { onContinueAsTeacher, onContinueAs
   const wrapper = document.createElement('div');
   wrapper.className = 'landing-view';
 
+  const eyebrow = document.createElement('p');
+  eyebrow.className = 'landing-view__eyebrow';
+  eyebrow.textContent = 'by Bloom Labs';
+
   const title = document.createElement('h1');
   title.className = 'landing-view__title';
-  title.textContent = 'Bloom Labs';
+  title.textContent = 'Classroom Tracker';
 
   const subtitle = document.createElement('p');
   subtitle.className = 'landing-view__subtitle';
-  subtitle.textContent = 'One platform, built around two different questions.';
+  subtitle.textContent = 'Two portals, built around two different questions.';
 
-  wrapper.append(title, subtitle);
+  wrapper.append(eyebrow, title, subtitle);
 
   const journeys = document.createElement('div');
   journeys.className = 'landing-view__journeys';
 
   const teacherCard = createJourneyCard({
     icon: '\ud83d\udcca',
-    title: 'For Teachers',
+    title: 'Teacher Portal',
     description: '\u201cHow is my classroom doing?\u201d \u2014 manage groups, recognition, notebooks, and progress.',
-    buttonLabel: 'Continue as Teacher',
+    buttonLabel: 'Enter Teacher Portal',
     onSelect: onContinueAsTeacher,
   });
 
   const studentCard = createJourneyCard({
     icon: '\ud83c\udf93',
-    title: 'For Students',
+    title: 'Student Portal',
     description: '\u201cHow am I doing?\u201d \u2014 your own progress and achievements, built around your perspective.',
-    buttonLabel: 'Continue as Student',
+    buttonLabel: 'Enter Student Portal',
     onSelect: onContinueAsStudent,
   });
 

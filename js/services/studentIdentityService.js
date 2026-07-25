@@ -141,3 +141,25 @@ export function listDemoRoster() {
 export async function isStudentLinked(classroomId, studentId) {
   return linkRepository.isStudentLinked(classroomId, studentId);
 }
+
+/** Whether any invitation has ever been sent for this classroom — used by setupStateService.js, independent of whether anyone has actually linked yet. */
+export async function hasSentAnyInvitation(classroom) {
+  return linkRepository.hasAnyInvitationForClassroom(classroom.id);
+}
+
+/**
+ * Whether ANY student across the whole classroom has a linked parent
+ * yet — powers the Dashboard's first-time onboarding card (see
+ * ui/views/DashboardView.js), which should disappear the moment at
+ * least one family has connected. Reuses isStudentLinked() per student
+ * rather than duplicating its logic against the repository directly.
+ */
+export async function hasAnyLinkedStudent(classroom) {
+  const allStudents = classroom.teams.flatMap((team) => team.students);
+  for (const student of allStudents) {
+    if (await isStudentLinked(classroom.id, student.id)) {
+      return true;
+    }
+  }
+  return false;
+}

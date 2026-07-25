@@ -139,6 +139,13 @@ export function createEmptyClassroom(details, owner) {
   validateDetails(details);
   const classroom = createClassroom({ ...details, ownerUid: owner.uid });
   memberService.addMember(classroom, owner.uid, MEMBER_ROLES.OWNER, owner.displayName);
+  // Generated here, at creation time, specifically so nothing ever
+  // needs to lazily backfill-and-save a join code as a side effect of
+  // rendering the Teachers section later — that pattern (a render
+  // function performing a write) was the actual root cause of a real
+  // render re-entrancy bug (see this project's CHANGELOG). A render
+  // function should only ever read; this is where the write belongs.
+  ensureJoinCode(classroom);
   classrooms.push(classroom);
   return classroom;
 }
@@ -232,4 +239,26 @@ export function ensureJoinCode(classroom) {
   if (classroom.classroomJoinCode) return false;
   classroom.classroomJoinCode = generateJoinCode();
   return true;
+}
+
+/**
+ * Every other feature in this app (Class Mode, Recognition, Notebook
+ * Tracker, Reports, Weekly Snapshot) already reads students via
+ * classroom.teams.flatMap(t => t.students) — rewriting that
+ * assumption across the whole app would be a much larger, riskier
+ * change than this feature needs. Instead, a single reserved team
+ * (isUngrouped: true) holds any student the teacher hasn't assigned
+ * to a real group, created lazily the first time it's needed and
+ * reused after that. Structurally identical to any other team, so
+ * nothing downstream needs special-casing — only UI that lists
+ * teacher-created groups (Settings' Groups tab, the Dashboard's
+ * Groups widget) needs to filter it out, since it isn't one.
+ */
+export function getOrCreateUngroupedTeam(classroom) {
+  const existing = classroom.teams.find((team) => team.isUngrouped);
+  if (existing) return existing;
+
+  const ungroupedTeam = { ...createTeam({ name: 'Ungrouped' }), isUngrouped: true };
+  classroom.teams.push(ungroupedTeam);
+  return ungroupedTeam;
 }

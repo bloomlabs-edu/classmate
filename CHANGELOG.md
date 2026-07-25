@@ -1751,3 +1751,333 @@ Confirmed normal operation (landing page, teacher sign-in) is completely unaffec
 ### Future TODOs
 - **Remove this diagnostic once the Android white-screen cause is confirmed** — it's deliberately temporary, not meant to ship indefinitely as user-facing behavior.
 - (Carried over, unchanged): mobile-viewport testing as standard practice; Student Workspace tab expansion; clickable-student-names audit; note-undo gap in `classModeService`; Session Lock and Session History; production `GoogleIdentityProvider`/`ConsentProvider` pending AI Working Committee review; consolidate avatar implementations; `firestore.rules` review; Learning Hub; role-based routing; all previously-listed items.
+
+---
+
+## Classroom Dashboard Onboarding: Reordered Information Architecture + First-Time Setup Card
+
+**Context:** direct observation that new fellows' actual workflow (add students → invite parents/generate PINs → only then reports/settings) didn't match the Dashboard's previous section order (Groups, Reports, Student Access, Settings), burying the thing a brand-new classroom needs first behind a section useful only once there's real data.
+
+### Components Identified Before Changing Anything, Per the Explicit Request
+- `ui/components/ClassroomSection.js` — the shared, generic layout wrapper for this whole grouping. Confirmed it does nothing but iterate whatever `children` array it's given, in order — genuinely reusable, no hardcoded section list, so reordering or inserting a new child requires zero changes to this file.
+- `ui/components/GroupsWidget.js` — Groups' own dedicated component.
+- `createReportsPlaceholder()`, `createStudentAccessButton()`, `createSettingsButton()` — local helper functions living inside `DashboardView.js` itself, not separate component files. The new onboarding card follows this exact same established convention (a local helper, not a new file) rather than introducing a new pattern for one small addition.
+
+### Changes
+- **Reordered** to Groups → (onboarding card, conditional) → Student Access → Reports → Settings, exactly as specified. This required touching only the `children` array passed into the existing `createClassroomSectionElement()` call — no changes to `ClassroomSection.js` itself.
+- **First-time onboarding card** — shown only while a classroom has zero linked students, hidden automatically once at least one family connects. Matches the requested copy and structure exactly (🎉 title, "Next step" framing, a button straight to Student Access).
+- **`hasAnyLinkedStudent(classroom)`** added to `studentIdentityService.js` — reuses the existing `isStudentLinked()` per student rather than duplicating its logic against the repository directly, per the explicit "avoid duplicate code" instruction.
+- **`renderDashboardView` made `async`** — needed to check link status before deciding whether to build the card, avoiding a render-then-patch flicker. Confirmed there's exactly one call site (`main.js`, fire-and-forget, matching the exact precedent already established for `StudentAccessView.js` in an earlier phase) — no other code depends on this function completing synchronously.
+- **Visual design reused, not reinvented**: the card uses the same surface/shadow/radius tokens as every other Dashboard card, plus the same accent-border treatment already used by `.recognition-card`, rather than introducing a new visual pattern.
+
+### A Real Limitation Worth Being Upfront About
+The demo fixture roster (used for Student Portal linking throughout this project) has fixed student IDs, entirely separate from the fresh, randomly-generated IDs any real classroom's students get when created through the normal Dashboard flow. This means a newly created classroom's students can never actually match the fixture roster, so the onboarding card cannot be driven to its "hidden" state through a full end-to-end demo click-through — that's an inherent property of the fixture system, not a bug in this feature. Verified the "hides once linked" behavior instead at the service level directly: confirmed `hasAnyLinkedStudent()` correctly returns `true` for the fixture roster's own classroom ID after a real PIN-linking flow completes.
+
+### Files Modified
+- `js/ui/views/DashboardView.js` — reordered section, `createOnboardingCard()` added, made async.
+- `js/services/studentIdentityService.js` — `hasAnyLinkedStudent()` added.
+- `css/styles.css` — `.onboarding-card` and its children.
+
+### Breaking Changes
+None. Confirmed directly: the onboarding card's own "Open Student Access" button and the separate persistent "Student Access" button both navigate to the identical destination; Settings and the (still-disabled) Reports placeholder are unaffected.
+
+### Regression Verification
+Confirmed the exact section order via direct DOM inspection (not text-matching heuristics, which initially targeted the wrong section since `TeachingSection.js` shares a CSS class name with `ClassroomSection.js` — caught and corrected before trusting the result). Confirmed the card renders for a brand-new classroom, confirmed both paths to Student Access work identically, confirmed Settings and Reports are unaffected, and confirmed the card fits correctly within a 393px mobile viewport.
+
+### Future TODOs
+- (Carried over, unchanged): mobile-viewport testing as standard practice; Student Workspace tab expansion; clickable-student-names audit; note-undo gap in `classModeService`; Session Lock and Session History; production `GoogleIdentityProvider`/`ConsentProvider` pending AI Working Committee review; consolidate avatar implementations; `firestore.rules` review; Learning Hub; role-based routing; all previously-listed items.
+
+---
+
+## Classroom Dashboard: True First-Time Setup View (Correcting the Previous Reorder-Only Attempt)
+
+**Context:** direct correction that the previous phase's reordering (Groups → Student Access → Reports → Settings within the Classroom section) missed the actual problem — Student Access was below the fold because five widgets above the Classroom section (Recognition Wall, Weekly Snapshot, Pending Tasks, Continue Working, Teaching/Subjects) all render empty states for a brand-new classroom, consuming real vertical space for zero value. Proposed the UX before implementing, per explicit request: a genuinely distinct first-time setup view replacing the whole dashboard body, not a trimmed version of it, rather than further reordering.
+
+### The Redesign
+When `hasAnyLinkedStudent(classroom)` is false, the entire dashboard body (everything below the header) is replaced by a compact setup view:
+- **A context-aware hero card** — the message and primary button adapt to what's actually true: a classroom with no roster yet can't meaningfully use Student Access (there's no one to generate a PIN for), so the CTA reads "Add Students" → Settings first; once a roster exists, it switches to "Open Student Access" → Student Access, becoming the true primary call-to-action exactly where the spec asked for it.
+- **A one-line roster summary** ("3 groups · 12 students" or "No students added yet") instead of the full Groups widget — the widget's own list/empty-state padding was a direct contributor to the fold problem, not an innocent bystander.
+- **Everything else suppressed entirely** — Recognition Wall, Weekly Snapshot, Pending Tasks, Continue Working, Teaching/Subjects, Reports don't render at all in this state, since none are useful before any real activity exists.
+- **The header and Start Class Mode remain fully available** — setup mode doesn't block a fellow from teaching immediately if they choose to.
+- The moment any student links, this entire view stops rendering — automatically, via the same `hasAnyLinkedStudent` check now gating the whole body, not one card — and the full normal dashboard (all widgets, full Groups widget, the Groups→Student Access→Reports→Settings order from the previous phase, which stands on its own merits once a classroom is past initial setup) takes over.
+
+### Verified: The Actual Fold Requirement, Not Just "It Looks Better"
+Measured directly against a real 1366×768 viewport, not eyeballed:
+- **No roster yet**: hero card + CTA bottom edge at **y=662px** — comfortably within the 768px fold.
+- **Roster exists, no links yet**: hero card + Student Access CTA bottom edge at **y=644px** — same result, confirming the layout holds regardless of which message/CTA variant is showing.
+
+### A Real, Previously-Undetected Bug Found Incidentally During This Phase's Testing
+While setting up a controlled test override to verify the "linked" branch renders the full normal dashboard correctly, discovered `DemoStudentLinkRepository.js` had contained a genuine **duplicate `isStudentLinked()` method** since an earlier phase — two byte-identical copies of the same method body. This is legal JavaScript (a later class method definition silently shadows an earlier one of the same name; no syntax error, which is exactly why `node --check` never caught it, and why it survived this project's own file-by-file syntax audits). Confirmed both copies were functionally identical, so this had caused no incorrect behavior — but it was real, unintentional dead code, not a stylistic nitpick, and is now removed, leaving exactly one clean definition.
+
+### A Test-Methodology Dead End, Worth Recording Honestly
+Verifying the "linked" branch properly required forcing `hasAnyLinkedStudent` to report true. Two approaches were tried and abandoned before landing on a reliable one: monkey-patching the service module via a dynamically-imported reference (failed — the same cross-module-instance mismatch this project has hit before with `page.evaluate`'s dynamic `import()`), and testing against the fixture roster's fixed IDs against a freshly-created classroom's own IDs (the same inherent mismatch noted in the previous phase — they can never match). The approach that actually worked: directly patching the repository's own method to return `true` unconditionally, in an isolated test copy only, then exercising the real UI against it. Also worth recording: the first attempt with this approach *still* failed, because the test classroom had no students added yet — `hasAnyLinkedStudent`'s loop never calls `isStudentLinked` at all when the roster is empty, regardless of what that method would return. Not a bug; a reminder that a test needs to actually exercise the code path it claims to be checking.
+
+### Files Modified
+- `js/ui/views/DashboardView.js` — `renderDashboardView` now branches its entire content body on link status; `createOnboardingCard()` replaced by `createFirstTimeSetupContent()` (context-aware hero, compact roster summary); the normal-dashboard branch is otherwise unchanged from the previous phase, including its Groups→Student Access→Reports→Settings order.
+- `js/repositories/identity/DemoStudentLinkRepository.js` — duplicate `isStudentLinked()` method removed.
+- `css/styles.css` — `.onboarding-card` styles replaced by `.first-time-setup` and its children.
+
+### Breaking Changes
+None. The normal (post-linking) dashboard is functionally identical to the previous phase's version — confirmed directly, not assumed, once a working test override was found: all four suppressed widgets reappear correctly, the full Groups widget (not the compact summary) renders, and the Classroom section order is unchanged.
+
+### Regression Verification
+Confirmed both first-time-setup variants (no roster; roster with no links) render the correct adaptive messaging, correct roster summary text, and correct navigation destinations. Confirmed via direct pixel measurement that both variants fit within a 1366×768 first viewport. Confirmed, once a reliable test method was found, that the normal dashboard's full widget set and section order are completely unaffected by this change.
+
+### Future TODOs
+- (Carried over, unchanged): mobile-viewport testing as standard practice; Student Workspace tab expansion; clickable-student-names audit; note-undo gap in `classModeService`; Session Lock and Session History; production `GoogleIdentityProvider`/`ConsentProvider` pending AI Working Committee review; consolidate avatar implementations; `firestore.rules` review; Learning Hub; role-based routing; all previously-listed items.
+
+---
+
+## Teaching Assistant: Recommendation-Driven Architecture (Phase 1 — Onboarding Rules)
+
+**Context:** the culmination of a multi-round design conversation (recorded across the several CHANGELOG entries above this one) that moved from a branching two-state dashboard, through a boolean `setupProgress` object with dashboard "tiers," to this final architecture: a single, unbranched dashboard with a self-contained, recommendation-driven Teaching Assistant mounted above it. This entry implements Phase 1 (onboarding recommendations only), per explicit scope.
+
+### Architecture
+- **`setupStateService.js`** — derives setup-only facts (`hasStudents`, `hasSentInvitation`, `hasLinkedStudent`, `hasGroups`, `hasNotebookConfigured`) from existing data. Deliberately excludes anything about actual teaching activity (a future `activityStateService.js` would hold that), per the explicit instruction that running a Class Session is evidence of activity, not a setup checkbox.
+- **`recommendationEngine.js`** — a flat list of independent rules, each answering "does this apply, at what priority" given `setupState`. The engine runs every rule, filters to applicable and non-dismissed, and returns the single highest-priority one. This is the actual extensibility point: a future teaching-oriented rule (recognize a student, review pending checks) is one new entry in the list — nothing about the engine, the priority mechanism, or any existing rule changes.
+- **`TeachingAssistant.js`** — a self-contained UI component rendering exactly what the engine returns, or nothing. Priority does double duty as both ranking and visual weight (>=80 → full card, 30-79 → compact strip), avoiding a separate "tier" concept layered on top of priority.
+- **`DashboardView.js`** — reverted to a single, always-built content path (every widget always renders) with the Assistant mounted as one call above it. Confirmed directly, not assumed: removing this call entirely would leave the rest of the dashboard completely unaffected, since the dashboard has zero awareness of setup state or recommendations.
+
+### A Real Data-Model Finding, Not an Assumption
+Checked `studentService.js`'s `addStudent(team, name)` before writing the `hasGroups` rule, since assuming "any team exists" would be the right signal seemed worth verifying first — it requires an existing team, meaning any classroom with students necessarily has at least one team already. A plain "has any team" check could therefore never be false once `hasStudents` is true, making it useless as a signal for "has this teacher intentionally organized their class into groups." Used `classroom.teams.length > 1` instead — more than one team is the real signal; a single team is just the container every roster needs.
+
+### Two More Duplicate-Declaration Bugs Found and Fixed
+While building `hasSentAnyInvitation`, found that `js/repositories/identity/StudentLinkRepository.js` (the abstract interface) had carried a duplicate `isStudentLinked()` abstract method declaration since an earlier phase — same category of bug as the one found and fixed in `DemoStudentLinkRepository.js` two phases ago (legal JS for class methods, silently shadows, no syntax error, which is exactly why it survived every prior audit). Both occurrences were functionally identical (both just `throw`), so no incorrect behavior resulted — but it's real, now-removed dead code. Given this is the *second* time this exact bug shape has turned up in this same file pair, it's worth treating as a pattern: duplicate class methods don't announce themselves, and are worth explicitly grepping for (`grep -c "async methodName"`) after any edit that touches an existing method, not just assumed correct because `node --check` passes.
+
+### A Test-Methodology Dead End, Recorded Honestly
+Verifying that a dismissal persists was first attempted via a full page reload — which failed, showing no dashboard at all. Investigated rather than assumed broken: this project's test mocks for `authService.js` and `firestoreClassroomRepository.js` are both purely in-memory, with no persistence layer of their own (unlike the real Firebase SDK, which persists sessions natively) — so a genuine full-page reload wipes the mock sign-in state and the mock "Firestore" store together, unrelated to whether dismissal actually works. Re-verified via SPA navigation (which correctly preserves session state, matching real-world behavior) instead, and confirmed dismissal persists correctly: after dismissing "Create Groups," navigating away and back shows "Create Notebook" — the correct next recommendation — not a reset state.
+
+### Features Added
+- `js/services/setupStateService.js`, `js/services/recommendationEngine.js`, `js/ui/components/TeachingAssistant.js` (all new).
+- `js/services/studentIdentityService.js`, `js/repositories/identity/DemoStudentLinkRepository.js`, `js/repositories/identity/StudentLinkRepository.js` — `hasSentAnyInvitation`/`hasAnyInvitationForClassroom` added.
+- `js/main.js` — `onOpenSettingsStudents`, `onOpenSettingsGroups`, `onOpenSettingsNotebooks` navigation callbacks added.
+- `css/styles.css` — `.teaching-assistant--full`/`--compact` styles, replacing the superseded `.first-time-setup` block.
+
+### Files Removed / Superseded
+- `createFirstTimeSetupContent()` in `DashboardView.js` — the branching dashboard content builder from two phases ago is fully removed, not just unused; the single-path architecture this phase settles on has no equivalent concept.
+
+### Breaking Changes
+None to existing functionality. `renderDashboardView` reverted from `async` back to a plain function, since nothing in its own body needs to await once the Assistant's async work moved into its own self-contained component.
+
+### Regression Verification
+Confirmed the full priority progression end-to-end: Add Students (full card, non-dismissible) → Invite Students (full card, dismissible) → a compact strip once both are done (Create Groups or Create Notebook, tied at priority 30) → nothing rendered once every onboarding rule is satisfied. Confirmed the dashboard's own widgets (Recognition Wall, Weekly Snapshot, etc.) render unconditionally throughout, proving the single-path claim rather than just asserting it. Confirmed dismissal persists correctly via realistic SPA navigation.
+
+### Future TODOs
+- **Phase 2**: `activityStateService.js` and teaching-oriented recommendations (recognize a student, review pending notebook checks, prepare tomorrow's lesson) — the architecture is explicitly designed for this to be additive, one new rule at a time.
+- Re-audit other files in this identity/repository cluster for the same duplicate-method pattern found twice now, as a precaution.
+- (Carried over, unchanged): mobile-viewport testing as standard practice; Student Workspace tab expansion; clickable-student-names audit; note-undo gap in `classModeService`; Session Lock and Session History; production `GoogleIdentityProvider`/`ConsentProvider` pending AI Working Committee review; consolidate avatar implementations; `firestore.rules` review; Learning Hub; role-based routing; all previously-listed items.
+
+---
+
+## Pre-Roster Welcome Screen — A Deliberate, Named Tension with the Previous Phase
+
+**Context:** a direct request that nothing render for a brand-new classroom except a welcome message and Add Students — explicitly reversing the "one dashboard, always" decision made just one phase earlier. Flagged this directly before implementing, since it's a genuine, intentional reversal of a decision made together, not an oversight — and confirmed the reversal doesn't actually require touching the recommendation-engine architecture built to support it.
+
+### The reconciliation
+The welcome screen this phase asks for — title, one line, "Add Students" — is exactly the top recommendation `recommendationEngine.js` already produces when there are no students yet ("add-students," priority 100, non-dismissible). Nothing about `setupStateService.js`, `recommendationEngine.js`, or `TeachingAssistant.js` needed to change at all. What changed is narrower and lives entirely in `DashboardView.js`: the standard header and full widget stack are now gated behind a direct `hasStudents` check, and before that point, the Assistant's own existing card *is* the entire screen — not a second, separately-maintained mockup of it.
+
+### What's suppressed before the first student is added
+The standard header (including Start Class Mode), Continue Working, Recognition Wall, Weekly Snapshot, Pending Tasks, the Teaching section (Subjects), and the Classroom section (Groups, Student Access, Reports, Settings) — all of it, confirmed absent by direct check, not inferred from the code. Once a student is added, all of it appears together, and the Assistant continues its exact same priority progression from the previous phase (Add Students → Invite Students → compact Groups/Notebook → nothing) without any special-casing for having just crossed that boundary.
+
+### A deliberate non-change worth naming
+`onDismiss` is not wired for the Assistant in this pre-roster context. "Add Students" is the only recommendation the engine can ever return while `hasStudents` is false — every other rule requires it — and that one is marked non-dismissible. Wiring a dismiss handler here anyway (reconstructing a partial prop set for a future re-render) would have been dead code that looked functional but would silently break the moment a future rule ever made something dismissible reachable in this state. Left unwired, with a comment explaining exactly why, rather than papering over it with a handler that can't currently be exercised.
+
+### Files Modified
+- `js/ui/views/DashboardView.js` — `hasStudents` gate added at the top of `renderDashboardView`; `renderPreRosterWelcome()` added, reusing `TeachingAssistant` unchanged.
+- `css/styles.css` — `.pre-roster-welcome` and its children.
+
+### Breaking Changes
+None to the post-roster experience — confirmed directly, not assumed: the full dashboard, its widgets, and the Assistant's priority progression are byte-for-byte the same once a classroom has students as they were before this phase.
+
+### Regression Verification
+Confirmed, for a brand-new classroom: the pre-roster welcome renders with the correct classroom name and the Assistant's "Add Students" card, and every suppressed item (header, Start Class Mode, Continue Working, Recognition Wall, Weekly Snapshot, Groups, Subjects, Reports) is genuinely absent, not just visually de-emphasized. Confirmed that adding the first student transitions cleanly to the full dashboard with the standard header, Start Class Mode, and Recognition Wall all present, and that the Assistant correctly advances to "Invite Students" at that point — the same progression verified in the previous phase, now confirmed unaffected by this change.
+
+### Future TODOs
+- (Carried over, unchanged): Phase 2 activity-state recommendations; re-audit the identity/repository files for the duplicate-method pattern found twice; mobile-viewport testing as standard practice; Student Workspace tab expansion; clickable-student-names audit; note-undo gap in `classModeService`; Session Lock and Session History; production `GoogleIdentityProvider`/`ConsentProvider` pending AI Working Committee review; consolidate avatar implementations; `firestore.rules` review; Learning Hub; role-based routing; all previously-listed items.
+
+---
+
+## Bug Fix: Removed the "Add a Group First" Dependency for Students
+
+**Context:** flagged as a bug — the Students Settings tab blocked adding any student until at least one group existed, a real dependency baked into the data model (`studentService.addStudent(team, name)` requires a team object), not just a UI message.
+
+### The fix
+Rather than rewriting every feature that assumes students live nested inside `team.students` (Class Mode, Recognition, Notebook Tracker, Reports, Weekly Snapshot all read students this way), introduced a single reserved team — `classroomService.getOrCreateUngroupedTeam()` — created lazily the first time it's needed and reused after that, marked with `isUngrouped: true`. Structurally identical to any other team, so nothing downstream needs special-casing; only UI that lists *teacher-created* groups needed a one-line filter to exclude it, since it isn't one:
+- Settings' Groups tab
+- The Dashboard's Groups widget
+
+Both continue to show correctly empty (not falsely "has groups") until the teacher creates a real one — confirmed directly, not assumed, including that a real group and the Ungrouped team coexist correctly and the second ungrouped student reuses the same team rather than creating a duplicate.
+
+### The new Students empty state
+Replaces the old blocking message with the exact requested copy — icon, "Students" title, welcoming message, and a working "Add Student" button that adds directly to the Ungrouped team. `createEmptyStateElement` (the existing generic component) only supports a plain message, not an icon+title+message combination, so this is built directly rather than stretching that component past what it's designed for.
+
+### `hasGroups` updated for the new model
+`setupStateService.js`'s `hasGroups` — used by the Teaching Assistant's "Create Groups" recommendation — previously read `classroom.teams.length > 1` (reasoning that a single team is just the roster's container, not evidence of real grouping). With the Ungrouped auto-team now able to exist independently, that's no longer the right check: updated to `classroom.teams.some(team => !team.isUngrouped)`, so a classroom with only ungrouped students still correctly shows "Create Groups (Optional)," and a classroom with one real group correctly doesn't.
+
+### Files Modified
+- `js/services/classroomService.js` — `getOrCreateUngroupedTeam()` added.
+- `js/ui/views/SettingsView.js` — Students section rewritten (empty state, ungrouped-add path, an always-available "add a new student" section once real teams exist too); Groups section filters out the Ungrouped team.
+- `js/ui/components/GroupsWidget.js` — same filter applied to the Dashboard widget.
+- `js/services/setupStateService.js` — `hasGroups` updated for the new model.
+- `css/styles.css` — `.settings-empty-state` and its children.
+
+### Breaking Changes
+None to existing real-group workflows — confirmed directly that adding, renaming, and removing real groups and their students all behave exactly as before; the only change is that students no longer require one to exist first.
+
+### Regression Verification
+Confirmed the full flow end-to-end: empty state renders with the exact requested copy, "Add Student" works with zero groups present, the student appears correctly under an "Ungrouped" heading, the Groups widget correctly shows its own empty state (proving Ungrouped doesn't count as a real group), and the student is fully visible and tappable in Class Mode. Separately confirmed a real group can coexist with the Ungrouped team without conflict, and that a second ungrouped student reuses the same team rather than creating a duplicate one.
+
+### Part 2 — Settings Navigation Reorganization: Reviewed, Not Yet Implemented
+Per explicit request to review before implementing: the proposed "People / Learning / Classroom" grouping should be implemented as a purely presentational change inside `SettingsView.js`'s own tab rendering, without altering the underlying route shape (`/classroom/{id}/settings/{section}` stays exactly as it is). Changing the URL shape itself (e.g., to `/settings/people/students`) would require updating every one of the 4 places elsewhere in the app that construct a settings sub-route directly (`main.js`'s `onOpenSettingsStudents`/`onOpenSettingsGroups`/`onOpenSettingsNotebooks`, plus `onOpenGroups`), and would break any existing deep link into a specific tab. Keeping the flat route and only regrouping the tab bar's presentation avoids all of that — implementation held pending confirmation, per the request.
+
+### Future TODOs
+- Implement the Settings navigation reorganization (Part 2), once confirmed.
+- (Carried over, unchanged): Phase 2 activity-state recommendations; re-audit identity/repository files for the duplicate-method pattern found twice; mobile-viewport testing as standard practice; Student Workspace tab expansion; clickable-student-names audit; note-undo gap in `classModeService`; Session Lock and Session History; production `GoogleIdentityProvider`/`ConsentProvider` pending AI Working Committee review; consolidate avatar implementations; `firestore.rules` review; Learning Hub; role-based routing; all previously-listed items.
+
+---
+
+## Settings Redesign Continued: Upload Restored, Action-First Layout, Post-Import Guidance — and a Real Data-Loss Bug Found and Fixed
+
+**Context:** continuation of the Settings-as-Setup-Wizard redesign — restoring CSV upload, making the Students section action-first, and adding post-import guidance, following the proposal confirmed in the previous phase.
+
+### Completed this phase
+- **Upload Student List restored**, reusing the exact existing pipeline (`classroomImportService.analyzeCsv`/`parseWithFormat`, `ImportPreviewModal`, `workspaceService.importRosterIntoClassroom`) rather than a second implementation, per explicit instruction.
+- **Action-first layout**: Add Student and Upload Student List now render before any list or empty state, with quick-add toggling inline rather than sitting open by default.
+- **Post-import guidance**: a dedicated success screen ("✓ N students imported... Next, invite your students to connect... Open Student Access") replaces the normal content immediately after a successful import.
+- **Bloom Labs palette applied, scoped to Settings** — via `.settings-view`-scoped CSS variables, deliberately not a global token change, since the rest of the app hasn't been reviewed against this palette yet. Spacing increased, card shadows softened, heading/body contrast increased for the "lighter, calmer" feel requested, not just a color swap.
+- **Naming**: implemented as "Roster" per the reasoning given last phase (avoids colliding with the "Classroom" section name and "Class Mode").
+
+### Two real bugs found through testing, one of them serious
+**1. A genuine data-loss bug**, found by testing a realistic sequence (manual add, then import) rather than each action in isolation. The import's `onConfirm` handler called `workspaceService.save(classroom)` *again*, after `workspaceService.importRosterIntoClassroom()` had already persisted correctly using its own internal, freshly-fetched classroom reference. Since `classroomService.upsertClassroom()` replaces the classroom object wholesale on every real-time update (it doesn't mutate the existing reference), the `classroom` variable captured in this view's own closure had gone stale the moment any earlier save round-tripped through the subscription — meaning the redundant save call persisted a snapshot that never had the imported teams applied to it, silently overwriting the correct import with stale data. A previously-added student survived (since it had been mutated directly on that same stale reference); the imported roster did not. **Fixed by removing the redundant save call entirely** — `importRosterIntoClassroom` already persists correctly on its own.
+
+Getting the fix right took two attempts, both instructive:
+- First fix removed the redundant save but didn't set the `pendingImportSuccess` flag until *after* calling `importRosterIntoClassroom` — whose internal save synchronously triggers this app's real-time subscription and a full re-render *before* any code written after the call would run, so the flag wasn't set in time and the success screen silently didn't appear (though the underlying data was, by then, correctly saved). **Fixed by setting the flag before making that call, not after** — a straightforward but easy-to-miss ordering issue once a synchronous subscription is in the mix.
+
+**2. A real usability ambiguity, not just a test artifact.** Investigating the above, an earlier test run appeared to show manual "Add Student" broken entirely — traced to the test's own `button:has-text("Add Student")` locator matching the action bar's "+ Add Student" *toggle* button before the form's own submit button, since Playwright's `:has-text()` does substring matching (a repeated click just closed the form again, never reaching the actual handler). The underlying functionality wasn't broken — but two buttons with near-identical, overlapping text is a real ambiguity risk for actual teachers too, not only automated tests, especially in a redesign explicitly about reducing exactly this kind of friction. **Fixed by giving the submit button a distinct label ("Save")** rather than leaving it to coincidentally repeat the toggle's own text.
+
+### What's still not done
+Given the depth this phase's investigation required, the remaining reorganization items from the confirmed proposal — Roster/Groups/Teachers coexisting on one page rather than separate tabs, the Learning/Classroom section consolidation, and the associated route changes — have not been started yet.
+
+### Files Modified
+- `js/ui/views/SettingsView.js` — action-first Students/Roster layout, restored CSV import, post-import success screen (`renderImportSuccess`, `pendingImportSuccess` module-level flag), the two bugs above fixed, `onOpenStudentAccess` threaded through (and its own rerender-closure omission, found and fixed, from an earlier phase's threading).
+- `js/main.js` — `onOpenStudentAccess` added to the Settings route wiring.
+- `css/styles.css` — Settings-scoped palette variables, spacing/shadow adjustments, action-bar and import-success styles.
+
+### Breaking Changes
+None to existing functionality — confirmed directly that manual student management, group management, and now-restored CSV import all work correctly together in realistic combined sequences, not just individually.
+
+### Regression Verification
+Confirmed the full realistic sequence end-to-end: manual add → CSV upload → import success screen with correct count → all students (manual and imported) correctly present afterward → manual add still works correctly after an import, with all five students from both sources present. This is a meaningfully more thorough check than testing each action in isolation, which is exactly what let the data-loss bug through undetected initially.
+
+### Future TODOs
+- Roster page redesign so Students/Groups/Teachers coexist without leaving the page.
+- Learning/Classroom section consolidation and the associated route changes.
+- (Carried over, unchanged): Phase 2 activity-state recommendations; re-audit identity/repository files for the duplicate-method pattern found twice; mobile-viewport testing as standard practice; Student Workspace tab expansion; clickable-student-names audit; note-undo gap in `classModeService`; Session Lock and Session History; production `GoogleIdentityProvider`/`ConsentProvider` pending AI Working Committee review; consolidate avatar implementations; `firestore.rules` review; Learning Hub; role-based routing; all previously-listed items.
+
+---
+
+## Double-Render Investigated and Fixed Properly — Root Cause, Not a Guard
+
+**Context:** explicit instruction to pause feature work and investigate the double-render found in the previous phase properly — determine why `renderSettingsView` was invoked from two paths, identify the architectural reason, and fix it at the root rather than suppressing the symptom.
+
+### Why two invocation paths exist — both are legitimate
+Traced with precise, timestamped instrumentation (not assumption): one path is `router.js`'s `hashchange` listener, registered once at boot to render whenever the URL changes — this owns rendering in response to **navigation**. The other is `workspaceService`'s `onChangeCallback`, invoked from inside `subscribeToClassroomRefs`'s own update handler — which fires **every time the classroom-refs list changes**, not just once at initial load. This is a real-time data-sync signal: if a co-teacher's own edit changes something about the classroom while you're looking at it, this is what makes the view refresh automatically. **Neither path is legacy.** Removing either would remove a real, necessary capability — navigation-driven rendering and data-sync-driven rendering are both required, for different reasons.
+
+### The actual root cause: a render function was performing a write
+Precise, timestamped tracing showed the second render wasn't happening *after* the first completed — it was starting **while the first was still mid-execution**, before it had even appended its own output. That's only possible if something inside the first render's own synchronous body triggered the second, nested inside it. Investigation found it: `renderTeachersSection` called `ensureJoinCode(classroom)` directly in its render body, and — for a brand-new classroom with no code yet — generated one and immediately called `workspaceService.save(classroom)` **as a side effect of rendering**, not in response to any user action. That save synchronously fires the same classroom-refs subscription used for legitimate external data-sync, which calls `renderSettingsView` again, nested inside the original call.
+
+This is a genuine architectural violation with a well-established name: **a render function must only read, never write.** The specific bug predates this phase's own work — `renderTeachersSection` existed as its own tab before today with this same pattern — but it was dormant until this phase's own Students/Groups/Teachers merge made it fire on an unrelated action (clicking "Add Students" now also renders the Teachers section, and its side-effecting write, as a side effect of viewing a different sub-section on the same page).
+
+### The fix: move the write out of the render path entirely, not guard against its symptom
+- **`classroomService.createEmptyClassroom()`** now generates the join code at classroom creation time — every classroom has one from the moment it exists, so there is no longer a "first render needs to lazily backfill" case for anything created going forward.
+- **`renderTeachersSection` is now a pure read** for the common case (display the existing code, offer Copy). For the one remaining edge case — a classroom that predates this fix, with no code yet — it shows an explicit **"Generate Classroom ID"** button instead of silently writing during render; the write now only ever happens in direct response to a click, the same as every other write in this codebase.
+
+This directly satisfies "if both paths are required, explain why and redesign the flow so rendering only happens once": both paths remain, unchanged and un-suppressed; what changed is that rendering itself no longer has a way to trigger either of them recursively.
+
+### A codebase-wide audit, as requested, for the same anti-pattern elsewhere
+Searched every UI file for `workspaceService.save()` calls not clearly inside an event handler. Found 12 candidates; manually inspected every one. Eleven were false positives from the search heuristic — genuinely inside `addEventListener`/modal-callback/chip-picker callbacks (`StudentProfileView.js`, `SetupWizardView.js`, and the two new chip-picker call sites in `SettingsView.js` added this phase). **The join-code generation was the only genuine instance of this pattern in the codebase.**
+
+### Files Modified
+- `js/services/classroomService.js` — `createEmptyClassroom()` now generates the join code at creation.
+- `js/ui/views/SettingsView.js` — `renderTeachersSection`'s join-code display rewritten as a pure read, with an explicit Generate button for the legacy-classroom edge case.
+
+### Breaking Changes
+None. Confirmed directly: a brand-new classroom's join code appears immediately, correctly, without any lazy generation step; an existing classroom without one (simulated) would show the explicit Generate button rather than silently failing or duplicating renders.
+
+### Full Verification Suite Re-Run, Per Explicit Request
+Before any further feature work: confirmed exactly one `.settings-view` element renders (no duplication) on initial navigation to Settings, after a quick-add, and after switching to each of the three tabs. Confirmed the header text is white, the 3-tab structure is correct, the merged Class page shows Students/Groups/Teachers together, the join code displays immediately, action-first Add Student/Upload buttons are present, Learning's chip pickers render and function, Permissions shows the single-teacher empty state, and Danger Zone is visually separated. All passed.
+
+### Future TODOs
+- Resume Settings redesign feature work now that the render lifecycle is confirmed correct.
+- (Carried over, unchanged): Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; clickable-student-names audit; note-undo gap in `classModeService`; Session Lock and Session History; production `GoogleIdentityProvider`/`ConsentProvider` pending AI Working Committee review; consolidate avatar implementations; `firestore.rules` review; Learning Hub; role-based routing; all previously-listed items.
+
+---
+
+## Landing Page Rebrand: Bloom Labs as Umbrella, Classroom Tracker as the Product
+
+**Context:** the landing page previously presented "Bloom Labs" as the primary title with "For Teachers"/"For Students" as its two modes — inverting the intended hierarchy. Bloom Labs is the umbrella ecosystem; Classroom Tracker is the actual product this screen is the entry point to, and Teacher/Student Portal are two experiences *within* Classroom Tracker, not two modes of Bloom Labs itself.
+
+### Changes
+- **A small "by Bloom Labs" eyebrow label** now sits above the main title — present, but clearly secondary (uppercase, muted, smaller than the title).
+- **"Classroom Tracker" is now the primary title**, where "Bloom Labs" used to be.
+- **Subtitle reframed**: "Two portals, built around two different questions" — describing Classroom Tracker's own two portals, not "one platform" with two modes.
+- **Journey cards renamed**: "For Teachers"/"For Students" → **"Teacher Portal"/"Student Portal"**, matching the requested terminology exactly.
+- **Button labels updated** to match: "Continue as Teacher"/"Continue as Student" → **"Enter Teacher Portal"/"Enter Student Portal"** — applying the same hierarchy shift consistently to the actual calls-to-action, not just the card titles.
+
+No routing changes were needed or made — `/`, `/teacher`, and `/student` all work exactly as before. This was a deliberate choice, not an oversight: keeping the same routes while changing only the visual/copy hierarchy on this one screen is exactly what makes introducing Learning Hub later straightforward — a future version of this same screen would show Classroom Tracker and Learning Hub as sibling *products* to choose between, each still small-labeled under Bloom Labs, without needing to redesign this screen's structure again.
+
+### Files Modified
+- `js/ui/views/LandingView.js` — title/subtitle/card copy updated; module doc comment rewritten to describe the corrected hierarchy explicitly, so the reasoning stays documented for whoever builds the Learning Hub entry later.
+- `css/styles.css` — `.landing-view__eyebrow` added.
+
+### Breaking Changes
+None. Confirmed directly: both "Enter Teacher Portal" and "Enter Student Portal" navigate to exactly the same destinations the old buttons did.
+
+### Regression Verification
+Confirmed the eyebrow label, main title, subtitle, both journey card titles, and both button labels all show the correct new copy, and that clicking each button still correctly navigates into the Teacher and Student flows respectively.
+
+### Future TODOs
+- When Learning Hub is introduced, extend this same screen to show it as a third sibling product alongside Classroom Tracker, per the hierarchy this phase established.
+- (Carried over, unchanged): resume Settings redesign feature work; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; clickable-student-names audit; note-undo gap in `classModeService`; Session Lock and Session History; production `GoogleIdentityProvider`/`ConsentProvider` pending AI Working Committee review; consolidate avatar implementations; `firestore.rules` review; role-based routing; all previously-listed items.
+
+---
+
+## Dashboard Widgets Made Truly Conditional on Real Data — No More Empty Placeholders
+
+**Context:** even after the earlier pre-roster-welcome and Teaching Assistant work, the moment a classroom's first student was added, the *entire* normal dashboard appeared at once — Recognition Wall, Weekly Snapshot, Pending Tasks, Subjects, Groups, all showing empty-state placeholder text simultaneously. Explicit direction: recommendations (the Teaching Assistant) and the dashboard (widgets showing real information) are separate concepts, and a widget should not exist on screen at all until it has real data — not render with text explaining why it's empty.
+
+### The fix
+Every widget below the header is now individually gated on a real-data check, computed directly from the classroom:
+- **Recognition Wall** — only if any student has an actual badge.
+- **Weekly Snapshot** — only if any student has real score/history activity.
+- **Pending Tasks** — only if `pendingTaskService.getPendingTasks()` actually returns something (it already filters to non-empty groups internally, so an empty result reliably means nothing is pending).
+- **Teaching section (Subjects)** — only if at least one subject is configured.
+- **Groups widget** — only if a real (non-`Ungrouped`) team exists.
+- **Continue Working** — only if there's an actual notebook entry to continue; previously always rendered a widget even with zero entries.
+- **Reports** — removed entirely rather than gated, since it's a disabled placeholder button with no real functionality behind it yet; "avoid placeholder boxes" applies here too; it can come back once the feature is real.
+
+Student Access and Settings remain always-present once students exist — they're persistent navigation actions, not data widgets summarizing activity, so they don't fit the "empty until it has data" framing at all.
+
+### One deliberate interpretation, worth being upfront about
+The request's own example ("after students are added, show only the Invite Students recommendation") reads literally as excluding Start Class Mode too at that stage. I kept it visible, as part of the header, once students exist — reasoning that Class Mode is the *mechanism* that produces the data every other widget is gated on, and hiding it would leave a teacher with students added but no way to actually start teaching until working through every recommendation first. This is a judgment call, not an unambiguous reading of the request — happy to hide it too if that's not the right call.
+
+### Real test-methodology mistakes caught along the way, not smoothed over
+Verifying this phase's work surfaced three of my own testing errors in a row, each investigated properly rather than assumed:
+1. A test script using "Continue as Teacher" — the pre-rebrand button label, replaced by "Enter Teacher Portal" in the previous phase's landing page rebrand.
+2. A test script clicking a "Groups" settings tab that no longer exists as its own tab, following the Class/Learning/Classroom merge from an earlier phase.
+3. Checking for Weekly Snapshot immediately after clicking "Save Session," while still on the Class Mode screen — saving a session doesn't automatically navigate back to the Dashboard, so of course a Dashboard-only widget wasn't there. Fixed by explicitly exiting Class Mode first, and confirmed Weekly Snapshot correctly appears once actually back on the Dashboard.
+
+None of these were bugs in the feature itself — but each was worth chasing down properly rather than either assuming a false negative meant success, or reporting a false failure.
+
+### Files Modified
+- `js/ui/views/DashboardView.js` — every widget gated on a real-data check; `loadContinueWorking` no longer renders anything when there's nothing to continue; `createReportsPlaceholder()` removed entirely.
+
+### Breaking Changes
+None. All existing widgets behave identically once they do have data — only the "should this render at all" gate is new.
+
+### Regression Verification
+Confirmed the full progression directly: a classroom with just one added student (no groups, no subjects, no activity) shows only the header's Start Class Mode, the Teaching Assistant's "Invite Students" recommendation, and the persistent Student Access/Settings actions — nothing else. Confirmed the Groups widget appears the moment a real group is created, the Teaching section appears the moment a subject is configured, and Weekly Snapshot appears the moment a Class Session is saved and the teacher returns to the actual Dashboard.
+
+### Future TODOs
+- Confirm whether Start Class Mode should also be excluded from the earliest stage, per the interpretation note above.
+- (Carried over, unchanged): resume broader Settings redesign feature work; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; clickable-student-names audit; note-undo gap in `classModeService`; Session Lock and Session History; production `GoogleIdentityProvider`/`ConsentProvider` pending AI Working Committee review; consolidate avatar implementations; `firestore.rules` review; role-based routing; all previously-listed items.

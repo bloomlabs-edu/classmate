@@ -39,7 +39,9 @@
  */
 
 import * as notebookConfigService from '../../services/notebookConfigService.js';
+import * as pendingTaskService from '../../services/pendingTaskService.js';
 import * as continueWorkingService from '../../services/continueWorkingService.js';
+import { renderTeachingAssistant } from '../components/TeachingAssistant.js';
 import { getDisplayName, getDisplaySubtitle } from '../../services/classroomService.js';
 import { createClassroomHeaderElement } from '../components/ClassroomHeader.js';
 import { createRecognitionWidgetElement } from '../components/RecognitionWidget.js';
@@ -57,6 +59,9 @@ export function renderDashboardView(container, props) {
     classroom,
     currentUser,
     onOpenSettings,
+    onOpenSettingsStudents,
+    onOpenSettingsGroups,
+    onOpenSettingsNotebooks,
     onOpenStudentAccess,
     onOpenNotebookTracker,
     onOpenGroups,
@@ -68,6 +73,31 @@ export function renderDashboardView(container, props) {
   } = props;
 
   container.innerHTML = '';
+
+  // Every teaching-time feature (Start Class Mode, Continue Working,
+  // Recognition Wall, Weekly Snapshot, Groups, Subjects, Reports) is
+  // suppressed entirely until the classroom has a usable roster — "a
+  // newly created classroom is still in the setup phase, not the
+  // teaching phase." This reuses setupStateService.js and
+  // TeachingAssistant.js completely unchanged: the "add students"
+  // welcome screen below isn't a new, separately-maintained mockup —
+  // it's the exact same top recommendation the Assistant already
+  // produces when there are no students yet, just rendered as the
+  // page's entire content instead of a card sitting above a full
+  // dashboard. See this project's CHANGELOG for the full reasoning
+  // behind reusing the engine here rather than hand-building a
+  // second, parallel "no students yet" screen.
+  const hasStudents = classroom.teams.some((team) => team.students.length > 0);
+
+  if (!hasStudents) {
+    renderPreRosterWelcome(container, classroom, {
+      onOpenSettingsStudents,
+      onOpenStudentAccess,
+      onOpenSettingsGroups,
+      onOpenSettingsNotebooks,
+    });
+    return;
+  }
 
   const wrapper = document.createElement('div');
   wrapper.className = 'dashboard-view';
@@ -114,44 +144,124 @@ export function renderDashboardView(container, props) {
     })
   );
 
+  // The Teaching Assistant is entirely self-contained — see
+  // ui/components/TeachingAssistant.js. The dashboard has zero
+  // awareness of setup state, recommendations, or priorities; it just
+  // gives this component a mount point above its own single, always-
+  // built content below. Removing this call entirely would leave the
+  // rest of the dashboard completely unaffected.
+  const assistantSlot = document.createElement('div');
+  wrapper.appendChild(assistantSlot);
+  renderTeachingAssistant(assistantSlot, {
+    classroom,
+    onOpenSettingsStudents,
+    onOpenStudentAccess,
+    onOpenSettingsGroups,
+    onOpenSettingsNotebooks,
+    onDismiss: () => renderDashboardView(container, props),
+  });
+
   const content = document.createElement('div');
   content.className = 'dashboard-view__content';
 
-  // 1. What should I celebrate? — grouped together (smaller internal
-  // gap) so whitespace itself communicates that these two answer the
-  // same question, distinct from the larger gap before Pending Tasks.
-  const celebrateGroup = document.createElement('div');
-  celebrateGroup.className = 'dashboard-view__group';
-  celebrateGroup.appendChild(createRecognitionWidgetElement({ classroom, onViewAll: onOpenRecognition }));
-  celebrateGroup.appendChild(createWeeklySnapshotWidgetElement({ classroom }));
-  content.appendChild(celebrateGroup);
+  // Every widget below is gated on whether it actually has something
+  // meaningful to show — not rendered unconditionally with an
+  // explanatory empty state. The Teaching Assistant above already
+  // owns "what should the teacher do next"; this content area is
+  // reserved for real information about the classroom, and simply
+  // doesn't exist on screen until there's real information to show.
+  // See this project's CHANGELOG for the reasoning: an earlier version
+  // of this file rendered every widget unconditionally, which meant a
+  // teacher who'd just added their first student saw five empty
+  // widgets and an explanatory placeholder in each — exactly the
+  // "dashboard appearing too early" problem this redesign corrects.
+  const allStudents = classroom.teams.flatMap((team) => team.students);
+  const hasAnyRecognition = allStudents.some((student) => (student.badges || []).length > 0);
+  const hasAnyScoreActivity = allStudents.some((student) => student.score !== 0 || (student.history || []).length > 0);
+  const hasPendingTasks = pendingTaskService.getPendingTasks(classroom).length > 0;
+  const hasSubjectsConfigured = (classroom.notebookConfig?.subjects || []).length > 0;
+  const hasRealGroups = classroom.teams.some((team) => !team.isUngrouped);
 
-  // 2. What needs my attention?
-  content.appendChild(createPendingTasksWidgetElement({ classroom, onSelectTask: onSelectPendingTask }));
+  if (hasAnyRecognition || hasAnyScoreActivity) {
+    const celebrateGroup = document.createElement('div');
+    celebrateGroup.className = 'dashboard-view__group';
+    if (hasAnyRecognition) celebrateGroup.appendChild(createRecognitionWidgetElement({ classroom, onViewAll: onOpenRecognition }));
+    if (hasAnyScoreActivity) celebrateGroup.appendChild(createWeeklySnapshotWidgetElement({ classroom }));
+    content.appendChild(celebrateGroup);
+  }
 
-  // 3. What should I do next?
-  content.appendChild(
-    createTeachingSectionElement({
-      children: [createSubjectsWidgetElement({ classroom, onOpenNotebookTracker }), createActivitiesLink(onOpenActivities)],
-    })
-  );
+  if (hasPendingTasks) {
+    content.appendChild(createPendingTasksWidgetElement({ classroom, onSelectTask: onSelectPendingTask }));
+  }
 
-  // 4. How is my classroom organized?
-  content.appendChild(
-    createClassroomSectionElement({
-      children: [
-        createGroupsWidgetElement({ classroom, onOpenGroups }),
-        createReportsPlaceholder(),
-        createStudentAccessButton(onOpenStudentAccess),
-        createSettingsButton(onOpenSettings),
-      ],
-    })
-  );
+  if (hasSubjectsConfigured) {
+    content.appendChild(
+      createTeachingSectionElement({
+        children: [createSubjectsWidgetElement({ classroom, onOpenNotebookTracker }), createActivitiesLink(onOpenActivities)],
+      })
+    );
+  }
+
+  // Student Access and Settings are persistent, evergreen navigation
+  // actions, not data widgets summarizing activity — they always
+  // belong here once a classroom has students. The Groups widget
+  // specifically is the one piece of this section gated on real data,
+  // since an empty "no groups yet" card is exactly the placeholder
+  // pattern being removed.
+  const classroomSectionChildren = [];
+  if (hasRealGroups) classroomSectionChildren.push(createGroupsWidgetElement({ classroom, onOpenGroups }));
+  classroomSectionChildren.push(createStudentAccessButton(onOpenStudentAccess), createSettingsButton(onOpenSettings));
+  content.appendChild(createClassroomSectionElement({ children: classroomSectionChildren }));
 
   wrapper.appendChild(content);
   container.appendChild(wrapper);
 
   loadContinueWorking(classroom, currentUser, secondaryContentSlot, onSelectNotebook);
+}
+
+/**
+ * The entire screen shown before a classroom has any students —
+ * deliberately nothing but a celebratory heading and whatever
+ * ui/components/TeachingAssistant.js decides to render (which, with
+ * no students yet, will always be its "add students" recommendation
+ * at full-card priority). No standard header, no Start Class Mode, no
+ * widgets of any kind — those are all teaching-time features with
+ * nothing to act on yet. This function owns none of that logic itself;
+ * it only supplies the one thing the Assistant doesn't know how to
+ * say — the classroom's own name in a welcome message — and gets out
+ * of the way.
+ */
+function renderPreRosterWelcome(container, classroom, assistantCallbacks) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'pre-roster-welcome';
+
+  const emoji = document.createElement('span');
+  emoji.className = 'pre-roster-welcome__emoji';
+  emoji.setAttribute('aria-hidden', 'true');
+  emoji.textContent = '\ud83c\udf89';
+
+  const title = document.createElement('h1');
+  title.className = 'pre-roster-welcome__title';
+  title.textContent = `Welcome to ${getDisplayName(classroom)}`;
+
+  wrapper.append(emoji, title);
+
+  const assistantSlot = document.createElement('div');
+  wrapper.appendChild(assistantSlot);
+
+  container.appendChild(wrapper);
+
+  renderTeachingAssistant(assistantSlot, {
+    classroom,
+    ...assistantCallbacks,
+    // No onDismiss wired here: "Add Students" is the only
+    // recommendation the engine can ever return while hasStudents is
+    // false (every other rule requires it), and that one is marked
+    // non-dismissible in recommendationEngine.js — so there's nothing
+    // to reconstruct a dismiss re-render for at this call site. If a
+    // future rule ever changes that, this is the first place to
+    // revisit.
+  });
 }
 
 /** Extracts a first name for the Hero's greeting — falls back gracefully if displayName is ever missing. */
@@ -173,16 +283,6 @@ function createActivitiesLink(onOpenActivities) {
   button.className = 'dashboard-widget__chip';
   button.textContent = 'Activities';
   button.addEventListener('click', onOpenActivities);
-  return button;
-}
-
-function createReportsPlaceholder() {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'btn btn--ghost';
-  button.textContent = 'Reports';
-  button.disabled = true;
-  button.title = 'Coming soon';
   return button;
 }
 
@@ -215,6 +315,7 @@ async function loadContinueWorking(classroom, currentUser, slot, onSelectNoteboo
   }));
 
   slot.innerHTML = '';
+  if (resolvedEntries.length === 0) return;
   slot.appendChild(createContinueWorkingWidgetElement({ entries: resolvedEntries, onOpenNotebook: onSelectNotebook }));
 }
 

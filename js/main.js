@@ -277,9 +277,12 @@ function renderRoute(route) {
         classroom,
         currentUser,
         onOpenSettings: () => router.navigate(`/classroom/${classroom.id}/settings`),
+        onOpenSettingsStudents: () => router.navigate(`/classroom/${classroom.id}/settings/class`),
+        onOpenSettingsGroups: () => router.navigate(`/classroom/${classroom.id}/settings/class`),
+        onOpenSettingsNotebooks: () => router.navigate(`/classroom/${classroom.id}/settings/learning`),
         onOpenStudentAccess: () => router.navigate(`/classroom/${classroom.id}/student-access`),
         onOpenNotebookTracker: () => router.navigate(`/classroom/${classroom.id}/notebooks`),
-        onOpenGroups: () => router.navigate(`/classroom/${classroom.id}/settings/groups`),
+        onOpenGroups: () => router.navigate(`/classroom/${classroom.id}/settings/class`),
         onStartClassMode: () => router.navigate(`/classroom/${classroom.id}/class-mode`),
         onSelectNotebook: (subjectId, notebookTypeId) =>
           router.navigate(`/classroom/${classroom.id}/notebooks/${subjectId}/${notebookTypeId}`),
@@ -319,6 +322,7 @@ function renderRoute(route) {
         onBack: () => router.navigate(`/classroom/${classroom.id}`),
         onNavigateSection: (section) =>
           router.navigate(`/classroom/${classroom.id}/settings/${section}`),
+        onOpenStudentAccess: () => router.navigate(`/classroom/${classroom.id}/student-access`),
         onDeleted: () => router.navigate('/teacher'),
         onReopenSetupWizard: () => router.navigate(`/classroom/${classroom.id}/setup`),
       });
