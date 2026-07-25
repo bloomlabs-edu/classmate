@@ -187,6 +187,19 @@ Pages, set the source to the branch you want published, with root
 (`/`) as the folder. No build step is required; every file Pages needs
 (`index.html`, `css/`, `js/`, `data/`) is already at the root.
 
+A `.nojekyll` file sits at the repository root — GitHub Pages runs
+pushed content through Jekyll by default, and this file disables that,
+so every file is served exactly as committed with no processing in
+between. Standard practice for a plain static/JS site like this one.
+
+**If you're relocating `index.html` or any part of this app to a new
+path in your own fork:** remember that `js/config/firebaseConfig.js`
+is gitignored and never committed — moving the rest of the app with
+`git mv` or a script will not move that file for you. Move it manually
+to match the app's new structure, or the app will fail to load
+entirely (a missing import breaks the whole module graph, not just
+Firebase features) with no error visible beyond a blank page.
+
 ### 4. Formatting
 
 This project uses [Prettier](https://prettier.io) for consistent code

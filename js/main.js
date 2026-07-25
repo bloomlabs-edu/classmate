@@ -408,79 +408,121 @@ function renderRoute(route) {
   }
 }
 
+/**
+ * TEMPORARY STARTUP DIAGNOSTIC — added specifically to chase down a
+ * white screen on Chrome for Android that produces no visible error
+ * anywhere else (not even the window.onerror-based banner added
+ * previously), so mobile devices without DevTools access can still
+ * report exactly what failed. Remove once that issue is found and
+ * fixed; this is not meant to be permanent application behavior.
+ *
+ * Replaces the entire page (not an overlay) with the error message,
+ * full stack trace, and navigator.userAgent — the exact three things
+ * needed to diagnose a failure on a device with no other way to see
+ * console output.
+ */
+function showFatalStartupError(error) {
+  document.body.innerHTML =
+    '<div style="padding:1.5rem;font-family:monospace;white-space:pre-wrap;' +
+    'word-break:break-word;background:#fff3f2;color:#3a0d0d;min-height:100vh;box-sizing:border-box;">' +
+    '<h1 style="font-size:1rem;font-family:sans-serif;margin:0 0 1rem;">Startup failed</h1>' +
+    '<p style="font-weight:bold;margin:0 0 0.5rem;">' + escapeHtml(String(error && error.message ? error.message : error)) + '</p>' +
+    '<p style="margin:0 0 0.25rem;font-size:0.85rem;opacity:0.8;">Stack trace:</p>' +
+    '<pre style="font-size:0.75rem;background:#fff;border:1px solid #e3b3b0;border-radius:6px;' +
+    'padding:0.75rem;overflow:auto;">' + escapeHtml((error && error.stack) || '(no stack trace available)') + '</pre>' +
+    '<p style="margin:1rem 0 0.25rem;font-size:0.85rem;opacity:0.8;">User agent:</p>' +
+    '<pre style="font-size:0.75rem;background:#fff;border:1px solid #e3b3b0;border-radius:6px;' +
+    'padding:0.75rem;overflow:auto;">' + escapeHtml(navigator.userAgent) + '</pre>' +
+    '</div>';
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
 function init() {
-  appContainer = document.getElementById('app');
-  userBarContainer = document.getElementById('user-bar');
+  try {
+    appContainer = document.getElementById('app');
+    userBarContainer = document.getElementById('user-bar');
 
-  // Registered once — renderRoute() itself checks auth/loading state on
-  // every call, so this doesn't need to be re-attached on sign-in/out.
-  router.onRouteChange(renderRoute);
+    // Registered once — renderRoute() itself checks auth/loading state on
+    // every call, so this doesn't need to be re-attached on sign-in/out.
+    router.onRouteChange(renderRoute);
 
-  // Browsers do not allow custom dialog text or buttons on
-  // beforeunload (a long-standing security restriction, not something
-  // any site can override) — this can only trigger the browser's own
-  // generic "leave site? changes may not be saved" prompt, not the
-  // three-option Continue/Discard/Save dialog used for in-app
-  // navigation (see ui/components/UnsavedSessionDialog.js). Still
-  // meaningfully protects against an accidental refresh or tab close
-  // losing a draft Class Session.
-  window.addEventListener('beforeunload', (event) => {
-    if (classSessionService.hasAnyUnsavedSession()) {
-      event.preventDefault();
-      event.returnValue = '';
-    }
-  });
-
-  authService.initAuth();
-
-  authService.onAuthStateChange((user) => {
-    currentUser = user;
-
-    if (!user) {
-      workspaceService.stopListening();
-      currentAccentColorId = 'ocean';
-      accentColorService.applyAccentColor('ocean');
-      renderRoute(router.getCurrentRoute());
-      return;
-    }
-
-    accentColorPreferenceService.getPreferenceOnce(user.uid).then((storedValue) => {
-      currentAccentColorId = storedValue;
-      // A stored value is either one of the 5 preset ids, or a raw hex
-      // from the spectrum picker (always starts with '#') — each needs
-      // its own apply function, since only presets have an authored
-      // text-color override (see accentColorConfig.js's Ocean comment).
-      if (storedValue.startsWith('#')) {
-        accentColorService.applyCustomAccentColor(storedValue);
-      } else {
-        accentColorService.applyAccentColor(storedValue);
+    // Browsers do not allow custom dialog text or buttons on
+    // beforeunload (a long-standing security restriction, not something
+    // any site can override) — this can only trigger the browser's own
+    // generic "leave site? changes may not be saved" prompt, not the
+    // three-option Continue/Discard/Save dialog used for in-app
+    // navigation (see ui/components/UnsavedSessionDialog.js). Still
+    // meaningfully protects against an accidental refresh or tab close
+    // losing a draft Class Session.
+    window.addEventListener('beforeunload', (event) => {
+      if (classSessionService.hasAnyUnsavedSession()) {
+        event.preventDefault();
+        event.returnValue = '';
       }
-      renderUserBar(userBarContainer, {
-        user: currentUser,
-        onSignOut: handleSignOut,
-        onBackToLanding: () => router.navigate('/'),
-        currentAccentColorId,
-        onSelectAccentColor: handleSelectAccentColor,
-        onSelectCustomAccentColor: handleSelectCustomAccentColor,
-        onPreviewCustomAccentColor: handlePreviewCustomAccentColor,
-      });
     });
 
-    workspaceLoading = true;
-    renderRoute(router.getCurrentRoute());
+    authService.initAuth();
 
-    workspaceService
-      .initForUser(user.uid, user.displayName, () => {
-        workspaceLoading = false;
+    authService.onAuthStateChange((user) => {
+      try {
+        currentUser = user;
+
+        if (!user) {
+          workspaceService.stopListening();
+          currentAccentColorId = 'ocean';
+          accentColorService.applyAccentColor('ocean');
+          renderRoute(router.getCurrentRoute());
+          return;
+        }
+
+        accentColorPreferenceService.getPreferenceOnce(user.uid).then((storedValue) => {
+          currentAccentColorId = storedValue;
+          // A stored value is either one of the 5 preset ids, or a raw hex
+          // from the spectrum picker (always starts with '#') — each needs
+          // its own apply function, since only presets have an authored
+          // text-color override (see accentColorConfig.js's Ocean comment).
+          if (storedValue.startsWith('#')) {
+            accentColorService.applyCustomAccentColor(storedValue);
+          } else {
+            accentColorService.applyAccentColor(storedValue);
+          }
+          renderUserBar(userBarContainer, {
+            user: currentUser,
+            onSignOut: handleSignOut,
+            onBackToLanding: () => router.navigate('/'),
+            currentAccentColorId,
+            onSelectAccentColor: handleSelectAccentColor,
+            onSelectCustomAccentColor: handleSelectCustomAccentColor,
+            onPreviewCustomAccentColor: handlePreviewCustomAccentColor,
+          });
+        });
+
+        workspaceLoading = true;
         renderRoute(router.getCurrentRoute());
-      })
-      .catch((error) => {
-        console.error('[main] Failed to load classrooms:', error);
-        workspaceLoading = false;
-        window.alert('We couldn\u2019t load your classrooms. Please check your connection and try again.');
-        renderRoute(router.getCurrentRoute());
-      });
-  });
+
+        workspaceService
+          .initForUser(user.uid, user.displayName, () => {
+            workspaceLoading = false;
+            renderRoute(router.getCurrentRoute());
+          })
+          .catch((error) => {
+            console.error('[main] Failed to load classrooms:', error);
+            workspaceLoading = false;
+            window.alert('We couldn\u2019t load your classrooms. Please check your connection and try again.');
+            renderRoute(router.getCurrentRoute());
+          });
+      } catch (error) {
+        showFatalStartupError(error);
+      }
+    });
+  } catch (error) {
+    showFatalStartupError(error);
+  }
 }
 
 document.addEventListener('DOMContentLoaded', init);

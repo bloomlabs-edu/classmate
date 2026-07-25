@@ -17,16 +17,103 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Classroom Tracker</title>
+    <!--
+      Loaded non-render-blocking, deliberately: a plain
+      <link rel="stylesheet"> to a third-party domain blocks the whole
+      page's first render until that request resolves. If this
+      specific request is slow, blocked, or unreachable on a given
+      network (school/institutional WiFi filtering third-party font
+      CDNs is common, and this is exactly the kind of failure that
+      wouldn't show up in desktop testing on an unrestricted network),
+      the page could sit blank indefinitely before any of the app's
+      own CSS or JavaScript ever gets a chance to run — a different,
+      earlier failure category than anything a JS error handler could
+      catch, since nothing has executed yet. rel="preload" fetches it
+      without blocking render; the small inline script swaps it to an
+      active stylesheet once it's actually loaded. The <noscript>
+      fallback covers the rare case of JavaScript being disabled.
+    -->
     <link
-      rel="stylesheet"
+      rel="preload"
+      as="style"
       href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700;800&display=swap"
+      onload="this.onload=null;this.rel='stylesheet'"
     />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700;800&display=swap"
+      />
+    </noscript>
     <link rel="stylesheet" href="css/styles.css" />
   </head>
   <body>
     <div id="user-bar"></div>
     <div id="app"></div>
 
+    <!--
+      Registered before the module script below, so it catches
+      literally any startup failure — including one thrown during a
+      module's own top-level evaluation, before main.js's own body
+      ever runs. Renders a visible on-page message rather than only
+      logging to the console, since most people testing this app on a
+      phone have no easy way to open devtools there — a silent white
+      screen with an error only visible in a desktop console is nearly
+      undebuggable from the device actually showing the problem.
+    -->
+    <script>
+      function showStartupError(message, detail) {
+        var existing = document.getElementById('startup-error');
+        if (existing) return; // don't stack multiple error banners
+        var banner = document.createElement('div');
+        banner.id = 'startup-error';
+        banner.style.cssText =
+          'position:fixed;inset:0;z-index:99999;background:#fff3f2;color:#7a1f1f;' +
+          'font-family:sans-serif;padding:1.5rem;overflow:auto;box-sizing:border-box;';
+        banner.innerHTML =
+          '<h1 style="font-size:1.1rem;margin:0 0 0.75rem;">Something went wrong loading Classroom Tracker</h1>' +
+          '<p style="margin:0 0 0.75rem;">' + message + '</p>' +
+          '<pre style="white-space:pre-wrap;font-size:0.8rem;background:#fff;border:1px solid #e3b3b0;' +
+          'border-radius:6px;padding:0.75rem;">' + (detail || '') + '</pre>' +
+          '<p style="margin:1rem 0 0.25rem;font-size:0.8rem;opacity:0.8;">User agent:</p>' +
+          '<pre style="white-space:pre-wrap;font-size:0.75rem;background:#fff;border:1px solid #e3b3b0;' +
+          'border-radius:6px;padding:0.75rem;">' + navigator.userAgent + '</pre>';
+        document.body.appendChild(banner);
+      }
+      window.addEventListener('error', function (event) {
+        showStartupError(
+          'A script error occurred before the app could load.',
+          (event.error && event.error.stack) || event.message
+        );
+      });
+      window.addEventListener('unhandledrejection', function (event) {
+        showStartupError(
+          'A background operation failed before the app could finish loading.',
+          (event.reason && event.reason.stack) || String(event.reason)
+        );
+      });
+    </script>
+
     <script type="module" src="js/main.js"></script>
+
+    <!--
+      Only executes in a browser that does NOT support ES modules at
+      all (nomodule scripts are the inverse of type="module" ones,
+      per the HTML spec) — such a browser wouldn't error on the
+      script above, it would silently skip it entirely, with nothing
+      for any error handler to ever catch. That produces exactly the
+      reported symptom: a blank page with no error banner, because
+      nothing ever tried to run. This is the one failure category the
+      full import-graph audit above can't rule out from the code
+      alone, since it's about whether the module script tag executes
+      at all, not what's inside it.
+    -->
+    <script nomodule>
+      document.body.innerHTML =
+        '<div style="padding:1.5rem;font-family:sans-serif;">' +
+        '<h1 style="font-size:1.1rem;">This browser can\u2019t run Classroom Tracker</h1>' +
+        '<p>Your browser doesn\u2019t support modern JavaScript modules, which this app requires. ' +
+        'Please update Chrome, or try a different browser.</p></div>';
+    </script>
   </body>
 </html>

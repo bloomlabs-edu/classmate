@@ -61,9 +61,31 @@ class FirestoreClassroomRepository extends ClassroomRepository {
       // FAILED: Unexpected state" and the cascading failures that follow
       // it (including token requests, once Firestore's internal state is
       // corrupted).
-      this.db = initializeFirestore(app, {
-        localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
-      });
+      //
+      // initializeFirestore() with persistentLocalCache() can throw
+      // synchronously if IndexedDB isn't fully available to the page —
+      // a real, documented condition on mobile browsers specifically
+      // (Incognito/Private mode, restricted site-storage settings, or
+      // immediately after the user clears site data, before storage
+      // permission for the origin is freshly re-established). Since
+      // this is the first Firestore call in the whole app's boot
+      // sequence, an uncaught throw here previously halted all
+      // JavaScript execution before anything rendered — a silent,
+      // total white screen, with no error visible anywhere. Falling
+      // back to a plain, non-persistent Firestore instance means the
+      // app still works (no offline cache, but every online feature
+      // is unaffected) instead of not working at all.
+      try {
+        this.db = initializeFirestore(app, {
+          localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+        });
+      } catch (error) {
+        console.error(
+          '[firestoreClassroomRepository] Persistent (offline) cache unavailable — falling back to a non-persistent Firestore instance. Offline support is disabled for this session; online reads and writes are unaffected.',
+          error
+        );
+        this.db = initializeFirestore(app, {});
+      }
     }
     return this.db;
   }

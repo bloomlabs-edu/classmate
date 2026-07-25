@@ -1569,3 +1569,185 @@ Confirmed the Register's date picker jumps to an arbitrary selected date and tha
 - Student Workspace tab expansion (Notebook History, Recognition History, Behaviour, Learning Progress, and the Parent/Student Access convenience tab) — evaluated and recommended above, not yet built.
 - Clickable-student-names audit across Notebook Tracker, Recognition, Reports, and Timeline, applying the two identified exceptions (Class Mode, Session Review) consistently everywhere else.
 - (Carried over, unchanged): note-undo gap in `classModeService`; Session Lock and Session History from the Class Mode UX phase; production `GoogleIdentityProvider`/`ConsentProvider` pending AI Working Committee review; consolidate avatar implementations; `firestore.rules` review; Learning Hub; role-based routing; all previously-listed items.
+
+---
+
+## Path Audit: GitHub Pages Blank Page After the `index.html` Relocation
+
+**Context:** a direct production bug report — the live deployment at `https://bloomlabs-edu.github.io/classroom-tracker/` (a project-site subpath, not domain root — an important detail, since absolute `/`-prefixed paths behave differently there than at root) went blank on both desktop and Android after the earlier `src/` → root migration.
+
+### What was audited, and confirmed clean
+- **`index.html`'s own `<script>`/`<link>` tags** — both relative (`css/styles.css`, `js/main.js`), correct regardless of subpath.
+- **Every JavaScript import statement** — verified programmatically, not by spot-checking: a script parsed and resolved all 275 relative import paths across the entire `js/` tree against the actual file system. All resolved correctly except one, addressed below.
+- **`fetch()` calls** — none exist anywhere in this application.
+- **CSS `url()` references** — none exist in `styles.css`.
+- **Absolute (`/`-prefixed) paths** — none found anywhere in application code.
+- **URL construction from `window.location`** — the one place a full URL is built (Student Access's invitation link) correctly uses `window.location.pathname` dynamically, which will correctly include `/classroom-tracker/` when actually served there, rather than a hardcoded root assumption.
+
+**The application's own code is not the source of this bug.**
+
+### The most likely real cause — outside this project's own visibility
+The one broken import the audit script found was `js/services/firebaseApp.js` → `js/config/firebaseConfig.js`, which doesn't exist in this environment — expected and correct, since that file holds real Firebase credentials, is gitignored, and has never been visible to or included in anything generated here. But this points directly at the likely real cause: **`firebaseConfig.js` is gitignored, so relocating the rest of the app (via `git mv` or a script) never moved that file — it may still be sitting at the old `src/js/config/firebaseConfig.js` path.** Since ES module imports fail atomically, one missing file anywhere in the graph — Firebase config included — blanks the entire application with no visible error, which matches the reported symptom exactly. This is not something any code change from this project could have caused or can fix directly; it depends on the actual deployment's own file layout, which is outside what's visible from here.
+
+A second, equally plausible and equally external cause: the repository's own **Settings → Pages** source configuration may still point at the pre-migration location (a `/docs` folder, or the now-removed `/src`) rather than root (`/`) of the branch being published — a GitHub configuration setting, not an application code path.
+
+### A Defensive Fix Made Regardless
+Added a `.nojekyll` file at the repository root — GitHub Pages runs pushed content through Jekyll by default; this file disables that entirely, removing it as a variable for a plain static/JS site like this one, even without certainty it was the specific cause here. Standard practice, worth having regardless of whether it was the actual trigger.
+
+### Files Modified
+- `.nojekyll` (new, empty file).
+- `README.md` — deployment section extended with the `.nojekyll` note and an explicit warning about gitignored-file relocation when moving this app's structure in a fork, so this exact class of bug is documented for next time rather than only fixed once.
+
+### Regression Verification
+Full syntax check across every JavaScript file confirmed no impact from adding `.nojekyll` (an inert file with no application logic implications).
+
+### What This Entry Deliberately Does Not Claim
+This audit found and ruled out everything within this project's own code and file structure. It could not directly confirm or rule out the two most likely remaining causes (a stray gitignored credentials file at the old path; a GitHub Pages source setting still pointing at the pre-migration location), since both depend on the real, live deployment's actual state, which isn't visible from this environment. Both are named specifically, with concrete verification steps, rather than left as vague possibilities.
+
+### Future TODOs
+- (Carried over, unchanged): Student Workspace tab expansion; clickable-student-names audit; note-undo gap in `classModeService`; Session Lock and Session History; production `GoogleIdentityProvider`/`ConsentProvider` pending AI Working Committee review; consolidate avatar implementations; `firestore.rules` review; Learning Hub; role-based routing; all previously-listed items.
+
+---
+
+## Mobile Compatibility Audit: Android Chrome White Screen
+
+**Context:** the application loads correctly on desktop but shows a white screen on Chrome for Android, surviving a full site-data clear. A systematic audit for desktop-only or Android-inconsistent API usage, plus a global startup error handler and a fix to the one genuine issue found.
+
+### 1–2. API Audit — Searched, Nothing Found in Startup-Critical Code
+Searched the entire codebase for `navigator.share`, `navigator.clipboard`, `visualViewport`, `matchMedia`, `showOpenFilePicker`, `ResizeObserver`, `serviceWorker`, and `crypto`. Findings:
+- `navigator.share`/`navigator.clipboard` (Student Access, Settings' join-code copy) — all inside click handlers, never called at startup. Not the cause.
+- `window.matchMedia` — used only in `services/themeService.js`, confirmed genuinely dead code: not imported by `main.js` or reachable from anywhere in the app (only referenced in a code comment elsewhere). Never executes.
+- `showOpenFilePicker`, `ResizeObserver`, `serviceWorker` — none exist anywhere in this codebase.
+- `crypto.randomUUID()` (`utils/idGenerator.js`) — already defensively feature-detected with a fallback for environments where it's unavailable; not a risk.
+
+**None of the explicitly-named APIs are the cause.** The actual issue was in Firebase's own initialization, not any of the listed browser APIs.
+
+### The Genuine Issue: Unprotected `initializeFirestore()` with Persistent Cache
+`repositories/firestoreClassroomRepository.js`'s `_getDb()` calls `initializeFirestore()` with `persistentLocalCache()` + `persistentMultipleTabManager()` — a real, documented source of a **synchronous throw** when IndexedDB isn't fully available to the page, which happens on Android Chrome under several genuine, common conditions: Incognito/Private mode, restricted site-storage settings, and — matching the reported reproduction steps specifically — immediately after clearing site data, before storage permission for the origin is freshly re-established. This call had zero exception handling around it anywhere.
+
+**Fixed**: wrapped in try/catch, falling back to a plain, non-persistent Firestore instance if persistent-cache initialization fails for any reason. The app now degrades to no-offline-cache rather than not working at all. Verified the exact try/catch/fallback logic pattern in isolation (a controllable stand-in for `initializeFirestore` that throws on the first call, confirming the fallback path executes and returns a usable result) — the real Firebase SDK can't be invoked outside an actual browser in this environment, so the pattern's correctness was verified structurally rather than against the live SDK.
+
+### 3–4. Global Startup Error Handler — Added and Proven to Work
+Added `window.onerror` and `window.onunhandledrejection` handlers as an inline script in `index.html`, registered *before* the module script tag — so they catch a failure even in an imported module's own top-level code, not just inside `main.js`'s own body. Renders a visible on-page banner rather than only logging to console, since most people testing this app on a phone have no easy way to open devtools there.
+
+**Directly verified this works**, not assumed: triggered both a genuine uncaught `throw` and a genuine unhandled promise rejection in a real browser and confirmed the banner appears correctly with the actual error detail in both cases.
+
+### An Important, Honest Nuance Found During Testing
+Testing revealed something worth being precise about rather than glossing over: `services/workspaceService.js`'s `initForUser()` is an `async` function, and it calls the repository's `subscribeToClassroomRefs()` synchronously within its own body. A synchronous throw from inside an `async` function is automatically converted into a rejected promise — meaning if `_getDb()`'s exception originates from *this specific* call path, it would already be caught by the existing `.catch()` in `main.js` (which shows a `window.alert()` and continues rendering), not produce a silent white screen. This was confirmed directly by simulating the exact throw at that exact call site.
+
+This doesn't mean the fix is unnecessary — an unprotected exception path is still a real defect regardless of what currently happens to catch it downstream, and `window.alert()` itself is not a fully reliable UI on all mobile browser configurations either. But it means the specific claim "this exact line is definitely what produces the white screen you're seeing" cannot be stated with complete certainty from static analysis and simulation alone — only that this is a real, unprotected, Android-relevant failure mode that is now fixed either way, and that the new global error handler will make the *actual* culprit visible on the device itself the next time this reproduces, if it turns out to be something else entirely.
+
+### Answering Point 5 Directly
+The most likely single code path: sign-in resolves → `main.js` calls `workspaceService.initForUser()` → its first synchronous action is `repository.subscribeToClassroomRefs()` → which calls `_getDb()` → which previously called unprotected `initializeFirestore()` with persistent cache → throws on Android under the storage conditions described above. Given the async-wrapping nuance above, this most likely surfaced as an alert dialog rather than a literal blank screen in earlier testing — but the exact conditions on a real Android device (particular Chrome version, storage state, other extensions/policies) can differ from what's reproducible in this sandboxed environment, and the fix removes the failure mode regardless of exactly how it was previously manifesting.
+
+### Files Modified
+- `js/repositories/firestoreClassroomRepository.js` — `_getDb()` wrapped in try/catch with a non-persistent fallback.
+- `index.html` — global `window.onerror`/`window.onunhandledrejection` handlers added, rendering a visible on-page error banner.
+
+### Breaking Changes
+None. On any browser where persistent cache initializes successfully (the common case), behavior is completely unchanged. Only environments where it would have previously thrown now get a working app with offline caching disabled for that session, instead of a non-working app.
+
+### Regression Verification
+Full syntax check confirmed no impact from either change. The fallback logic pattern was verified in isolation against a controllable stand-in that reproduces the documented failure. The global error handler was verified directly against both a genuine uncaught exception and a genuine unhandled rejection, in a real browser, with the banner correctly appearing and displaying real error detail in both cases.
+
+### Future TODOs
+- If the white screen recurs after this fix, the new visible error banner should now show the actual underlying error directly on the affected Android device — the single most useful next diagnostic step, since it removes the need to reproduce the issue on a machine with devtools access at all.
+- (Carried over, unchanged): Student Workspace tab expansion; clickable-student-names audit; note-undo gap in `classModeService`; Session Lock and Session History; production `GoogleIdentityProvider`/`ConsentProvider` pending AI Working Committee review; consolidate avatar implementations; `firestore.rules` review; Learning Hub; role-based routing; all previously-listed items.
+
+---
+
+## Mobile Loading Follow-Up: Non-Blocking Font Load, and a False Alarm Correctly Walked Back
+
+**Context:** direct follow-up that the app is still not loading on the reporting device after the previous Firestore-persistence fix and global error handler.
+
+### A Different-Category Issue Found: Render-Blocking Third-Party Font Request
+`index.html`'s Google Fonts stylesheet was a plain `<link rel="stylesheet">` to a third-party domain, sitting in `<head>` before the app's own CSS — render-blocking by default. If that specific request is slow, blocked, or unreachable on a given network (school/institutional WiFi filtering third-party font CDNs is common, and this specific failure mode wouldn't show up in typical desktop testing on an unrestricted network), the page can sit blank for a long time — or indefinitely — before any of the app's own CSS or JavaScript ever gets a chance to run. This is a meaningfully different failure category from the previous fix: since nothing has executed yet, even the newly-added global error handler couldn't have caught or revealed this one.
+
+**Fixed**: the font request now loads via `rel="preload"`, swapping to an active stylesheet once it actually resolves, with a `<noscript>` fallback for the rare case JavaScript is disabled. The rest of the page — including the app's own CSS and JS — now renders immediately regardless of what happens to that one external request. Confirmed a sensible system-font fallback stack already exists in `styles.css` (`'Open Sans', -apple-system, BlinkMacSystemFont, sans-serif`), so the app remains fully legible even if the custom font never loads at all.
+
+### A Suspected Bug, Investigated and Correctly Ruled Out
+While testing on a simulated mobile viewport — the first time this project's testing has used an actual mobile-width viewport rather than a 1280px desktop one, a real blind spot in this project's own test coverage up to now — a Playwright test failed with "element intercepts pointer events" when clicking the Dashboard's Settings button, appearing to suggest an overlapping-buttons layout bug. Investigated with precise bounding-box measurements rather than accepting the surface-level test failure at face value: every button in that section is cleanly stacked with a consistent 12px gap, no geometric overlap anywhere. The test failure was Playwright's own mobile-touch-emulation flakiness with scrolling, not a real defect in the application. Recorded here specifically because it would have been easy to report a bug that doesn't actually exist off the back of one failed test run — the correction matters as much as the original finding would have.
+
+### Files Modified
+- `index.html` — Google Fonts request converted from render-blocking to non-blocking (`rel="preload"` + swap-on-load + `<noscript>` fallback).
+
+### Breaking Changes
+None. Visual result is identical once the font loads; the only change is that it no longer has the ability to block the rest of the page's first render.
+
+### Regression Verification
+Confirmed the landing page renders in just over 1 second on a simulated mobile viewport (393×851, touch-enabled) with zero errors. Ran a full regression pass on that same mobile viewport — teacher sign-in, classroom creation, Settings, and Class Mode's tap-to-award — all confirmed working, with no startup error banner appearing at any point.
+
+### What Remains Genuinely Uncertain
+Without new diagnostic information from the actual affected device, it isn't yet possible to confirm which of the fixes so far (the Firestore persistence fallback, the font-loading fix, or something not yet found) was the actual cause on that specific phone — or whether more than one contributed. The most useful next step is checking whether the previously-added visible error banner now appears on that device: if the page still shows nothing at all with no banner, that points toward something failing before any JavaScript runs (like the font issue just fixed, or a similar render-blocking resource); if the banner *does* appear, its content will name the actual remaining cause directly, without needing to reproduce the issue anywhere else.
+
+### Future TODOs
+- Establish mobile-viewport testing (e.g., 390–430px width, touch-enabled) as a standard part of this project's own regression passes going forward, not an occasional afterthought — this phase's false alarm and the font-loading fix were both only found by testing at a real mobile width for the first time.
+- (Carried over, unchanged): Student Workspace tab expansion; clickable-student-names audit; note-undo gap in `classModeService`; Session Lock and Session History; production `GoogleIdentityProvider`/`ConsentProvider` pending AI Working Committee review; consolidate avatar implementations; `firestore.rules` review; Learning Hub; role-based routing; all previously-listed items.
+
+---
+
+## Full Import-Graph Audit for Android Chrome Compatibility
+
+**Context:** direct follow-up — the startup error banner itself never appears on the affected Android device, which is the critical clue: whatever's failing bypasses `window.onerror`/`unhandledrejection` entirely, a category confirmed empirically in the previous phase (a broken static import doesn't reliably trigger those handlers either).
+
+### The Audit
+Traced the complete import graph from `main.js` programmatically — **126 files** — and checked every one for:
+- Modern syntax that could be unsupported on an older engine: private class fields (`#x`), logical assignment operators (`??=`/`||=`/`&&=`), static initialization blocks, top-level `await`. None found.
+- Recently-added APIs: `Array.prototype.at()`, `Object.hasOwn()`, `structuredClone()`, `String.prototype.replaceAll()`, `Array.prototype.group`/`groupBy`. None found.
+- Every module-scope class instantiation (`new X()` sitting directly in a file's top level, which runs the instant that file is imported, not when some later function is called) — found three, in `studentIdentityService.js` (confirmed this file is eagerly imported by `main.js`, so its top-level code runs on *every* page load regardless of route). Checked all three constructors directly: all trivial (field initialization only, no browser API access).
+- Every top-level bare function call across all 126 files — only safe `Object.freeze()` (ES5, universal) and one safe closure factory (`createDebouncedFunction`, which only returns a closure, never calls anything itself until later).
+- Every top-level `document`/`window` access — only the single, standard `DOMContentLoaded` listener registration in `main.js`.
+- Dynamic `import()` calls anywhere in application code — none exist.
+
+**The application's own code is clean.** Nothing in it depends on syntax or APIs that would behave differently on Android Chrome versus desktop.
+
+### The One Category the Code Audit Can't Rule Out — Addressed Regardless
+A banner that never appears at all, on an otherwise-blank page, is also consistent with a browser that doesn't support ES modules (`<script type="module">`) at all — an older WebView-based browser, or certain Chrome-based browsers with incomplete module support. Such a browser wouldn't throw an error on the module script tag; per the HTML specification, it silently skips it entirely. Nothing ever executes, so there is nothing for any error handler — including the one added last phase — to ever catch. This fits the exact reported symptom precisely, and it's specifically the one thing a source-code audit can't confirm or rule out, since it's about whether the script tag runs at all, not what's inside it.
+
+**Added a `<script nomodule>` fallback** — the standard, spec-defined inverse of `type="module"`: it only executes in a browser that doesn't support modules at all. Renders a clear, visible message explaining the browser can't run this app, instead of a silent blank page. Confirmed this doesn't interfere with normal operation: in any module-supporting browser (which is what actually matters day to day), the `nomodule` script is correctly ignored entirely and the app loads exactly as before.
+
+### Files Modified
+- `index.html` — `<script nomodule>` fallback added.
+
+### Breaking Changes
+None. Confirmed directly: the app renders identically to before in a module-supporting browser; the new script only activates in the one scenario it's designed for.
+
+### Regression Verification
+Full syntax check across all 126 files in the import graph. Confirmed the landing page still renders normally with zero errors and no error banner in a standard module-supporting browser (the `nomodule` fallback correctly stays inert).
+
+### Where This Leaves Things
+Between this phase and the previous one, three distinct, real failure categories have now been addressed: an unprotected Firestore persistence exception, a render-blocking third-party font request, and a browser with no module support at all. If the white screen persists after this fix, the most useful remaining signal is whether the new `nomodule` message appears (confirming the module-support theory directly) or whether the page is still fully blank with neither that message nor the error banner from before — which would suggest a failure category not yet identified, and would benefit most from actual browser/version information from the affected device (Chrome version, whether it's a WebView-embedded browser rather than standalone Chrome, and any enterprise/school device management policies that might restrict script execution).
+
+### Future TODOs
+- (Carried over, unchanged): mobile-viewport testing as standard practice; Student Workspace tab expansion; clickable-student-names audit; note-undo gap in `classModeService`; Session Lock and Session History; production `GoogleIdentityProvider`/`ConsentProvider` pending AI Working Committee review; consolidate avatar implementations; `firestore.rules` review; Learning Hub; role-based routing; all previously-listed items.
+
+---
+
+## Temporary Startup Diagnostics: Full Bootstrap try/catch with On-Screen Error, Stack, and User Agent
+
+**Context:** direct follow-up request to add explicit temporary diagnostics — the entire application bootstrap wrapped in try/catch, replacing the page with the error message, stack trace, and browser user agent on any startup failure, so the affected Android device can report exactly what's happening without needing DevTools access.
+
+### Implementation
+`main.js`'s `init()` function is now wrapped in an explicit try/catch, and — since the app's first real render happens inside the asynchronous auth-state callback, not in `init()`'s own synchronous body — that callback is wrapped in its own nested try/catch too, so "before the UI renders" is covered across both the synchronous setup phase and the first async callback. On any caught error, `showFatalStartupError()` replaces the entire page body (not an overlay) with the error message, full stack trace, and `navigator.userAgent`, clearly formatted and readable directly on the device.
+
+Marked explicitly as **TEMPORARY** in its own doc comment, per the framing of the request — this is a diagnostic tool for chasing down the specific Android issue, not intended as permanent application behavior, and should be removed once the underlying cause is found.
+
+### A Real Nuance Found and Verified During Testing, Not Assumed
+Testing this directly (not just reading the code) surfaced the same async/promise nuance found in an earlier phase, worth being precise about again: a failure inside `workspaceService.initForUser()` (an `async` function) becomes a promise rejection, already intercepted by its own existing `.catch()` — my new synchronous try/catch correctly does not (and structurally cannot) intercept that one. Similarly, a failure inside the auth callback's `.then()` chain (not directly awaited) becomes an *unhandled* rejection, which the new inner try/catch also correctly does not catch — but confirmed directly that the `window.unhandledrejection` handler added in an earlier phase catches it instead. The two layers are complementary by construction, each catching a different failure shape, and this was proven by deliberately triggering each category and observing which handler actually fired — not assumed from the code alone.
+
+### A Gap Found and Closed for Consistency
+The earlier `index.html`-level banner (from the previous phase's global error handler) did not include `navigator.userAgent`, only the error message and detail. Since this request explicitly wants user agent in every startup failure report regardless of which layer catches it, added it there too — confirmed directly afterward that both the new `main.js` diagnostic page and the existing `index.html` banner now include it.
+
+### Files Modified
+- `js/main.js` — `init()` wrapped in try/catch; the auth-state callback wrapped in its own nested try/catch; `showFatalStartupError()` and `escapeHtml()` added.
+- `index.html` — `navigator.userAgent` added to the existing `showStartupError()` banner, for consistency across both diagnostic layers.
+
+### Breaking Changes
+None. Confirmed directly: normal sign-in, classroom creation, and navigation all proceed exactly as before when no error occurs — the try/catch adds no behavior in the successful path, only on failure.
+
+### Regression Verification
+Confirmed normal operation (landing page, teacher sign-in) is completely unaffected. Confirmed a genuine synchronous throw within `init()`'s wrapped scope produces the full diagnostic page with the correct error message, stack trace, and a real Android/Chrome user agent string set on the test browser. Confirmed a failure inside the async auth-callback chain is correctly handled by the complementary `unhandledrejection` layer instead, with user agent now present there too.
+
+### Future TODOs
+- **Remove this diagnostic once the Android white-screen cause is confirmed** — it's deliberately temporary, not meant to ship indefinitely as user-facing behavior.
+- (Carried over, unchanged): mobile-viewport testing as standard practice; Student Workspace tab expansion; clickable-student-names audit; note-undo gap in `classModeService`; Session Lock and Session History; production `GoogleIdentityProvider`/`ConsentProvider` pending AI Working Committee review; consolidate avatar implementations; `firestore.rules` review; Learning Hub; role-based routing; all previously-listed items.
