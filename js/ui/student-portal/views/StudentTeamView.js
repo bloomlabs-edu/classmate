@@ -3,20 +3,33 @@
  *
  * A student's own group, from their side — teammates and the team's
  * combined stars, reusing the same avatar generator as everywhere
- * else in the Portal. Placeholder data for now — see
+ * else in the Portal. Live Firestore data — see
  * services/studentPortalDataService.js.
  */
 
 import { getTeamSummary } from '../../../services/studentPortalDataService.js';
 import { getAvatarForPerson } from '../../../utils/avatarGenerator.js';
+import { createEmptyStateElement } from '../../components/EmptyState.js';
 
-export function renderStudentTeamView(container) {
+export async function renderStudentTeamView(container) {
   container.innerHTML = '';
 
-  const team = getTeamSummary();
+  const team = await getTeamSummary();
 
   const wrapper = document.createElement('div');
   wrapper.className = 'student-team';
+
+  if (!team) {
+    // A real, reachable state now that this reads live data - a
+    // student simply may not be assigned to a group yet.
+    const title = document.createElement('h1');
+    title.className = 'student-section__title';
+    title.textContent = 'My Team';
+    wrapper.appendChild(title);
+    wrapper.appendChild(createEmptyStateElement({ message: 'Not assigned to a group yet \u2014 ask your teacher.' }));
+    container.appendChild(wrapper);
+    return;
+  }
 
   const title = document.createElement('h1');
   title.className = 'student-section__title';

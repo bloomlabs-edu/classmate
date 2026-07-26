@@ -2569,3 +2569,26 @@ Reproduced the exact reported failure directly: a mock repository that succeeds 
 ### Future TODOs
 - (Carried over, still open): restructure `hasJoinedPortal` to a top-level field on the classroom document, so a Firestore rule *can* safely permit this write instead of it silently failing every time. Not blocking — Student Access's "has joined" indicator just won't reflect reality until this is done.
 - (Carried over, unchanged): fix `awardStar()` not reading the classroom's own "Default point value" setting; apply category badges to Settings' own tabs and Activities if a future pass wants full palette coverage; resume broader Settings redesign feature work; wire the Student Portal's own dashboard content to the actually-joined student; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; role-based routing; all previously-listed items.
+
+---
+
+## Student Home Dashboard Wired to Live Data — Verified Live This Time
+
+**Context:** continuation of the previous entry, which made the code changes but couldn't complete live verification due to a sustained sandbox infrastructure issue at the time. That issue resolved; this entry documents the actual live testing and one real bug it caught.
+
+### What live testing caught that static review didn't
+Testing a real classroom (a student with actual score history, badges, and a real team) against a brand-new student (zero score, zero badges, no group assignment) surfaced a genuine bug: a student not manually assigned to a group is placed in a special default "Ungrouped" bucket (see `classroomService.js` — `{ ...createTeam({ name: 'Ungrouped' }), isUngrouped: true }`). The first version of the fix displayed this literally — "Ungrouped" as the team name, with "Leading the class!" as the caption, since it technically out-ranked other empty teams. Correct to the data, but a misleading thing to tell a student who isn't really on a team yet.
+
+### Fix
+Used the reliable `team.isUngrouped` flag (not a fragile name match) to treat this bucket as "not assigned" from the student's own perspective, across all three places team status is read: `getHomeSummary()`, `getTeamSummary()`, and `getCurrentStudentProfile()`.
+
+### Live verification (this time actually completed)
+Two full scenarios run end-to-end through the real join flow (enter code → pick name → land on Home):
+- **A student with real data** (2 stars this week, 2 badges, on a real team): Home showed "2" stars, "Group A" / "Leading the class!", "2" recognitions with "Latest: Helper," Achievements listed both real badges, Team screen showed the correct teammate (self correctly excluded) and correct team star total. Zero console errors.
+- **A brand-new, unassigned student**: Home showed "0" stars, "Not assigned yet" / "Ask your teacher to add you to a group," "0" recognitions with "Nothing yet — keep going!," "0 days" streak, Team screen showed "Not assigned to a group yet — ask your teacher." Zero console errors.
+
+### Files Modified (this entry)
+- `js/services/studentPortalDataService.js` — the `isUngrouped` handling, three call sites.
+
+### Regression Verification
+Both scenarios above, live, via a real browser automated through the actual join flow — not assumed from reading the code.

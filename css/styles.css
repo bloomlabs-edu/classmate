@@ -3600,6 +3600,11 @@ button.wizard-checklist__row:hover {
   margin: 0 0 1.25rem;
   text-align: center;
 }
+.student-home__empty-notice {
+  text-align: center;
+  color: var(--color-muted);
+  font-size: 1rem;
+}
 .student-home__cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));

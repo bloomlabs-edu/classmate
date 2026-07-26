@@ -4,18 +4,19 @@
  * The Student Portal's landing screen — answers "How am I doing?"
  * directly, with five cards: My Stars, My Team, Recognition Wall, My
  * Journey, Continue Learning. All data comes from
- * services/studentPortalDataService.js, which is placeholder-only for
- * now (see that file's own doc comment for why) — this view has no
- * knowledge of whether its data is real or placeholder, so wiring in
- * real data later is a change to that service, not to this file.
+ * services/studentPortalDataService.js, which now reads live
+ * Firestore data for the device's remembered student profile — this
+ * view has no knowledge of whether its data is real, so a future
+ * change to how that data is computed is a change to that service,
+ * not to this file.
  */
 
 import { getHomeSummary } from '../../../services/studentPortalDataService.js';
 
-export function renderStudentHomeView(container) {
+export async function renderStudentHomeView(container) {
   container.innerHTML = '';
 
-  const summary = getHomeSummary();
+  const summary = await getHomeSummary();
 
   const wrapper = document.createElement('div');
   wrapper.className = 'student-home';
@@ -24,6 +25,18 @@ export function renderStudentHomeView(container) {
   greeting.className = 'student-home__greeting';
   greeting.textContent = 'How are you doing this week?';
   wrapper.appendChild(greeting);
+
+  if (!summary) {
+    // No remembered profile, or the classroom/student it points to
+    // could no longer be found — shouldn't normally happen given the
+    // join flow, but a real empty state beats a broken one.
+    const notice = document.createElement('p');
+    notice.className = 'student-home__empty-notice';
+    notice.textContent = "We couldn't load your data right now. Try rejoining your classroom.";
+    wrapper.appendChild(notice);
+    container.appendChild(wrapper);
+    return;
+  }
 
   const cards = document.createElement('div');
   cards.className = 'student-home__cards';
@@ -41,8 +54,12 @@ export function renderStudentHomeView(container) {
     createCard({
       icon: '\ud83c\udfc6',
       title: 'My Team',
-      value: summary.teamName,
-      caption: summary.teamRank === 1 ? 'Leading the class!' : `Ranked #${summary.teamRank}`,
+      value: summary.teamName || 'Not assigned yet',
+      caption: summary.teamName
+        ? summary.teamRank === 1
+          ? 'Leading the class!'
+          : `Ranked #${summary.teamRank}`
+        : 'Ask your teacher to add you to a group',
     })
   );
 

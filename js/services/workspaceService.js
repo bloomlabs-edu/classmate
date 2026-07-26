@@ -177,6 +177,19 @@ export function getClassroomById(id) {
   return classroomService.getClassroomById(id);
 }
 
+/**
+ * A direct, one-time Firestore read by classroomId — distinct from
+ * getClassroomById() above, which reads from the teacher-side
+ * subscription cache (classroomService.listClassrooms()) that a
+ * student device never populates. Used by
+ * services/studentPortalDataService.js, the same way
+ * resolveStudentJoinCode()/markStudentJoinedPortal() already read
+ * directly via the repository rather than the cache.
+ */
+export function getClassroomOnce(classroomId) {
+  return repository.getClassroomOnce(classroomId);
+}
+
 /** `owner` is the creating teacher's safe profile: { uid, displayName }. */
 export function createClassroom(details, owner) {
   const classroom = classroomService.createEmptyClassroom(details, owner);
