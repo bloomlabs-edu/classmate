@@ -331,12 +331,29 @@ export async function resolveStudentJoinCode(code) {
  * device tapping a name would only ever update its own local storage,
  * invisible to the teacher. Deliberately a narrow flag, not an
  * account or a session record.
+ *
+ * Deliberately fault-tolerant: a student device has no Firebase Auth
+ * at all (see studentDeviceService.js), and the current, correctly
+ * restrictive Firestore rules reject this write for exactly that
+ * reason — there is no safe rule that can permit an unauthenticated
+ * client to mutate one nested field without also permitting it to
+ * mutate anything else in the document (see firestore.rules' own
+ * comment on this same limitation). Rather than block a student's own
+ * access to the Portal on a teacher-facing indicator succeeding, a
+ * failure here is caught and logged, not thrown — the student still
+ * proceeds. The proper fix (restructuring this flag to a top-level
+ * field a rule CAN safely permit) is tracked separately, not solved
+ * by making this call block the student experience in the meantime.
  */
 export async function markStudentJoinedPortal(classroomId, studentId) {
-  const classroom = await repository.getClassroomOnce(classroomId);
-  if (!classroom) return;
-  const student = classroom.teams.flatMap((team) => team.students).find((s) => s.id === studentId);
-  if (!student || student.hasJoinedPortal) return;
-  student.hasJoinedPortal = true;
-  await repository.saveClassroom(classroom);
+  try {
+    const classroom = await repository.getClassroomOnce(classroomId);
+    if (!classroom) return;
+    const student = classroom.teams.flatMap((team) => team.students).find((s) => s.id === studentId);
+    if (!student || student.hasJoinedPortal) return;
+    student.hasJoinedPortal = true;
+    await repository.saveClassroom(classroom);
+  } catch (error) {
+    console.warn('[workspaceService] markStudentJoinedPortal failed (non-blocking, student proceeds regardless):', error);
+  }
 }

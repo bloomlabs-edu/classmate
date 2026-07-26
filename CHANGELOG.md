@@ -2535,3 +2535,37 @@ None — messaging only, verified live that the same `classroomJoinCode` value s
 
 ### Future TODOs
 - (Carried over, unchanged): fix `markStudentJoinedPortal()`'s unsupported write under production Firestore rules; fix `awardStar()` not reading the classroom's own "Default point value" setting; apply category badges to Settings' own tabs and Activities if a future pass wants full palette coverage; resume broader Settings redesign feature work; wire the Student Portal's own dashboard content to the actually-joined student; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; role-based routing; all previously-listed items.
+
+---
+
+## Fixed: Student Portal Failing to Load — markStudentJoinedPortal Made Fault-Tolerant
+
+**Context:** first-time students hit `FirebaseError: Missing or insufficient permissions` at `StudentDeviceFlow.js:61`, preventing the Student Portal from ever loading after entering a code and picking a name.
+
+### 1. Which Firestore operation is actually failing
+Not a read — a **write**. `markStudentJoinedPortal()` first does a `get` on `/classrooms/{id}` (succeeds fine — the get/list rules split from the earlier security review explicitly allows this for unauthenticated students), then calls `saveClassroom()`, an `update`, to flip one student's `hasJoinedPortal` flag.
+
+### 2. Why the current rules reject it
+This is the exact gap identified — but not yet fixed — in the earlier security reviews. Student devices have zero Firebase Auth (deliberate: no sign-in, no PIN). The `update` rule requires `request.auth != null`, so every write from a student device fails this check outright. There's no safe way to write a rule permitting "mutate exactly this one deeply-nested field" without also permitting an unauthenticated visitor to rewrite scores or students — already explained in `firestore.rules`' own comments.
+
+### 3. Which of the three options — a genuine code change, not a query change or a delay
+Delaying the read doesn't apply — this is a write, and it happens at the moment a student picks their name, which is exactly when it should. Modifying the query doesn't apply either — this isn't a malformed query, it's an auth mismatch no query shape can work around. The right fix: make `markStudentJoinedPortal()` itself fault-tolerant. It already exists specifically to update a "narrow, teacher-visible indicator, not an account or session record" — its own doc comment says so. There's no reason this specific, low-stakes write failing should block a student from reaching the Portal at all.
+
+### 4 & 5. Rules were not changed
+No rules change was made or is recommended for this fix — the goal (first-time student reaches the Portal successfully) is fully achieved by the code change alone. The rules gap is real and still tracked, but weakening rules to paper over it isn't necessary here.
+
+### The fix
+Wrapped `markStudentJoinedPortal()`'s body in try/catch. A failure is caught and logged as a non-blocking warning; the student proceeds regardless. Placed inside the service function itself (not the one call site in `StudentDeviceFlow.js`) so any future caller gets this same protection automatically.
+
+### Files Modified
+- `js/services/workspaceService.js`.
+
+### Breaking Changes
+None. When Firestore rules eventually support this write safely (the still-open recommendation: restructure `hasJoinedPortal` to a top-level field), it will simply start succeeding — no code path depends on it failing.
+
+### Regression Verification
+Reproduced the exact reported failure directly: a mock repository that succeeds on `getClassroomOnce` but throws the literal `FirebaseError: Missing or insufficient permissions` on `saveClassroom` (matching real unauthenticated-write behavior). Ran the full flow — enter code, see the real roster, pick a name — end to end. Confirmed zero uncaught errors (the actual bug, now fixed), the expected non-blocking warning logs instead, and the flow completes and hands off to the Portal successfully despite the underlying write failing, exactly as intended.
+
+### Future TODOs
+- (Carried over, still open): restructure `hasJoinedPortal` to a top-level field on the classroom document, so a Firestore rule *can* safely permit this write instead of it silently failing every time. Not blocking — Student Access's "has joined" indicator just won't reflect reality until this is done.
+- (Carried over, unchanged): fix `awardStar()` not reading the classroom's own "Default point value" setting; apply category badges to Settings' own tabs and Activities if a future pass wants full palette coverage; resume broader Settings redesign feature work; wire the Student Portal's own dashboard content to the actually-joined student; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; role-based routing; all previously-listed items.
