@@ -216,16 +216,18 @@ export function renderTrackerView(container, props) {
       })
     );
   } else {
-    classroom.teams.forEach((team) => {
-      grid.appendChild(
-        createTeamCardElement(team, getTeamScore(team), {
-          highlightTeamId: highlight.teamId,
-          onTap: (student) => handleTap(classroom, team, student, rerender),
-          onSwipeLeft: (student) => handleSwipeLeft(classroom, team, student, rerender),
-          onLongPress: (student) => handleLongPress(classroom, team, student, { onSelectStudent, rerender }),
-        })
-      );
-    });
+    classroom.teams
+      .filter((team) => team.students.length > 0)
+      .forEach((team) => {
+        grid.appendChild(
+          createTeamCardElement(team, getTeamScore(team), {
+            highlightTeamId: highlight.teamId,
+            onTap: (student) => handleTap(classroom, team, student, rerender),
+            onSwipeLeft: (student) => handleSwipeLeft(classroom, team, student, rerender),
+            onLongPress: (student) => handleLongPress(classroom, team, student, { onSelectStudent, rerender }),
+          })
+        );
+      });
   }
 
   wrapper.append(header, grid);

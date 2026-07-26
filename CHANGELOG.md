@@ -2697,3 +2697,33 @@ Both fixed live, not just read back in code:
 ### Future TODOs
 - (Carried over, unchanged): restructure `hasJoinedPortal` to a top-level field so a Firestore rule can safely permit that write; fix `awardStar()` not reading the classroom's own "Default point value" setting; apply category badges to Settings' own tabs and Activities if a future pass wants full palette coverage; resume broader Settings redesign feature work; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; role-based routing; all previously-listed items.
 - New, from this entry: the `pages-build-deployment` workflow spotted in the GitHub Actions sidebar during the deployment troubleshooting session suggests GitHub Pages may still be enabled on this repo from before the switch to Firebase Hosting — worth confirming and disabling it if so, so only one deployment target is active.
+
+---
+
+## No Empty Group Boxes Anywhere in the Portal
+
+**Context:** every team was rendered unconditionally in two places, regardless of whether it actually had any students — an empty card with just a header and nothing underneath.
+
+### Where this was actually happening
+Checked every place teams get rendered, not just the one screenshot:
+- **Class Mode** (`TrackerView.js`) — every team in `classroom.teams` got a full card, including ones with zero students.
+- **Dashboard's Groups widget** (`GroupsWidget.js`) — already correctly excluded the automatic "Ungrouped" bucket, but still rendered any teacher-created group with zero students.
+- **Weekly Snapshot's Team Champion section** — checked, already handled correctly: the whole widget returns an empty state before ever reaching team-specific rendering if no stars have been awarded at all this week.
+
+### Fix
+Both actual gaps filter on `team.students.length > 0` before rendering, applied consistently — including "Ungrouped" itself, so a classroom where every student has been assigned to a real group no longer shows an empty leftover "Ungrouped" card either.
+
+### Files Modified
+- `js/ui/views/TrackerView.js` — Class Mode's team grid.
+- `js/ui/components/GroupsWidget.js` — Dashboard's Groups widget.
+
+### Breaking Changes
+None — purely a display filter, no data changes. An empty group still exists and can still be managed from Settings (where seeing an empty group is actually useful, so a teacher can populate or remove it) — this only affects screens that display teams as classroom activity/progress, not the management UI.
+
+### Regression Verification
+Live-tested both fixes with a real empty group alongside a real populated one:
+- **Class Mode**: created "Group B" with zero students — confirmed only teams with actual students rendered cards, Group B correctly absent.
+- **Dashboard widget**: created Group A (empty) and Group B (empty) alongside the automatic Ungrouped bucket — confirmed the widget's own empty state showed correctly while both were empty; then moved a student into Group A using the Change Group feature from the previous session, and confirmed the widget updated to show only Group A, with Group B still correctly absent.
+
+### Future TODOs
+- (Carried over, unchanged): restructure `hasJoinedPortal` to a top-level field so a Firestore rule can safely permit that write; fix `awardStar()` not reading the classroom's own "Default point value" setting; apply category badges to Settings' own tabs and Activities if a future pass wants full palette coverage; resume broader Settings redesign feature work; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; role-based routing; confirm whether GitHub Pages is still enabled on the repo and disable it if so; all previously-listed items.

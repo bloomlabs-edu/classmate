@@ -38,8 +38,10 @@ export function createGroupsWidgetElement({ classroom, onOpenGroups }) {
   // Same reasoning as Settings' Groups tab: the automatic Ungrouped
   // team (see classroomService.js's getOrCreateUngroupedTeam) isn't a
   // group the teacher created, so it's excluded from this "how is my
-  // classroom organized" widget entirely.
-  const realTeams = classroom.teams.filter((team) => !team.isUngrouped);
+  // classroom organized" widget entirely. Teams with no students yet
+  // are also excluded — an empty group row here isn't useful data,
+  // just an empty box (see this project's CHANGELOG).
+  const realTeams = classroom.teams.filter((team) => !team.isUngrouped && team.students.length > 0);
 
   if (realTeams.length === 0) {
     widget.appendChild(createEmptyStateElement({ message: 'Add a group in Settings to bring your class together.' }));
