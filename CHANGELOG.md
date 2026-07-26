@@ -2244,3 +2244,41 @@ Confirmed the WhatsApp/share invitation text still generates the correct link fo
 
 ### Future TODOs
 - (Carried over, unchanged): resume broader Settings redesign feature work; wire the Student Portal's own dashboard content to the actually-joined student; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; consolidate avatar implementations; `firestore.rules` review; role-based routing; all previously-listed items.
+
+---
+
+## Action Design Language: Circular Icon Buttons, Pill Text Buttons, and a Navigation Wording Fix
+
+### Part 1 — Back link wording
+`← ClassMate` / `← Bloom Labs` → `← Home`, in both the teacher header (`UserBar.js`) and the Student Portal (`StudentPortalShell.js`) — navigation should describe the destination, not repeat the product name.
+
+**Worth flagging directly**: both links actually navigate to the Landing/product-picker page (`/`), one level *above* the app's own `HomeView.js` (the teacher's classroom list). Since `UserBar` is the persistent header shown on every authenticated screen — including the Home screen itself — "← Home" will appear on the classroom-list screen too, pointing further back to the picker rather than describing "you are here." Implemented exactly as instructed, since it's explicit and unambiguous, but flagging this rather than silently proceeding as if there's no naming overlap with the app's own existing "Home" screen.
+
+### Part 2 — Undo / Notebook / Reset Session
+Confirmed the actual prior state before changing anything: Undo and Notebook Tracker already shared `.btn--ghost` (a blue-tinted outline); Reset Session used `.btn--danger` (red) — treating a reversible, in-session "start fresh" action with the same visual severity as an actual deletion. `.btn--danger` is otherwise correctly reserved for genuine deletions elsewhere (Delete Classroom, Remove Student, Discard Session) and was left untouched there.
+
+`.btn--icon-only` redesigned to be the single, authoritative circular treatment — it now owns its own background (`--color-surface`), border, and color directly, overriding whatever variant class (`.btn--ghost`, `.btn--danger`) is also present on the button. Reset Session's class changed from `btn btn--danger btn--icon-only` to `btn btn--ghost btn--icon-only`, and since the icon-only rule now wins regardless, all three buttons render identically — confirmed via computed-style comparison, not a visual check alone: identical background, border, 999px radius, and 40×40 size across Undo, Notebook, and Reset. The existing base `.btn:active { transform: scale(0.97) }` already provided a consistent pressed state, so nothing new was needed there.
+
+### Part 3 — Design system: circular for icon-only, pill for icon+text
+Searched the whole codebase for icon-only buttons (no accompanying text) to identify migration candidates, then checked each one's actual layout context before deciding, rather than migrating everything found:
+
+**Migrated**: the previous/next date-navigation arrows in `NotebookRegisterView.js` and `NotebookTimelineView.js` — previously `.btn btn--text` (borderless), now `.btn btn--icon-only`. Checked `.notebook-date-bar`'s layout first (a centered flex row with generous `1rem` gap) and confirmed it comfortably accommodates the larger, bordered circular treatment without disrupting the existing prev-arrow/date-label/next-arrow layout.
+
+**Identified as exceptions, not migrated — with reasoning, per the explicit instruction to explain before implementing these**:
+- **`.student-row__more` (Class Mode's "⋮" per-student menu)** — deliberately borderless and transparent today, sitting inline within a list of up to 40–60 simultaneous student rows. Adding a bordered, surface-colored circle to every single row would introduce real visual noise across a screen whose entire design goal — established and repeatedly reinforced across many earlier phases of this project — is fast, at-a-glance scanning of many rows at once. Migrating it would work directly against that goal.
+- **`.achievement-card__remove` (the badge "×" dismiss)** — absolutely positioned in the corner of a small achievement card, sized as a bare glyph with no button-box padding at all. A 40×40 bordered circle wouldn't just look oversized here, it would likely break the `top: 0.35rem; right: 0.5rem` corner positioning the current layout depends on.
+
+### Files Modified
+- `js/ui/components/UserBar.js`, `js/ui/student-portal/StudentPortalShell.js` — back-link wording.
+- `js/ui/views/TrackerView.js` — Reset Session's class.
+- `js/ui/views/NotebookRegisterView.js`, `NotebookTimelineView.js` — prev/next arrows migrated to `.btn--icon-only`.
+- `css/styles.css` — `.btn--icon-only` redesigned as the shared, authoritative circular treatment.
+
+### Breaking Changes
+None — purely visual; no functionality, event handlers, or navigation targets changed anywhere.
+
+### Regression Verification
+Confirmed via computed-style comparison (not just a visual check) that Undo, Notebook, and Reset Session render byte-for-byte identically. Confirmed the migrated previous/next arrows render correctly with the new circular treatment inside the actual Notebook Register view, reached through the real navigation flow rather than checked in isolation.
+
+### Future TODOs
+- (Carried over, unchanged): resume broader Settings redesign feature work; wire the Student Portal's own dashboard content to the actually-joined student; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; consolidate avatar implementations; `firestore.rules` review; role-based routing; all previously-listed items.

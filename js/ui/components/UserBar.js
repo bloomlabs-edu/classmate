@@ -154,8 +154,8 @@ export function renderUserBar(container, { user, onSignOut, currentAccentColorId
     const landingLink = document.createElement('button');
     landingLink.type = 'button';
     landingLink.className = 'btn btn--text';
-    landingLink.textContent = '\u2190 ClassMate';
-    landingLink.title = 'Back to ClassMate';
+    landingLink.textContent = '\u2190 Home';
+    landingLink.title = 'Back to Home';
     landingLink.addEventListener('click', onBackToLanding);
     rightGroup.appendChild(landingLink);
   }

@@ -94,7 +94,7 @@ export function renderNotebookTimelineView(container, props) {
 
   const prevButton = document.createElement('button');
   prevButton.type = 'button';
-  prevButton.className = 'btn btn--text';
+  prevButton.className = 'btn btn--icon-only';
   prevButton.textContent = '\u2190';
 
   // Same pattern as NotebookRegisterView.js's date, for consistency —
@@ -120,7 +120,7 @@ export function renderNotebookTimelineView(container, props) {
 
   const nextButton = document.createElement('button');
   nextButton.type = 'button';
-  nextButton.className = 'btn btn--text';
+  nextButton.className = 'btn btn--icon-only';
   nextButton.textContent = '\u2192';
 
   let rangeStart;

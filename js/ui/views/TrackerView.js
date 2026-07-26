@@ -176,7 +176,7 @@ export function renderTrackerView(container, props) {
   // shouldn't sit at the same visual weight as Undo.
   const resetButton = document.createElement('button');
   resetButton.type = 'button';
-  resetButton.className = 'btn btn--danger btn--icon-only';
+  resetButton.className = 'btn btn--ghost btn--icon-only';
   resetButton.textContent = '\ud83d\udd04';
   resetButton.setAttribute('aria-label', 'Reset session');
   resetButton.title = 'Reset Session';

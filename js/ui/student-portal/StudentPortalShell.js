@@ -37,7 +37,7 @@ export function renderStudentPortalShell(container, { activeSection, onNavigateS
   const backLink = document.createElement('button');
   backLink.type = 'button';
   backLink.className = 'student-portal__back-link';
-  backLink.textContent = '\u2190 ClassMate';
+  backLink.textContent = '\u2190 Home';
   backLink.addEventListener('click', onBackToLanding);
   topBar.appendChild(backLink);
 

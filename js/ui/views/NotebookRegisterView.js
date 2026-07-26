@@ -97,7 +97,7 @@ export function renderNotebookRegisterView(container, props) {
 
   const prevButton = document.createElement('button');
   prevButton.type = 'button';
-  prevButton.className = 'btn btn--text';
+  prevButton.className = 'btn btn--icon-only';
   prevButton.textContent = '\u2190';
   prevButton.setAttribute('aria-label', 'Previous day');
   prevButton.addEventListener('click', () => onNavigateDate(shiftDateKey(dateKey, -1)));
@@ -135,7 +135,7 @@ export function renderNotebookRegisterView(container, props) {
 
   const nextButton = document.createElement('button');
   nextButton.type = 'button';
-  nextButton.className = 'btn btn--text';
+  nextButton.className = 'btn btn--icon-only';
   nextButton.textContent = '\u2192';
   nextButton.setAttribute('aria-label', 'Next day');
   nextButton.addEventListener('click', () => onNavigateDate(shiftDateKey(dateKey, 1)));

@@ -232,10 +232,25 @@ select:focus {
   transition: transform var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard);
 }
 /*
- * Icon-only variant — "keep it clean by replacing text with icons."
- * Square, centered, sized for a single glyph; aria-label/title on the
- * button itself carry what the text used to say, so this stays
- * accessible even without visible text.
+ * Icon-only variant — the shared circular button used for every
+ * icon-only action across the app (Undo, Notebook, Reset Session,
+ * and others migrated to this same treatment — see this project's
+ * CHANGELOG for the design-system rule this implements: icon-only
+ * actions are circular, icon+text actions are pill-shaped).
+ *
+ * Deliberately owns its own background/border/color here, overriding
+ * whatever variant class (.btn--ghost, .btn--danger, etc.) is also
+ * present on the element — the whole point is that these buttons look
+ * identical to each other regardless of what they do, with the icon
+ * itself providing the only distinction. A permanently blue "undo" or
+ * red "reset" button was coloring actions that aren't actually
+ * distinct in severity; red stays reserved for genuinely destructive
+ * actions (delete a classroom, remove a student) that use ordinary
+ * labeled buttons, not this circular treatment, so there's no
+ * competing red circular button anywhere to be confused with those.
+ *
+ * aria-label/title on the button itself carry what visible text used
+ * to say, so this stays accessible even without a label.
  */
 .btn--icon-only {
   display: inline-flex;
@@ -245,6 +260,14 @@ select:focus {
   height: 2.5rem;
   padding: 0;
   font-size: 1.2rem;
+  border-radius: var(--radius-pill);
+  border: 2px solid var(--color-border);
+  background-color: var(--color-surface);
+  color: var(--color-ink);
+}
+.btn--icon-only:hover:not(:disabled) {
+  background-color: var(--color-bg);
+  border-color: var(--color-muted);
 }
 
 .btn:active {
