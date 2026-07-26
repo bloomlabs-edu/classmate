@@ -15,6 +15,7 @@
  */
 
 import { createEmptyStateElement } from './EmptyState.js';
+import { createIcon } from './Icon.js';
 
 export function createContinueWorkingWidgetElement({ entries, onOpenNotebook }) {
   const widget = document.createElement('div');
@@ -22,7 +23,8 @@ export function createContinueWorkingWidgetElement({ entries, onOpenNotebook }) 
 
   const heading = document.createElement('h2');
   heading.className = 'dashboard-widget__heading';
-  heading.textContent = '\ud83d\udd52 Continue Working';
+  heading.appendChild(createIcon('clock', { size: 18 }));
+  heading.append('Continue Working');
   widget.appendChild(heading);
 
   if (entries.length === 0) {

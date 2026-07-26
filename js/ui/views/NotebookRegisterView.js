@@ -22,6 +22,7 @@ import { createNotebookRosterElement } from '../components/NotebookRoster.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { getTodayDateKey, shiftDateKey, formatDateKey } from '../../utils/dateHelpers.js';
 import { createDebouncedFunction } from '../../utils/debounce.js';
+import { createIcon } from '../components/Icon.js';
 
 const debouncedSave = createDebouncedFunction((classroom) => workspaceService.save(classroom), 400);
 
@@ -69,7 +70,8 @@ export function renderNotebookRegisterView(container, props) {
   const backButton = document.createElement('button');
   backButton.type = 'button';
   backButton.className = 'btn btn--text';
-  backButton.textContent = '\u2190 Back to Notebook Tracker';
+  backButton.appendChild(createIcon('arrow-left'));
+  backButton.append('Back to Notebook Tracker');
   backButton.addEventListener('click', onBack);
 
   const titleBlock = document.createElement('div');
@@ -85,7 +87,8 @@ export function renderNotebookRegisterView(container, props) {
   const timelineButton = document.createElement('button');
   timelineButton.type = 'button';
   timelineButton.className = 'btn btn--ghost';
-  timelineButton.textContent = '\ud83d\udcc5 Timeline';
+  timelineButton.appendChild(createIcon('calendar', { size: 16 }));
+  timelineButton.append('Timeline');
   timelineButton.addEventListener('click', onOpenTimeline);
   actions.appendChild(timelineButton);
 
@@ -98,7 +101,7 @@ export function renderNotebookRegisterView(container, props) {
   const prevButton = document.createElement('button');
   prevButton.type = 'button';
   prevButton.className = 'btn btn--icon-only';
-  prevButton.textContent = '\u2190';
+  prevButton.appendChild(createIcon('arrow-left'));
   prevButton.setAttribute('aria-label', 'Previous day');
   prevButton.addEventListener('click', () => onNavigateDate(shiftDateKey(dateKey, -1)));
 
@@ -136,7 +139,7 @@ export function renderNotebookRegisterView(container, props) {
   const nextButton = document.createElement('button');
   nextButton.type = 'button';
   nextButton.className = 'btn btn--icon-only';
-  nextButton.textContent = '\u2192';
+  nextButton.appendChild(createIcon('arrow-right'));
   nextButton.setAttribute('aria-label', 'Next day');
   nextButton.addEventListener('click', () => onNavigateDate(shiftDateKey(dateKey, 1)));
 

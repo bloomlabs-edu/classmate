@@ -17,12 +17,14 @@
  * "views own their content, shells own layout" split.
  */
 
+import { createIcon } from '../components/Icon.js';
+
 const SECTIONS = [
-  { id: 'home', icon: '\ud83c\udfe0', label: 'Home' },
-  { id: 'achievements', icon: '\ud83c\udfc5', label: 'Achievements' },
-  { id: 'team', icon: '\ud83d\udc65', label: 'Team' },
-  { id: 'learn', icon: '\ud83d\udcda', label: 'Learn' },
-  { id: 'profile', icon: '\ud83d\udc64', label: 'Profile' },
+  { id: 'home', icon: 'home', label: 'Home' },
+  { id: 'achievements', icon: 'award', label: 'Achievements' },
+  { id: 'team', icon: 'users', label: 'Team' },
+  { id: 'learn', icon: 'book-open', label: 'Learn' },
+  { id: 'profile', icon: 'user', label: 'Profile' },
 ];
 
 export function renderStudentPortalShell(container, { activeSection, onNavigateSection, renderSectionContent, onBackToLanding }) {
@@ -37,7 +39,8 @@ export function renderStudentPortalShell(container, { activeSection, onNavigateS
   const backLink = document.createElement('button');
   backLink.type = 'button';
   backLink.className = 'student-portal__back-link';
-  backLink.textContent = '\u2190 Home';
+  backLink.appendChild(createIcon('arrow-left'));
+  backLink.append('Home');
   backLink.addEventListener('click', onBackToLanding);
   topBar.appendChild(backLink);
 
@@ -52,10 +55,7 @@ export function renderStudentPortalShell(container, { activeSection, onNavigateS
       'student-portal__tab' + (section.id === activeSection ? ' student-portal__tab--active' : '');
     tab.setAttribute('aria-current', section.id === activeSection ? 'page' : 'false');
 
-    const icon = document.createElement('span');
-    icon.className = 'student-portal__tab-icon';
-    icon.setAttribute('aria-hidden', 'true');
-    icon.textContent = section.icon;
+    const icon = createIcon(section.icon, { className: 'student-portal__tab-icon' });
 
     const label = document.createElement('span');
     label.className = 'student-portal__tab-label';

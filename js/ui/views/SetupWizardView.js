@@ -93,11 +93,10 @@ function renderOverview(container, classroom, { onNavigateStep, onFinish }) {
   );
 
   STEP_KEYS.forEach((key) => {
-    const isComingSoon = key === 'inviteTeachers';
-    const done = !isComingSoon && setupProgressService.isStepDone(classroom, key);
+    const done = setupProgressService.isStepDone(classroom, key);
     checklist.appendChild(
       createChecklistRow({
-        label: STEP_LABELS[key] + (isComingSoon ? ' (Coming Soon)' : ''),
+        label: STEP_LABELS[key],
         done,
         interactive: true,
         onClick: () => onNavigateStep(key),
@@ -567,20 +566,51 @@ function renderConfigureScoringStep(content, classroom, { advance }) {
 }
 
 function renderInviteTeachersStep(content, classroom, { finish }) {
-  const badge = document.createElement('span');
-  badge.className = 'wizard-badge';
-  badge.textContent = 'Coming Soon';
-  content.appendChild(badge);
+  const intro = document.createElement('p');
+  intro.className = 'wizard-step__intro';
+  intro.textContent =
+    "If you're co-teaching this classroom, share this code so another teacher can join with their own account. Skip this if you're teaching solo — you can always share it later from Settings.";
+  content.appendChild(intro);
 
-  const explanation = document.createElement('p');
-  explanation.className = 'wizard-step__intro';
-  explanation.textContent = 'Invite additional teachers after cloud synchronization is enabled.';
-  content.appendChild(explanation);
+  const codeDisplay = document.createElement('div');
+  codeDisplay.className = 'invite-students-card__code';
+  codeDisplay.textContent = classroom.classroomJoinCode || 'Generating…';
+  content.appendChild(codeDisplay);
 
-  const finishButton = document.createElement('button');
-  finishButton.type = 'button';
-  finishButton.className = 'btn btn--primary';
-  finishButton.textContent = 'Go to Tracker';
-  finishButton.addEventListener('click', finish);
-  content.appendChild(finishButton);
+  const actions = document.createElement('div');
+  actions.className = 'wizard-step__actions';
+
+  const shareButton = document.createElement('button');
+  shareButton.type = 'button';
+  shareButton.className = 'btn btn--primary';
+  shareButton.textContent = 'Share Code & Continue';
+  shareButton.addEventListener('click', async () => {
+    const code = classroom.classroomJoinCode;
+    const shareText = `Join ${classroom.classroomName || 'our classroom'} on ClassMate as a co-teacher. Classroom Code: ${code}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Join our classroom', text: shareText });
+      } catch (error) {
+        // Cancelled or unavailable — fall through to marking done anyway, the code is still visible on screen.
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(shareText);
+      } catch (error) {
+        console.error('[SetupWizardView] Failed to copy join code:', error);
+      }
+    }
+    setupProgressService.markStepDone(classroom, 'inviteTeachers');
+    workspaceService.save(classroom);
+    finish();
+  });
+
+  const skipButton = document.createElement('button');
+  skipButton.type = 'button';
+  skipButton.className = 'btn btn--text';
+  skipButton.textContent = 'Skip — teaching solo';
+  skipButton.addEventListener('click', finish);
+
+  actions.append(shareButton, skipButton);
+  content.appendChild(actions);
 }

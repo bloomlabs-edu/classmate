@@ -18,6 +18,7 @@
  */
 
 import * as workspaceService from '../../../services/workspaceService.js';
+import { createIcon } from '../../components/Icon.js';
 
 export function renderStudentJoinClassroomView(container, { onClassroomResolved }) {
   container.innerHTML = '';
@@ -25,10 +26,7 @@ export function renderStudentJoinClassroomView(container, { onClassroomResolved 
   const wrapper = document.createElement('div');
   wrapper.className = 'student-join-code';
 
-  const icon = document.createElement('span');
-  icon.className = 'student-join-code__icon';
-  icon.setAttribute('aria-hidden', 'true');
-  icon.textContent = '\ud83c\udf93';
+  const icon = createIcon('graduation-cap', { className: 'student-join-code__icon', size: 32, strokeWidth: 1.5 });
 
   const title = document.createElement('h1');
   title.className = 'student-join-code__title';

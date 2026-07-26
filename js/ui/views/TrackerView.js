@@ -40,6 +40,7 @@ import { openAddNoteModal } from '../components/AddNoteModal.js';
 import { showToast } from '../components/Toast.js';
 import { renderSessionReview } from '../components/SessionReview.js';
 import { openUnsavedSessionDialog } from '../components/UnsavedSessionDialog.js';
+import { createIcon } from '../components/Icon.js';
 import * as studentService from '../../services/studentService.js';
 import * as badgeService from '../../services/badgeService.js';
 import * as noteService from '../../services/noteService.js';
@@ -89,7 +90,8 @@ export function renderTrackerView(container, props) {
   const backButton = document.createElement('button');
   backButton.type = 'button';
   backButton.className = 'btn btn--text';
-  backButton.textContent = '\u2190 Exit Class';
+  backButton.appendChild(createIcon('arrow-left'));
+  backButton.append('Exit Class');
   backButton.addEventListener('click', () => {
     const { totalActions } = classSessionService.getSessionSummary(classroom);
     if (totalActions === 0) {
@@ -142,7 +144,7 @@ export function renderTrackerView(container, props) {
   const undoButton = document.createElement('button');
   undoButton.type = 'button';
   undoButton.className = 'btn btn--ghost btn--icon-only';
-  undoButton.textContent = '\u21a9\ufe0f';
+  undoButton.appendChild(createIcon('undo-2'));
   undoButton.setAttribute('aria-label', 'Undo last action');
   undoButton.title = 'Undo';
   undoButton.disabled = !classModeService.canUndo(classroom);
@@ -164,7 +166,7 @@ export function renderTrackerView(container, props) {
   const notebooksButton = document.createElement('button');
   notebooksButton.type = 'button';
   notebooksButton.className = 'btn btn--ghost btn--icon-only';
-  notebooksButton.textContent = '\ud83d\udcd2';
+  notebooksButton.appendChild(createIcon('notebook-text'));
   notebooksButton.setAttribute('aria-label', 'Notebook Tracker');
   notebooksButton.title = 'Notebook Tracker';
   notebooksButton.addEventListener('click', onNotebooks);
@@ -177,7 +179,7 @@ export function renderTrackerView(container, props) {
   const resetButton = document.createElement('button');
   resetButton.type = 'button';
   resetButton.className = 'btn btn--ghost btn--icon-only';
-  resetButton.textContent = '\ud83d\udd04';
+  resetButton.appendChild(createIcon('rotate-ccw'));
   resetButton.setAttribute('aria-label', 'Reset session');
   resetButton.title = 'Reset Session';
   resetButton.disabled = !hasStudents;

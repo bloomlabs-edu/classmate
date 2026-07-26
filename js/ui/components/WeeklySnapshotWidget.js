@@ -17,6 +17,7 @@
 import * as studentProgressService from '../../services/studentProgressService.js';
 import { getWeekRange } from '../../utils/dateHelpers.js';
 import { createEmptyStateElement } from './EmptyState.js';
+import { createIcon, createIconBadge } from './Icon.js';
 
 /**
  * A small, reliable rank indicator — a colored circular badge for the
@@ -45,7 +46,8 @@ export function createWeeklySnapshotWidgetElement({ classroom }) {
 
   const heading = document.createElement('h2');
   heading.className = 'dashboard-widget__heading';
-  heading.textContent = '\ud83d\udcc8 Weekly Snapshot';
+  heading.appendChild(createIconBadge('trending-up', 'progress', { size: 28 }));
+  heading.append('Weekly Snapshot');
   widget.appendChild(heading);
 
   const weekRange = getWeekRange();
@@ -63,7 +65,7 @@ export function createWeeklySnapshotWidgetElement({ classroom }) {
   kpiCard.className = 'kpi-card';
   const kpiIcon = document.createElement('span');
   kpiIcon.className = 'kpi-card__icon';
-  kpiIcon.textContent = '\ud83d\udcd2';
+  kpiIcon.textContent = '\u2b50';
   kpiIcon.setAttribute('aria-hidden', 'true');
   const kpiNumber = document.createElement('span');
   kpiNumber.className = 'kpi-card__number';
@@ -105,7 +107,8 @@ export function createWeeklySnapshotWidgetElement({ classroom }) {
   if (championTeams.length > 0) {
     const championHeading = document.createElement('h3');
     championHeading.className = 'dashboard-widget__subheading';
-    championHeading.textContent = '\ud83e\udd1d Team Champion';
+    championHeading.appendChild(createIcon('users', { size: 16 }));
+    championHeading.append(' Team Champion');
     widget.appendChild(championHeading);
 
     const championLine = document.createElement('p');

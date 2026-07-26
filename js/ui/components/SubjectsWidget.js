@@ -20,6 +20,7 @@
 
 import * as notebookConfigService from '../../services/notebookConfigService.js';
 import { createEmptyStateElement } from './EmptyState.js';
+import { createIconBadge } from './Icon.js';
 
 export function createSubjectsWidgetElement({ classroom, onOpenNotebookTracker }) {
   const widget = document.createElement('div');
@@ -27,7 +28,8 @@ export function createSubjectsWidgetElement({ classroom, onOpenNotebookTracker }
 
   const heading = document.createElement('h2');
   heading.className = 'dashboard-widget__heading';
-  heading.textContent = '\ud83d\udcda Subjects';
+  heading.appendChild(createIconBadge('book-open', 'notebook', { size: 28 }));
+  heading.append('Subjects');
   widget.appendChild(heading);
 
   const subjects = notebookConfigService.listSubjects(classroom);

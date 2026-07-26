@@ -9,8 +9,10 @@
  * elsewhere in the app — see services/bucketService.js).
  *
  * PROGRESS_STEP_KEYS lists the Setup Wizard steps that count toward the
- * progress percentage. "Invite Teachers" is deliberately excluded — it's
- * Coming Soon and not yet an actionable step.
+ * progress percentage. "Invite Teachers" is included here — the
+ * co-teacher join-code mechanism it depends on already exists and
+ * works (see services/workspaceService.js's joinClassroomByCode()),
+ * so there's no longer a reason to exclude it as not-yet-actionable.
  */
 
 import { DEFAULT_BADGE_CATALOG } from './badgeConfig.js';
@@ -21,6 +23,7 @@ export const PROGRESS_STEP_KEYS = Object.freeze([
   'assignBuckets',
   'customizeGroups',
   'configureScoring',
+  'inviteTeachers',
 ]);
 
 export function buildDefaultSettings() {

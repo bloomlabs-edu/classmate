@@ -252,6 +252,30 @@ select:focus {
  * aria-label/title on the button itself carry what visible text used
  * to say, so this stays accessible even without a label.
  */
+.icon {
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+/* Category badge — soft colored circle behind a neutral icon, see Icon.js's createIconBadge() and docs/icon-design-guide.md */
+.icon-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.icon-badge .icon {
+  stroke-width: 1.8;
+}
+
+/* Icon + text pill buttons get a consistent gap between the icon and its label, per the design guide's spacing rule */
+.btn:has(.icon) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .btn--icon-only {
   display: inline-flex;
   align-items: center;
@@ -334,6 +358,22 @@ select:focus {
      "pressing in." */
   background-color: color-mix(in srgb, var(--color-primary-deep) 80%, black);
   border-color: color-mix(in srgb, var(--color-primary-deep) 80%, black);
+}
+
+/* Student Portal and its onboarding screens use the student category's
+   button color instead of the app-wide primary blue, so the whole
+   student-facing experience feels consistently themed, not just the
+   Landing page card that identifies it from outside. */
+.student-portal .btn--primary,
+.student-join-code .btn--primary {
+  background-color: #ff9b65;
+  border-color: transparent;
+  color: #ffffff;
+}
+.student-portal .btn--primary:hover:not(:disabled),
+.student-join-code .btn--primary:hover:not(:disabled) {
+  background-color: color-mix(in srgb, #ff9b65 80%, black);
+  border-color: color-mix(in srgb, #ff9b65 80%, black);
 }
 
 .btn--ghost {
@@ -768,6 +808,22 @@ select:focus-visible,
 .tracker-header .btn--ghost:hover:not(:disabled) {
   background-color: color-mix(in srgb, var(--color-on-primary-deep) 15%, transparent);
   border-color: var(--color-on-primary-deep);
+}
+/* Undo/Notebook/Reset carry both .btn--ghost and .btn--icon-only —
+   the rule above was written for the header's older text-style ghost
+   buttons and was overriding the icon-only circle's own dark icon
+   color with white, making the icon invisible against its own white
+   circle. The icon-only circular treatment must always win regardless
+   of context, so this needs to come after and match specificity. */
+.tracker-header .btn--icon-only {
+  color: var(--color-ink);
+  border-color: var(--color-border);
+  background-color: var(--color-surface);
+  text-shadow: none;
+}
+.tracker-header .btn--icon-only:hover:not(:disabled) {
+  background-color: var(--color-bg);
+  border-color: var(--color-muted);
 }
 .tracker-header .btn--danger {
   border-color: transparent;
@@ -2643,6 +2699,9 @@ button.wizard-checklist__row:hover {
   margin: 0 0 0.75rem;
   font-size: var(--text-lg);
   font-weight: var(--font-weight-bold);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
 }
 
 .dashboard-widget__subheading {
@@ -3499,7 +3558,7 @@ button.wizard-checklist__row:hover {
   padding: 0.25rem 0.5rem;
 }
 .student-portal__back-link:hover {
-  color: var(--color-primary);
+  color: #BF5F1A;
 }
 
 .student-portal__nav {
@@ -3530,8 +3589,8 @@ button.wizard-checklist__row:hover {
   font-weight: var(--font-weight-bold);
 }
 .student-portal__tab--active {
-  background-color: #fff0dc;
-  color: #b8631a;
+  background-color: #FDEEE0;
+  color: #BF5F1A;
 }
 
 .student-portal__content {

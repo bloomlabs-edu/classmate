@@ -18,6 +18,7 @@
  */
 
 import { linkWithPin, linkWithInvitationToken } from '../../../services/studentIdentityService.js';
+import { createIcon } from '../../components/Icon.js';
 
 export function renderStudentLinkView(container, { invitationToken, onLinked }) {
   container.innerHTML = '';
@@ -57,10 +58,7 @@ function renderPinEntry(container, { onLinked, fallbackNotice }) {
   const wrapper = document.createElement('div');
   wrapper.className = 'student-join-code';
 
-  const icon = document.createElement('span');
-  icon.className = 'student-join-code__icon';
-  icon.setAttribute('aria-hidden', 'true');
-  icon.textContent = '\ud83d\udd11';
+  const icon = createIcon('key', { className: 'student-join-code__icon', size: 32, strokeWidth: 1.5 });
 
   const title = document.createElement('h1');
   title.className = 'student-join-code__title';

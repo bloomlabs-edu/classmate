@@ -15,6 +15,7 @@
  */
 
 import { createEmptyStateElement } from './EmptyState.js';
+import { createIconBadge } from './Icon.js';
 
 const MAX_VISIBLE_AVATARS = 3;
 
@@ -30,7 +31,8 @@ export function createGroupsWidgetElement({ classroom, onOpenGroups }) {
 
   const heading = document.createElement('h2');
   heading.className = 'dashboard-widget__heading';
-  heading.textContent = '\ud83d\udc65 Groups';
+  heading.appendChild(createIconBadge('users', 'groups', { size: 28 }));
+  heading.append('Groups');
   widget.appendChild(heading);
 
   // Same reasoning as Settings' Groups tab: the automatic Ungrouped

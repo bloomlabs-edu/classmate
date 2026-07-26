@@ -10,6 +10,7 @@
  */
 
 import { getBucketLabel } from '../../config/bucketConfig.js';
+import { createIcon } from './Icon.js';
 
 export function openQuickActionsSheet({
   student,
@@ -51,20 +52,20 @@ export function openQuickActionsSheet({
   function renderMainActions() {
     actionsList.innerHTML = '';
     actionsList.appendChild(
-      createSheetAction('\u2b50', 'Award Badge', () => {
+      createSheetAction(createEmojiIcon('\u2b50'), 'Award Badge', () => {
         close();
         onAwardBadge();
       })
     );
     actionsList.appendChild(
-      createSheetAction('\ud83d\udcdd', 'Add Note', () => {
+      createSheetAction(createIcon('file-text', { size: 18 }), 'Add Note', () => {
         close();
         onAddNote();
       })
     );
-    actionsList.appendChild(createSheetAction('\ud83e\udea3', 'Change Bucket', renderBucketOptions));
+    actionsList.appendChild(createSheetAction(createIcon('folder', { size: 18 }), 'Change Bucket', renderBucketOptions));
     actionsList.appendChild(
-      createSheetAction('\ud83d\udc64', 'Open Full Profile', () => {
+      createSheetAction(createIcon('user', { size: 18 }), 'Open Full Profile', () => {
         close();
         onOpenProfile();
       })
@@ -76,13 +77,13 @@ export function openQuickActionsSheet({
     bucketOptions.forEach(({ key, label }) => {
       const isCurrent = student.bucket === key;
       actionsList.appendChild(
-        createSheetAction('', label + (isCurrent ? ' (current)' : ''), () => {
+        createSheetAction(null, label + (isCurrent ? ' (current)' : ''), () => {
           close();
           onChangeBucket(key);
         })
       );
     });
-    actionsList.appendChild(createSheetAction('\u2190', 'Back', renderMainActions));
+    actionsList.appendChild(createSheetAction(createIcon('arrow-left', { size: 18 }), 'Back', renderMainActions));
   }
 
   renderMainActions();
@@ -107,16 +108,14 @@ export function openQuickActionsSheet({
   });
 }
 
-function createSheetAction(icon, label, onClick) {
+function createSheetAction(iconElement, label, onClick) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'bottom-sheet__action';
 
-  if (icon) {
-    const iconSpan = document.createElement('span');
-    iconSpan.className = 'bottom-sheet__action-icon';
-    iconSpan.textContent = icon;
-    button.appendChild(iconSpan);
+  if (iconElement) {
+    iconElement.classList.add('bottom-sheet__action-icon');
+    button.appendChild(iconElement);
   }
 
   const labelSpan = document.createElement('span');
@@ -125,4 +124,11 @@ function createSheetAction(icon, label, onClick) {
 
   button.addEventListener('click', onClick);
   return button;
+}
+
+function createEmojiIcon(emoji) {
+  const span = document.createElement('span');
+  span.setAttribute('aria-hidden', 'true');
+  span.textContent = emoji;
+  return span;
 }

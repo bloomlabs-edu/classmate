@@ -16,17 +16,17 @@ export const PENDING_TASK_TYPES = Object.freeze([
   {
     id: 'notebook_not_checked_today',
     label: 'Notebook not checked today',
-    icon: '\ud83d\udcd2', // 📒
+    icon: 'notebook-text',
   },
   {
     id: 'activity_awaiting_completion',
     label: 'Activities awaiting completion',
-    icon: '\ud83d\udcdd', // 📝
+    icon: 'clipboard-list',
   },
   {
     id: 'homework_awaiting_review',
     label: 'Homework awaiting review',
-    icon: '\u26a0', // ⚠
+    icon: 'alert-triangle',
   },
 ]);
 

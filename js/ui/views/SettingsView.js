@@ -32,6 +32,7 @@ import * as notebookConfigService from '../../services/notebookConfigService.js'
 import { getDisplayName, ClassroomValidationError, ensureJoinCode, getOrCreateUngroupedTeam } from '../../services/classroomService.js';
 import * as classroomImportService from '../../services/classroomImportService.js';
 import { ClassroomImportError } from '../../services/classroomImportService.js';
+import { createIcon } from '../components/Icon.js';
 import { openImportPreviewModal } from '../components/ImportPreviewModal.js';
 import { MEMBER_ROLES, PERMISSIONS, ROLE_PERMISSIONS } from '../../config/memberRoles.js';
 import { showToast } from '../components/Toast.js';
@@ -55,9 +56,9 @@ const SECTIONS = ['class', 'learning', 'classroom'];
 let pendingImportSuccess = null;
 
 const SECTION_LABELS = {
-  class: '\ud83d\udc65 Class',
-  learning: '\ud83d\udcda Learning',
-  classroom: '\u2699\ufe0f Classroom',
+  class: { icon: 'users', text: 'Class' },
+  learning: { icon: 'book-open', text: 'Learning' },
+  classroom: { icon: 'settings', text: 'Classroom' },
 };
 
 export function renderSettingsView(container, { classroom, currentUser, section, onBack, onNavigateSection, onOpenStudentAccess, onDeleted, onReopenSetupWizard }) {
@@ -84,7 +85,8 @@ export function renderSettingsView(container, { classroom, currentUser, section,
   const backButton = document.createElement('button');
   backButton.type = 'button';
   backButton.className = 'btn btn--text';
-  backButton.textContent = '← Back';
+  backButton.appendChild(createIcon('arrow-left'));
+  backButton.append('Back');
   backButton.addEventListener('click', onBack);
 
   const title = document.createElement('h1');
@@ -102,7 +104,8 @@ export function renderSettingsView(container, { classroom, currentUser, section,
     tabButton.type = 'button';
     tabButton.className =
       'settings-tabs__tab' + (key === activeSection ? ' settings-tabs__tab--active' : '');
-    tabButton.textContent = SECTION_LABELS[key];
+    tabButton.appendChild(createIcon(SECTION_LABELS[key].icon, { size: 16 }));
+    tabButton.append(SECTION_LABELS[key].text);
     tabButton.addEventListener('click', () => onNavigateSection(key));
     tabs.appendChild(tabButton);
   });
@@ -292,9 +295,9 @@ function renderSetupProgressBlock(classroom, onReopenSetupWizard) {
     list.appendChild(createStatusRow(label, setupProgressService.isStepDone(classroom, key)));
   });
 
-  // Teacher Collaboration has no on/off state yet — it's Coming Soon
-  // regardless, same as the wizard's Invite Teachers step.
-  list.appendChild(createStatusRow('Teacher Collaboration (Coming Soon)', false));
+  // Teacher Collaboration now has a real on/off state — the co-teacher
+  // join-code mechanism it depends on already exists and works.
+  list.appendChild(createStatusRow('Teacher Collaboration', setupProgressService.isStepDone(classroom, 'inviteTeachers')));
 
   block.appendChild(list);
 
@@ -359,7 +362,8 @@ function renderStudentsSection(content, classroom, rerender, onOpenStudentAccess
   const uploadButton = document.createElement('button');
   uploadButton.type = 'button';
   uploadButton.className = 'btn btn--ghost';
-  uploadButton.textContent = '\ud83d\udcc4 Upload Student List';
+  uploadButton.appendChild(createIcon('file-up', { size: 16 }));
+  uploadButton.append('Upload Student List');
 
   const divider = document.createElement('span');
   divider.className = 'settings-action-bar__divider';
@@ -920,10 +924,7 @@ function renderPermissionsSection(content, classroom) {
     const emptyState = document.createElement('div');
     emptyState.className = 'settings-empty-state';
 
-    const icon = document.createElement('span');
-    icon.className = 'settings-empty-state__icon';
-    icon.setAttribute('aria-hidden', 'true');
-    icon.textContent = '\ud83d\udd10';
+    const icon = createIcon('lock', { className: 'settings-empty-state__icon', size: 28, strokeWidth: 1.5 });
 
     const title = document.createElement('h3');
     title.className = 'settings-empty-state__title';

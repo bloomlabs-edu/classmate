@@ -17,6 +17,8 @@
  * exists one level above both, at the platform layer.
  */
 
+import { createIconBadge, ICON_CATEGORIES } from '../components/Icon.js';
+
 export function renderLandingView(container, { onContinueAsTeacher, onContinueAsStudent }) {
   container.innerHTML = '';
 
@@ -37,7 +39,8 @@ export function renderLandingView(container, { onContinueAsTeacher, onContinueAs
   journeys.className = 'landing-view__journeys';
 
   const teacherCard = createJourneyCard({
-    icon: '\ud83d\udcca',
+    icon: 'chalkboard-easel',
+    category: 'teacher',
     title: 'Teacher Portal',
     description: 'Manage students, groups, recognition, notebooks and classroom progress.',
     buttonLabel: 'Enter Teacher Portal',
@@ -45,7 +48,8 @@ export function renderLandingView(container, { onContinueAsTeacher, onContinueAs
   });
 
   const studentCard = createJourneyCard({
-    icon: '\ud83c\udf93',
+    icon: 'graduation-cap',
+    category: 'student',
     title: 'Student Portal',
     description: 'View your progress, achievements, notebook updates and learning journey.',
     buttonLabel: 'Enter Student Portal',
@@ -57,14 +61,12 @@ export function renderLandingView(container, { onContinueAsTeacher, onContinueAs
   container.appendChild(wrapper);
 }
 
-function createJourneyCard({ icon, title, description, buttonLabel, onSelect }) {
+function createJourneyCard({ icon, category, title, description, buttonLabel, onSelect }) {
   const card = document.createElement('div');
   card.className = 'landing-view__journey-card';
 
-  const iconEl = document.createElement('span');
-  iconEl.className = 'landing-view__journey-icon';
-  iconEl.setAttribute('aria-hidden', 'true');
-  iconEl.textContent = icon;
+  const iconEl = createIconBadge(icon, category, { size: 48 });
+  iconEl.classList.add('landing-view__journey-icon');
 
   const titleEl = document.createElement('h2');
   titleEl.className = 'landing-view__journey-title';
@@ -78,6 +80,16 @@ function createJourneyCard({ icon, title, description, buttonLabel, onSelect }) 
   button.type = 'button';
   button.className = 'btn btn--primary btn--large';
   button.textContent = buttonLabel;
+  // Categories that define their own "button" brand color (distinct
+  // from the softer icon color) override the default primary-blue
+  // button styling — Student's button stays the bolder ff9b65 the
+  // icon badge itself doesn't use, per this app's CHANGELOG.
+  const categoryButtonColor = ICON_CATEGORIES[category]?.button;
+  if (categoryButtonColor) {
+    button.style.backgroundColor = categoryButtonColor;
+    button.style.borderColor = categoryButtonColor;
+    button.style.color = '#ffffff';
+  }
   button.addEventListener('click', onSelect);
 
   card.append(iconEl, titleEl, descriptionEl, button);

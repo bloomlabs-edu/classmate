@@ -37,6 +37,8 @@
  * on minors, and consistent with the Student Dashboard preview design.
  */
 
+import { createIcon } from './Icon.js';
+
 function getInitials(name) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return '?';
@@ -101,7 +103,11 @@ export function createRecognitionCardElement({ category, winners, period, varian
     avatar.className = isTeamWinner(winner)
       ? 'recognition-card__avatar recognition-card__avatar--team'
       : 'recognition-card__avatar';
-    avatar.textContent = isTeamWinner(winner) ? '\ud83d\udc65' : getInitials(winner.studentName);
+    if (isTeamWinner(winner)) {
+      avatar.appendChild(createIcon('users', { size: 18 }));
+    } else {
+      avatar.textContent = getInitials(winner.studentName);
+    }
 
     const name = document.createElement('span');
     name.className = 'recognition-card__winner-name';

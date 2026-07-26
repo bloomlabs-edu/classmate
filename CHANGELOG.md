@@ -2282,3 +2282,155 @@ Confirmed via computed-style comparison (not just a visual check) that Undo, Not
 
 ### Future TODOs
 - (Carried over, unchanged): resume broader Settings redesign feature work; wire the Student Portal's own dashboard content to the actually-joined student; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; consolidate avatar implementations; `firestore.rules` review; role-based routing; all previously-listed items.
+
+---
+
+## Lucide Icon Migration — Design System Foundation, Functional Icons Migrated, Celebration Emojis Preserved
+
+**Context:** replacing emoji-based navigation and functional icons with a proper, self-hosted Lucide icon system, while explicitly preserving emoji for celebration/recognition/emotion — implementing the audit and mapping table proposed and confirmed across the prior two phases.
+
+### Foundation
+`ui/components/Icon.js` — self-hosted Lucide SVG path data (no CDN dependency, consistent with this project's own established caution about third-party resources stalling on restricted school networks), `createIcon(name, { size, strokeWidth, className })`, `stroke="currentColor"` so every icon inherits its container's color automatically. Grew from ~25 to 28 icons as migration surfaced real needs (`award`, `file-text` added along the way).
+
+### What migrated
+Back/forward navigation across every view (`TrackerView`, `UserBar`, `StudentPortalShell`, `SettingsView`, both Notebook views, `ActivitiesView`, `RecognitionScreenView`, `StudentAccessView`, `StudentProfileView`); Class Mode's Undo/Notebook/Reset and Exit Class; the Student Portal's entire 5-tab navigation (Home/Achievements/Team/Learn/Profile); Landing page's Teacher/Student Portal identifier icons; Settings' 3-section tabs, Upload button, and Permissions empty-state icon; the Dashboard widgets (Pending Tasks, Weekly Snapshot, Subjects, Continue Working); Quick Actions Sheet's action icons; the Recognition Wall's team-winner avatar and "View All" link; and the Student Portal's join/sign-in/link-entry hero icons.
+
+### Genuine exceptions found and *not* migrated, with reasoning
+- **Class Mode's per-student "⋮" menu** — dense, repeating list (up to 40–60 rows); a bordered circle on every row would add real visual noise against this screen's own established "fast scanning" design goal.
+- **Notebook Timeline's day-status symbols** (✅🟡❌🚫⏰•) — checked the actual rendering, not assumed: plain-text string concatenation across a compact multi-day calendar grid, by the config file's own doc comment ("reads cleaner across many dates in a row"). Same density reasoning as Class Mode's menu.
+- **Arrows embedded in prose** ("Settings → Groups", "Bucket Changed: Green → Yellow") — punctuation inside a sentence, not standalone UI icons. Left as plain text.
+- **`recognitionCategories.js`** — entirely untouched, per explicit instruction to defer individual review of category icons.
+
+### A real, pre-existing bug found and fixed while migrating, not related to icons
+`WeeklySnapshotWidget.js`'s stars-count KPI card was using a 📒 notebook icon above a number that's explicitly `totalWeeklyStars` — a mismatch predating this migration. Since stars are explicitly reserved as emoji, the fix was correcting it to ⭐, not migrating it to a Lucide icon.
+
+### A deliberate, flagged inconsistency: the same emoji treated differently by role
+🏅 stays as emoji in Session Review and the Recognition Wall (a celebration moment), but was migrated to Lucide's `award` for the Student Portal's own "Achievements" *navigation tab* — there, it's a wayfinding label, not a celebration. Recorded explicitly in the design guide as the one nuance worth calling out, rather than left as an unexplained inconsistency.
+
+### Three real "missing import" bugs found through actual testing, not syntax-checking
+`node --check` validates syntax only — it cannot catch a call to an undefined function. Live browser testing caught three files (`SettingsView.js`, `StudentSignInView.js`, `StudentLinkView.js`, `StudentJoinClassroomView.js`) where `createIcon()` was called without ever importing it, which would have thrown a runtime error the moment that code actually ran, despite passing every syntax check along the way. Fixed by systematically grep-checking every touched file for "uses `createIcon` but never imports it" as its own explicit verification step, not just re-running `node --check`.
+
+### One duplicate-declaration mistake caught before moving on
+Migrating `StudentJoinClassroomView.js`'s icon, the first edit left both the original `document.createElement('span')` line and the new `createIcon(...)` line assigning to the same `const icon` — caught by reviewing the file afterward, not assumed correct, and fixed before applying the same pattern to the next two files with full context checked first.
+
+### Files Created
+- `js/ui/components/Icon.js`
+- `docs/icon-design-guide.md`
+
+### Files Modified
+Approximately 25 files across `ui/views/`, `ui/components/`, `ui/student-portal/`, and `config/` — see the full list of migrated call sites above; every one syntax-checked individually and re-verified for import correctness.
+
+### Breaking Changes
+None to functionality — purely visual. Button labels, click handlers, and navigation targets are unchanged everywhere; only how each icon renders changed.
+
+### Regression Verification
+Confirmed via live browser testing (not just syntax checks, given the import bugs those alone missed): Landing page portal icons render as real SVGs; the full teacher flow (sign-in → classroom creation → Settings → adding a student → Dashboard → Class Mode) completes with every migrated icon rendering correctly at each step; the Subjects widget's icon correctly appears once a subject is actually configured; the Student Portal's join screen renders its migrated hero icon; and every celebration emoji (⭐, 🏆, 🥇🥈🥉) was explicitly re-confirmed untouched after the full migration pass, not merely assumed preserved.
+
+### Future TODOs
+- Individual review of `recognitionCategories.js`'s icons, deliberately deferred per explicit instruction.
+- (Carried over, unchanged): resume broader Settings redesign feature work; wire the Student Portal's own dashboard content to the actually-joined student; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; consolidate avatar implementations; `firestore.rules` review; role-based routing; all previously-listed items.
+
+---
+
+## Semantic Icon Color System — Implemented Across Portal Pages
+
+**Context:** implementing the semantic color palette from the multi-round mockup/review process (Option B: soft colored circle behind a neutral icon), with Student's color finalized as orange (`#ff9b65`) per explicit approval, including white button text despite the contrast trade-off flagged and accepted along the way.
+
+### Foundation
+- `Icon.js`: added `ICON_CATEGORIES` (the eight agreed categories — Teacher, Student, Groups, Notebook, Recognition, Progress, Activities, Settings) and `createIconBadge(iconName, category, options)`, returning a colored-circle-plus-icon element. Deliberately not applied to Class Mode's toolbar or other dense/repeating contexts (per-row menus, notebook timeline symbols) — those stay neutral, consistent with the exception established earlier in this same design-system work.
+- `styles.css`: added `.icon-badge` as the shared circular-badge component.
+
+### A real inconsistency caught mid-review, not just a color swap
+Testing surfaced that Student's icon circle was using the vivid `#ff9b65` as a solid fill, while Teacher used a pale tint with a rich icon color — structurally different treatments, not just different colors, and the direct cause of the "too saturated" feedback. Fixed by splitting Student into two roles: `#ff9b65` stays exactly where it was approved (the button), while a deeper, same-hue `#BF5F1A` handles the icon specifically, on a matching pale tint (`#FDEEE0`) — mirroring Teacher's actual structure (contrast verified: 4.3:1 for the icon, close to Teacher's own 5.75:1, versus `#ff9b65` itself only ever reaching 2.07:1 as a stroke color).
+
+### White button text — implemented per explicit decision, not my recommendation
+Contrast for white text on `#ff9b65` is 2.07:1, well under both the 4.5:1 text standard and even the 3:1 large-text floor — flagged clearly with the actual numbers and a rendered comparison before this was decided. The person reviewing weighed that trade-off and chose white text anyway; implemented as instructed, not re-litigated.
+
+### Applied across
+- `LandingView.js` — both portal cards use `createIconBadge`; Student's button reads its category's distinct `button` color instead of the shared primary blue.
+- `SubjectsWidget.js`, `WeeklySnapshotWidget.js`, `GroupsWidget.js` — headings migrated to category badges (Notebook, Progress, Groups respectively). `GroupsWidget.js` was still on its original emoji heading, untouched by the earlier Lucide migration — caught and fixed in the same pass rather than left inconsistent.
+- `.dashboard-widget__heading` — added `display: flex` + `gap` so badge and heading text align correctly; removed the now-redundant leading space from four widgets' heading text that this uncovered.
+- Student Portal chrome (`StudentPortalShell.js`'s CSS) — back-link hover and active-tab colors aligned to the official Student tokens, replacing a slightly different pre-existing orange (`#b8631a`/`#fff0dc`) left over from an earlier phase.
+- A new scoped rule (`.student-portal .btn--primary`, `.student-join-code .btn--primary`) themes every primary button inside the Student Portal and its onboarding screens to the Student orange — extending the color scheme to the whole student-facing experience, not just the Landing card, per "across the portal pages."
+
+### Files Modified
+`js/ui/components/Icon.js`, `js/ui/views/LandingView.js`, `js/ui/components/SubjectsWidget.js`, `WeeklySnapshotWidget.js`, `GroupsWidget.js`, `ContinueWorkingWidget.js`, `PendingTasksWidget.js` (heading spacing only), `css/styles.css`.
+
+### Not yet extended to
+Settings' own tab icons (Settings category exists in the token set but wasn't applied there this pass) and Activities (no Dashboard widget currently surfaces this category). Left as-is rather than forcing a category onto a screen that doesn't need one yet.
+
+### Breaking Changes
+None to functionality — visual only. `GroupsWidget.js`'s heading changed from a single text node to icon+text, matching every other migrated widget's structure.
+
+### Regression Verification
+Confirmed via computed-style assertions (background-color, color) rather than visual inspection alone: Student's badge tint, button color, and button text color all match the agreed values exactly; a real subject configured through the actual Settings flow correctly surfaces the Subjects widget with the Notebook-violet badge; the Student Portal's join screen button renders in the Student orange via the new scoped CSS rule.
+
+### Future TODOs
+- Apply category badges to Settings' own section tabs if a future pass wants full palette coverage.
+- (Carried over, unchanged): resume broader Settings redesign feature work; wire the Student Portal's own dashboard content to the actually-joined student; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; `firestore.rules` review; role-based routing; all previously-listed items.
+
+---
+
+## Teacher Portal Icon: Custom Chalkboard-Easel Replaces bar-chart-3
+
+**Context:** `bar-chart-3` read as "analytics/dashboard," not "teacher." Extensive search for a genuine Lucide icon matching "blackboard with chalk" confirmed Lucide has no such icon — `presentation` is the only icon tagged with blackboard/chalk, but is actually a monitor-on-a-stand shape, not a chalkboard. Rather than force-fit an icon that didn't match the actual request, or hand-draw a guess (the mistake made earlier with the Undo icon), built a small custom icon from simple, verifiable geometric primitives matching the person's own reference images.
+
+### Investigation before drawing anything
+Confirmed via web search that Lucide's `presentation` icon exists and is tagged blackboard/chalk/school/lesson, but is a different visual concept (screen on a stand) from a literal chalkboard. Attempted to source its exact path data through several routes (lucide.dev, unpkg, jsDelivr) — got a fully verified alternative (`briefcase`) along the way, but could not retrieve `presentation`'s exact coordinates within reasonable effort. Rather than approximate it from memory, surfaced the trade-off directly and let the actual decision be made with full information.
+
+### The custom icon
+`chalkboard-easel` in `Icon.js` — a rounded rectangle (the board) with two straight lines forming splayed easel legs, and two horizontal lines inside representing content, built at the same 24×24 grid and 2px stroke as every Lucide icon in the file. Deliberately built from only rectangles and straight lines (no curves) — the exact category of mistake made with the Undo icon was curve coordinates guessed from memory; a board-on-legs shape has no such risk. Clearly documented in the file as a custom addition, not official Lucide, so it's never mistaken for one later.
+
+### Files Modified
+- `js/ui/components/Icon.js` — `chalkboard-easel` added to `ICONS`.
+- `js/ui/views/LandingView.js` — Teacher Portal card now uses `chalkboard-easel` instead of `bar-chart-3`.
+
+### Regression Verification
+Confirmed by extracting the actual rendered SVG markup from the live DOM (not just visual inspection) — the path data matches exactly what was designed: `<rect width="18" height="12" x="3" y="3" rx="1"/>` for the board, two leg paths, two content-line paths, correctly colored in the Teacher category's blue (`#1565C0`) on its pale tint (`#E6F1FB`).
+
+### Future TODOs
+- (Carried over, unchanged): apply category badges to Settings' own tabs and Activities if a future pass wants full palette coverage; resume broader Settings redesign feature work; wire the Student Portal's own dashboard content to the actually-joined student; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; `firestore.rules` review; role-based routing; all previously-listed items.
+
+---
+
+## Fixed: Invisible Class Mode Toolbar Icons (White-on-White)
+
+**Context:** a screenshot showed Undo, Notebook, and Reset rendering as empty circles — no icon glyph visible at all.
+
+### Root cause, found by tracing CSS specificity, not guessed
+`.tracker-header .btn--ghost` — a rule from an earlier phase, written for the header's original *text*-labeled ghost buttons — sets `color: var(--color-on-primary-deep)` (white), so its text would read against the blue header. Undo/Notebook/Reset carry both `.btn--ghost` and `.btn--icon-only` classes, so this older, equally-specific rule was overriding `.btn--icon-only`'s own intended dark icon color. The result: a white icon stroke on the icon-only circle's own white background — technically rendering, just invisible.
+
+### Fix
+Added `.tracker-header .btn--icon-only`, matching specificity and placed after the conflicting rule, so the icon-only circular treatment's dark color always wins in this context regardless of the older ghost-button rule sitting alongside it.
+
+### Files Modified
+- `css/styles.css`.
+
+### Regression Verification
+Confirmed via computed style, not just a visual check: all three buttons now compute to `rgb(26, 26, 26)` (`--color-ink`) instead of white, in a live render of the actual Class Mode toolbar.
+
+---
+
+## Teacher Collaboration Enabled — Retired a Stale "Coming Soon" Placeholder
+
+**Context:** the Setup Wizard's "Invite Teachers" step was permanently hardcoded as "Coming Soon," with placeholder text literally referencing "cloud synchronization" being enabled someday — but this app has been Firestore-backed since early in this project, and the co-teacher join-code mechanism this step was waiting on (`workspaceService.joinClassroomByCode()`, the Teachers section in Settings) has existed and worked for a long time. The placeholder simply never got revisited once the real feature shipped elsewhere.
+
+### Investigation before changing anything
+Traced `isComingSoon = key === 'inviteTeachers'` — a hardcoded flag, not a check on whether anything was actually missing. Confirmed Settings' own Teachers section already displays the classroom's join code with working Copy/Share, fully functional. This was the same underlying capability the wizard step was gating on, just never connected.
+
+### Fix
+- `classroomDefaults.js` — `inviteTeachers` added to `PROGRESS_STEP_KEYS`, so it now counts toward real setup progress like every other step.
+- `SetupWizardView.js` — the hardcoded Coming Soon gate removed from the checklist; `renderInviteTeachersStep` rewritten from the stale placeholder to real content: the classroom's actual join code, a "Share Code & Continue" action that shares/copies it and calls `markStepDone`, and a "Skip — teaching solo" option for teachers who don't need it — matching the exact save/skip pattern every other wizard step already uses.
+- `SettingsView.js` — the hardcoded `createStatusRow('Teacher Collaboration (Coming Soon)', false)` replaced with a real status check, matching every other row in that list.
+
+### Files Modified
+- `js/config/classroomDefaults.js`, `js/ui/views/SetupWizardView.js`, `js/ui/views/SettingsView.js`.
+
+### Breaking Changes
+None — purely additive; no existing step's behavior changed.
+
+### Regression Verification
+Confirmed live: the checklist no longer shows "Coming Soon" anywhere; the step displays a real, freshly-generated join code instead of the old placeholder text; the stale "cloud synchronization" line is gone; clicking "Share Code & Continue" completes without error; and Settings' own Teacher Collaboration row reflects real status instead of a hardcoded false.
+
+### Future TODOs
+- (Carried over, unchanged): apply category badges to Settings' own tabs and Activities if a future pass wants full palette coverage; resume broader Settings redesign feature work; wire the Student Portal's own dashboard content to the actually-joined student; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; `firestore.rules` review; role-based routing; all previously-listed items.

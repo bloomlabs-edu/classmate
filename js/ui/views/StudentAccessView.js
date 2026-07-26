@@ -21,6 +21,7 @@ import { showToast } from '../components/Toast.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { getDisplayName } from '../../services/classroomService.js';
 import { APP_BASE_URL } from '../../config/appConfig.js';
+import { createIcon } from '../components/Icon.js';
 
 export function renderStudentAccessView(container, { classroom, onBack }) {
   container.innerHTML = '';
@@ -34,7 +35,8 @@ export function renderStudentAccessView(container, { classroom, onBack }) {
   const backButton = document.createElement('button');
   backButton.type = 'button';
   backButton.className = 'btn btn--text';
-  backButton.textContent = '\u2190 Back';
+  backButton.appendChild(createIcon('arrow-left'));
+  backButton.append('Back');
   backButton.addEventListener('click', onBack);
 
   const titleBlock = document.createElement('div');

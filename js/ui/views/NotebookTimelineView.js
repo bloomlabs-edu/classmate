@@ -26,6 +26,7 @@ import * as notebookService from '../../services/notebookService.js';
 import { createNotebookTimelineElement } from '../components/NotebookTimeline.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { NOTEBOOK_TIMELINE_SYMBOLS, NOTEBOOK_TIMELINE_STATUS_LABELS, deriveDaySymbolKey } from '../../config/notebookStatuses.js';
+import { createIcon } from '../components/Icon.js';
 import {
   getTodayDateKey,
   shiftDateKey,
@@ -68,7 +69,8 @@ export function renderNotebookTimelineView(container, props) {
   const backButton = document.createElement('button');
   backButton.type = 'button';
   backButton.className = 'btn btn--text';
-  backButton.textContent = '\u2190 Back to Register';
+  backButton.appendChild(createIcon('arrow-left'));
+  backButton.append('Back to Register');
   backButton.addEventListener('click', onBack);
 
   const titleEl = document.createElement('h1');
@@ -95,7 +97,7 @@ export function renderNotebookTimelineView(container, props) {
   const prevButton = document.createElement('button');
   prevButton.type = 'button';
   prevButton.className = 'btn btn--icon-only';
-  prevButton.textContent = '\u2190';
+  prevButton.appendChild(createIcon('arrow-left'));
 
   // Same pattern as NotebookRegisterView.js's date, for consistency —
   // a native <input type="date"> overlaid invisibly on the formatted
@@ -121,7 +123,7 @@ export function renderNotebookTimelineView(container, props) {
   const nextButton = document.createElement('button');
   nextButton.type = 'button';
   nextButton.className = 'btn btn--icon-only';
-  nextButton.textContent = '\u2192';
+  nextButton.appendChild(createIcon('arrow-right'));
 
   let rangeStart;
   let rangeEnd;

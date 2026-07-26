@@ -12,6 +12,7 @@
 
 import * as notebookConfigService from '../../services/notebookConfigService.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
+import { createIcon } from '../components/Icon.js';
 
 export function renderNotebookTrackerView(container, { classroom, onBack, onSelectNotebook }) {
   container.innerHTML = '';
@@ -24,7 +25,8 @@ export function renderNotebookTrackerView(container, { classroom, onBack, onSele
   const backButton = document.createElement('button');
   backButton.type = 'button';
   backButton.className = 'btn btn--text';
-  backButton.textContent = '\u2190 Back to Dashboard';
+  backButton.appendChild(createIcon('arrow-left'));
+  backButton.append('Back to Dashboard');
   backButton.addEventListener('click', onBack);
   const title = document.createElement('h1');
   title.className = 'tracker-header__title';

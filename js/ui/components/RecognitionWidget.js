@@ -24,6 +24,7 @@ import { RECOGNITION_CATEGORIES } from '../../config/recognitionCategories.js';
 import * as studentProgressService from '../../services/studentProgressService.js';
 import { createRecognitionCardElement } from './RecognitionCard.js';
 import { createEmptyStateElement } from './EmptyState.js';
+import { createIcon } from './Icon.js';
 
 export function createRecognitionWidgetElement({ classroom, onViewAll }) {
   const widget = document.createElement('div');
@@ -40,7 +41,8 @@ export function createRecognitionWidgetElement({ classroom, onViewAll }) {
     const viewAllLink = document.createElement('button');
     viewAllLink.type = 'button';
     viewAllLink.className = 'btn btn--text';
-    viewAllLink.textContent = 'View All \u2192';
+    viewAllLink.append('View All ');
+    viewAllLink.appendChild(createIcon('arrow-right', { size: 16 }));
     viewAllLink.addEventListener('click', onViewAll);
     header.appendChild(viewAllLink);
   }

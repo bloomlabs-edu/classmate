@@ -26,6 +26,7 @@
 
 import * as pendingTaskService from '../../services/pendingTaskService.js';
 import { createEmptyStateElement } from './EmptyState.js';
+import { createIcon } from './Icon.js';
 
 const previousSnapshotByClassroomId = new Map();
 
@@ -44,7 +45,8 @@ export function createPendingTasksWidgetElement({ classroom, onSelectTask }) {
 
   const heading = document.createElement('h2');
   heading.className = 'dashboard-widget__heading';
-  heading.textContent = '\u2705 Pending Tasks';
+  heading.appendChild(createIcon('clipboard-list', { size: 18 }));
+  heading.append('Pending Tasks');
   widget.appendChild(heading);
 
   const taskGroups = pendingTaskService.getPendingTasks(classroom);
@@ -98,10 +100,7 @@ export function createPendingTasksWidgetElement({ classroom, onSelectTask }) {
   taskGroups.forEach((group) => {
     const groupHeading = document.createElement('h3');
     groupHeading.className = 'dashboard-widget__subheading task-group-heading';
-    const groupIconBadge = document.createElement('span');
-    groupIconBadge.className = 'task-group-heading__icon';
-    groupIconBadge.textContent = group.icon;
-    groupIconBadge.setAttribute('aria-hidden', 'true');
+    const groupIconBadge = createIcon(group.icon, { className: 'task-group-heading__icon', size: 16 });
     groupHeading.append(groupIconBadge, ` ${group.label} (${group.items.length})`);
     detailContainer.appendChild(groupHeading);
 

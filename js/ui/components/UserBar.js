@@ -27,6 +27,7 @@
 
 import { ACCENT_COLOR_OPTIONS } from '../../config/accentColorConfig.js';
 import { createSpectrumColorPicker } from './SpectrumColorPicker.js';
+import { createIcon } from './Icon.js';
 
 export function renderUserBar(container, { user, onSignOut, currentAccentColorId, onSelectAccentColor, onSelectCustomAccentColor, onPreviewCustomAccentColor, onBackToLanding }) {
   container.innerHTML = '';
@@ -86,10 +87,7 @@ export function renderUserBar(container, { user, onSignOut, currentAccentColorId
     currentSwatch.style.backgroundColor = currentHex;
     editButton.appendChild(currentSwatch);
 
-    const pencilIcon = document.createElement('span');
-    pencilIcon.className = 'user-bar__color-edit-icon';
-    pencilIcon.setAttribute('aria-hidden', 'true');
-    pencilIcon.textContent = '\u270f\ufe0f';
+    const pencilIcon = createIcon('palette', { className: 'user-bar__color-edit-icon', size: 16 });
     editButton.appendChild(pencilIcon);
 
     const popover = document.createElement('div');
@@ -154,7 +152,8 @@ export function renderUserBar(container, { user, onSignOut, currentAccentColorId
     const landingLink = document.createElement('button');
     landingLink.type = 'button';
     landingLink.className = 'btn btn--text';
-    landingLink.textContent = '\u2190 Home';
+    landingLink.appendChild(createIcon('arrow-left'));
+    landingLink.append('Home');
     landingLink.title = 'Back to Home';
     landingLink.addEventListener('click', onBackToLanding);
     rightGroup.appendChild(landingLink);
