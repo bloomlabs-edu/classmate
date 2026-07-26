@@ -3605,9 +3605,9 @@ button.wizard-checklist__row:hover {
   color: var(--color-muted);
   font-size: 1rem;
 }
-.student-home__cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+.student-home__modules {
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
 }
 .student-home__card {
@@ -3640,6 +3640,27 @@ button.wizard-checklist__row:hover {
   font-size: var(--text-sm);
   color: var(--color-muted);
   margin: 0;
+}
+.student-home__goal {
+  background-color: #fdeee0;
+  border-radius: 20px;
+  padding: 1.5rem;
+  text-align: center;
+  margin-top: 1.5rem;
+}
+.student-home__goal-title {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-bold);
+  color: #b8631a;
+  margin: 0 0 0.4rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.student-home__goal-body {
+  font-size: var(--text-sm);
+  color: var(--color-ink);
+  margin: 0;
+  line-height: 1.5;
 }
 
 /* Achievements */

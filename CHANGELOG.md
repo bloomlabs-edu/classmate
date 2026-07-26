@@ -2592,3 +2592,40 @@ Two full scenarios run end-to-end through the real join flow (enter code → pic
 
 ### Regression Verification
 Both scenarios above, live, via a real browser automated through the actual join flow — not assumed from reading the code.
+
+---
+
+## Student Home Redesigned — Progressive Disclosure
+
+**Context:** implementing the agreed product redesign — Student Home now answers "what should I do next?" instead of surfacing every metric at once, several of them empty. Full design discussion in the two preceding conversation turns.
+
+### Module visibility, as agreed
+- **Welcome header, My Stars, My Team, Today's Goal** — always shown. Stars and Team now teach the reward system through encouraging copy before real data exists ("Your teacher awards stars during class...", "You'll be placed into a team soon...") rather than hiding the concept or showing a bare `0` / "Not assigned yet."
+- **Recognition Wall** — only once the student has at least one badge.
+- **Learning Journey** — only once there's a real, active streak.
+- **Continue Learning removed entirely** — not even a "Coming soon" placeholder, since Learning Hub doesn't exist. A module that doesn't exist yet shouldn't occupy a slot on screen.
+
+### Data service changes
+`getHomeSummary()` now also returns `studentName` and `classroomName` (needed for the new greeting logic — "Welcome to {classroom}!" for a student with zero activity anywhere, "Welcome back, {name}!" once any real activity exists). Removed the now-unused `learningActivityInProgress` field, since nothing renders it anymore.
+
+### One judgment call flagged, not hidden
+The team module doesn't distinguish "just joined a team" from "been on this team for weeks" — both show rank-based captions ("Leading the class!" / "Ranked #X") once a real team exists. I don't have a reliable "team age" signal to gate a softer initial message on, and inventing one felt riskier than being upfront that this is a simplification versus the original mockup's suggestion of a gentler landing period.
+
+### Files Modified
+- `js/ui/student-portal/views/StudentHomeView.js` — full rewrite.
+- `js/services/studentPortalDataService.js` — two fields added, one removed.
+- `css/styles.css` — cards switched from a grid to a single stacked column; new `Today's Goal` module styling added.
+
+### Breaking Changes
+None to data or other views — `getAchievements()` and `getTeamSummary()` are untouched.
+
+### Regression Verification
+Live-tested three real scenarios end to end through the actual join flow, not assumed from reading the code:
+- **Day 1, zero activity**: "Welcome to Grade 8A!", Stars and Team both show teaching/anticipation copy, Recognition and Journey correctly absent, Today's Goal present. Zero console errors.
+- **Immediately after first star**: greeting correctly flips to "Welcome back, Rohan!", Stars shows "1" with "Your first star! Keep it up.", Team correctly still shows anticipation copy (unchanged, still ungrouped). Zero console errors.
+- **Mature classroom, several weeks of activity**: Stars "8", Team "Group A" / "Leading the class!", Recognition Wall "3" / "Latest: Team Player" (correctly the most recently-awarded badge). Zero console errors.
+
+One path not exercised: a non-zero Learning Journey streak, since constructing realistic mock notebook-check history was out of proportion to this pass — the gate logic (`journeyStreak > 0`) is straightforward and shares the same underlying function already verified correct on the teacher side, but this specific display state should get a quick look once real notebook data exists.
+
+### Future TODOs
+- (Carried over, unchanged): restructure `hasJoinedPortal` to a top-level field so a Firestore rule can safely permit that write; fix `awardStar()` not reading the classroom's own "Default point value" setting; apply category badges to Settings' own tabs and Activities if a future pass wants full palette coverage; resume broader Settings redesign feature work; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; role-based routing; all previously-listed items.

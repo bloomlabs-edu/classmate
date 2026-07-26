@@ -78,13 +78,14 @@ export async function getHomeSummary() {
   const journeyStreak = studentProgressService.getBestActiveStreakAcrossNotebooks(classroom, student.id);
 
   return {
+    studentName: student.name,
+    classroomName: classroom.classroomName,
     starsThisWeek,
     teamName,
     teamRank,
     recognitionCount,
     latestRecognition,
     journeyStreak,
-    learningActivityInProgress: null, // Learning Hub isn't built yet — a real gap, not placeholder data standing in for one
   };
 }
 
