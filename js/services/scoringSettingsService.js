@@ -2,11 +2,9 @@
  * services/scoringSettingsService.js
  *
  * Reads and updates a classroom's point-scoring settings (default point
- * value, whether negative points are allowed, and the future bucket
- * multiplier flag — left disabled for now, see
- * config/classroomDefaults.js). Not wired to the actual scoring system
- * yet (that's a future milestone), but the settings a teacher configures
- * here are ready for it to read once it exists.
+ * value, whether negative points are allowed). Not wired to the actual
+ * scoring system yet (that's a future milestone), but the settings a
+ * teacher configures here are ready for it to read once it exists.
  */
 
 export function getScoringSettings(classroom) {

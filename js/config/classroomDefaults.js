@@ -32,7 +32,6 @@ export function buildDefaultSettings() {
     scoring: {
       defaultPointValue: 1,
       allowNegativePoints: false,
-      bucketMultiplierEnabled: false, // future; left disabled for now
     },
     // A fresh copy per classroom — never the shared DEFAULT_BADGE_CATALOG
     // array itself — so one classroom adding/removing a badge type never

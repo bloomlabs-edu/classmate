@@ -27,7 +27,13 @@ export function renderLandingView(container, { onContinueAsTeacher, onContinueAs
 
   const title = document.createElement('h1');
   title.className = 'landing-view__title';
-  title.textContent = 'ClassMate';
+  const titleClass = document.createElement('span');
+  titleClass.className = 'landing-view__title-class';
+  titleClass.textContent = 'Class';
+  const titleMate = document.createElement('span');
+  titleMate.className = 'landing-view__title-mate';
+  titleMate.textContent = 'Mate';
+  title.append(titleClass, titleMate);
 
   const subtitle = document.createElement('p');
   subtitle.className = 'landing-view__subtitle';

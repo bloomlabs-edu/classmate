@@ -529,14 +529,6 @@ function renderConfigureScoringStep(content, classroom, { advance }) {
   negativeLabel.append(negativeCheckbox, document.createTextNode(' Allow negative points'));
   content.appendChild(negativeLabel);
 
-  const multiplierLabel = document.createElement('label');
-  multiplierLabel.className = 'wizard-checkbox-field wizard-checkbox-field--disabled';
-  const multiplierCheckbox = document.createElement('input');
-  multiplierCheckbox.type = 'checkbox';
-  multiplierCheckbox.disabled = true;
-  multiplierLabel.append(multiplierCheckbox, document.createTextNode(' Bucket multiplier (Coming Soon)'));
-  content.appendChild(multiplierLabel);
-
   const actions = document.createElement('div');
   actions.className = 'wizard-step__actions';
 

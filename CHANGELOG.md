@@ -2434,3 +2434,79 @@ Confirmed live: the checklist no longer shows "Coming Soon" anywhere; the step d
 
 ### Future TODOs
 - (Carried over, unchanged): apply category badges to Settings' own tabs and Activities if a future pass wants full palette coverage; resume broader Settings redesign feature work; wire the Student Portal's own dashboard content to the actually-joined student; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; `firestore.rules` review; role-based routing; all previously-listed items.
+
+---
+
+## Bucket Multiplier Feature Removed
+
+**Context:** investigated whether "Bucket multiplier (Coming Soon)" could be enabled the same way Teacher Collaboration was. Found a genuine difference — the multiplier was never actually built (`scoringSettingsService.js`'s own doc comment: "Not wired to the actual scoring system yet"), and enabling it properly would have also required fixing an adjacent, more fundamental gap: `classModeService.awardStar()` uses a hardcoded `delta = 1` and doesn't even read the classroom's own "Default point value" setting, let alone a bucket multiplier. Surfaced this and asked what the intended multiplier behavior should be, rather than inventing a scoring scheme unilaterally — the decision was to remove the feature entirely instead.
+
+### Removed
+- The disabled "Bucket multiplier (Coming Soon)" checkbox from the Configure Scoring wizard step (`SetupWizardView.js`).
+- `bucketMultiplierEnabled` from the classroom settings defaults (`classroomDefaults.js`).
+- The stale doc-comment reference in `scoringSettingsService.js`.
+- Two now-orphaned CSS rules: `.wizard-checkbox-field--disabled` and `.wizard-badge` — the latter was actually orphaned back when Teacher Collaboration's placeholder was fixed in an earlier phase, not caught at the time; found and cleaned up in this same pass.
+
+### Files Modified
+- `js/ui/views/SetupWizardView.js`, `js/config/classroomDefaults.js`, `js/services/scoringSettingsService.js`, `css/styles.css`.
+
+### Breaking Changes
+None — no classroom ever had this flag doing anything, since nothing read it.
+
+### Regression Verification
+Confirmed zero remaining references to "multiplier" anywhere in the codebase. Confirmed live that the Configure Scoring step still works correctly without it — Default point value field, Allow negative points checkbox, and Save & Continue all function exactly as before.
+
+### Future TODOs
+- The adjacent gap noticed while investigating remains open and worth its own decision eventually: `awardStar()` doesn't read the classroom's own "Default point value" setting either — every star awards exactly 1 point regardless of what's configured. Not fixed here, since it wasn't what was asked, but worth flagging clearly for whenever scoring configuration is revisited.
+- (Carried over, unchanged): apply category badges to Settings' own tabs and Activities if a future pass wants full palette coverage; resume broader Settings redesign feature work; wire the Student Portal's own dashboard content to the actually-joined student; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; `firestore.rules` review; role-based routing; all previously-listed items.
+
+---
+
+## Group Colors Switched to Pastel
+
+**Context:** the four default group colors (Blue, Purple, Orange, Teal) were fully saturated (`#3B82F6`, `#8B5CF6`, `#F97316`, `#14B8A6`) and felt too vivid.
+
+### More than a color swap — a real contrast dependency found first
+`.team-card__header`'s text color was hardcoded to white, which only worked because the original colors were dark/saturated enough. Verified with contrast math before changing anything: white text on any pastel candidate came out to 1.48–1.85:1 (badly failing), while dark text on the same pastels reached 9.4–11.8:1. Pastel backgrounds genuinely require dark text, not just a hex swap.
+
+### A dark-mode bug caught before it shipped, not after
+The obvious fix — switching to `--color-ink` — would have introduced a real bug: that token deliberately flips to a light color in dark mode, but the pastel background itself doesn't change with theme (it's a fixed hex). That combination would have produced light text on a light pastel background specifically in dark mode. Found the exact right token already established for this precise scenario — `--color-on-brand`, explicitly documented in this project's own CSS as "theme-independent, for text on top of a brand-color fill" — and used that instead. Confirmed directly: rendering the same component in both light and dark mode produced byte-identical background and text colors, exactly as intended.
+
+Also updated the star-count pill's background from a white-tinted overlay (invisible on a light background) to a dark-tinted one, for the same underlying reason.
+
+### Files Modified
+- `js/config/groupColorConfig.js` — the four hex values.
+- `css/styles.css` — `.team-card__header` text color and `.team-card__total` pill background.
+
+### Breaking Changes
+None to functionality — purely visual, and any classroom's existing group color *assignment* (which color ID a group has) is untouched; only what each color ID actually renders as changed.
+
+### Regression Verification
+Verified by rendering the actual `TeamCard.js` component directly with mock data (not just reading the CSS) in both light and dark mode via `page.emulateMedia`: confirmed the pastel background and dark text render identically in both, and the choice of `--color-on-brand` over `--color-ink` is what makes that true.
+
+### Future TODOs
+- (Carried over, unchanged): fix `awardStar()` not reading the classroom's own "Default point value" setting; apply category badges to Settings' own tabs and Activities if a future pass wants full palette coverage; resume broader Settings redesign feature work; wire the Student Portal's own dashboard content to the actually-joined student; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; `firestore.rules` review; role-based routing; all previously-listed items.
+
+---
+
+## Landing Page Title Split into Class/Mate Colors
+
+**Context:** implementing the finalized brand exploration — "Class" in Teacher blue, "Mate" in Student orange, same font as before (a slab-serif alternative was explored and explicitly rejected in favor of keeping the existing bold sans-serif).
+
+### A real bug caught before shipping, not after
+The natural first implementation used `var(--color-primary-deep)` for "Class," matching how the rest of the app references the teacher-blue token. Checked its actual definition first and found it's not a fixed brand color at all — it's a teacher's *personal, customizable* accent color preference (one of 5 options), overridden per-classroom via inline style once loaded. Using it here would mean "Class" silently changed color for any teacher who'd picked a non-default accent, breaking the fixed blue/orange pairing established everywhere else (the CM icon, the portal cards). Fixed by hardcoding `#1565C0` directly, matching how "Mate"'s orange was already a fixed hex rather than a token.
+
+Verified this was a real risk, not a theoretical one: tested the exact scenario that would have exposed it — created a classroom, confirmed its actual loaded accent was a different blue (`#5ea6da`, not the default), navigated back to the Landing page via the persistent SPA session, and confirmed the title's "Class" span still correctly rendered the fixed `#1565C0` rather than picking up the still-active override.
+
+### Files Modified
+- `js/ui/views/LandingView.js` — title restructured into two spans instead of one text node.
+- `css/styles.css` — `.landing-view__title-class` and `.landing-view__title-mate` added.
+
+### Breaking Changes
+None — purely visual.
+
+### Regression Verification
+Confirmed via computed style on a fresh landing page (correct colors on first load) and, more importantly, after actually loading a non-default accent color in a real classroom and returning to the Landing page via in-app navigation — the exact scenario that would have surfaced the token-vs-fixed-color bug if it existed.
+
+### Future TODOs
+- (Carried over, unchanged): fix `awardStar()` not reading the classroom's own "Default point value" setting; apply category badges to Settings' own tabs and Activities if a future pass wants full palette coverage; resume broader Settings redesign feature work; wire the Student Portal's own dashboard content to the actually-joined student; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; `firestore.rules` review; role-based routing; all previously-listed items.

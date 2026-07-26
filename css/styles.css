@@ -489,6 +489,12 @@ select:focus-visible,
   font-weight: var(--font-weight-black);
   margin: 0;
 }
+.landing-view__title-class {
+  color: #1565C0;
+}
+.landing-view__title-mate {
+  color: #ff9b65;
+}
 
 .landing-view__subtitle {
   font-size: 1.05rem;
@@ -890,8 +896,7 @@ select:focus-visible,
   gap: 0.75rem;
   padding: 1rem 1.15rem;
   background-color: var(--color-primary-deep);
-  color: var(--color-on-primary-deep);
-  text-shadow: var(--shadow-on-primary-deep);
+  color: var(--color-on-brand);
 }
 
 .team-card__name {
@@ -903,7 +908,7 @@ select:focus-visible,
 .team-card__total {
   font-size: 1.3rem;
   font-weight: var(--font-weight-black);
-  background-color: rgba(255, 255, 255, 0.22);
+  background-color: rgba(0, 0, 0, 0.1);
   padding: 0.25rem 0.75rem;
   border-radius: var(--radius-pill);
   min-width: 2.25rem;
@@ -1394,23 +1399,6 @@ button.wizard-checklist__row:hover {
   gap: 0.5rem;
   font-size: 0.95rem;
   margin-bottom: 0.75rem;
-}
-
-.wizard-checkbox-field--disabled {
-  color: var(--color-muted);
-}
-
-.wizard-badge {
-  display: inline-block;
-  background-color: var(--color-yellow);
-  color: var(--color-on-brand);
-  font-size: 0.75rem;
-  font-weight: var(--font-weight-black);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  padding: 0.3rem 0.6rem;
-  border-radius: var(--radius-pill);
-  margin-bottom: 1rem;
 }
 
 .wizard-group-row {

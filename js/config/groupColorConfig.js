@@ -9,10 +9,10 @@
  */
 
 export const DEFAULT_GROUP_COLORS = Object.freeze([
-  { id: 'blue', label: 'Blue', hex: '#3B82F6' },
-  { id: 'purple', label: 'Purple', hex: '#8B5CF6' },
-  { id: 'orange', label: 'Orange', hex: '#F97316' },
-  { id: 'teal', label: 'Teal', hex: '#14B8A6' },
+  { id: 'blue', label: 'Blue', hex: '#93C5FD' },
+  { id: 'purple', label: 'Purple', hex: '#C4B5FD' },
+  { id: 'orange', label: 'Orange', hex: '#FDBA74' },
+  { id: 'teal', label: 'Teal', hex: '#5EEAD4' },
 ]);
 
 /** Cycles through DEFAULT_GROUP_COLORS by index, for auto-assigning new teams. */
