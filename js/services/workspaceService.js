@@ -183,6 +183,18 @@ export function createClassroom(details, owner) {
   repository.createClassroomWithOwner(classroom, owner.uid).catch((error) => {
     console.error('[workspaceService] Failed to create classroom:', error);
   });
+  // A real, pre-existing gap found while testing the new student
+  // join-code flow: createEmptyClassroom() sets both join codes on
+  // the classroom object itself (via ensureJoinCode/
+  // ensureStudentJoinCode), but neither code's separate, public
+  // lookup mapping was ever actually created here — only via the
+  // Settings "Generate Classroom ID" fallback button, which exists
+  // for classrooms that predate these features. That meant a code
+  // generated the normal way, at creation, could never actually
+  // resolve. Both mappings need creating right here, for both codes,
+  // the moment a classroom is created.
+  createJoinCodeMapping(classroom.classroomJoinCode, classroom.id);
+  createStudentJoinCodeMapping(classroom.classroomStudentJoinCode, classroom.id);
   return classroom;
 }
 
@@ -283,4 +295,48 @@ export async function joinClassroomByCode(code, uid, displayName) {
   });
 
   return { success: true, classroomId };
+}
+
+/** Fire-and-forget, matching createJoinCodeMapping()'s pattern — called once, alongside saving a classroom that just generated a new student join code (see classroomService.ensureStudentJoinCode()). */
+export function createStudentJoinCodeMapping(code, classroomId) {
+  repository.createStudentJoinCodeMapping(code, classroomId).catch((error) => {
+    console.error('[workspaceService] Failed to create student join code mapping:', error);
+  });
+}
+
+/**
+ * Resolves a student join code to the classroom it belongs to —
+ * read-only, and deliberately not the same operation as
+ * joinClassroomByCode() above: no membership is added, no account is
+ * involved, nothing is written. Returns the classroom (so the caller
+ * can show its real roster) or null if the code doesn't match
+ * anything. This is genuinely new, additive surface — it doesn't
+ * touch identity/studentIdentityService.js or any PIN/consent
+ * machinery at all.
+ */
+export async function resolveStudentJoinCode(code) {
+  const normalizedCode = code.trim().toUpperCase();
+  if (!normalizedCode) return null;
+
+  const classroomId = await repository.getClassroomIdByStudentJoinCode(normalizedCode);
+  if (!classroomId) return null;
+
+  return repository.getClassroomOnce(classroomId);
+}
+
+/**
+ * The one shared, teacher-visible write in this whole flow: marks a
+ * specific student as having opened the Portal at least once. This is
+ * what lets Student Access show anything at all — without it, a
+ * device tapping a name would only ever update its own local storage,
+ * invisible to the teacher. Deliberately a narrow flag, not an
+ * account or a session record.
+ */
+export async function markStudentJoinedPortal(classroomId, studentId) {
+  const classroom = await repository.getClassroomOnce(classroomId);
+  if (!classroom) return;
+  const student = classroom.teams.flatMap((team) => team.students).find((s) => s.id === studentId);
+  if (!student || student.hasJoinedPortal) return;
+  student.hasJoinedPortal = true;
+  await repository.saveClassroom(classroom);
 }

@@ -11,24 +11,26 @@
  *   const student = await studentIdentityService.getCurrentStudent();
  *
  * This module composes three swappable pieces — an IdentityProvider,
- * a ConsentProvider, and a StudentLinkRepository — each wired to its
- * Demo* implementation below. That's the ONLY thing that needs to
- * change to go from this demo phase to production: swap these three
- * instantiations for GoogleIdentityProvider, a real ConsentProvider,
- * and a Firestore-backed StudentLinkRepository. Nothing in the Student
- * Portal, and nothing else in this file's own exported functions,
- * would need to change.
+ * a ConsentProvider, and a StudentLinkRepository. The sign-in and
+ * consent pieces are still demo/placeholder implementations pending
+ * real Google Auth and the AI Working Committee's consent review —
+ * but the link repository is now genuinely generic over any real
+ * classroom's real students (see LocalStudentLinkRepository.js),
+ * not a fixed fictional roster. Swapping in GoogleIdentityProvider and
+ * a real ConsentProvider later is still the only remaining change
+ * needed for full production readiness; nothing about student linking
+ * itself is a placeholder anymore.
  */
 
 import { DemoIdentityProvider } from './identity/DemoIdentityProvider.js';
 import { DemoConsentProvider } from './identity/DemoConsentProvider.js';
-import { DemoStudentLinkRepository } from '../repositories/identity/DemoStudentLinkRepository.js';
+import { LocalStudentLinkRepository } from '../repositories/identity/LocalStudentLinkRepository.js';
 
 // The one place this whole architecture's concrete providers are
 // chosen. A production build changes exactly these three lines.
 const identityProvider = new DemoIdentityProvider();
 const consentProvider = new DemoConsentProvider();
-const linkRepository = new DemoStudentLinkRepository();
+const linkRepository = new LocalStudentLinkRepository();
 
 /**
  * The Student Portal's main entry point. Resolves to a student ref —
@@ -122,19 +124,19 @@ export function onProviderAuthStateChange(callback) {
   return identityProvider.onAuthStateChange(callback);
 }
 
-/** Teacher-side (Classroom Tracker) — generates a fresh PIN for a student. Teachers never choose or type one themselves. */
-export async function generatePinForStudent(classroomId, studentId) {
-  return linkRepository.generatePin(classroomId, studentId);
+/** Teacher-side (Classroom Tracker) — generates a fresh PIN for a student. Teachers never choose or type one themselves. Works for any real classroom student — see LocalStudentLinkRepository.js's own doc comment on why studentName is passed in rather than looked up. */
+export async function generatePinForStudent(classroomId, studentId, studentName) {
+  return linkRepository.generatePin(classroomId, studentId, studentName);
 }
 
-/** Teacher-side — creates a single-use, expiring invitation link token for a student. */
-export async function generateInvitationTokenForStudent(classroomId, studentId, expiryDays = 7) {
-  return linkRepository.generateInvitationToken(classroomId, studentId, expiryDays);
+/** Teacher-side — creates a single-use, expiring invitation link token for a student. Works for any real classroom student. */
+export async function generateInvitationTokenForStudent(classroomId, studentId, studentName, expiryDays = 7) {
+  return linkRepository.generateInvitationToken(classroomId, studentId, studentName, expiryDays);
 }
 
-/** Demo-only — lets the teacher-side PIN management UI list the fixture roster without a real classroom lookup. Not part of the production surface. */
-export function listDemoRoster() {
-  return linkRepository.listDemoRoster();
+/** The current PIN for a student, or null if one hasn't been generated yet — lets Student Access show "no PIN yet" versus a real value. */
+export function getCurrentPinForStudent(studentId) {
+  return linkRepository.getCurrentPin(studentId);
 }
 
 /** Whether any parent account is currently linked to this student — powers Student Access's connection-status-first view. */

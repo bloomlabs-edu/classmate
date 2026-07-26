@@ -38,9 +38,23 @@ function hasNotebookConfigured(classroom) {
   return (classroom.notebookConfig?.subjects || []).length > 0;
 }
 
+/**
+ * The new join-code flow's own signal — has any student actually
+ * opened the Portal yet (see workspaceService.markStudentJoinedPortal()),
+ * independent of the older hasSentInvitation/hasLinkedStudent below,
+ * which still describe the separate, un-removed parent-connection
+ * path. There's no per-student "invitation" to send anymore under the
+ * join-code model — the code exists from classroom creation — so
+ * "has anyone actually joined" is the meaningful setup signal now.
+ */
+function hasAnyStudentJoined(classroom) {
+  return classroom.teams.some((team) => team.students.some((student) => student.hasJoinedPortal));
+}
+
 export async function getSetupState(classroom) {
   return {
     hasStudents: hasStudents(classroom),
+    hasAnyStudentJoined: hasAnyStudentJoined(classroom),
     hasSentInvitation: await studentIdentityService.hasSentAnyInvitation(classroom),
     hasLinkedStudent: await studentIdentityService.hasAnyLinkedStudent(classroom),
     hasGroups: hasGroups(classroom),

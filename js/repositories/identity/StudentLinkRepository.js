@@ -4,9 +4,13 @@
  * The persistence contract behind linking a Google (or future
  * Microsoft/SSO/OTP) account to one or more students. A production
  * implementation would back this with the Firestore collections
- * documented below; DemoStudentLinkRepository.js backs it with
- * in-memory fixture data instead, for building and reviewing this
- * whole architecture without touching real student records.
+ * documented below; LocalStudentLinkRepository.js backs it with
+ * localStorage/in-memory storage instead — genuinely generic over any
+ * real classroom's real students, not tied to any fixed roster. It
+ * exists so this whole architecture works fully today, against real
+ * classroom data, without needing Firestore-backed PIN/token storage
+ * (still pending the AI Working Committee's consent review) to be
+ * built first.
  *
  * Proposed Firestore model for a future production implementation
  * (not built this phase — documented here so the interface shape
@@ -92,15 +96,15 @@ export class StudentLinkRepository {
 
   // --- Teacher-side operations (called from Classroom Tracker, not the Student Portal) ---
 
-  /** Generates a fresh PIN for a student, overwriting any existing one — teachers never choose or type a PIN themselves. */
+  /** Generates a fresh PIN for a student, overwriting any existing one — teachers never choose or type a PIN themselves. studentName is stored alongside so resolvePin() can return it later without this repository needing any independent knowledge of who students are. */
   // eslint-disable-next-line no-unused-vars
-  async generatePin(classroomId, studentId) {
+  async generatePin(classroomId, studentId, studentName) {
     throw new Error('StudentLinkRepository.generatePin() must be implemented by a subclass');
   }
 
-  /** Creates a single-use invitation token for a student, expiring after expiryDays. Returns the token string. */
+  /** Creates a single-use invitation token for a student, expiring after expiryDays. Returns the token string. studentName is stored alongside for the same reason as generatePin() above. */
   // eslint-disable-next-line no-unused-vars
-  async generateInvitationToken(classroomId, studentId, expiryDays) {
+  async generateInvitationToken(classroomId, studentId, studentName, expiryDays) {
     throw new Error('StudentLinkRepository.generateInvitationToken() must be implemented by a subclass');
   }
 }

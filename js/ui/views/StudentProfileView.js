@@ -279,23 +279,16 @@ function renderAccessTab(content, classroom, student, team, rerender, onOpenStud
   const statusRow = document.createElement('div');
   statusRow.className = 'access-status-row';
 
-  const demoEntry = studentIdentityService.listDemoRoster().find((entry) => entry.studentName === student.name);
   const statusBadge = document.createElement('span');
-
-  if (!demoEntry) {
-    statusBadge.className = 'access-status-badge access-status-badge--unknown';
-    statusBadge.textContent = 'Not available in this demo roster';
-  } else {
-    // Resolved async below, since isStudentLinked() is a real (if
-    // demo-backed) lookup — shown as "Checking..." only for the
-    // instant before it resolves, not a meaningful loading state.
-    statusBadge.className = 'access-status-badge';
-    statusBadge.textContent = 'Checking\u2026';
-    studentIdentityService.isStudentLinked(classroom.id, demoEntry.studentId).then((linked) => {
-      statusBadge.className = 'access-status-badge' + (linked ? ' access-status-badge--linked' : ' access-status-badge--pending');
-      statusBadge.textContent = linked ? '\u2705 Linked' : '\u23f3 Not Linked';
-    });
-  }
+  // Resolved async below, since isStudentLinked() is a real lookup —
+  // shown as "Checking..." only for the instant before it resolves,
+  // not a meaningful loading state.
+  statusBadge.className = 'access-status-badge';
+  statusBadge.textContent = 'Checking\u2026';
+  studentIdentityService.isStudentLinked(classroom.id, student.id).then((linked) => {
+    statusBadge.className = 'access-status-badge' + (linked ? ' access-status-badge--linked' : ' access-status-badge--pending');
+    statusBadge.textContent = linked ? '\u2705 Linked' : '\u23f3 Not Linked';
+  });
   statusRow.appendChild(statusBadge);
   section.appendChild(statusRow);
 

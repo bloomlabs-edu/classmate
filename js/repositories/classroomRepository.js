@@ -145,6 +145,18 @@ export class ClassroomRepository {
     throw new Error('ClassroomRepository.getClassroomIdByJoinCode() must be implemented by a subclass');
   }
 
+  /** Same as createJoinCodeMapping(), for the separate student-facing code — see classroomService.js's ensureStudentJoinCode(). A distinct mapping so a student code can never resolve through the co-teacher lookup, or vice versa. */
+  // eslint-disable-next-line no-unused-vars
+  async createStudentJoinCodeMapping(code, classroomId) {
+    throw new Error('ClassroomRepository.createStudentJoinCodeMapping() must be implemented by a subclass');
+  }
+
+  /** Resolves a student join code to a classroomId, or null if the code doesn't exist. */
+  // eslint-disable-next-line no-unused-vars
+  async getClassroomIdByStudentJoinCode(code) {
+    throw new Error('ClassroomRepository.getClassroomIdByStudentJoinCode() must be implemented by a subclass');
+  }
+
   /** A narrow, additive-only write adding exactly one uid as a member — see firestoreClassroomRepository.js's implementation for why this shape matters for the security rule it needs. */
   // eslint-disable-next-line no-unused-vars
   async addSelfAsTeacher(classroomId, uid, memberInfo) {

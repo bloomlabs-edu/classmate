@@ -114,6 +114,20 @@ class FirestoreClassroomRepository extends ClassroomRepository {
     return doc(this._getDb(), 'joinCodes', code);
   }
 
+  /**
+   * A separate collection from joinCodes above, not just a different
+   * key prefix in the same one — this needs its own, more permissive
+   * read rule (any unauthenticated visitor resolving a student code)
+   * than joinCodes needs today (only used from an already-signed-in
+   * teacher session), and keeping them physically separate is what
+   * makes writing that narrower rule straightforward. See
+   * firestore.rules — this needs its own rule added, same as
+   * joinCodes did, not assumed to already be permitted.
+   */
+  _studentJoinCodeDoc(code) {
+    return doc(this._getDb(), 'studentJoinCodes', code);
+  }
+
   _classroomRefsCollection(uid) {
     return collection(this._getDb(), 'users', uid, 'classroomRefs');
   }
@@ -164,6 +178,17 @@ class FirestoreClassroomRepository extends ClassroomRepository {
   /** Returns the classroomId a join code points to, or null if the code doesn't exist. */
   async getClassroomIdByJoinCode(code) {
     const docSnapshot = await getDoc(this._joinCodeDoc(code));
+    return docSnapshot.exists() ? docSnapshot.data().classroomId : null;
+  }
+
+  /** Same as createJoinCodeMapping(), for the separate student-facing code (see classroomService.ensureStudentJoinCode()). */
+  async createStudentJoinCodeMapping(code, classroomId) {
+    await setDoc(this._studentJoinCodeDoc(code), { classroomId });
+  }
+
+  /** Resolves a student join code to a classroomId, or null if the code doesn't exist. */
+  async getClassroomIdByStudentJoinCode(code) {
+    const docSnapshot = await getDoc(this._studentJoinCodeDoc(code));
     return docSnapshot.exists() ? docSnapshot.data().classroomId : null;
   }
 

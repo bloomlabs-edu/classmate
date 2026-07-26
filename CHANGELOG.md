@@ -2081,3 +2081,96 @@ Confirmed the full progression directly: a classroom with just one added student
 ### Future TODOs
 - Confirm whether Start Class Mode should also be excluded from the earliest stage, per the interpretation note above.
 - (Carried over, unchanged): resume broader Settings redesign feature work; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; clickable-student-names audit; note-undo gap in `classModeService`; Session Lock and Session History; production `GoogleIdentityProvider`/`ConsentProvider` pending AI Working Committee review; consolidate avatar implementations; `firestore.rules` review; role-based routing; all previously-listed items.
+
+---
+
+## Demo Roster Architecture Retired — Student Access Now Operates Entirely on Classroom Data
+
+**Context:** "Not available in this demo roster" was blocking every real student in Student Access, since the underlying identity architecture had been built around a fixed, fictional fixture roster that predates real roster-building features (manual add, CSV import). Investigated before making any changes, per explicit request.
+
+### Investigation findings
+1. **Which service determined demo-roster membership**: `DemoStudentLinkRepository.js`'s internal `findStudent(studentId)`, checking against a hardcoded array of exactly 2 fictional students ("Hariharan," "Blessy"). Both teacher-side methods (`generatePin`, `generateInvitationToken`) called this first and threw for anyone else; `StudentAccessView.js` never actually attempted them for a real student, instead using a separate UI-level name-match against `listDemoRoster()` purely to avoid triggering that throw.
+2. **Why Student Access didn't read the roster directly**: the repository beneath it had no mechanism to generate or store a PIN for an arbitrary student ID — by its own doc comment, it was built as a temporary stand-in for a production, Firestore-backed repository that was never built (blocked on the AI Working Committee's consent review), so a stopgap became a permanent ceiling.
+3. **Whether the demo roster served any other purpose**: found it was more deeply embedded than the two obvious call sites — `getLinkedStudents()`, `resolvePin()`, and `resolveInvitationToken()` all resolved a student's *name* through the same hardcoded lookup, and `StudentProfileView.js` had an independent copy of the identical pattern. All four were the same single bottleneck, not four separate concerns.
+
+### The fix: a genuinely generic repository, not four patched call sites
+Rather than teaching each UI screen to skip the demo check, the repository itself was rebuilt with no built-in knowledge of any specific student, demo or real:
+- **`LocalStudentLinkRepository.js`** replaces `DemoStudentLinkRepository.js` entirely (old file deleted). PINs and invitation tokens are now keyed by the real `(classroomId, studentId)` pair the caller provides, with `studentName` passed in and stored alongside at generation time — since the caller (Student Access, looking at the real roster) always has it. This is what lets `resolvePin()`/`resolveInvitationToken()` return a name later without the repository needing any independent roster to look one up against.
+- **`StudentLinkRepository.js`** (the interface) — `generatePin`/`generateInvitationToken` signatures updated to accept `studentName`.
+- **`studentIdentityService.js`** — instantiates the new repository; `listDemoRoster()` removed entirely, replaced by `getCurrentPinForStudent(studentId)`, a genuinely general "does this student have a PIN yet" check.
+- **`StudentAccessView.js`** — the `demoEntry` name-match lookup removed completely. Every button (Share Invitation, Generate/Reset/Copy PIN) is now unconditionally available for every real student; "Not available in this demo roster" no longer exists anywhere in this codebase.
+- **`StudentProfileView.js`** — the same pattern, independently present here too, removed the same way.
+
+### Verified directly, not assumed
+- A manually-added real student ("Priyanka Reddy," never part of the old fixture) generated a real, dynamically-created PIN and had every action available with nothing disabled.
+- A CSV-imported real student ("Fatima Sheikh") independently generated her own real PIN — confirming both roster-creation paths mentioned in the request work identically.
+- End-to-end linking was verified, not just PIN generation: a real PIN generated for a real student ("Arjun Mehta") was used to successfully link through the actual Student Portal sign-in flow — confirming "parent linking works for every classroom student" against a genuine, non-fixture student rather than assuming the repository swap was sufficient.
+- Confirmed zero remaining references anywhere in the codebase to `listDemoRoster`, `DemoStudentLinkRepository`, or any `demoEntry`-style lookup.
+
+### A separate, pre-existing gap noticed along the way, out of scope for this fix
+While verifying the Student Portal linking flow, noticed the Portal's own dashboard (stars, streak, team name) still shows placeholder data unrelated to whichever student actually linked — that's `studentPortalDataService.js`'s own known placeholder-data state, a separate, already-documented gap in the Student Portal feature itself, not something this fix touches or introduces.
+
+### Files Modified
+- `js/repositories/identity/LocalStudentLinkRepository.js` — new, replacing the deleted `DemoStudentLinkRepository.js`.
+- `js/repositories/identity/StudentLinkRepository.js` — interface signatures updated.
+- `js/services/studentIdentityService.js` — repository swapped in; `listDemoRoster()` removed; `getCurrentPinForStudent()` added.
+- `js/ui/views/StudentAccessView.js`, `js/ui/views/StudentProfileView.js` — demo lookups removed entirely.
+
+### Breaking Changes
+The two old fixture students ("Hariharan"/PIN 482913, "Blessy"/PIN 731064) no longer exist as special-cased entities — any localStorage link data tied to those specific fictional IDs from earlier testing is now orphaned and irrelevant, which is the intended outcome of retiring a fixture that was never real student data in the first place.
+
+### Regression Verification
+Confirmed the full lifecycle for real students created both ways (manual add, CSV import): PIN generation, reset, copy, invitation sharing, and actual successful linking through the Student Portal — all working identically regardless of how the student was added, with no code path anywhere distinguishing a "demo" student from a "real" one.
+
+### Future TODOs
+- Wire the Student Portal's own dashboard content to the actually-linked student, replacing its remaining placeholder data (noted above, separate from this fix).
+- (Carried over, unchanged): resume broader Settings redesign feature work; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; clickable-student-names audit; note-undo gap in `classModeService`; Session Lock and Session History; production `GoogleIdentityProvider`/`ConsentProvider` pending AI Working Committee review; consolidate avatar implementations; `firestore.rules` review; role-based routing; all previously-listed items.
+
+---
+
+## Classroom Join Code Replaces Per-Student PINs — Student Onboarding Implementation
+
+**Context:** implementing the final decision from this project's multi-round student-onboarding architecture discussion — replace per-student PIN generation with one shared classroom code that lets students pick their own name, per the explicit instruction to build this specific piece while leaving the rest of the identity architecture (`IdentityProvider`, `ConsentProvider`, PIN/invitation-token machinery) untouched and in place, not deleted.
+
+### What was built
+- **A second, separately-scoped join code** (`classroomStudentJoinCode`), generated at classroom creation alongside the existing co-teacher code, in its own Firestore collection (`studentJoinCodes`, not just a different key prefix in `joinCodes`) — deliberately never interchangeable with the teacher code, so a student who obtains it can never add themselves as a co-teacher.
+- **`studentDeviceService.js`** — a genuinely new, separate mechanism: a browser remembering which student profile(s) it's opened, in localStorage, with no account, no identity provider, no consent check anywhere in it. Includes a `forgetProfile` affordance for the lost/handed-down-device scenario raised during the architecture discussion.
+- **The new student join flow** (`StudentJoinClassroomView.js`, `StudentRosterPickerView.js`, `StudentDeviceFlow.js`) — enter a code, see the real roster, tap a name, done. Reuses CSS classes left over from this project's *original*, pre-PIN classroom-code flow, unused since PINs were introduced and a good fit for this one.
+- **The one necessary shared write**: `workspaceService.markStudentJoinedPortal()` sets a `hasJoinedPortal` flag directly on the student record — realized partway through implementation that without this, a device tapping a name would only ever update its own local storage, leaving the teacher's side with literally nothing to show.
+- **`StudentAccessView.js` rewritten** around the one code (Share / Copy), with a simple, non-actionable joined-status list below it — "Not Joined Yet" is now a normal, expected state, not a bottleneck, matching the architecture discussion's point that per-student urgency framing no longer applies.
+- **`recommendationEngine.js`'s "Invite Students" recommendation** updated to the new model, and its trigger signal (`hasAnyStudentJoined`, added to `setupStateService.js`) changed from "has an invitation been sent" (meaningless now — there's no per-student invitation to send) to "has anyone actually joined."
+
+### What was deliberately left alone, per explicit instruction
+`IdentityProvider`, `ConsentProvider`, `DemoIdentityProvider`, `DemoConsentProvider`, `LocalStudentLinkRepository`'s PIN/token generation and resolution, `StudentOnboardingFlow.js`, `StudentLinkView.js`, `StudentSignInView.js` — all untouched, all still in the codebase. They're no longer reachable from the Student Portal's default route, but they haven't been removed; they still represent the separate, authenticated parent-connection path this project's architecture discussion explicitly chose not to unwind in this pass.
+
+### A real, pre-existing bug found and fixed along the way
+Testing the new flow end-to-end (not just checking each piece in isolation) surfaced that a freshly generated join code failed to resolve at all. Traced it to `workspaceService.createClassroom()`: it calls `classroomService.createEmptyClassroom()` (which sets the join code *fields* on the classroom object) and saves the classroom, but never actually calls `createJoinCodeMapping()` to populate the separate, public lookup table those fields are useless without — that only ever happened via Settings' "Generate Classroom ID" fallback button, meant for classrooms that predate the feature. This is a **pre-existing gap in the co-teacher join-code feature**, inherited by the new student code because it was built by mirroring the same (buggy) pattern. Fixed by calling both `createJoinCodeMapping()` and `createStudentJoinCodeMapping()` directly in `createClassroom()`, for both codes, at creation time.
+
+### A test-methodology lesson, recorded honestly
+Verifying "does a code generated on the teacher's page work from the student's device" initially failed when tested across two separate Playwright browser pages — traced to the test itself, not the app: this project's mock repositories are in-memory JS module state, which is isolated per browser page/tab (unlike real Firestore, which genuinely is shared across clients). Re-verified correctly using SPA-style hash navigation within one page, which correctly exercises the same shared mock state — confirming the join, the teacher-visible status update, and the device's auto-resolve on a later visit all work correctly, including the multi-profile "who's using this device" picker with two remembered names shown together.
+
+### Files Created
+- `js/services/studentDeviceService.js`
+- `js/ui/student-portal/onboarding/StudentJoinClassroomView.js`, `StudentRosterPickerView.js`, `StudentDeviceFlow.js`
+
+### Files Modified
+- `js/models/Classroom.js` — `classroomStudentJoinCode` field added.
+- `js/services/classroomService.js` — `ensureStudentJoinCode()` added.
+- `js/repositories/classroomRepository.js`, `firestoreClassroomRepository.js` — student join-code mapping methods added.
+- `js/services/workspaceService.js` — `createStudentJoinCodeMapping()`, `resolveStudentJoinCode()`, `markStudentJoinedPortal()` added; `createClassroom()` fixed to actually populate both join-code mappings.
+- `js/services/setupStateService.js` — `hasAnyStudentJoined()` added.
+- `js/services/recommendationEngine.js` — "Invite Students" rule updated.
+- `js/ui/views/StudentAccessView.js` — rewritten around the one code.
+- `js/main.js` — default Student Portal entry repointed to the new flow; `onSwitchStudent` fixed to use the new device mechanism instead of the old, now-inapplicable identity-service one.
+
+### Breaking Changes
+The Student Portal's default entry point no longer asks for Google sign-in or a PIN — this is the intended, requested change, not an oversight.
+
+### Regression Verification
+Confirmed end-to-end: classroom creation generates both codes correctly; Student Access shows the one code with working Share/Copy and a correct joined-status list; the student flow (code entry → real roster → tap name) completes successfully; the teacher's status view updates to "Joined" immediately after; a device correctly auto-resolves to a single remembered profile on a later visit, skipping the join screen entirely; and a device with two remembered profiles correctly shows both in the "who's using this device" picker.
+
+### Future TODOs
+- Wire the Student Portal's own dashboard content to the actually-joined student (still placeholder data — a separate, already-documented gap, unaffected by this phase).
+- Consider surfacing a path back to the (still-functional, un-removed) parent-connection flow from within the new Student Portal, since it's no longer reachable from the default route at all.
+- Re-audit whether the same "mapping never created at creation time" bug pattern exists anywhere else this project generates a code or token.
+- (Carried over, unchanged): resume broader Settings redesign feature work; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; clickable-student-names audit; note-undo gap in `classModeService`; Session Lock and Session History; consolidate avatar implementations; `firestore.rules` review (now needs the new `studentJoinCodes` collection's rule too); role-based routing; all previously-listed items.

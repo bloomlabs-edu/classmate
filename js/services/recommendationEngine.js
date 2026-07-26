@@ -41,10 +41,10 @@ const RULES = [
     category: 'onboarding',
     priority: 80,
     dismissible: true,
-    applies: (setupState) => setupState.hasStudents && !setupState.hasSentInvitation,
+    applies: (setupState) => setupState.hasStudents && !setupState.hasAnyStudentJoined,
     build: ({ onOpenStudentAccess }) => ({
       title: 'Nice, your roster is coming together',
-      description: "Now let's get your students connected — share an invitation link or PIN so they (and later their parents) can join.",
+      description: "Now let's get your students in — share your classroom code once and they'll pick their own name to join.",
       actions: [{ label: 'Invite Students', onNavigate: onOpenStudentAccess }],
     }),
   },

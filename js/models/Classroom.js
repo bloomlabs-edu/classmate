@@ -68,6 +68,15 @@
  *                    real `members` entry via memberService.addMember()
  *                    — the same function teachers are added through
  *                    today. No generator, no redemption logic, and no UI
+ *   classroomStudentJoinCode - a second, separately-scoped code for
+ *                    students to join the Portal directly (enter code
+ *                    -> see the real roster -> tap their own name),
+ *                    with no PIN, sign-in, or account of any kind
+ *                    behind it. Deliberately a different code from
+ *                    classroomJoinCode above — that one can add someone
+ *                    as a co-teacher; this one only ever resolves to a
+ *                    read-only roster view, and must never be
+ *                    interchangeable with the co-teacher code.
  *                    exist yet; this field exists purely so that future
  *                    work is additive (fill in a value and wire up a
  *                    service) rather than a schema change. See
@@ -104,6 +113,7 @@ export function createClassroom({
   notebookCheckTemplates = {},
   notebookChecks = {},
   classroomJoinCode = null,
+  classroomStudentJoinCode = null,
   settings = buildDefaultSettings(),
 } = {}) {
   return {
@@ -124,6 +134,7 @@ export function createClassroom({
     notebookCheckTemplates,
     notebookChecks,
     classroomJoinCode,
+    classroomStudentJoinCode,
     settings,
   };
 }

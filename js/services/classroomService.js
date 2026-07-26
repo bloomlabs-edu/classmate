@@ -146,6 +146,7 @@ export function createEmptyClassroom(details, owner) {
   // render re-entrancy bug (see this project's CHANGELOG). A render
   // function should only ever read; this is where the write belongs.
   ensureJoinCode(classroom);
+  ensureStudentJoinCode(classroom);
   classrooms.push(classroom);
   return classroom;
 }
@@ -238,6 +239,18 @@ export function getMemberCount(classroom) {
 export function ensureJoinCode(classroom) {
   if (classroom.classroomJoinCode) return false;
   classroom.classroomJoinCode = generateJoinCode();
+  return true;
+}
+
+/**
+ * Same reasoning as ensureJoinCode() above, for the separate
+ * student-facing code — deliberately a different code, since a code
+ * that can add a co-teacher must never be the same one posted on a
+ * classroom board or shared over WhatsApp for students to enter.
+ */
+export function ensureStudentJoinCode(classroom) {
+  if (classroom.classroomStudentJoinCode) return false;
+  classroom.classroomStudentJoinCode = generateJoinCode();
   return true;
 }
 

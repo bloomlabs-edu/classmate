@@ -27,9 +27,9 @@ import * as router from './ui/router.js';
 import { renderWelcomeView } from './ui/views/WelcomeView.js';
 import { renderLandingView } from './ui/views/LandingView.js';
 import { renderStudentPortalShell } from './ui/student-portal/StudentPortalShell.js';
-import { renderStudentOnboardingFlow } from './ui/student-portal/onboarding/StudentOnboardingFlow.js';
-import { renderStudentPickerView } from './ui/student-portal/onboarding/StudentPickerView.js';
-import * as studentIdentityService from './services/studentIdentityService.js';
+import { renderStudentDeviceFlow } from './ui/student-portal/onboarding/StudentDeviceFlow.js';
+import { renderStudentRosterPickerView } from './ui/student-portal/onboarding/StudentRosterPickerView.js';
+import * as studentDeviceService from './services/studentDeviceService.js';
 import { renderStudentHomeView } from './ui/student-portal/views/StudentHomeView.js';
 import { renderStudentAchievementsView } from './ui/student-portal/views/StudentAchievementsView.js';
 import { renderStudentTeamView } from './ui/student-portal/views/StudentTeamView.js';
@@ -202,11 +202,15 @@ function renderStudentPortalMain(route) {
       } else if (route.section === 'profile') {
         renderStudentPortalProfileView(content, {
           onSwitchStudent: async () => {
-            const linked = await studentIdentityService.listLinkedStudents();
-            if (linked.length < 2) return; // nothing to switch to
-            renderStudentPickerView(content, {
-              students: linked,
-              onSelected: () => renderRoute(router.getCurrentRoute()),
+            const remembered = studentDeviceService.getRememberedProfiles();
+            if (remembered.length < 2) return; // nothing to switch to
+            renderStudentRosterPickerView(content, {
+              title: "Who's using Bloom Labs today?",
+              students: remembered,
+              onSelect: (studentRef) => {
+                studentDeviceService.setLastActiveProfile(studentRef);
+                renderRoute(router.getCurrentRoute());
+              },
             });
           },
         });
@@ -235,10 +239,7 @@ function renderRoute(route) {
   if (route.name === 'studentPortal') {
     userBarContainer.innerHTML = '';
 
-    const invitationToken = route.query?.token || null;
-
-    renderStudentOnboardingFlow(appContainer, {
-      invitationToken,
+    renderStudentDeviceFlow(appContainer, {
       onResolved: () => renderStudentPortalMain(route),
     });
     return;

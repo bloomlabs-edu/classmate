@@ -1,26 +1,27 @@
 /**
  * ui/views/StudentAccessView.js
  *
- * A dedicated page answering the teacher's actual question: "which
- * parents have already connected?" — connection status first, PIN as
- * secondary information you expand into, not the headline. Reorganized
- * from an earlier version of this page that led with the PIN/credential
- * itself; that answered "what's this student's PIN" well but made the
- * more common question ("who still needs onboarding?") something a
- * teacher had to work out by scanning raw codes rather than being told
- * directly. See this project's CHANGELOG for the full reasoning.
+ * Rebuilt around the new classroom-code student join flow — one code,
+ * shared once, instead of a PIN generated per student. See this
+ * project's CHANGELOG for the architecture discussion this
+ * implements (students JOIN via a shared code; the earlier per-
+ * student PIN/invitation-link machinery still exists in the codebase,
+ * unused by this page now, backing a secondary parent-connection path
+ * that this phase deliberately left alone).
  *
- * Every PIN/link action here still calls services/studentIdentityService.js
- * — nothing about how PINs or invitation links actually work changed,
- * only what's shown first and what's tucked behind "Manage."
+ * The status list below the code is informational only, not a
+ * bottleneck to clear — a student can be fully using the Portal with
+ * "Not Joined Yet" showing for a slow-to-open classmate, and that's a
+ * completely normal state, not a gap the teacher needs to act on.
  */
 
-import * as studentIdentityService from '../../services/studentIdentityService.js';
+import * as classroomService from '../../services/classroomService.js';
+import * as workspaceService from '../../services/workspaceService.js';
 import { showToast } from '../components/Toast.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { getDisplayName } from '../../services/classroomService.js';
 
-export async function renderStudentAccessView(container, { classroom, onBack }) {
+export function renderStudentAccessView(container, { classroom, onBack }) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
@@ -48,177 +49,147 @@ export async function renderStudentAccessView(container, { classroom, onBack }) 
   header.append(backButton, titleBlock);
   wrapper.appendChild(header);
 
-  const note = document.createElement('p');
-  note.className = 'profile-section__meta';
-  note.style.padding = '0 1.5rem';
-  note.textContent = 'Which parents have connected, and who still needs an invitation.';
-  wrapper.appendChild(note);
-
-  const allStudents = classroom.teams.flatMap((team) => team.students.map((student) => ({ student, team })));
   const content = document.createElement('div');
   content.className = 'wizard-step-content';
 
+  content.appendChild(createInviteStudentsCard(classroom, () => renderStudentAccessView(container, { classroom, onBack })));
+
+  const allStudents = classroom.teams.flatMap((team) => team.students);
   if (allStudents.length === 0) {
     content.appendChild(createEmptyStateElement({ message: 'There are no students in this classroom yet.' }));
   } else {
-    const list = document.createElement('div');
-    list.className = 'student-access-list';
-
-    // Resolved up front so rows can render in one pass, sorted with
-    // not-yet-linked students first — those are the ones actually
-    // needing the teacher's attention right now.
-    const rowsData = await Promise.all(
-      allStudents.map(async ({ student, team }) => ({
-        student,
-        team,
-        isLinked: await studentIdentityService.isStudentLinked(classroom.id, student.id),
-      }))
-    );
-    rowsData.sort((a, b) => Number(a.isLinked) - Number(b.isLinked));
-
-    rowsData.forEach(({ student, team, isLinked }) => {
-      list.appendChild(
-        createStudentAccessRow(classroom, student, team, isLinked, () => renderStudentAccessView(container, { classroom, onBack }))
-      );
-    });
-    content.appendChild(list);
+    content.appendChild(createJoinedStatusList(allStudents));
   }
 
   wrapper.appendChild(content);
   container.appendChild(wrapper);
 }
 
-function createStudentAccessRow(classroom, student, team, isLinked, rerender) {
-  const row = document.createElement('div');
-  row.className = 'student-access-row';
+/**
+ * The one thing this page leads with now — a single code/link/QR the
+ * teacher shares once (board, WhatsApp, projected), replacing forty
+ * individual PIN-generation actions with one.
+ */
+function createInviteStudentsCard(classroom, rerender) {
+  const card = document.createElement('div');
+  card.className = 'settings-section invite-students-card';
 
-  const nameBlock = document.createElement('div');
-  nameBlock.className = 'student-access-row__main';
+  const heading = document.createElement('h2');
+  heading.className = 'settings-page-heading';
+  heading.textContent = 'Invite Students';
+  heading.style.marginTop = '0';
+  heading.style.paddingTop = '0';
+  heading.style.borderTop = 'none';
+  card.appendChild(heading);
 
-  const nameEl = document.createElement('p');
-  nameEl.className = 'student-access-row__name';
-  nameEl.textContent = team ? `${student.name} \u00b7 ${team.name}` : student.name;
-  nameBlock.appendChild(nameEl);
+  const description = document.createElement('p');
+  description.className = 'settings-section__meta';
+  description.textContent = 'Share this once — on the board, over WhatsApp, or by projecting the QR code. No individual invitations needed.';
+  card.appendChild(description);
 
-  const statusEl = document.createElement('p');
-  statusEl.className = 'student-access-row__status' + (isLinked ? ' student-access-row__status--linked' : '');
-  statusEl.textContent = isLinked ? '\u2705 Linked' : '\u23f3 Not Linked';
-  nameBlock.appendChild(statusEl);
+  if (!classroom.classroomStudentJoinCode) {
+    // Only classrooms created before this feature existed can reach
+    // this branch — every classroom created going forward already has
+    // a code (see classroomService.createEmptyClassroom()). Generating
+    // one here happens only in direct response to a click, never
+    // automatically as a side effect of rendering this page — see
+    // this project's CHANGELOG on why a render function must never
+    // perform a write.
+    const generateButton = document.createElement('button');
+    generateButton.type = 'button';
+    generateButton.className = 'btn btn--primary';
+    generateButton.textContent = 'Generate Classroom Code';
+    generateButton.addEventListener('click', () => {
+      classroomService.ensureStudentJoinCode(classroom);
+      workspaceService.save(classroom);
+      workspaceService.createStudentJoinCodeMapping(classroom.classroomStudentJoinCode, classroom.id);
+      rerender();
+    });
+    card.appendChild(generateButton);
+    return card;
+  }
 
-  row.appendChild(nameBlock);
+  const code = classroom.classroomStudentJoinCode;
+  const link = `${window.location.origin}${window.location.pathname}#/student`;
+
+  const codeDisplay = document.createElement('div');
+  codeDisplay.className = 'invite-students-card__code';
+  codeDisplay.textContent = code;
+  card.appendChild(codeDisplay);
 
   const actions = document.createElement('div');
-  actions.className = 'student-access-row__actions';
+  actions.className = 'invite-students-card__actions';
 
-  // Demo-only lookup by name, since the fixture repository doesn't
-  // index PINs by this app's real classroom/student ids — a
-  // production repository would read the PIN directly off the student
-  // object instead (see repositories/identity/StudentLinkRepository.js's
-  // own doc comment on where a PIN actually lives in that model).
-  const demoEntry = studentIdentityService.listDemoRoster().find((entry) => entry.studentName === student.name);
-
-  if (isLinked) {
-    // Linked students get a single, low-key "Manage" action — the PIN
-    // isn't the headline once a parent's already connected; expanding
-    // reveals it only if the teacher actually needs to reset access.
-    const manageButton = document.createElement('button');
-    manageButton.type = 'button';
-    manageButton.className = 'btn btn--ghost';
-    manageButton.textContent = 'Manage';
-    manageButton.addEventListener('click', () => {
-      const details = row.querySelector('.student-access-row__details');
-      details.hidden = !details.hidden;
-    });
-    actions.appendChild(manageButton);
-  } else {
-    // Not-yet-linked students get the primary action front and
-    // center: send the invitation. This is the actual bottleneck the
-    // teacher is trying to clear.
-    const shareButton = document.createElement('button');
-    shareButton.type = 'button';
-    shareButton.className = 'btn btn--primary';
-    shareButton.textContent = 'Share Invitation';
-    shareButton.disabled = !demoEntry;
-    shareButton.addEventListener('click', () => shareInvitation(classroom, student, demoEntry));
-    actions.appendChild(shareButton);
-
-    const detailsToggle = document.createElement('button');
-    detailsToggle.type = 'button';
-    detailsToggle.className = 'btn btn--ghost';
-    detailsToggle.textContent = 'PIN';
-    detailsToggle.addEventListener('click', () => {
-      const details = row.querySelector('.student-access-row__details');
-      details.hidden = !details.hidden;
-    });
-    actions.appendChild(detailsToggle);
-  }
-
-  row.appendChild(actions);
-
-  // The secondary, expandable area — PIN plus Generate/Reset/Copy,
-  // hidden by default. This is exactly the information the earlier
-  // version of this page led with; it's still fully available, just
-  // no longer the first thing a teacher has to parse.
-  const details = document.createElement('div');
-  details.className = 'student-access-row__details';
-  details.hidden = true;
-
-  const pinValue = document.createElement('span');
-  pinValue.className = 'student-access-row__pin';
-  pinValue.textContent = demoEntry ? demoEntry.pin : 'Not available in this demo roster';
-  details.appendChild(pinValue);
-
-  const generateButton = document.createElement('button');
-  generateButton.type = 'button';
-  generateButton.className = 'btn btn--ghost';
-  generateButton.textContent = demoEntry ? 'Reset PIN' : 'Generate PIN';
-  generateButton.disabled = !demoEntry;
-  generateButton.addEventListener('click', async () => {
-    await studentIdentityService.generatePinForStudent(classroom.id, demoEntry.studentId);
-    showToast('New PIN generated');
-    rerender();
-  });
-  details.appendChild(generateButton);
-
-  const copyButton = document.createElement('button');
-  copyButton.type = 'button';
-  copyButton.className = 'btn btn--ghost';
-  copyButton.textContent = 'Copy PIN';
-  copyButton.disabled = !demoEntry;
-  copyButton.addEventListener('click', async () => {
+  const shareButton = document.createElement('button');
+  shareButton.type = 'button';
+  shareButton.className = 'btn btn--primary btn--large';
+  shareButton.textContent = 'Share with Students';
+  shareButton.addEventListener('click', async () => {
+    const shareText = `Join our classroom on Bloom Labs! Open the Student Portal (${link}) and enter this code: ${code}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Join our classroom', text: shareText, url: link });
+        return;
+      } catch (error) {
+        // Cancelled the native share sheet, or it's unavailable — fall through to copy.
+      }
+    }
     try {
-      await navigator.clipboard.writeText(demoEntry.pin);
-      copyButton.textContent = 'Copied!';
-      setTimeout(() => { copyButton.textContent = 'Copy PIN'; }, 1500);
+      await navigator.clipboard.writeText(shareText);
+      showToast('Invitation copied to clipboard');
     } catch (error) {
-      console.error('[StudentAccessView] Failed to copy PIN:', error);
-      window.alert(`Student PIN: ${demoEntry.pin}`);
+      console.error('[StudentAccessView] Failed to copy invitation:', error);
+      window.alert(shareText);
     }
   });
-  details.appendChild(copyButton);
+  actions.appendChild(shareButton);
 
-  row.appendChild(details);
-  return row;
+  const copyCodeButton = document.createElement('button');
+  copyCodeButton.type = 'button';
+  copyCodeButton.className = 'btn btn--ghost';
+  copyCodeButton.textContent = 'Copy Code';
+  copyCodeButton.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      copyCodeButton.textContent = 'Copied!';
+      setTimeout(() => { copyCodeButton.textContent = 'Copy Code'; }, 1500);
+    } catch (error) {
+      console.error('[StudentAccessView] Failed to copy code:', error);
+      window.alert(`Classroom code: ${code}`);
+    }
+  });
+  actions.appendChild(copyCodeButton);
+
+  card.appendChild(actions);
+  return card;
 }
 
-async function shareInvitation(classroom, student, demoEntry) {
-  if (!demoEntry) return;
-  const token = await studentIdentityService.generateInvitationTokenForStudent(classroom.id, demoEntry.studentId, 7);
-  const link = `${window.location.origin}${window.location.pathname}#/student?token=${token}`;
-  const shareText = `Link your Google account to ${student.name} on Bloom Labs: ${link}`;
-  if (navigator.share) {
-    try {
-      await navigator.share({ title: 'Bloom Labs Student Portal', text: shareText, url: link });
-      return;
-    } catch (error) {
-      // User cancelled the native share sheet, or it's unavailable — fall through to copy.
-    }
-  }
-  try {
-    await navigator.clipboard.writeText(link);
-    showToast('Invitation link copied \u2014 expires in 7 days, single use');
-  } catch (error) {
-    console.error('[StudentAccessView] Failed to copy invitation link:', error);
-    window.alert(shareText);
-  }
+/**
+ * Informational only — no actions, no urgency styling. "Not joined
+ * yet" is a completely normal, expected state here, not a bottleneck;
+ * there is nothing for the teacher to individually do about it, since
+ * there's no per-student credential to generate or send anymore.
+ */
+function createJoinedStatusList(allStudents) {
+  const list = document.createElement('div');
+  list.className = 'student-access-list';
+
+  allStudents.forEach((student) => {
+    const row = document.createElement('div');
+    row.className = 'student-access-row';
+
+    const nameEl = document.createElement('p');
+    nameEl.className = 'student-access-row__name';
+    nameEl.textContent = student.name;
+    row.appendChild(nameEl);
+
+    const statusEl = document.createElement('p');
+    statusEl.className = 'student-access-row__status' + (student.hasJoinedPortal ? ' student-access-row__status--linked' : '');
+    statusEl.textContent = student.hasJoinedPortal ? '\u2705 Joined' : '\u23f3 Not Joined Yet';
+    row.appendChild(statusEl);
+
+    list.appendChild(row);
+  });
+
+  return list;
 }

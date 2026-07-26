@@ -4194,3 +4194,24 @@ button.wizard-checklist__row:hover {
   color: var(--settings-text-secondary, var(--color-muted));
   border-style: dashed;
 }
+
+/* Student Access: the one shared classroom code, replacing per-student PIN generation */
+.invite-students-card {
+  text-align: center;
+}
+.invite-students-card__code {
+  font-family: monospace;
+  font-size: 2rem;
+  font-weight: var(--font-weight-black);
+  letter-spacing: 0.1em;
+  background-color: var(--settings-bg, var(--color-bg));
+  border-radius: var(--radius-control);
+  padding: 1rem;
+  margin: 1rem 0;
+}
+.invite-students-card__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: center;
+}
