@@ -27,6 +27,29 @@ export function removeStudent(team, studentId) {
   return team.students.length < before;
 }
 
+/**
+ * Moves a student from one team to another within the same classroom —
+ * the capability this app was missing entirely until now (only
+ * rename and remove existed; a student could never be reassigned to
+ * a different group once created, other than being removed and
+ * re-added to Ungrouped by name, losing their score/badges/history in
+ * the process). Everything about the student — score, badges,
+ * history, bucket — is untouched; only which team's `students` array
+ * they live in changes.
+ */
+export function moveStudentToTeam(classroom, fromTeamId, studentId, toTeamId) {
+  const fromTeam = classroom.teams.find((t) => t.id === fromTeamId);
+  const toTeam = classroom.teams.find((t) => t.id === toTeamId);
+  if (!fromTeam || !toTeam || fromTeamId === toTeamId) return null;
+
+  const studentIndex = fromTeam.students.findIndex((s) => s.id === studentId);
+  if (studentIndex === -1) return null;
+
+  const [student] = fromTeam.students.splice(studentIndex, 1);
+  toTeam.students.push(student);
+  return student;
+}
+
 /** Finds a student by id across every team in a classroom. */
 export function findStudentInClassroom(classroom, studentId) {
   for (const team of classroom.teams) {

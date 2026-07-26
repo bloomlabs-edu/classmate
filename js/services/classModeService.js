@@ -19,6 +19,7 @@
 
 import * as bucketService from './bucketService.js';
 import * as badgeService from './badgeService.js';
+import * as studentService from './studentService.js';
 import * as timelineService from './timelineService.js';
 import { getBucketLabel } from '../config/bucketConfig.js';
 
@@ -85,6 +86,35 @@ export function changeBucketQuick(classroom, student, newBucket) {
 
   pushUndo(classroom.id, () => {
     student.bucket = previousBucket; // silent revert — no new "Bucket Changed" entry
+    removeHistoryEntry(student, entry.id);
+  });
+
+  return entry;
+}
+
+/**
+ * Moves a student to a different group/team, logging it the same way
+ * a bucket change is logged, with the same undo support (move back on
+ * undo, no new timeline entry for the reversal). The actual move
+ * itself is studentService.moveStudentToTeam() — this wraps that with
+ * the timeline + undo behavior consistent with every other quick
+ * action here. Returns null if the student is already on that team.
+ */
+export function changeGroupQuick(classroom, currentTeam, student, newTeamId) {
+  if (currentTeam.id === newTeamId) return null;
+
+  const newTeam = classroom.teams.find((t) => t.id === newTeamId);
+  if (!newTeam) return null;
+
+  const fromTeamId = currentTeam.id;
+  const fromTeamName = currentTeam.name;
+  const moved = studentService.moveStudentToTeam(classroom, fromTeamId, student.id, newTeamId);
+  if (!moved) return null;
+
+  const entry = timelineService.logEntry(student, { kind: 'group', label: `Moved to ${newTeam.name}` });
+
+  pushUndo(classroom.id, () => {
+    studentService.moveStudentToTeam(classroom, newTeamId, student.id, fromTeamId); // silent revert — no new "Moved to X" entry
     removeHistoryEntry(student, entry.id);
   });
 

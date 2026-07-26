@@ -255,6 +255,7 @@ function handleLongPress(classroom, team, student, { onSelectStudent, rerender }
   openQuickActionsSheet({
     student,
     bucketOptions: classModeService.getBucketOptions(),
+    groupOptions: classroom.teams.filter((t) => t.id !== team.id).map((t) => ({ id: t.id, name: t.name })),
     onAwardBadge: () => {
       const catalog = badgeService.listCatalog(classroom);
       const availableBadges = catalog.filter((badge) => !(student.badges || []).includes(badge));
@@ -292,6 +293,13 @@ function handleLongPress(classroom, team, student, { onSelectStudent, rerender }
       const entry = classModeService.changeBucketQuick(classroom, student, bucketKey);
       if (entry) {
         showToast(`Bucket changed for ${student.name}`);
+        rerender();
+      }
+    },
+    onChangeGroup: (newTeamId) => {
+      const entry = classModeService.changeGroupQuick(classroom, team, student, newTeamId);
+      if (entry) {
+        showToast(`${student.name} moved to a new group`);
         rerender();
       }
     },

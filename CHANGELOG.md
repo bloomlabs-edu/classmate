@@ -2660,3 +2660,40 @@ None to the app itself. Anyone who had previously relied on the documented GitHu
 
 ### Regression Verification
 All new config files validated as well-formed (JSON parse, YAML parse). Full project JS syntax check passed. Live end-to-end deployment verification was not possible from this sandbox — no network access to Firebase/GitHub, and the two gaps above mean a real run isn't possible yet regardless. This needs to be confirmed by an actual push once you've completed the two steps above.
+
+---
+
+## Two Real Bugs Fixed: Student Profile Page, and Missing Group Reassignment
+
+**Context:** surfaced while verifying the automated deployment pipeline was actually serving fresh code — a genuine, useful side effect of that verification.
+
+### Bug 1: Student Portal Profile page showed "?" avatar and empty fields
+`StudentProfileView.js` (the Student Portal's own Profile tab — distinct from the similarly-named teacher-side `js/ui/views/StudentProfileView.js`) called `getCurrentStudentProfile()` synchronously. That function was made async during an earlier session's data-service rewrite, and every other consumer was found and fixed at the time — this one was missed, since the search for consumers wasn't run comprehensively enough in that pass. Fixed: the view is now async, awaits properly, has a real empty state if no profile loads, and shows "Not assigned yet" for an ungrouped student's Group field instead of a blank one.
+
+### Bug 2: No way to move a student between groups, anywhere in the app
+Investigating the reported "no option to regroup" turned up something bigger than expected: this capability didn't exist at all, not even in Settings — only rename and remove existed for an existing student. Once assigned (or left in the default "Ungrouped" bucket), a student was stuck; the only workaround was removing them entirely and re-adding them by name into Ungrouped, losing their score, badges, and history in the process.
+
+Built the missing capability properly rather than patch around it:
+- `studentService.moveStudentToTeam()` — the actual missing operation, preserving everything about the student except which team's `students` array they live in.
+- `classModeService.changeGroupQuick()` — mirrors the existing `changeBucketQuick()` exactly: logs a timeline entry ("Moved to Group B"), supports undo (moves back, no new entry on reversal).
+- `QuickActionsSheet.js` gained a fifth action, "Change Group," following the identical one-tap-deep pattern already established for "Change Bucket."
+
+### Files Modified
+- `js/ui/student-portal/views/StudentProfileView.js` — async fix, empty states.
+- `js/services/studentService.js` — `moveStudentToTeam()`.
+- `js/services/classModeService.js` — `changeGroupQuick()`, plus the new `studentService` import.
+- `js/ui/components/QuickActionsSheet.js` — the new action and its options sub-menu.
+- `js/ui/views/TrackerView.js` — wired `groupOptions` and `onChangeGroup` into the existing quick-actions call site.
+- `css/styles.css` — one small addition for the "no other groups yet" empty note.
+
+### Breaking Changes
+None. Both fixes are purely additive or corrective — no existing behavior changed for anyone not hitting the bug.
+
+### Regression Verification
+Both fixed live, not just read back in code:
+- **Profile page**: tested both a student in a real group (showed real name, initials-based avatar, classroom, "Group A", role) and an ungrouped student (showed "Not assigned yet" instead of blank). Zero console errors in both.
+- **Change Group**: created a second group in a real classroom, long-pressed a student sitting in "Ungrouped," opened "Change Group," confirmed it correctly listed only the *other* team as an option, tapped it, and confirmed both the toast ("TestKid moved to a new group") and the actual team card layout updated — the student now genuinely appears under the new group. Zero console errors.
+
+### Future TODOs
+- (Carried over, unchanged): restructure `hasJoinedPortal` to a top-level field so a Firestore rule can safely permit that write; fix `awardStar()` not reading the classroom's own "Default point value" setting; apply category badges to Settings' own tabs and Activities if a future pass wants full palette coverage; resume broader Settings redesign feature work; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; role-based routing; all previously-listed items.
+- New, from this entry: the `pages-build-deployment` workflow spotted in the GitHub Actions sidebar during the deployment troubleshooting session suggests GitHub Pages may still be enabled on this repo from before the switch to Firebase Hosting — worth confirming and disabling it if so, so only one deployment target is active.

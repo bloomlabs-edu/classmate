@@ -2019,6 +2019,13 @@ button.wizard-checklist__row:hover {
   margin: 0.2rem 0 1rem;
 }
 
+.bottom-sheet__empty-note {
+  text-align: center;
+  color: var(--color-muted);
+  font-size: 0.85rem;
+  margin: 0.5rem 0;
+}
+
 .bottom-sheet__actions {
   display: flex;
   flex-direction: column;

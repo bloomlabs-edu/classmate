@@ -9,19 +9,31 @@
  * CHANGELOG). getAvatarForPerson() already branches on a `type` field
  * specifically so that adding real photo support later is a change to
  * that one function, not to this view.
+ *
+ * Live Firestore data — see services/studentPortalDataService.js.
  */
 
 import { getCurrentStudentProfile } from '../../../services/studentPortalDataService.js';
 import { getAvatarForPerson } from '../../../utils/avatarGenerator.js';
 
-export function renderStudentProfileView(container, { onSwitchStudent }) {
+export async function renderStudentProfileView(container, { onSwitchStudent }) {
   container.innerHTML = '';
 
-  const profile = getCurrentStudentProfile();
-  const avatar = getAvatarForPerson(profile);
+  const profile = await getCurrentStudentProfile();
 
   const wrapper = document.createElement('div');
   wrapper.className = 'student-profile';
+
+  if (!profile) {
+    const notice = document.createElement('p');
+    notice.className = 'student-home__empty-notice';
+    notice.textContent = "We couldn't load your profile right now. Try rejoining your classroom.";
+    wrapper.appendChild(notice);
+    container.appendChild(wrapper);
+    return;
+  }
+
+  const avatar = getAvatarForPerson(profile);
 
   const avatarEl = document.createElement('div');
   avatarEl.className = 'student-profile__avatar';
@@ -43,7 +55,7 @@ export function renderStudentProfileView(container, { onSwitchStudent }) {
   details.className = 'student-profile__details';
   details.append(
     createDetailRow('Classroom', profile.classroomName),
-    createDetailRow('Group', profile.groupName),
+    createDetailRow('Group', profile.groupName || 'Not assigned yet'),
     createDetailRow('Role', profile.role)
   );
   wrapper.appendChild(details);

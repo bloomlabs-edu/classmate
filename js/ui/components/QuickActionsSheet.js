@@ -2,11 +2,12 @@
  * ui/components/QuickActionsSheet.js
  *
  * The long-press bottom sheet: student name, current bucket, and four
- * actions (Award Badge, Add Note, Change Bucket, Open Full Profile),
- * plus Cancel. "Change Bucket" swaps the sheet's own content for the
- * four bucket options rather than opening another layer — everything
- * here should stay one tap deep. Rendering + wiring only; the caller
- * (see ui/views/TrackerView.js) supplies what each action actually does.
+ * actions (Award Badge, Add Note, Change Bucket, Change Group, Open
+ * Full Profile), plus Cancel. "Change Bucket" and "Change Group" both
+ * swap the sheet's own content for their options rather than opening
+ * another layer — everything here should stay one tap deep.
+ * Rendering + wiring only; the caller (see ui/views/TrackerView.js)
+ * supplies what each action actually does.
  */
 
 import { getBucketLabel } from '../../config/bucketConfig.js';
@@ -15,9 +16,11 @@ import { createIcon } from './Icon.js';
 export function openQuickActionsSheet({
   student,
   bucketOptions,
+  groupOptions,
   onAwardBadge,
   onAddNote,
   onChangeBucket,
+  onChangeGroup,
   onOpenProfile,
 }) {
   const overlay = document.createElement('div');
@@ -64,6 +67,7 @@ export function openQuickActionsSheet({
       })
     );
     actionsList.appendChild(createSheetAction(createIcon('folder', { size: 18 }), 'Change Bucket', renderBucketOptions));
+    actionsList.appendChild(createSheetAction(createIcon('users', { size: 18 }), 'Change Group', renderGroupOptions));
     actionsList.appendChild(
       createSheetAction(createIcon('user', { size: 18 }), 'Open Full Profile', () => {
         close();
@@ -80,6 +84,25 @@ export function openQuickActionsSheet({
         createSheetAction(null, label + (isCurrent ? ' (current)' : ''), () => {
           close();
           onChangeBucket(key);
+        })
+      );
+    });
+    actionsList.appendChild(createSheetAction(createIcon('arrow-left', { size: 18 }), 'Back', renderMainActions));
+  }
+
+  function renderGroupOptions() {
+    actionsList.innerHTML = '';
+    if (groupOptions.length === 0) {
+      const note = document.createElement('p');
+      note.className = 'bottom-sheet__empty-note';
+      note.textContent = 'No other groups yet — add one from Settings.';
+      actionsList.appendChild(note);
+    }
+    groupOptions.forEach(({ id, name }) => {
+      actionsList.appendChild(
+        createSheetAction(null, name, () => {
+          close();
+          onChangeGroup(id);
         })
       );
     });
