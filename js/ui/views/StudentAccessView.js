@@ -20,6 +20,7 @@ import * as workspaceService from '../../services/workspaceService.js';
 import { showToast } from '../components/Toast.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { getDisplayName } from '../../services/classroomService.js';
+import { APP_BASE_URL } from '../../config/appConfig.js';
 
 export function renderStudentAccessView(container, { classroom, onBack }) {
   container.innerHTML = '';
@@ -110,7 +111,7 @@ function createInviteStudentsCard(classroom, rerender) {
   }
 
   const code = classroom.classroomStudentJoinCode;
-  const link = `${window.location.origin}${window.location.pathname}#/student`;
+  const link = `${APP_BASE_URL}#/student`;
 
   const codeDisplay = document.createElement('div');
   codeDisplay.className = 'invite-students-card__code';

@@ -2211,3 +2211,36 @@ Searched the entire codebase one more time after all changes: zero remaining `.t
 
 ### Future TODOs
 - (Carried over, unchanged): resume broader Settings redesign feature work; wire the Student Portal's own dashboard content to the actually-joined student; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; consolidate avatar implementations; `firestore.rules` review (including the newer `studentJoinCodes` collection); role-based routing; all previously-listed items.
+
+---
+
+## Centralized `APP_BASE_URL` for All Generated Links
+
+**Context:** every link ClassMate generates (currently, the WhatsApp/share invitation) should be built from one configuration value, so a future deployment change (custom domain, different GitHub Pages path) only needs editing in one place.
+
+### Investigation, before changing anything
+Searched the whole codebase for every place constructing a URL from `window.location`, and found exactly one: `StudentAccessView.js`'s share-invitation link. No QR code generation exists yet to update (confirmed in an earlier phase — the Student Access page's copy only *describes* projecting a QR code, no image is actually generated), so there was nothing there to touch.
+
+### The old-repository-name search — nothing needed changing, and it's worth explaining why
+Found "classroom-tracker" in three places: `README.md` (folder/`cd` instructions), `CHANGELOG.md` (historical record), and `appConfig.js`'s `LEGACY_STORAGE_KEY`/`storageKeyPrefix`. None needed updating:
+- The README's references describe the actual, current repository folder name — the repo itself was never renamed, only the app's own branding changed to ClassMate. Changing these would make the instructions wrong, not fix anything.
+- `LEGACY_STORAGE_KEY = 'classroom-tracker:workspace'` is a **frozen migration key** — `workspaceService.js` uses it to find data an *earlier* version of this app actually wrote to localStorage under that exact string. Changing it wouldn't rebrand anything; it would just make the migration silently fail to find that old data.
+- `storageKeyPrefix` in `APP_CONFIG` turned out to be dead code — declared, but never imported or read anywhere in the app. Left alone as out of scope for this task; not something to quietly clean up under a "just update the URL config" request.
+
+### Implementation
+`APP_BASE_URL` added to `appConfig.js` as the single source of truth: `` `${window.location.origin}${window.location.pathname}` `` by default, so it's already correct with zero setup in whatever environment the app is actually running in — local dev, GitHub Pages, or a future custom domain — without needing to be kept in sync by hand. The doc comment spells out the one-line change needed if ClassMate ever moves to a stable domain and every environment should point at that one production URL regardless of where the code happens to be running.
+
+`StudentAccessView.js`'s share-invitation link now reads this constant instead of constructing the URL inline.
+
+### Files Modified
+- `js/config/appConfig.js` — `APP_BASE_URL` added; `LEGACY_STORAGE_KEY` documentation clarified to explain why it stays as "classroom-tracker" deliberately.
+- `js/ui/views/StudentAccessView.js` — uses `APP_BASE_URL` instead of inline `window.location` construction.
+
+### Breaking Changes
+None. Confirmed directly: the generated share link still correctly reflects the current environment's real origin, byte-for-byte the same output as before the refactor.
+
+### Regression Verification
+Confirmed the WhatsApp/share invitation text still generates the correct link for the environment it's actually running in, via the new centralized constant rather than inline construction — verified by intercepting the actual clipboard write, not just reading the code.
+
+### Future TODOs
+- (Carried over, unchanged): resume broader Settings redesign feature work; wire the Student Portal's own dashboard content to the actually-joined student; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; consolidate avatar implementations; `firestore.rules` review; role-based routing; all previously-listed items.
