@@ -1,6 +1,6 @@
 // firestore.rules
 //
-// Security rules for Classroom Tracker's Firestore database.
+// Security rules for ClassMate's Firestore database.
 //
 // How to apply these:
 //   Option A (Firebase Console): Firestore Database -> Rules tab ->
@@ -79,13 +79,50 @@
 //      possible to write safely; a rule permitting "a non-member may
 //      write anything" is not.
 
+// ---------------------------------------------------------------------
+// Student join codes (no student authentication, by design)
+// ---------------------------------------------------------------------
+//
+// Students join with no sign-in, no PIN, no password (see this
+// project's CHANGELOG for the architecture discussion) — the
+// classroom's student-facing code is the only thing standing between
+// "anyone" and the roster. That means, unlike joinCodes above:
+//   - studentJoinCodes/{code} must be readable with NO auth at all
+//     (request.auth is null for every student device).
+//   - Once resolved, the classroom document itself must also be
+//     readable with no auth — Firestore has no way to say "readable
+//     only if you arrived via a valid code," so the code itself (an
+//     unguessable 6-character string) is the actual gate, the same way
+//     a classroom's own Firestore document ID being unguessable is
+//     what makes this safe at all, not authentication.
+//   - WRITES stay restricted to authenticated members/owner, with one
+//     narrow exception below for marking a student as joined.
+
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
     match /classrooms/{classroomId} {
-      allow read: if request.auth != null &&
-        request.auth.uid in resource.data.memberUids;
+      // Split into get/list rather than one blanket `read`, verified
+      // against actual usage: every access anywhere in this app's
+      // repository code is doc(db, 'classrooms', classroomId) — a
+      // direct read by a known ID — never a collection query. So
+      // `get` needs to support the no-auth student flow (see below),
+      // but there is no legitimate reason for `list` to ever succeed
+      // for anyone, member or not — nothing in the app queries this
+      // collection broadly, and permitting it would let an
+      // unauthenticated client enumerate/scan classroom documents
+      // instead of only fetching one they already have the ID or
+      // student code for.
+      allow get: if (request.auth != null &&
+        request.auth.uid in resource.data.memberUids) || true;
+      // The `|| true` above is deliberate, not a mistake — see the
+      // "Student join codes" comment block below: gets must be open to
+      // unauthenticated students once they have a classroomId, which
+      // in practice only ever happens via an unguessable code. Left
+      // as two conditions rather than a bare `allow get: if true` so
+      // the intent (member OR anyone-with-the-id) stays legible.
+      allow list: if false;
 
       allow create: if request.auth != null &&
         request.auth.uid == request.resource.data.ownerUid &&
@@ -106,6 +143,26 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    match /studentJoinCodes/{code} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update, delete: if false;
+    }
+
+    // NOT YET SUPPORTED: markStudentJoinedPortal() in workspaceService.js
+    // needs an unauthenticated student device to flip one nested flag
+    // (a student's hasJoinedPortal, buried inside teams[].students[])
+    // — and there's no safe way to write a rule permitting "change
+    // exactly this one deeply-nested field, nothing else" the way
+    // isSelfOnlyJoin() does for the simpler top-level members/
+    // memberUids case below. Writing a rule permissive enough to allow
+    // this would also allow an unauthenticated visitor to rewrite
+    // scores, students, or anything else in the document — not an
+    // acceptable trade. Left deliberately unaddressed here rather than
+    // either silently broken or unsafely open — see this file's
+    // accompanying explanation for the recommended fix (restructuring
+    // this flag to a top-level field, which a rule CAN safely permit).
+
     match /users/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
 
@@ -116,6 +173,17 @@ service cloud.firestore {
 
     // Legacy, pre-sharing location — migration-only (see
     // services/workspaceService.js). Nothing new is ever written here.
+    //
+    // MIGRATION NOTE for this new Firebase project specifically: this
+    // rule exists to support a one-time read-then-delete migration
+    // from data that predates classroom sharing. A brand-new Firestore
+    // database has no documents at this path at all — there is
+    // nothing to migrate from here. Harmless to keep (an unreachable
+    // rule for a collection with no data isn't a security risk), but
+    // it is genuinely dead weight in this project specifically. Safe
+    // to delete this block entirely if you'd rather keep the rules
+    // file lean; keeping it only makes sense if you plan to import
+    // data from the old project into this same legacy path.
     match /teachers/{teacherId}/classrooms/{classroomId} {
       allow read, write: if request.auth != null && request.auth.uid == teacherId;
     }

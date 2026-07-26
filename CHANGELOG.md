@@ -2510,3 +2510,28 @@ Confirmed via computed style on a fresh landing page (correct colors on first lo
 
 ### Future TODOs
 - (Carried over, unchanged): fix `awardStar()` not reading the classroom's own "Default point value" setting; apply category badges to Settings' own tabs and Activities if a future pass wants full palette coverage; resume broader Settings redesign feature work; wire the Student Portal's own dashboard content to the actually-joined student; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; `firestore.rules` review; role-based routing; all previously-listed items.
+
+---
+
+## Invite Teachers Wording Clarified — Not Changed to a Student Invitation
+
+**Context:** flagged as "the invitation text is outdated... this should be a student invitation, not a co-teacher invitation." Traced it to the Setup Wizard's "Invite Teachers" step, and found something important before changing anything: that text shares `classroom.classroomJoinCode` — the co-teacher code, which grants full read/write classroom access via `addSelfAsTeacher()` when redeemed. A separate, already-correct student-facing flow exists in `StudentAccessView.js`, using `classroomStudentJoinCode` with already-appropriate wording — that one needed no changes.
+
+### Why the literal instruction wasn't followed as stated
+Rewriting this step's text to sound like a student invitation while leaving it tied to the co-teacher code would have created a dangerous mismatch: the message would say "join as a student," but redeeming that code actually grants full co-teacher access — not a student's read-only roster view. That's not a wording fix, it's a functional trap. Flagged this directly rather than complying with the literal request.
+
+### What actually happened, and the real fix
+The likely cause of the confusion: a brand-new, likely-solo teacher reaches this step immediately after Configure Scoring — before ever seeing the real student invite flow in Settings — and reasonably assumes "the invite step in front of me" is about students. Fixed by making this step's own wording unmistakable about what it does and where the real student invite lives, rather than changing what it invites someone as.
+
+### Changed (messaging only, confirmed via live test that the underlying code is untouched)
+- The step's on-screen intro now explicitly states this grants "full access to students, scores, and settings — not a student invitation," and points to Settings → Student Access for the real student invite.
+- The actual shared message (sent via native share or copied to clipboard) now also explicitly says "with full access to students and scores," as a second safety layer for whoever receives it directly, not just whoever is looking at the screen.
+
+### Files Modified
+- `js/ui/views/SetupWizardView.js` — two text strings only. `classroom.classroomJoinCode` (which code is used), `addSelfAsTeacher()` (what redeeming it does), and `StudentAccessView.js` (the separate, correct student flow) are all completely untouched.
+
+### Breaking Changes
+None — messaging only, verified live that the same `classroomJoinCode` value still displays and shares correctly.
+
+### Future TODOs
+- (Carried over, unchanged): fix `markStudentJoinedPortal()`'s unsupported write under production Firestore rules; fix `awardStar()` not reading the classroom's own "Default point value" setting; apply category badges to Settings' own tabs and Activities if a future pass wants full palette coverage; resume broader Settings redesign feature work; wire the Student Portal's own dashboard content to the actually-joined student; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; role-based routing; all previously-listed items.

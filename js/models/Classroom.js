@@ -61,13 +61,15 @@
  *                    services/notebookService.js's one-time,
  *                    non-destructive migration into `notebooks` (see
  *                    that file) — never written to again.
- *   classroomJoinCode - RESERVED, always null today. A future
- *                    student/parent joining flow (Class Code or QR)
- *                    would populate this and a not-yet-built
- *                    membershipRequestService would redeem it into a
- *                    real `members` entry via memberService.addMember()
- *                    — the same function teachers are added through
- *                    today. No generator, no redemption logic, and no UI
+ *   classroomJoinCode - a code a co-teacher enters to join this
+ *                    classroom as a real member (see
+ *                    services/classroomService.js's ensureJoinCode(),
+ *                    services/workspaceService.js's
+ *                    createJoinCodeMapping()/joinClassroomByCode(), and
+ *                    the Teachers section in SettingsView.js where an
+ *                    owner shares it). Redeeming it adds the joining
+ *                    teacher via memberService.addMember() — the same
+ *                    function used everywhere else a member is added.
  *   classroomStudentJoinCode - a second, separately-scoped code for
  *                    students to join the Portal directly (enter code
  *                    -> see the real roster -> tap their own name),
@@ -76,14 +78,16 @@
  *                    classroomJoinCode above — that one can add someone
  *                    as a co-teacher; this one only ever resolves to a
  *                    read-only roster view, and must never be
- *                    interchangeable with the co-teacher code.
- *                    exist yet; this field exists purely so that future
- *                    work is additive (fill in a value and wire up a
- *                    service) rather than a schema change. See
- *                    config/memberRoles.js's STUDENT/PARENT roles for
- *                    the matching placeholder on the membership side —
- *                    both are blocked pending the same authentication
- *                    approval.
+ *                    interchangeable with the co-teacher code. Live
+ *                    today (see services/classroomService.js's
+ *                    ensureStudentJoinCode(), services/workspaceService.js's
+ *                    resolveStudentJoinCode()/markStudentJoinedPortal(),
+ *                    and ui/student-portal/onboarding/). This is
+ *                    separate from real STUDENT/PARENT membership —
+ *                    see config/memberRoles.js — which remains
+ *                    genuinely blocked pending authentication approval;
+ *                    this code only ever grants read-only roster
+ *                    visibility, never a `members` entry.
  *   settings       - classroom-level settings: bucket scoring, point
  *                    scoring, badge catalog, and Setup Wizard progress —
  *                    see config/classroomDefaults.js for the defaults,

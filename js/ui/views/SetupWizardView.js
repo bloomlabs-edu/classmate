@@ -561,7 +561,7 @@ function renderInviteTeachersStep(content, classroom, { finish }) {
   const intro = document.createElement('p');
   intro.className = 'wizard-step__intro';
   intro.textContent =
-    "If you're co-teaching this classroom, share this code so another teacher can join with their own account. Skip this if you're teaching solo — you can always share it later from Settings.";
+    "This adds another teacher to this classroom, with full access to students, scores, and settings — not a student invitation. If you're teaching solo, skip this. Looking to invite students? That's a separate code, in Settings \u2192 Student Access, once you've finished setup.";
   content.appendChild(intro);
 
   const codeDisplay = document.createElement('div');
@@ -578,7 +578,7 @@ function renderInviteTeachersStep(content, classroom, { finish }) {
   shareButton.textContent = 'Share Code & Continue';
   shareButton.addEventListener('click', async () => {
     const code = classroom.classroomJoinCode;
-    const shareText = `Join ${classroom.classroomName || 'our classroom'} on ClassMate as a co-teacher. Classroom Code: ${code}`;
+    const shareText = `Join ${classroom.classroomName || 'our classroom'} on ClassMate as a co-teacher, with full access to students and scores. Classroom Code: ${code}`;
     if (navigator.share) {
       try {
         await navigator.share({ title: 'Join our classroom', text: shareText });
