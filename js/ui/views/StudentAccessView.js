@@ -125,10 +125,10 @@ function createInviteStudentsCard(classroom, rerender) {
   shareButton.className = 'btn btn--primary btn--large';
   shareButton.textContent = 'Share with Students';
   shareButton.addEventListener('click', async () => {
-    const shareText = `Join our classroom on Bloom Labs! Open the Student Portal (${link}) and enter this code: ${code}`;
+    const shareText = `\ud83c\udf89 You've been invited to join our classroom on ClassMate!\n\nOpen the Student Portal using the link below.\n\nClassroom Code:\n${code}\n\nStudent Portal:\n${link}`;
     if (navigator.share) {
       try {
-        await navigator.share({ title: 'Join our classroom', text: shareText, url: link });
+        await navigator.share({ title: 'Join our classroom on ClassMate', text: shareText });
         return;
       } catch (error) {
         // Cancelled the native share sheet, or it's unavailable — fall through to copy.

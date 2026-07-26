@@ -205,7 +205,7 @@ function renderStudentPortalMain(route) {
             const remembered = studentDeviceService.getRememberedProfiles();
             if (remembered.length < 2) return; // nothing to switch to
             renderStudentRosterPickerView(content, {
-              title: "Who's using Bloom Labs today?",
+              title: "Who's using ClassMate today?",
               students: remembered,
               onSelect: (studentRef) => {
                 studentDeviceService.setLastActiveProfile(studentRef);

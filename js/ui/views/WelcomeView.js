@@ -20,7 +20,7 @@ export function renderWelcomeView(container, { onNewClassroom, onJoinClassroom }
 
   const title = document.createElement('h1');
   title.className = 'welcome-view__title';
-  title.textContent = 'Welcome to Classroom Tracker';
+  title.textContent = 'Welcome to ClassMate';
 
   const subtitle = document.createElement('p');
   subtitle.className = 'welcome-view__subtitle';

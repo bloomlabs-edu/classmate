@@ -2174,3 +2174,40 @@ Confirmed end-to-end: classroom creation generates both codes correctly; Student
 - Consider surfacing a path back to the (still-functional, un-removed) parent-connection flow from within the new Student Portal, since it's no longer reachable from the default route at all.
 - Re-audit whether the same "mapping never created at creation time" bug pattern exists anywhere else this project generates a code or token.
 - (Carried over, unchanged): resume broader Settings redesign feature work; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; clickable-student-names audit; note-undo gap in `classModeService`; Session Lock and Session History; consolidate avatar implementations; `firestore.rules` review (now needs the new `studentJoinCodes` collection's rule too); role-based routing; all previously-listed items.
+
+---
+
+## Product Rebrand: ClassMate (Bloom Labs Remains the Subtle Company Name)
+
+**Context:** the product is now branded "ClassMate" everywhere a user actually sees it, replacing both "Bloom Labs" and "Classroom Tracker" as user-facing product names. Bloom Labs remains, deliberately subtle, as the company behind it — matching the Byju's/Think & Learn, Notion/Notion Labs pattern requested.
+
+### Full audit performed before implementing, as requested
+Searched every file for "Bloom Labs" and "Classroom Tracker," then separately searched broadly for "Tracker" alone to catch anything the first search might have missed. Categorized every hit as user-facing (changed) or internal documentation (lower priority, addressed selectively). Confirmed several items from the original request's example list don't currently exist in this codebase at all — no About page, no `manifest.json`, no actual QR code image generation (Student Access's copy only describes projecting one), no email-sending feature — so there was nothing to silently miss in those categories.
+
+### User-facing changes
+- **Browser tab title** (`index.html`): `Classroom Tracker` → `ClassMate`.
+- **Startup-error and nomodule-fallback messages** (`index.html`) — found during the final audit, not the initial one: "Something went wrong loading Classroom Tracker" and "This browser can't run Classroom Tracker" both updated. These only appear when something breaks, but that's exactly when a consistent identity matters most.
+- **Landing page**: main title `Classroom Tracker` → `ClassMate`; the "by Bloom Labs" eyebrow above it was *already* the correct subtle pattern from an earlier phase and needed no change.
+- **Welcome view, Login view titles**: both updated to ClassMate.
+- **Teacher and Student Portal "back" links** (`UserBar.js`, `StudentPortalShell.js`): `← Bloom Labs` → `← ClassMate`.
+- **Multi-profile device picker title** (`StudentDeviceFlow.js`, duplicated in `main.js`): `Who's using Bloom Labs today?` → `Who's using ClassMate today?`.
+- **"Add Students" recommendation card copy** (`recommendationEngine.js`): updated to reference ClassMate.
+- **WhatsApp/share invitation text** (`StudentAccessView.js`) — rewritten to the exact multi-line format requested, with the classroom code standing alone on its own line rather than embedded in a sentence. Also changed the native `navigator.share` title to "Join our classroom on ClassMate," and removed the separate `url` parameter from the share call, since the link was already embedded in the requested text format — passing both risked the link appearing twice on share sheets that concatenate `text` and `url`.
+
+### The "Tracker" audit
+Broadened the search beyond the exact phrase "Classroom Tracker" to catch any standalone use of "Tracker" that might read as the old product name. Found one genuinely ambiguous case: `NotebookTrackerView.js`'s back button read "← Back to Tracker" — worth being direct that its *actual* destination, verified by tracing the real navigation wiring rather than assumed, turned out to be the Dashboard, not Class Mode as a first guess suggested. Corrected to "← Back to Dashboard." Left "Notebook Tracker" itself as a feature name (the page's own title, and its own back-link "← Back to Notebook Tracker") — it describes a specific feature within ClassMate, the same way "Recognition Wall" or "Weekly Snapshot" do, not the product's own name, so renaming it would have been scope creep beyond what was requested.
+
+### Lower priority — internal doc comments
+Updated `LandingView.js`'s own module doc comment, since it explicitly documents the naming hierarchy other developers would read to understand it. Left doc-comment-only references in `UserBar.js`, `router.js`, `ConsentProvider.js`, `IdentityProvider.js`, `StudentPortalShell.js`, `StudentAchievementsView.js`, `studentIdentityService.js`, `studentPortalDataService.js`, `StudentLinkRepository.js`, `LocalStudentLinkRepository.js`, `main.js`, and `avatarGenerator.js` as-is — none of these affect anything a user sees, and updating every internal comment referencing the old names throughout this project's history didn't seem like the right use of this pass. `CHANGELOG.md`'s own historical entries were left entirely untouched, as a record of what was actually decided and said at the time.
+
+### Files Modified
+`index.html`, `js/ui/views/LandingView.js`, `WelcomeView.js`, `LoginView.js`, `NotebookTrackerView.js`, `js/ui/components/UserBar.js`, `js/ui/student-portal/StudentPortalShell.js`, `js/ui/student-portal/onboarding/StudentDeviceFlow.js`, `js/services/recommendationEngine.js`, `js/ui/views/StudentAccessView.js`, `js/main.js`.
+
+### Breaking Changes
+None — every change is text-only; no routes, function signatures, or data shapes changed.
+
+### Final Audit, Per Explicit Request
+Searched the entire codebase one more time after all changes: zero remaining `.textContent`/`.innerHTML` assignments containing either "Bloom Labs" or "Classroom Tracker" anywhere. Confirmed `ClassMate` appears correctly in every expected user-facing file. Verified end-to-end in a live test: the browser tab title, the Landing page's eyebrow-plus-title hierarchy, the Welcome and Login view titles, the recommendation card copy, and — checked precisely by intercepting the actual clipboard write, not just eyeballing the code — the exact WhatsApp share text, which matches the requested format exactly, including the classroom code standing alone on its own line.
+
+### Future TODOs
+- (Carried over, unchanged): resume broader Settings redesign feature work; wire the Student Portal's own dashboard content to the actually-joined student; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; consolidate avatar implementations; `firestore.rules` review (including the newer `studentJoinCodes` collection); role-based routing; all previously-listed items.

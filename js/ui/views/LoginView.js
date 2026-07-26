@@ -15,7 +15,7 @@ export function renderLoginView(container, { onSignIn }) {
 
   const title = document.createElement('h1');
   title.className = 'login-view__title';
-  title.textContent = 'Classroom Tracker';
+  title.textContent = 'ClassMate';
 
   const subtitle = document.createElement('p');
   subtitle.className = 'login-view__subtitle';

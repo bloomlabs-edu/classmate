@@ -32,7 +32,7 @@ const RULES = [
     applies: (setupState) => !setupState.hasStudents,
     build: ({ onOpenSettingsStudents }) => ({
       title: "Let's build your classroom roster",
-      description: 'Add your students so you can start awarding stars, tracking notebooks, and everything else Bloom Labs does.',
+      description: 'Add your students so you can start awarding stars, tracking notebooks, and everything else ClassMate does.',
       actions: [{ label: 'Add Students', onNavigate: onOpenSettingsStudents }],
     }),
   },

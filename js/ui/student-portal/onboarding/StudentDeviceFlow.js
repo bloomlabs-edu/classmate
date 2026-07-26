@@ -34,7 +34,7 @@ export async function renderStudentDeviceFlow(container, { onResolved }) {
 
   if (remembered.length > 1) {
     renderStudentRosterPickerView(container, {
-      title: "Who's using Bloom Labs today?",
+      title: "Who's using ClassMate today?",
       students: remembered,
       onSelect: (studentRef) => {
         studentDeviceService.setLastActiveProfile(studentRef);
