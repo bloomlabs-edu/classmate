@@ -19,11 +19,6 @@ npm-debug.log*
 .env
 .env.local
 
-# Real Firebase credentials — never commit or ship this. Copy
-# js/config/firebaseConfig.example.js to firebaseConfig.js and fill
-# in your own project's values; that copy stays local/untracked.
-js/config/firebaseConfig.js
-
 # Build output (none currently, kept for future-proofing)
 dist/
 build/

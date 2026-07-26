@@ -1,0 +1,28 @@
+# Deploys ClassMate to Firebase Hosting on every push to main.
+#
+# No build step - this is a static HTML/CSS/JS app with no bundler,
+# so the checked-out repo is deployed as-is. firebaseConfig.js is
+# committed to the repository (it's not a secret - see
+# js/config/firebaseConfig.example.js for why), so no config
+# generation step is needed here either.
+#
+# The FIREBASE_SERVICE_ACCOUNT secret this workflow depends on is
+# created automatically by running `firebase init hosting:github`
+# from the project root - see README.md's deployment section.
+
+name: Deploy to Firebase Hosting on merge
+on:
+  push:
+    branches:
+      - main
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_CLASSMATE_302C2 }}'
+          channelId: live
+          projectId: classmate-302c2

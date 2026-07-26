@@ -2,9 +2,14 @@
  * config/firebaseConfig.example.js
  *
  * Template for js/config/firebaseConfig.js — that file holds your
- * REAL Firebase project credentials and is gitignored (see .gitignore);
- * it is never committed, never regenerated, and never included in any
- * generated project archive. Treat it like a `.env` file.
+ * Firebase project's web app config and IS committed to the
+ * repository (see project README). This is a normal part of the
+ * shipped app, not a secret: Firebase's client-side config is
+ * designed to be public — anyone using the deployed app can already
+ * see every one of these values in their browser's dev tools. Real
+ * access control happens entirely through Firestore Security Rules
+ * (see firestore.rules) and the Authorized Domains list, not through
+ * hiding this file.
  *
  * Setup:
  *   1. Copy this file to firebaseConfig.js (same folder).
@@ -17,13 +22,6 @@
  *      domain you're serving this app from (localhost is included by
  *      default for local testing).
  *   7. Firestore Database \u2192 Rules \u2192 paste firestore.rules \u2192 Publish.
- *
- * These values are not secret in the sense of needing encryption —
- * Firebase's client-side config is designed to be shipped in the
- * browser; real access control happens via Firestore Security Rules —
- * but they ARE specific to your project, and this codebase's convention
- * is to keep them out of version control and generated deliverables
- * regardless, the same way any other environment file would be handled.
  */
 
 export const firebaseConfig = {

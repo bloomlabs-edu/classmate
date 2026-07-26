@@ -135,10 +135,13 @@ cd classroom-tracker
 ### 2. Set up Firebase (Authentication + Firestore)
 
 The app won't sign anyone in or load any classrooms until this is done.
-`js/config/firebaseConfig.js` holds your **real** Firebase
-credentials — it's gitignored and is never committed, regenerated, or
-included in any generated project archive, the same way you'd treat a
-`.env` file. See
+`js/config/firebaseConfig.js` holds your Firebase project's web app
+config and is committed to the repository — this isn't a secret;
+Firebase's client-side config is designed to be public, since anyone
+using the deployed app can already see these values in their browser's
+dev tools. Real access control happens through Firestore Security
+Rules (see `firestore.rules`) and the Authorized Domains list below,
+not through hiding this file. See
 [`js/config/firebaseConfig.example.js`](js/config/firebaseConfig.example.js)
 for the full checklist and every field's placeholder:
 
@@ -178,27 +181,40 @@ the repository root and choose "Open with Live Server."
 
 Then open `http://localhost:8000` in your browser.
 
-### GitHub Pages deployment
+### Deployment — automatic, via GitHub Actions
 
-The app lives at the repository root specifically so GitHub Pages can
-serve it directly — Pages only publishes from a repository's root or a
-`/docs` folder, not an arbitrary path. In the repository's Settings →
-Pages, set the source to the branch you want published, with root
-(`/`) as the folder. No build step is required; every file Pages needs
-(`index.html`, `css/`, `js/`, `data/`) is already at the root.
+The workflow is: **develop locally → commit → push to GitHub → GitHub
+Actions deploys to Firebase Hosting automatically.** There's no manual
+deploy command to remember day to day.
 
-A `.nojekyll` file sits at the repository root — GitHub Pages runs
-pushed content through Jekyll by default, and this file disables that,
-so every file is served exactly as committed with no processing in
-between. Standard practice for a plain static/JS site like this one.
+- Every push to `main` deploys to the live site
+  ([classmate-302c2.web.app](https://classmate-302c2.web.app)) — see
+  `.github/workflows/firebase-hosting-merge.yml`.
+- Every pull request gets its own temporary preview URL, so changes
+  can be reviewed live before merging — see
+  `.github/workflows/firebase-hosting-pull-request.yml`. Preview
+  channels expire automatically after a few days and never touch the
+  live site.
+- No build step — this is a plain static HTML/CSS/JS app with no
+  bundler, so the checked-out repository is deployed exactly as
+  committed, `firebaseConfig.js` included.
 
-**If you're relocating `index.html` or any part of this app to a new
-path in your own fork:** remember that `js/config/firebaseConfig.js`
-is gitignored and never committed — moving the rest of the app with
-`git mv` or a script will not move that file for you. Move it manually
-to match the app's new structure, or the app will fail to load
-entirely (a missing import breaks the whole module graph, not just
-Firebase features) with no error visible beyond a blank page.
+**One-time setup for a new clone of this repo** (already done for the
+main repository — only relevant if you're setting up your own fork's
+deployment):
+1. `firebase login`
+2. From the repository root: `firebase init hosting:github` — this
+   guided command creates a Firebase service account, adds it as an
+   encrypted GitHub secret automatically, and asks which branch
+   triggers deployment (`main`) and whether to enable PR previews
+   (yes).
+3. Push — the workflow files above already exist in this repo, so
+   this step just needs the GitHub secret it depends on
+   (`FIREBASE_SERVICE_ACCOUNT_CLASSMATE_302C2`) to exist for your fork.
+
+**If you ever need to deploy manually** (e.g. testing a change to the
+workflow files themselves): `firebase deploy --only hosting` from the
+repository root, same as before automation existed.
 
 ### 4. Formatting
 

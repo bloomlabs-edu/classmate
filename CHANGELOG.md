@@ -2629,3 +2629,34 @@ One path not exercised: a non-zero Learning Journey streak, since constructing r
 
 ### Future TODOs
 - (Carried over, unchanged): restructure `hasJoinedPortal` to a top-level field so a Firestore rule can safely permit that write; fix `awardStar()` not reading the classroom's own "Default point value" setting; apply category badges to Settings' own tabs and Activities if a future pass wants full palette coverage; resume broader Settings redesign feature work; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; role-based routing; all previously-listed items.
+
+---
+
+## Automatic Deployments via GitHub Actions
+
+**Context:** implementing the agreed automation, having first corrected a real misconception — `firebaseConfig.js` was being treated as a secret (gitignored, described as ".env-like") when Firebase's client-side config is actually designed to be public; real access control lives in Firestore Security Rules, not in hiding this file. That correction simplified the automation significantly: no GitHub Secret or generation step needed for it, since it's just committed and checked out normally.
+
+### Changed
+- `.gitignore` — removed `js/config/firebaseConfig.js`, since it's committed now.
+- `js/config/firebaseConfig.example.js` — doc comment rewritten to explain accurately why this isn't sensitive, replacing the previous ".env file" framing.
+- `README.md` — two fixes: the Firebase setup section's stale "real credentials... treat it like a `.env` file" language corrected, and the entire "GitHub Pages deployment" section (genuinely stale — this project deploys to Firebase Hosting, not GitHub Pages, and hadn't been updated when that changed) replaced with the new automatic workflow: develop locally → commit → push to `main` → GitHub Actions deploys to Firebase Hosting automatically.
+- `.nojekyll` removed — a GitHub Pages-specific artifact with no purpose now that hosting is on Firebase.
+
+### Added
+- `firebase.json` — standard static-site Hosting config. No SPA rewrite rules included, since this app's routing is hash-based (`#/...`), which never reaches the server on navigation.
+- `.firebaserc` — project alias pointing at `classmate-302c2`, inferred from the hosting URL and flagged for confirmation rather than assumed silently.
+- `.github/workflows/firebase-hosting-merge.yml` — deploys to the live site on every push to `main`.
+- `.github/workflows/firebase-hosting-pull-request.yml` — temporary preview deployment for every pull request, expiring automatically, never touching the live site.
+
+### Known gap this entry does not resolve — needs your action, not mine
+Two things I cannot do myself, flagged clearly rather than worked around:
+1. **The real `firebaseConfig.js` doesn't exist in this project copy** — I don't have your actual six config values (only the project ID, inferred from your hosting URL). This file needs to be created with real values and committed before any deploy — by you, or by you pasting me the six values.
+2. **The `FIREBASE_SERVICE_ACCOUNT_CLASSMATE_302C2` GitHub secret these workflows depend on doesn't exist yet** — creating it requires `firebase init hosting:github`, an interactive command needing your own Firebase/GitHub authentication, which I cannot run on your behalf.
+
+Neither workflow will succeed until both of these exist. This isn't a partial implementation — every file that *can* be written without your credentials has been, and is ready to work the moment those two things are in place.
+
+### Breaking Changes
+None to the app itself. Anyone who had previously relied on the documented GitHub Pages deployment path would need to switch to the new one — but per this same discussion, that path was already stale relative to what's actually being used.
+
+### Regression Verification
+All new config files validated as well-formed (JSON parse, YAML parse). Full project JS syntax check passed. Live end-to-end deployment verification was not possible from this sandbox — no network access to Firebase/GitHub, and the two gaps above mean a real run isn't possible yet regardless. This needs to be confirmed by an actual push once you've completed the two steps above.
