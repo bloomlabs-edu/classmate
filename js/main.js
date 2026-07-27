@@ -30,10 +30,9 @@ import { renderStudentPortalShell } from './ui/student-portal/StudentPortalShell
 import { renderStudentDeviceFlow } from './ui/student-portal/onboarding/StudentDeviceFlow.js';
 import { renderStudentRosterPickerView } from './ui/student-portal/onboarding/StudentRosterPickerView.js';
 import * as studentDeviceService from './services/studentDeviceService.js';
-import { renderStudentHomeView } from './ui/student-portal/views/StudentHomeView.js';
-import { renderStudentAchievementsView } from './ui/student-portal/views/StudentAchievementsView.js';
+import { renderStudentJourneyView } from './ui/student-portal/views/StudentJourneyView.js';
 import { renderStudentTeamView } from './ui/student-portal/views/StudentTeamView.js';
-import { renderStudentLearnView } from './ui/student-portal/views/StudentLearnView.js';
+import { renderStudentAvatarBuilderView } from './ui/student-portal/views/StudentAvatarBuilderView.js';
 import { renderStudentProfileView as renderStudentPortalProfileView } from './ui/student-portal/views/StudentProfileView.js';
 import { renderHomeView } from './ui/views/HomeView.js';
 import { renderTrackerView } from './ui/views/TrackerView.js';
@@ -193,14 +192,16 @@ function renderStudentPortalMain(route) {
     onNavigateSection: (section) => router.navigate(`/student/${section}`),
     onBackToLanding: () => router.navigate('/'),
     renderSectionContent: (content) => {
-      if (route.section === 'achievements') {
-        renderStudentAchievementsView(content);
-      } else if (route.section === 'team') {
+      if (route.section === 'team') {
         renderStudentTeamView(content);
-      } else if (route.section === 'learn') {
-        renderStudentLearnView(content);
+      } else if (route.section === 'avatar-builder') {
+        renderStudentAvatarBuilderView(content, {
+          studentId: studentDeviceService.getLastActiveProfile()?.studentId,
+          onBack: () => router.navigate('/student/profile'),
+        });
       } else if (route.section === 'profile') {
         renderStudentPortalProfileView(content, {
+          onCustomizeAvatar: () => router.navigate('/student/avatar-builder'),
           onSwitchStudent: async () => {
             const remembered = studentDeviceService.getRememberedProfiles();
             if (remembered.length < 2) return; // nothing to switch to
@@ -215,7 +216,7 @@ function renderStudentPortalMain(route) {
           },
         });
       } else {
-        renderStudentHomeView(content);
+        renderStudentJourneyView(content);
       }
     },
   });

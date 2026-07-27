@@ -13,7 +13,7 @@
  * StudentJoinClassroomView.js's doc comment for the full reasoning).
  */
 
-import { getAvatarForPerson } from '../../../utils/avatarGenerator.js';
+import { createAvatarElement } from '../../components/AvatarDisplay.js';
 
 /**
  * @param {Array<{classroomId, studentId, studentName}>} students
@@ -34,23 +34,25 @@ export function renderStudentRosterPickerView(container, { title = 'Choose your 
   list.className = 'student-picker__list';
 
   students.forEach((studentRef) => {
-    const avatar = getAvatarForPerson({ name: studentRef.studentName });
-
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'student-picker__card';
     card.addEventListener('click', () => onSelect(studentRef));
 
-    const avatarEl = document.createElement('span');
-    avatarEl.className = 'student-picker__avatar';
-    avatarEl.style.backgroundColor = avatar.color;
-    avatarEl.textContent = avatar.initials;
+    card.appendChild(
+      createAvatarElement({
+        studentId: studentRef.studentId,
+        name: studentRef.studentName,
+        size: 48,
+        className: 'student-picker__avatar',
+      })
+    );
 
     const nameEl = document.createElement('span');
     nameEl.className = 'student-picker__name';
     nameEl.textContent = studentRef.studentName;
 
-    card.append(avatarEl, nameEl);
+    card.appendChild(nameEl);
     list.appendChild(card);
   });
 

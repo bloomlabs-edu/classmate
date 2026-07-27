@@ -27,6 +27,7 @@ import * as studentDeviceService from './studentDeviceService.js';
 import * as studentService from './studentService.js';
 import * as studentProgressService from './studentProgressService.js';
 import { getWeekRange } from '../utils/dateHelpers.js';
+import { listRecognitionCategoriesForPeriod } from '../config/recognitionCategories.js';
 
 async function loadCurrentStudentAndClassroom() {
   const profile = studentDeviceService.getLastActiveProfile();
@@ -46,6 +47,7 @@ export async function getCurrentStudentProfile() {
   if (!found) return null;
 
   return {
+    studentId: found.student.id,
     name: found.student.name,
     classroomName: found.classroom.classroomName,
     groupName: found.team && !found.team.isUngrouped ? found.team.name : null,
@@ -78,6 +80,7 @@ export async function getHomeSummary() {
   const journeyStreak = studentProgressService.getBestActiveStreakAcrossNotebooks(classroom, student.id);
 
   return {
+    studentId: student.id,
     studentName: student.name,
     classroomName: classroom.classroomName,
     starsThisWeek,
@@ -100,6 +103,47 @@ export async function getAchievements() {
   }));
 }
 
+/**
+ * The Recognition Wall, from the student's own point of view — a
+ * genuinely different thing from getAchievements() above. Achievements
+ * are manually-awarded Behaviour Badges (Helper, Team Player, ...);
+ * this is "did I (or my team, for Team Champion) win one of the
+ * computed weekly recognition categories?" — the same categories and
+ * the same getRecognitionWinners() the teacher-side Recognition Wall
+ * already uses (see config/recognitionCategories.js,
+ * studentProgressService.js). Deliberately week-scoped only, matching
+ * the rest of this file's weekly framing.
+ *
+ * Returns raw structured data only (category metadata plus the
+ * winner's own fields) — formatting the "how much" statistic into a
+ * display string is left to the UI layer (see
+ * ui/components/RecognitionCard.js's formatKeyStatistic()), matching
+ * this project's stated rule that services never own display
+ * formatting.
+ */
+export async function getRecognitionWins() {
+  const found = await loadCurrentStudentAndClassroom();
+  if (!found) return [];
+
+  const { classroom, student, team } = found;
+
+  const wins = [];
+  listRecognitionCategoriesForPeriod('week').forEach((category) => {
+    const winners = studentProgressService.getRecognitionWinners(classroom, category.id, 'week');
+    const isTeamCategory = category.resolverId === 'team_stars';
+
+    const mine = isTeamCategory
+      ? team && !team.isUngrouped && winners.find((winner) => winner.teamId === team.id)
+      : winners.find((winner) => winner.studentId === student.id);
+
+    if (mine) {
+      wins.push({ category, winner: mine });
+    }
+  });
+
+  return wins;
+}
+
 export async function getTeamSummary() {
   const found = await loadCurrentStudentAndClassroom();
   if (!found || !found.team || found.team.isUngrouped) return null;
@@ -107,9 +151,33 @@ export async function getTeamSummary() {
   const { classroom, student, team } = found;
   const weekRange = getWeekRange();
 
+  // Every real team's rank this week (Ungrouped is deliberately
+  // excluded — same reasoning as GroupsWidget.js and the Dashboard's
+  // Groups section: it isn't a group a teacher organized, so it
+  // doesn't belong in a "classroom leaderboard" of teams).
+  const classroomLeaderboard = studentProgressService
+    .getTeamRankInRange(classroom, weekRange)
+    .filter((entry) => {
+      const entryTeam = classroom.teams.find((t) => t.id === entry.teamId);
+      return entryTeam && !entryTeam.isUngrouped;
+    });
+
+  const myLeaderboardEntry = classroomLeaderboard.find((entry) => entry.teamId === team.id);
+
+  const members = team.students
+    .map((teammate) => ({
+      studentId: teammate.id,
+      name: teammate.name,
+      isSelf: teammate.id === student.id,
+      stars: studentProgressService.getStarsInRange(classroom, teammate.id, weekRange),
+    }))
+    .sort((a, b) => b.stars - a.stars);
+
   return {
     teamName: team.name,
-    teammates: team.students.filter((s) => s.id !== student.id).map((s) => s.name),
-    teamStars: studentProgressService.getTeamStarsInRange(classroom, team.id, weekRange),
+    teamStars: myLeaderboardEntry ? myLeaderboardEntry.stars : studentProgressService.getTeamStarsInRange(classroom, team.id, weekRange),
+    teamRank: myLeaderboardEntry ? myLeaderboardEntry.rank : null,
+    members,
+    classroomLeaderboard,
   };
 }

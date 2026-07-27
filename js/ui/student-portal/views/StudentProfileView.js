@@ -1,22 +1,26 @@
 /**
  * ui/student-portal/views/StudentProfileView.js
  *
- * Shows the generated avatar (initials + deterministic color — see
- * utils/avatarGenerator.js), name, classroom, group, and role, plus a
- * "Switch Student" action, for a parent linked to more than one child
- * entry screen. No photo upload anywhere:
- * not a missing feature, a deliberate decision (see this project's
- * CHANGELOG). getAvatarForPerson() already branches on a `type` field
- * specifically so that adding real photo support later is a change to
- * that one function, not to this view.
+ * A lightweight settings page: avatar, name, classroom, group, role,
+ * plus "Customize Avatar" and "Switch Student" actions.
  *
- * Live Firestore data — see services/studentPortalDataService.js.
+ * The avatar shown here is always the illustrated 2D avatar (custom
+ * or default) — never initials — since this is the student's own
+ * profile; see ui/components/AvatarDisplay.js's `useDefaultIfMissing`
+ * for why "self" always gets a real avatar rather than a fallback.
+ * Phase 1: the avatar config itself lives in this device's
+ * localStorage only (see services/avatarConfigService.js) — no photo
+ * upload anywhere, not a missing feature, a deliberate decision (see
+ * this project's CHANGELOG).
+ *
+ * Live Firestore data for name/classroom/group/role — see
+ * services/studentPortalDataService.js.
  */
 
 import { getCurrentStudentProfile } from '../../../services/studentPortalDataService.js';
-import { getAvatarForPerson } from '../../../utils/avatarGenerator.js';
+import { createAvatarElement } from '../../components/AvatarDisplay.js';
 
-export async function renderStudentProfileView(container, { onSwitchStudent }) {
+export async function renderStudentProfileView(container, { onSwitchStudent, onCustomizeAvatar }) {
   container.innerHTML = '';
 
   const profile = await getCurrentStudentProfile();
@@ -33,18 +37,24 @@ export async function renderStudentProfileView(container, { onSwitchStudent }) {
     return;
   }
 
-  const avatar = getAvatarForPerson(profile);
+  wrapper.appendChild(
+    createAvatarElement({
+      studentId: profile.studentId,
+      name: profile.name,
+      size: 96,
+      useDefaultIfMissing: true,
+      className: 'student-profile__avatar',
+    })
+  );
 
-  const avatarEl = document.createElement('div');
-  avatarEl.className = 'student-profile__avatar';
-  if (avatar.type === 'generated') {
-    avatarEl.style.backgroundColor = avatar.color;
-    avatarEl.textContent = avatar.initials;
+  if (onCustomizeAvatar) {
+    const customizeButton = document.createElement('button');
+    customizeButton.type = 'button';
+    customizeButton.className = 'btn btn--text student-profile__customize-avatar';
+    customizeButton.textContent = 'Customize Avatar';
+    customizeButton.addEventListener('click', () => onCustomizeAvatar(profile.studentId));
+    wrapper.appendChild(customizeButton);
   }
-  // A future avatar.type === 'photo' branch would set avatarEl's
-  // background to an <img> instead — not implemented, since photo
-  // support isn't built (see this file's own module comment).
-  wrapper.appendChild(avatarEl);
 
   const name = document.createElement('h1');
   name.className = 'student-profile__name';

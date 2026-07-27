@@ -57,7 +57,7 @@ const PERIOD_LABELS = Object.freeze({
  * a generic "value: N", since each category's number needs different
  * units to be self-explanatory at a glance.
  */
-function formatKeyStatistic(category, winner) {
+export function formatKeyStatistic(category, winner) {
   switch (category.resolverId) {
     case 'stars':
     case 'team_stars':
