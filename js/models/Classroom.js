@@ -40,6 +40,25 @@
  *   learningActivities - LearningActivity[] (see models/LearningActivity.js),
  *                    created once per classroom; each student then gets
  *                    a status against each one (see models/Student.js)
+ *   learningRecord - { subjects: LearningSubject[] } — the Learning
+ *                    Record syllabus tree: Subject -> Unit -> Concept
+ *                    (see models/LearningSubject.js,
+ *                    models/LearningUnit.js,
+ *                    models/LearningConcept.js). Teacher-controlled
+ *                    (syllabus structure + each concept's taught
+ *                    status) — see services/learningRecordTeacherService.js.
+ *                    A student's own understanding/notebook/helpRequested
+ *                    against each concept lives separately, on that
+ *                    Student (see models/Student.js's `learningRecord`
+ *                    field), the same split `learningActivities` above
+ *                    uses with `submissions`. Wrapped in an object with
+ *                    a `subjects` key (rather than being a bare array
+ *                    directly on the classroom) so this same shape has
+ *                    room to grow — e.g. syllabus-level settings later —
+ *                    without another migration, matching how
+ *                    `notebookConfig` below is shaped. Completely
+ *                    independent of Learning Hub — see
+ *                    docs/LEARNING_RECORD.md.
  *   notebookConfig - { subjects: [{id, name}], notebookTypes: [{id,
  *                    subjectId, name}] } — the classroom's configurable
  *                    notebook taxonomy (see
@@ -132,6 +151,7 @@ export function createClassroom({
   memberUids = [],
   teams = [],
   learningActivities = [],
+  learningRecord = { subjects: [] },
   notebookConfig = { subjects: [], notebookTypes: [] },
   notebooks = {},
   notebookCheckTemplates = {},
@@ -154,6 +174,7 @@ export function createClassroom({
     memberUids,
     teams,
     learningActivities,
+    learningRecord,
     notebookConfig,
     notebooks,
     notebookCheckTemplates,

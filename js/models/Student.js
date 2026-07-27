@@ -22,6 +22,21 @@
  *                 models/LearningActivity.js and
  *                 services/learningActivityService.js). An activity with
  *                 no entry here is "Not Assigned" for this student.
+ *   learningRecord - { [conceptId]: StudentConceptRecord } — this
+ *                 student's own understanding/notebook/helpRequested
+ *                 against each concept in the classroom's Learning
+ *                 Record syllabus (see models/LearningSubject.js,
+ *                 models/StudentConceptRecord.js, and
+ *                 services/learningRecordService.js). Same "shared
+ *                 entity + a per-student map keyed by its id" shape as
+ *                 `submissions` above, for the same reason. A concept
+ *                 with no entry here is 'not_marked' /
+ *                 'not_required' / not requesting help for this
+ *                 student — see
+ *                 learningRecordService.getStudentConceptRecord(),
+ *                 which returns those defaults rather than undefined.
+ *                 Completely independent of Learning Hub — see
+ *                 docs/LEARNING_RECORD.md.
  *   history     - the Timeline: an array of { id, kind, label, delta,
  *                 recordedAt } entries (see services/timelineService.js).
  *                 This is the append-only log `score` is derived from,
@@ -38,6 +53,7 @@ export function createStudent({
   badges = [],
   notes = [],
   submissions = {},
+  learningRecord = {},
   history = [],
 } = {}) {
   return {
@@ -48,6 +64,7 @@ export function createStudent({
     badges,
     notes,
     submissions,
+    learningRecord,
     history,
   };
 }
