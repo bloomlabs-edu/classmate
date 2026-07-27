@@ -33,6 +33,7 @@ import * as workspaceService from '../../services/workspaceService.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
 import * as learningRecordTeacherService from '../../services/learningRecordTeacherService.js';
 import { createIcon } from '../components/Icon.js';
+import { renderConceptWorkspaceView, createTaughtToggle } from './ConceptWorkspaceView.js';
 
 const DEFAULT_SUBJECT_NAMES = ['Science', 'Maths', 'English', 'Social Science'];
 
@@ -129,7 +130,7 @@ function renderScreen(container, classroom, openSubjectId, openUnitId, handlers)
     breadcrumb.append(' \u203a ' + subject.title + ' \u203a ' + unit.title);
     wrapper.appendChild(breadcrumb);
 
-    wrapper.appendChild(renderLessonsLevel(classroom, unit, handlers));
+    wrapper.appendChild(renderLessonsLevel(container, classroom, subject, unit, handlers));
   } else if (subject) {
     const breadcrumb = document.createElement('p');
     breadcrumb.className = 'learning-record-view__breadcrumb';
@@ -264,7 +265,7 @@ function renderUnitsLevel(classroom, subject, handlers) {
 
 // ---- Lessons (Concepts) ------------------------------------------------
 
-function renderLessonsLevel(classroom, unit, handlers) {
+function renderLessonsLevel(container, classroom, subject, unit, handlers) {
   const section = document.createElement('div');
   section.className = 'learning-record-view__section';
 
@@ -272,18 +273,34 @@ function renderLessonsLevel(classroom, unit, handlers) {
     const row = document.createElement('div');
     row.className = 'learning-record-view__row';
 
+    // Milestone 1: the Concept Workspace — see ConceptWorkspaceView.js,
+    // now the permanent home for every concept-related feature.
+    // Deliberately a separate button from the rename input rather than
+    // making the title itself clickable, for the same reason
+    // AvatarDisplay/name-links elsewhere in this app avoid overloading
+    // a click target that's already used for something else (here,
+    // editing).
+    const openButton = document.createElement('button');
+    openButton.type = 'button';
+    openButton.className = 'learning-record-view__open-workspace-button';
+    openButton.appendChild(createIcon('arrow-right', { size: 16 }));
+    openButton.setAttribute('aria-label', `Open ${concept.title} workspace`);
+    openButton.addEventListener('click', () => {
+      renderConceptWorkspaceView(container, {
+        classroom,
+        subject,
+        unit,
+        concept,
+        onBack: handlers.rerender,
+      });
+    });
+
     const input = createRenameInput(concept.title, (newTitle) => {
       learningRecordTeacherService.renameConcept(classroom, concept.id, newTitle);
       workspaceService.save(classroom);
     });
 
-    const isTaught = concept.status === 'taught';
-    const taughtToggle = document.createElement('button');
-    taughtToggle.type = 'button';
-    taughtToggle.className = 'learning-record-taught-toggle' + (isTaught ? ' learning-record-taught-toggle--taught' : '');
-    taughtToggle.textContent = isTaught ? '\u2713 Taught' : '\u25cb Not Taught';
-    taughtToggle.addEventListener('click', () => {
-      learningRecordTeacherService.setConceptTaughtStatus(classroom, concept.id, isTaught ? 'not_taught' : 'taught');
+    const taughtToggle = createTaughtToggle(classroom, concept, () => {
       workspaceService.save(classroom);
       handlers.rerender();
     });
@@ -294,7 +311,7 @@ function renderLessonsLevel(classroom, unit, handlers) {
       handlers.rerender();
     });
 
-    row.append(input, taughtToggle, removeButton);
+    row.append(openButton, input, taughtToggle, removeButton);
     section.appendChild(row);
   });
 

@@ -54,6 +54,9 @@ import { createClassModeWidgetElement } from '../components/ClassModeWidget.js';
 import { createTeachingSectionElement } from '../components/TeachingSection.js';
 import { createClassroomSectionElement } from '../components/ClassroomSection.js';
 import { renderLearningRecordView } from './LearningRecordView.js';
+import { renderConceptWorkspaceView } from './ConceptWorkspaceView.js';
+import { renderReadingEditorView } from './ReadingEditorView.js';
+import * as resourceService from '../../services/resourceService.js';
 
 export function renderDashboardView(container, props) {
   const {
@@ -88,6 +91,48 @@ export function renderDashboardView(container, props) {
       classroom,
       onClose: () => renderDashboardView(container, props),
     });
+  }
+
+  // The Dashboard's "Continue Working" shortcut to whatever a teacher
+  // actually touched last, across the whole classroom, regardless of
+  // type — see services/resourceService.js's
+  // getMostRecentlyEditedResource() and
+  // ContinueWorkingWidget.js's own doc comment for why this is the
+  // finishing step of the Reading Editor milestone, not a separate
+  // feature. Jumps straight into the resource's real editor when one
+  // exists (Reading, today); for any other type — no editor yet —
+  // lands on that resource's Details tab instead, the most useful
+  // screen available for it, via the same Concept Workspace every
+  // other path into a resource already uses.
+  function openRecentResource({ resource, subject, unit, concept }) {
+    function backToConceptWorkspace() {
+      renderConceptWorkspaceView(container, {
+        classroom,
+        subject,
+        unit,
+        concept,
+        initialResourceId: resource.id,
+        // "Back to [Unit]" from here deliberately returns to the
+        // Dashboard rather than reconstructing Learning Record's own
+        // Subject/Unit navigation state — that state lives inside
+        // LearningRecordView.js's own closure and isn't designed to
+        // be entered mid-way from outside it. A teacher jumping in via
+        // this shortcut backing out to the Dashboard (one level above
+        // where they started) is an honest simplification, not a
+        // broken breadcrumb.
+        onBack: () => renderDashboardView(container, props),
+      });
+    }
+
+    if (resource.type === 'reading') {
+      renderReadingEditorView(container, {
+        classroom,
+        resource,
+        onBack: backToConceptWorkspace,
+      });
+    } else {
+      backToConceptWorkspace();
+    }
   }
 
   // Every teaching-time feature (Start Class Mode, Continue Working,
@@ -232,7 +277,7 @@ export function renderDashboardView(container, props) {
   wrapper.appendChild(content);
   container.appendChild(wrapper);
 
-  loadContinueWorking(classroom, currentUser, secondaryContentSlot, onSelectNotebook, openManageLessons);
+  loadContinueWorking(classroom, currentUser, secondaryContentSlot, onSelectNotebook, openManageLessons, resourceService.getMostRecentlyEditedResource(classroom), openRecentResource);
 }
 
 /**
@@ -334,7 +379,7 @@ function createSettingsButton(onOpenSettings) {
   return button;
 }
 
-async function loadContinueWorking(classroom, currentUser, slot, onSelectNotebook, onManageLessons) {
+async function loadContinueWorking(classroom, currentUser, slot, onSelectNotebook, onManageLessons, recentResource, onOpenRecentResource) {
   const allEntries = await continueWorkingService.getRecentOnce(currentUser?.uid);
   const classroomEntries = allEntries.filter((entry) => entry.classroomId === classroom.id);
 
@@ -352,6 +397,14 @@ async function loadContinueWorking(classroom, currentUser, slot, onSelectNoteboo
   // early here whenever a teacher had no recent notebooks at all,
   // which would have hidden that button for exactly the teachers most
   // likely to be new to the app.
-  slot.appendChild(createContinueWorkingWidgetElement({ entries: resolvedEntries, onOpenNotebook: onSelectNotebook, onManageLessons }));
+  slot.appendChild(
+    createContinueWorkingWidgetElement({
+      entries: resolvedEntries,
+      onOpenNotebook: onSelectNotebook,
+      onManageLessons,
+      recentResource,
+      onOpenRecentResource,
+    })
+  );
 }
 

@@ -1310,6 +1310,467 @@ select:focus-visible,
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
 }
+.learning-record-view__open-workspace-button {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background-color: #ffffff;
+  color: var(--color-primary);
+  cursor: pointer;
+}
+.learning-record-view__open-workspace-button:hover {
+  background-color: var(--color-primary);
+  color: #ffffff;
+  border-color: var(--color-primary);
+}
+
+/* Concept Workspace — see ui/views/ConceptWorkspaceView.js. The
+   permanent home for every future concept-related feature; fully
+   self-contained, same reasoning as .learning-record-view above. */
+.concept-workspace {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 1.5rem 3rem;
+}
+.concept-workspace__header {
+  padding: 1.25rem 0 0.5rem;
+}
+.concept-workspace__breadcrumb {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  margin: 0.75rem 0 0.15rem;
+}
+.concept-workspace__title {
+  font-size: 1.5rem;
+  font-weight: var(--font-weight-black);
+  margin: 0 0 1.25rem;
+}
+.concept-workspace__tab-bar {
+  margin-bottom: 1.5rem;
+}
+.concept-workspace__section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.concept-workspace__section--empty {
+  align-items: flex-start;
+}
+.concept-workspace__tab-intro {
+  color: var(--color-muted);
+  margin: 0;
+}
+.concept-workspace__empty-message {
+  color: var(--color-muted);
+  margin: 0 0 0.5rem;
+}
+.concept-workspace__status-row {
+  display: flex;
+}
+.concept-workspace__stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.85rem;
+}
+.concept-workspace__stat-card {
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 1.1rem 1.25rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+}
+.concept-workspace__stat-value {
+  font-size: 1.8rem;
+  font-weight: var(--font-weight-black);
+  margin: 0 0 0.2rem;
+}
+.concept-workspace__stat-label {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+  margin: 0;
+}
+.concept-workspace__progress-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.concept-workspace__progress-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  background-color: #ffffff;
+  border-radius: 14px;
+  padding: 0.75rem 1.1rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+}
+.concept-workspace__progress-name {
+  font-weight: var(--font-weight-bold);
+  flex: 1;
+  min-width: 100px;
+}
+.concept-workspace__progress-tag {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+  background-color: #F3F4F6;
+  border-radius: var(--radius-pill);
+  padding: 0.25rem 0.65rem;
+}
+.concept-workspace__progress-tag--help {
+  background-color: #FDEBEC;
+  color: #b3261e;
+  font-weight: var(--font-weight-bold);
+}
+
+/* Resources tab — see ConceptWorkspaceView.js's renderResourcesTab() */
+.concept-workspace__resource-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.85rem;
+}
+.concept-workspace__resource-card {
+  display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
+  background-color: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+  overflow: hidden;
+}
+.concept-workspace__resource-reorder {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.1rem;
+  flex-shrink: 0;
+  padding: 0 0.3rem;
+}
+.concept-workspace__resource-reorder-button {
+  background: none;
+  border: none;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.7rem;
+  color: var(--color-muted);
+  cursor: pointer;
+  line-height: 1;
+}
+.concept-workspace__resource-reorder-button:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.concept-workspace__resource-card-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 0.9rem 1rem 0.25rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  min-width: 0;
+}
+.concept-workspace__resource-card:hover {
+  box-shadow: 0 4px 16px rgba(21, 101, 192, 0.18);
+}
+.concept-workspace__resource-card-icon {
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 12px;
+  background-color: #EAF2FB;
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.concept-workspace__resource-card-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.concept-workspace__resource-card-title {
+  font-weight: var(--font-weight-bold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.concept-workspace__resource-card-meta {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+.concept-workspace__resource-status-badge {
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  font-weight: var(--font-weight-bold);
+  border-radius: var(--radius-pill);
+  padding: 0.2rem 0.55rem;
+  white-space: nowrap;
+}
+.concept-workspace__resource-status-badge--draft {
+  background-color: #F3F4F6;
+  color: var(--color-muted);
+}
+.concept-workspace__resource-status-badge--published {
+  background-color: #EAF7EC;
+  color: #2e7d32;
+}
+.concept-workspace__resource-status-badge--archived {
+  background-color: #FDEBEC;
+  color: #b3261e;
+}
+.concept-workspace__resource-name-input {
+  flex: 1;
+  min-width: 120px;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+.concept-workspace__resource-type-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.6rem;
+}
+.concept-workspace__resource-type-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem 0.75rem;
+  border: 2px solid var(--color-border);
+  border-radius: 14px;
+  background-color: #ffffff;
+  color: var(--color-primary);
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+  text-align: center;
+}
+.concept-workspace__resource-type-option span {
+  color: var(--color-ink);
+}
+.concept-workspace__resource-type-option:hover {
+  border-color: var(--color-primary);
+}
+.concept-workspace__name-new-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.concept-workspace__name-new-form input[type='text'] {
+  flex: 1;
+  min-width: 220px;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font-size: 1rem;
+}
+.concept-workspace__resource-details-card {
+  background-color: #ffffff;
+  border-radius: 18px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  max-width: 480px;
+}
+.concept-workspace__resource-details-icon {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 14px;
+  background-color: #EAF2FB;
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.concept-workspace__resource-details-title-input {
+  width: 100%;
+  font-size: 1.2rem;
+  font-weight: var(--font-weight-black);
+  padding: 0.5rem 0.7rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+}
+.concept-workspace__resource-details-title-input:hover,
+.concept-workspace__resource-details-title-input:focus {
+  border-color: var(--color-border);
+}
+.concept-workspace__resource-details-meta {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  margin: 0;
+}
+.concept-workspace__resource-open-editor-button {
+  width: 100%;
+}
+
+/* Shared read-only Reading content renderer — see
+   ui/components/ReadingContentRenderer.js. Used inside both the
+   editor's live preview and the standalone viewer. */
+.reading-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.reading-content__empty {
+  color: var(--color-muted);
+}
+.reading-content__heading {
+  font-size: 1.3rem;
+  font-weight: var(--font-weight-black);
+  margin: 0;
+}
+.reading-content__paragraph {
+  line-height: 1.6;
+  margin: 0;
+}
+.reading-content__image-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  background-color: #F3F4F6;
+  border: 2px dashed var(--color-border);
+  border-radius: 14px;
+  padding: 2rem 1rem;
+  color: var(--color-muted);
+}
+.reading-content__image-placeholder-icon {
+  font-size: 2rem;
+}
+.reading-content__image-placeholder-caption {
+  font-size: 0.9rem;
+}
+
+/* Reading Viewer — see ui/views/ReadingViewerView.js */
+.reading-viewer {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0 1.5rem 3rem;
+}
+.reading-viewer__header {
+  padding: 1.25rem 0;
+}
+.reading-viewer__title {
+  font-size: 1.5rem;
+  font-weight: var(--font-weight-black);
+  margin: 0.75rem 0 1.5rem;
+}
+
+/* Reading Editor — see ui/views/ReadingEditorView.js */
+.reading-editor {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 1.5rem 3rem;
+}
+.reading-editor__header {
+  padding: 1.25rem 0 0.5rem;
+}
+.reading-editor__title {
+  font-size: 1.4rem;
+  font-weight: var(--font-weight-black);
+  margin: 0.75rem 0 0.15rem;
+}
+.reading-editor__saved-note {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+  margin: 0 0 1rem;
+}
+.reading-editor__block-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 0.85rem;
+}
+.reading-editor__empty-message {
+  color: var(--color-muted);
+}
+.reading-editor__block-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  background-color: #ffffff;
+  border-radius: 14px;
+  padding: 0.75rem 0.9rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+  flex-wrap: wrap;
+}
+.reading-editor__block-reorder {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex-shrink: 0;
+  padding-top: 0.3rem;
+}
+.reading-editor__block-reorder-button {
+  background: none;
+  border: none;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.7rem;
+  color: var(--color-muted);
+  cursor: pointer;
+  line-height: 1;
+}
+.reading-editor__block-reorder-button:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.reading-editor__block-type-badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary);
+  background-color: #EAF2FB;
+  border-radius: var(--radius-pill);
+  padding: 0.3rem 0.65rem;
+  white-space: nowrap;
+  margin-top: 0.2rem;
+}
+.reading-editor__block-input {
+  flex: 1;
+  min-width: 200px;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+textarea.reading-editor__block-input {
+  min-height: 4.5rem;
+  resize: vertical;
+}
+.reading-editor__add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 2rem;
+}
+.reading-editor__preview-heading {
+  font-size: 1.1rem;
+  font-weight: var(--font-weight-black);
+  margin: 0 0 0.85rem;
+}
+.reading-editor__preview-frame {
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+}
 
 .settings-add-form {
   display: flex;
@@ -3489,6 +3950,42 @@ button.wizard-checklist__row:hover {
 }
 .dashboard-widget__manage-lessons-button:hover {
   background-color: #0d4d94;
+}
+
+/* "Continue Working" resource shortcut — see
+   ContinueWorkingWidget.js's own doc comment */
+.dashboard-widget__recent-resource-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  text-align: left;
+  background-color: #EAF2FB;
+  border: 1px solid #d3e4f7;
+  border-radius: 14px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.85rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+.dashboard-widget__recent-resource-chip:hover {
+  border-color: var(--color-primary);
+}
+.dashboard-widget__recent-resource-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.dashboard-widget__recent-resource-title {
+  font-weight: var(--font-weight-bold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dashboard-widget__recent-resource-meta {
+  font-size: 0.8rem;
+  color: var(--color-muted);
 }
 
 /* Classroom Dashboard header (Phase 4) — Primary Action / Secondary

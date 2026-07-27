@@ -1,12 +1,22 @@
 /**
  * ui/components/ContinueWorkingWidget.js
  *
- * Classroom Dashboard widget: this teacher's own recently-opened
- * notebooks, filtered to the classroom currently being viewed (the
- * underlying list is per-teacher across every classroom they have —
- * see services/continueWorkingService.js and
- * docs/PROGRESS_ENGINE.md §10 — so filtering to "this classroom" is a
- * display-time concern, not a storage-time one).
+ * Classroom Dashboard widget: "pick up where you left off," generic
+ * across content types, not notebook-specific. Two independent things
+ * can show up here:
+ *   - This teacher's own recently-opened notebooks (unchanged from
+ *     before — see services/continueWorkingService.js).
+ *   - The single most recently edited resource across the whole
+ *     classroom, regardless of type (see
+ *     services/resourceService.js's getMostRecentlyEditedResource()),
+ *     with its concept and subject for context, opening straight into
+ *     that resource's editor (or its Details page, for a type with no
+ *     editor yet) — see ui/views/DashboardView.js's
+ *     openRecentResource(). This is the finishing step of the Reading
+ *     Editor milestone: writing a lesson is worth nothing if a teacher
+ *     can't naturally resume it next time they open the app, which
+ *     otherwise meant re-walking Manage Lessons -> Subject -> Unit ->
+ *     Concept -> Resources -> the resource itself, every single time.
  *
  * Also carries the "📚 Manage Lessons" entry point into Learning
  * Record (see ui/views/LearningRecordView.js, docs/LEARNING_RECORD.md)
@@ -33,8 +43,9 @@
 
 import { createEmptyStateElement } from './EmptyState.js';
 import { createIcon } from './Icon.js';
+import { getResourceTypeIcon } from '../../config/resourceTypeConfig.js';
 
-export function createContinueWorkingWidgetElement({ entries, onOpenNotebook, onManageLessons }) {
+export function createContinueWorkingWidgetElement({ entries, onOpenNotebook, onManageLessons, recentResource, onOpenRecentResource }) {
   const widget = document.createElement('div');
   widget.className = 'dashboard-widget';
 
@@ -53,8 +64,32 @@ export function createContinueWorkingWidgetElement({ entries, onOpenNotebook, on
   heading.append('Continue Working');
   widget.appendChild(heading);
 
+  if (recentResource && onOpenRecentResource) {
+    const { resource, concept, subject } = recentResource;
+    const resourceChip = document.createElement('button');
+    resourceChip.type = 'button';
+    resourceChip.className = 'dashboard-widget__recent-resource-chip';
+    resourceChip.appendChild(createIcon(getResourceTypeIcon(resource.type), { size: 18 }));
+
+    const textWrap = document.createElement('span');
+    textWrap.className = 'dashboard-widget__recent-resource-text';
+    const titleEl = document.createElement('span');
+    titleEl.className = 'dashboard-widget__recent-resource-title';
+    titleEl.textContent = resource.title;
+    const metaEl = document.createElement('span');
+    metaEl.className = 'dashboard-widget__recent-resource-meta';
+    metaEl.textContent = `${concept.title} \u00b7 ${subject.title}`;
+    textWrap.append(titleEl, metaEl);
+    resourceChip.appendChild(textWrap);
+
+    resourceChip.addEventListener('click', () => onOpenRecentResource(recentResource));
+    widget.appendChild(resourceChip);
+  }
+
   if (entries.length === 0) {
-    widget.appendChild(createEmptyStateElement({ message: 'Notebooks you open will show up here.' }));
+    if (!recentResource) {
+      widget.appendChild(createEmptyStateElement({ message: 'Notebooks you open will show up here.' }));
+    }
     return widget;
   }
 
