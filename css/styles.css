@@ -4463,6 +4463,9 @@ button.wizard-checklist__row:hover {
   font-weight: var(--font-weight-black);
   margin: 0 0 1.5rem;
 }
+.pre-roster-welcome__learning-record-link {
+  margin-top: 1.5rem;
+}
 
 /* Settings' richer empty state - icon + title + message, used where a plain one-line message (see .empty-state) isn't enough, e.g. the Students tab before any students exist */
 .settings-empty-state {

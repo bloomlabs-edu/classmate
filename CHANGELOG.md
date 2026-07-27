@@ -2700,6 +2700,35 @@ Both fixed live, not just read back in code:
 
 ---
 
+## No Empty Group Boxes Anywhere in the Portal
+
+**Context:** every team was rendered unconditionally in two places, regardless of whether it actually had any students — an empty card with just a header and nothing underneath.
+
+### Where this was actually happening
+Checked every place teams get rendered, not just the one screenshot:
+- **Class Mode** (`TrackerView.js`) — every team in `classroom.teams` got a full card, including ones with zero students.
+- **Dashboard's Groups widget** (`GroupsWidget.js`) — already correctly excluded the automatic "Ungrouped" bucket, but still rendered any teacher-created group with zero students.
+- **Weekly Snapshot's Team Champion section** — checked, already handled correctly: the whole widget returns an empty state before ever reaching team-specific rendering if no stars have been awarded at all this week.
+
+### Fix
+Both actual gaps filter on `team.students.length > 0` before rendering, applied consistently — including "Ungrouped" itself, so a classroom where every student has been assigned to a real group no longer shows an empty leftover "Ungrouped" card either.
+
+### Files Modified
+- `js/ui/views/TrackerView.js` — Class Mode's team grid.
+- `js/ui/components/GroupsWidget.js` — Dashboard's Groups widget.
+
+### Breaking Changes
+None — purely a display filter, no data changes. An empty group still exists and can still be managed from Settings (where seeing an empty group is actually useful, so a teacher can populate or remove it) — this only affects screens that display teams as classroom activity/progress, not the management UI.
+
+### Regression Verification
+Live-tested both fixes with a real empty group alongside a real populated one:
+- **Class Mode**: created "Group B" with zero students — confirmed only teams with actual students rendered cards, Group B correctly absent.
+- **Dashboard widget**: created Group A (empty) and Group B (empty) alongside the automatic Ungrouped bucket — confirmed the widget's own empty state showed correctly while both were empty; then moved a student into Group A using the Change Group feature from the previous session, and confirmed the widget updated to show only Group A, with Group B still correctly absent.
+
+### Future TODOs
+- (Carried over, unchanged): restructure `hasJoinedPortal` to a top-level field so a Firestore rule can safely permit that write; fix `awardStar()` not reading the classroom's own "Default point value" setting; apply category badges to Settings' own tabs and Activities if a future pass wants full palette coverage; resume broader Settings redesign feature work; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; role-based routing; confirm whether GitHub Pages is still enabled on the repo and disable it if so; all previously-listed items.
+---
+
 ## Learning Record — Milestone 3, Phase 2 (Teacher Workflow)
 
 **Context:** Phase 1 (models, services, persistence — see `docs/LEARNING_RECORD.md`) was approved with one flagged deviation from the literal brief: `understanding`/`notebook`/`helpRequested` live per-student (`Student.learningRecord`), not on the shared classroom-level Concept, since those three fields are inherently individual across a 40–60 student roster. That split is now load-bearing for everything below — this phase is the first thing actually built on top of it.
@@ -2737,30 +2766,33 @@ No browser/network access in this environment, so verification here is code-leve
 
 ---
 
-## No Empty Group Boxes Anywhere in the Portal
+## Learning Record Phase 2 — Fixed: Feature Was Completely Unreachable
 
-**Context:** every team was rendered unconditionally in two places, regardless of whether it actually had any students — an empty card with just a header and nothing underneath.
+**Context:** the previous entry's Dashboard entry point was reported as invisible — no nav item, no dashboard card, nothing reachable anywhere in the Teacher Portal after applying the update.
 
-### Where this was actually happening
-Checked every place teams get rendered, not just the one screenshot:
-- **Class Mode** (`TrackerView.js`) — every team in `classroom.teams` got a full card, including ones with zero students.
-- **Dashboard's Groups widget** (`GroupsWidget.js`) — already correctly excluded the automatic "Ungrouped" bucket, but still rendered any teacher-created group with zero students.
-- **Weekly Snapshot's Team Champion section** — checked, already handled correctly: the whole widget returns an empty state before ever reaching team-specific rendering if no stars have been awarded at all this week.
+### Root Cause
+`DashboardView.js`'s entire normal dashboard — including every widget, every section, and the new Learning Record chip — is skipped completely for any classroom with zero students. `renderPreRosterWelcome()` renders instead, deliberately showing nothing but a welcome message and the Teaching Assistant's "add students" card — by design, per that function's own doc comment, since every *other* feature it suppresses (Start Class Mode, Recognition, Groups, Notebook Tracker) genuinely has nothing to act on without a roster. Learning Record was never actually one of those — building a syllabus doesn't require a single student to exist — but it got placed only in the post-roster code path, so on the most likely first-use scenario (a freshly created or still-empty test classroom), it had no visible entry point at all. This matches exactly what was reported.
 
 ### Fix
-Both actual gaps filter on `team.students.length > 0` before rendering, applied consistently — including "Ungrouped" itself, so a classroom where every student has been assigned to a real group no longer shows an empty leftover "Ungrouped" card either.
+Added a "Build Your Learning Record →" link to the pre-roster welcome screen itself, as a deliberate, documented exception to that screen's "no widgets" rule — the doc comment now explains why Learning Record is the one feature that belongs there. The post-roster Teaching-section chip from the previous entry is unchanged and still present once a classroom has students.
 
 ### Files Modified
-- `js/ui/views/TrackerView.js` — Class Mode's team grid.
-- `js/ui/components/GroupsWidget.js` — Dashboard's Groups widget.
+- `js/ui/views/DashboardView.js` — pre-roster welcome screen now accepts and renders `onOpenLearningRecord`.
+- `css/styles.css` — spacing for the new link.
 
 ### Breaking Changes
-None — purely a display filter, no data changes. An empty group still exists and can still be managed from Settings (where seeing an empty group is actually useful, so a teacher can populate or remove it) — this only affects screens that display teams as classroom activity/progress, not the management UI.
+None.
 
 ### Regression Verification
-Live-tested both fixes with a real empty group alongside a real populated one:
-- **Class Mode**: created "Group B" with zero students — confirmed only teams with actual students rendered cards, Group B correctly absent.
-- **Dashboard widget**: created Group A (empty) and Group B (empty) alongside the automatic Ungrouped bucket — confirmed the widget's own empty state showed correctly while both were empty; then moved a student into Group A using the Change Group feature from the previous session, and confirmed the widget updated to show only Group A, with Group B still correctly absent.
+This time verified by **actually executing the real application code**, not just reading it — the same kind of miss (an unwired parameter) caused both this bug and the earlier `onSelectStudent` crash, so static reading alone clearly wasn't sufficient. Built a minimal DOM shim (`createElement`/`classList`/`appendChild`/event listeners — just enough surface area, no third-party library available in this offline environment) plus a custom Node ESM loader stubbing only the three Firebase CDN imports and the local (gitignored, not-yet-created) `firebaseConfig.js` — nothing about this project's own code was stubbed or modified for the test.
+
+Against the real, unmodified `router.js`, `DashboardView.js`, and `LearningRecordView.js`:
+- Confirmed `#/classroom/{id}/learning-record`, `.../{subjectId}`, and `.../{subjectId}/{unitId}` all resolve to the correct route object, and `#/classroom/{id}` still resolves to `dashboard`.
+- Rendered the real Dashboard against both a zero-student classroom and a one-student classroom; in both cases found a real "Learning Record" button in the resulting tree and confirmed clicking it actually fires `onOpenLearningRecord`.
+- Ran a full scripted walkthrough against the real `LearningRecordView.js`: add Subject → rename it → open its Units → add a Unit → open its Concepts → add 4 concepts (Force, Pressure, Friction, Viscosity) → mark one Taught → toggle it back to Not Taught → delete a Concept → delete the Unit (confirmed cascade-deleted its remaining concepts) → delete the Subject. All 11 steps passed against the actual classroom object's actual resulting data, not a mock.
+
+Still not tested in a real browser (no network access in this environment at all) — this is executed-JS verification, a stronger check than reading the code, but still not the same as a human clicking through it in Chrome.
 
 ### Future TODOs
-- (Carried over, unchanged): restructure `hasJoinedPortal` to a top-level field so a Firestore rule can safely permit that write; fix `awardStar()` not reading the classroom's own "Default point value" setting; apply category badges to Settings' own tabs and Activities if a future pass wants full palette coverage; resume broader Settings redesign feature work; Phase 2 activity-state recommendations; mobile-viewport testing as standard practice; Student Workspace tab expansion; note-undo gap in `classModeService`; Session Lock and Session History; role-based routing; confirm whether GitHub Pages is still enabled on the repo and disable it if so; all previously-listed items.
+- (Carried over, unchanged): all items from the previous entry.
+- New, from this entry: none — this was purely a discoverability bug in already-built code.

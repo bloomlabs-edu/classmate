@@ -97,7 +97,7 @@ export function renderDashboardView(container, props) {
       onOpenStudentAccess,
       onOpenSettingsGroups,
       onOpenSettingsNotebooks,
-    });
+    }, onOpenLearningRecord);
     return;
   }
 
@@ -233,14 +233,20 @@ export function renderDashboardView(container, props) {
  * deliberately nothing but a celebratory heading and whatever
  * ui/components/TeachingAssistant.js decides to render (which, with
  * no students yet, will always be its "add students" recommendation
- * at full-card priority). No standard header, no Start Class Mode, no
- * widgets of any kind — those are all teaching-time features with
- * nothing to act on yet. This function owns none of that logic itself;
- * it only supplies the one thing the Assistant doesn't know how to
- * say — the classroom's own name in a welcome message — and gets out
- * of the way.
+ * at full-card priority), PLUS one deliberate exception: a Learning
+ * Record link (see ui/views/LearningRecordView.js,
+ * docs/LEARNING_RECORD.md). Every other Dashboard feature suppressed
+ * here — Start Class Mode, Recognition, Groups, Notebook Tracker — is
+ * genuinely a teaching-time feature with nothing to act on without a
+ * roster. Learning Record is not: building a syllabus (Subjects ->
+ * Units -> Concepts) is independent of whether any students have been
+ * added yet, and a teacher very plausibly wants to do this *before*
+ * importing a roster, not after. Omitting it here would mean the
+ * feature has no visible entry point at all on a brand-new classroom
+ * — exactly the gap that was reported and is being fixed by this
+ * change.
  */
-function renderPreRosterWelcome(container, classroom, assistantCallbacks) {
+function renderPreRosterWelcome(container, classroom, assistantCallbacks, onOpenLearningRecord) {
   const wrapper = document.createElement('div');
   wrapper.className = 'pre-roster-welcome';
 
@@ -257,6 +263,15 @@ function renderPreRosterWelcome(container, classroom, assistantCallbacks) {
 
   const assistantSlot = document.createElement('div');
   wrapper.appendChild(assistantSlot);
+
+  if (onOpenLearningRecord) {
+    const learningRecordLink = document.createElement('button');
+    learningRecordLink.type = 'button';
+    learningRecordLink.className = 'btn btn--ghost pre-roster-welcome__learning-record-link';
+    learningRecordLink.textContent = 'Build Your Learning Record \u2192';
+    learningRecordLink.addEventListener('click', onOpenLearningRecord);
+    wrapper.appendChild(learningRecordLink);
+  }
 
   container.appendChild(wrapper);
 
