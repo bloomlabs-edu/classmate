@@ -29,7 +29,7 @@ function createRankIndicator(rank) {
   return badge;
 }
 
-export function createLeaderboardListElement({ entries, formatValue }) {
+export function createLeaderboardListElement({ entries, formatValue, onSelectStudent }) {
   const wrapper = document.createElement('div');
   wrapper.className = 'leaderboard-list';
 
@@ -59,8 +59,16 @@ export function createLeaderboardListElement({ entries, formatValue }) {
       rank.className = 'leaderboard-list__rank';
       rank.appendChild(createRankIndicator(entry.rank));
 
-      const name = document.createElement('span');
-      name.className = 'leaderboard-list__name';
+      let name;
+      if (onSelectStudent && entry.studentId) {
+        name = document.createElement('button');
+        name.type = 'button';
+        name.className = 'leaderboard-list__name student-name-link';
+        name.addEventListener('click', () => onSelectStudent(entry.studentId));
+      } else {
+        name = document.createElement('span');
+        name.className = 'leaderboard-list__name';
+      }
       name.textContent = entry.studentName || entry.teamName;
 
       const value = document.createElement('span');

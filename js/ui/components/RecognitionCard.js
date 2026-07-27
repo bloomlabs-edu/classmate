@@ -77,7 +77,7 @@ function isTeamWinner(winner) {
   return winner.teamName !== undefined;
 }
 
-export function createRecognitionCardElement({ category, winners, period, variant = 'full' }) {
+export function createRecognitionCardElement({ category, winners, period, variant = 'full', onSelectStudent }) {
   const card = document.createElement('div');
   card.className = variant === 'compact' ? 'recognition-card recognition-card--compact' : 'recognition-card recognition-card--full';
 
@@ -109,8 +109,16 @@ export function createRecognitionCardElement({ category, winners, period, varian
       avatar.textContent = getInitials(winner.studentName);
     }
 
-    const name = document.createElement('span');
-    name.className = 'recognition-card__winner-name';
+    let name;
+    if (onSelectStudent && !isTeamWinner(winner)) {
+      name = document.createElement('button');
+      name.type = 'button';
+      name.className = 'recognition-card__winner-name student-name-link';
+      name.addEventListener('click', () => onSelectStudent(winner.studentId));
+    } else {
+      name = document.createElement('span');
+      name.className = 'recognition-card__winner-name';
+    }
     name.textContent = isTeamWinner(winner) ? winner.teamName : winner.studentName;
 
     winnerEl.append(avatar, name);

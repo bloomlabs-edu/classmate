@@ -70,6 +70,7 @@ export function renderDashboardView(container, props) {
     onOpenRecognition,
     onOpenActivities,
     onSelectPendingTask,
+    onSelectStudent,
   } = props;
 
   container.innerHTML = '';
@@ -185,8 +186,8 @@ export function renderDashboardView(container, props) {
   if (hasAnyRecognition || hasAnyScoreActivity) {
     const celebrateGroup = document.createElement('div');
     celebrateGroup.className = 'dashboard-view__group';
-    if (hasAnyRecognition) celebrateGroup.appendChild(createRecognitionWidgetElement({ classroom, onViewAll: onOpenRecognition }));
-    if (hasAnyScoreActivity) celebrateGroup.appendChild(createWeeklySnapshotWidgetElement({ classroom }));
+    if (hasAnyRecognition) celebrateGroup.appendChild(createRecognitionWidgetElement({ classroom, onViewAll: onOpenRecognition, onSelectStudent }));
+    if (hasAnyScoreActivity) celebrateGroup.appendChild(createWeeklySnapshotWidgetElement({ classroom, onSelectStudent }));
     content.appendChild(celebrateGroup);
   }
 

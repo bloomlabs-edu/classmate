@@ -297,6 +297,7 @@ function renderRoute(route) {
             router.navigate(`/classroom/${classroom.id}/notebooks/${item.subjectId}/${item.notebookTypeId}${dateSegment}`);
           }
         },
+        onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
       });
     } else if (route.name === 'recognition') {
       renderRecognitionScreenView(appContainer, {
@@ -307,6 +308,7 @@ function renderRoute(route) {
         onNavigatePeriod: (period) => router.navigate(`/classroom/${classroom.id}/recognition/${period}`),
         onNavigateCategory: (period, categoryId) =>
           router.navigate(`/classroom/${classroom.id}/recognition/${period}/${categoryId}`),
+        onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
       });
     } else if (route.name === 'tracker') {
       renderTrackerView(appContainer, {
@@ -326,6 +328,7 @@ function renderRoute(route) {
         onOpenStudentAccess: () => router.navigate(`/classroom/${classroom.id}/student-access`),
         onDeleted: () => router.navigate('/teacher'),
         onReopenSetupWizard: () => router.navigate(`/classroom/${classroom.id}/setup`),
+        onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
       });
     } else if (route.name === 'setup') {
       renderSetupWizardView(appContainer, {
@@ -348,6 +351,7 @@ function renderRoute(route) {
       renderStudentAccessView(appContainer, {
         classroom,
         onBack: () => router.navigate(`/classroom/${classroom.id}`),
+        onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
       });
     } else if (route.name === 'activitiesList') {
       renderActivitiesListView(appContainer, {
@@ -361,6 +365,7 @@ function renderRoute(route) {
         classroom,
         activityId: route.activityId,
         onBack: () => router.navigate(`/classroom/${classroom.id}/activities`),
+        onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
       });
     } else if (route.name === 'notebookTracker') {
       renderNotebookTrackerView(appContainer, {
@@ -394,6 +399,7 @@ function renderRoute(route) {
         subjectId: route.subjectId,
         notebookTypeId: route.notebookTypeId,
         onBack: () => router.navigate(`/classroom/${classroom.id}/notebooks/${route.subjectId}/${route.notebookTypeId}`),
+        onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
       });
     }
     return;

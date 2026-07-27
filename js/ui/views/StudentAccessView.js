@@ -23,7 +23,7 @@ import { getDisplayName } from '../../services/classroomService.js';
 import { APP_BASE_URL } from '../../config/appConfig.js';
 import { createIcon } from '../components/Icon.js';
 
-export function renderStudentAccessView(container, { classroom, onBack }) {
+export function renderStudentAccessView(container, { classroom, onBack, onSelectStudent }) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
@@ -61,7 +61,7 @@ export function renderStudentAccessView(container, { classroom, onBack }) {
   if (allStudents.length === 0) {
     content.appendChild(createEmptyStateElement({ message: 'There are no students in this classroom yet.' }));
   } else {
-    content.appendChild(createJoinedStatusList(allStudents));
+    content.appendChild(createJoinedStatusList(allStudents, onSelectStudent));
   }
 
   wrapper.appendChild(content);
@@ -173,7 +173,7 @@ function createInviteStudentsCard(classroom, rerender) {
  * there is nothing for the teacher to individually do about it, since
  * there's no per-student credential to generate or send anymore.
  */
-function createJoinedStatusList(allStudents) {
+function createJoinedStatusList(allStudents, onSelectStudent) {
   const list = document.createElement('div');
   list.className = 'student-access-list';
 
@@ -181,8 +181,16 @@ function createJoinedStatusList(allStudents) {
     const row = document.createElement('div');
     row.className = 'student-access-row';
 
-    const nameEl = document.createElement('p');
-    nameEl.className = 'student-access-row__name';
+    let nameEl;
+    if (onSelectStudent) {
+      nameEl = document.createElement('button');
+      nameEl.type = 'button';
+      nameEl.className = 'student-access-row__name student-name-link';
+      nameEl.addEventListener('click', () => onSelectStudent(student.id));
+    } else {
+      nameEl = document.createElement('p');
+      nameEl.className = 'student-access-row__name';
+    }
     nameEl.textContent = student.name;
     row.appendChild(nameEl);
 

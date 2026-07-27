@@ -26,7 +26,7 @@ import { createRecognitionCardElement } from './RecognitionCard.js';
 import { createEmptyStateElement } from './EmptyState.js';
 import { createIcon } from './Icon.js';
 
-export function createRecognitionWidgetElement({ classroom, onViewAll }) {
+export function createRecognitionWidgetElement({ classroom, onViewAll, onSelectStudent }) {
   const widget = document.createElement('div');
   widget.className = 'dashboard-widget dashboard-widget--recognition dashboard-widget--celebrate';
 
@@ -65,7 +65,7 @@ export function createRecognitionWidgetElement({ classroom, onViewAll }) {
   cardRow.className = 'recognition-card-row';
 
   categoriesWithWinners.forEach(({ category, winners }) => {
-    cardRow.appendChild(createRecognitionCardElement({ category, winners, period: 'week', variant: 'compact' }));
+    cardRow.appendChild(createRecognitionCardElement({ category, winners, period: 'week', variant: 'compact', onSelectStudent }));
   });
 
   widget.appendChild(cardRow);

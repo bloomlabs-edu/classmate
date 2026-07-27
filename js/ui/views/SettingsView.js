@@ -61,7 +61,7 @@ const SECTION_LABELS = {
   classroom: { icon: 'settings', text: 'Classroom' },
 };
 
-export function renderSettingsView(container, { classroom, currentUser, section, onBack, onNavigateSection, onOpenStudentAccess, onDeleted, onReopenSetupWizard }) {
+export function renderSettingsView(container, { classroom, currentUser, section, onBack, onNavigateSection, onOpenStudentAccess, onDeleted, onReopenSetupWizard, onSelectStudent }) {
   container.innerHTML = '';
   const activeSection = SECTIONS.includes(section) ? section : 'class';
   const rerender = () =>
@@ -148,7 +148,7 @@ function renderClassSection(content, classroom, rerender, onOpenStudentAccess, c
   studentsHeading.textContent = 'Students';
   studentsWrapper.appendChild(studentsHeading);
   content.appendChild(studentsWrapper);
-  renderStudentsSection(content, classroom, rerender, onOpenStudentAccess);
+  renderStudentsSection(content, classroom, rerender, onOpenStudentAccess, onSelectStudent);
 
   const groupsHeading = document.createElement('h2');
   groupsHeading.className = 'settings-page-heading';
@@ -332,7 +332,7 @@ function createStatusRow(label, done) {
   return item;
 }
 
-function renderStudentsSection(content, classroom, rerender, onOpenStudentAccess) {
+function renderStudentsSection(content, classroom, rerender, onOpenStudentAccess, onSelectStudent) {
   if (pendingImportSuccess) {
     const { count } = pendingImportSuccess;
     pendingImportSuccess = null; // consumed — only ever shown once, right after the import that set it
@@ -530,7 +530,22 @@ function renderStudentsSection(content, classroom, rerender, onOpenStudentAccess
         rerender();
       });
 
-      item.append(input, removeButton);
+      // The name itself is a rename input here, not plain text, so it
+      // can't double as a profile link without breaking editing (a
+      // click would just place the cursor). A separate "View Profile"
+      // action gets the same clickable-name-leads-to-profile behavior
+      // this list has everywhere else in the app, without touching how
+      // renaming works.
+      if (onSelectStudent) {
+        const viewProfileButton = document.createElement('button');
+        viewProfileButton.type = 'button';
+        viewProfileButton.className = 'btn btn--text';
+        viewProfileButton.textContent = 'View Profile';
+        viewProfileButton.addEventListener('click', () => onSelectStudent(student.id));
+        item.append(input, viewProfileButton, removeButton);
+      } else {
+        item.append(input, removeButton);
+      }
       list.appendChild(item);
     });
 

@@ -147,7 +147,7 @@ function renderNewActivityForm(classroom, rerender) {
   return form;
 }
 
-export function renderActivityRosterView(container, { classroom, activityId, onBack }) {
+export function renderActivityRosterView(container, { classroom, activityId, onBack, onSelectStudent }) {
   container.innerHTML = '';
 
   const activity = learningActivityService.getActivityById(classroom, activityId);
@@ -185,7 +185,7 @@ export function renderActivityRosterView(container, { classroom, activityId, onB
     rosterList.className = 'activity-roster-list';
 
     allStudents.forEach(({ student, team }) => {
-      rosterList.appendChild(createRosterRow(classroom, student, team, activity));
+      rosterList.appendChild(createRosterRow(classroom, student, team, activity, onSelectStudent));
     });
 
     content.appendChild(rosterList);
@@ -196,12 +196,20 @@ export function renderActivityRosterView(container, { classroom, activityId, onB
   container.appendChild(wrapper);
 }
 
-function createRosterRow(classroom, student, team, activity) {
+function createRosterRow(classroom, student, team, activity, onSelectStudent) {
   const row = document.createElement('div');
   row.className = 'activity-roster-row';
 
-  const nameEl = document.createElement('span');
-  nameEl.className = 'activity-roster-row__name';
+  let nameEl;
+  if (onSelectStudent) {
+    nameEl = document.createElement('button');
+    nameEl.type = 'button';
+    nameEl.className = 'activity-roster-row__name student-name-link';
+    nameEl.addEventListener('click', () => onSelectStudent(student.id));
+  } else {
+    nameEl = document.createElement('span');
+    nameEl.className = 'activity-roster-row__name';
+  }
   nameEl.textContent = `${student.name} \u00b7 ${team.name}`;
 
   const existing = student.submissions?.[activity.id] || {};

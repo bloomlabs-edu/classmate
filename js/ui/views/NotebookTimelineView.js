@@ -43,7 +43,7 @@ function formatWeekRangeLabel(start, end) {
 }
 
 export function renderNotebookTimelineView(container, props) {
-  const { classroom, subjectId, notebookTypeId, onBack } = props;
+  const { classroom, subjectId, notebookTypeId, onBack, onSelectStudent } = props;
   const viewMode = props.viewMode || 'week';
   const referenceDateKey = props.referenceDateKey || getTodayDateKey();
 

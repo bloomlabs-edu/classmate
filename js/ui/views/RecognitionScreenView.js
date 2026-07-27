@@ -63,7 +63,7 @@ function formatLeaderboardValue(category) {
 }
 
 export function renderRecognitionScreenView(container, props) {
-  const { classroom, onBack, onNavigatePeriod, onNavigateCategory } = props;
+  const { classroom, onBack, onNavigatePeriod, onNavigateCategory, onSelectStudent } = props;
   const period = PERIOD_TABS.some((tab) => tab.id === props.period) ? props.period : 'week';
 
   const availableForPeriod = listRecognitionCategoriesForPeriod(period);
@@ -176,7 +176,7 @@ export function renderRecognitionScreenView(container, props) {
       createEmptyStateElement({ message: `No ${selectedCategory.label} yet ${periodLabel} \u2014 check back soon.` })
     );
   } else {
-    detailArea.appendChild(createRecognitionCardElement({ category: selectedCategory, winners, period, variant: 'full' }));
+    detailArea.appendChild(createRecognitionCardElement({ category: selectedCategory, winners, period, variant: 'full', onSelectStudent }));
   }
 
   const leaderboardHeading = document.createElement('h3');
@@ -184,7 +184,7 @@ export function renderRecognitionScreenView(container, props) {
   leaderboardHeading.textContent = `Leaderboard \u2014 ${selectedCategory.label}`;
   detailArea.appendChild(leaderboardHeading);
 
-  detailArea.appendChild(createLeaderboardListElement({ entries: leaderboard, formatValue: formatLeaderboardValue(selectedCategory) }));
+  detailArea.appendChild(createLeaderboardListElement({ entries: leaderboard, formatValue: formatLeaderboardValue(selectedCategory), onSelectStudent }));
 
   content.appendChild(detailArea);
   wrapper.appendChild(content);

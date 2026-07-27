@@ -40,7 +40,7 @@ function createRankIndicator(rank) {
   return badge;
 }
 
-export function createWeeklySnapshotWidgetElement({ classroom }) {
+export function createWeeklySnapshotWidgetElement({ classroom, onSelectStudent }) {
   const widget = document.createElement('div');
   widget.className = 'dashboard-widget dashboard-widget--editorial dashboard-widget--learn';
 
@@ -91,8 +91,16 @@ export function createWeeklySnapshotWidgetElement({ classroom }) {
       const rank = document.createElement('span');
       rank.className = 'editorial-list__rank';
       rank.appendChild(createRankIndicator(entry.rank));
-      const name = document.createElement('span');
-      name.className = 'editorial-list__name';
+      let name;
+      if (onSelectStudent) {
+        name = document.createElement('button');
+        name.type = 'button';
+        name.className = 'editorial-list__name student-name-link';
+        name.addEventListener('click', () => onSelectStudent(entry.studentId));
+      } else {
+        name = document.createElement('span');
+        name.className = 'editorial-list__name';
+      }
       name.textContent = entry.studentName;
       const value = document.createElement('span');
       value.className = 'editorial-list__value';
