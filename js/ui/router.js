@@ -18,7 +18,6 @@
  *   #/classroom/{id}/notebooks/{subjectId}/{typeId}/{dateKey?}        -> register view (today if dateKey omitted)
  *   #/classroom/{id}/notebooks/{subjectId}/{typeId}/timeline/{yearMonth?} -> timeline view (current month if omitted)
  *   #/classroom/{id}/recognition/{period?}/{categoryId?}     -> recognition screen (defaults resolved by the view itself)
- *   #/classroom/{id}/learning-record/{subjectId?}/{unitId?}  -> Learning Record (subject list, or drilled into a subject/unit — see ui/views/LearningRecordView.js)
  * Deep links work on refresh since the route is derived from the URL,
  * not from in-memory state.
  *
@@ -89,9 +88,11 @@ function resolvePathParts(parts) {
       }
       return { name: 'notebookRegister', classroomId: parts[1], subjectId, notebookTypeId, dateKey: parts[5] || null };
     }
-    if (parts[2] === 'learning-record') {
-      return { name: 'learningRecord', classroomId: parts[1], subjectId: parts[3] || null, unitId: parts[4] || null };
-    }
+    // A stale bookmark to the old #/classroom/{id}/learning-record
+    // URL (retired — Learning Record is opened by a direct function
+    // call from ui/views/DashboardView.js's "Manage Lessons" button
+    // now, not routed) simply falls through to the dashboard below
+    // rather than erroring.
     return { name: 'dashboard', classroomId: parts[1] };
   }
 

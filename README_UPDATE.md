@@ -1,36 +1,52 @@
 -----------------------------------
 Feature:
-Learning Record – Phase 2 REVISED: "+ Add Lesson" as a First-Class Action
+Learning Record — Rebuilt as a Self-Contained "📚 Manage Lessons" Action
 
-This supersedes all previous Learning Record deliveries. Apply the
-same way: extract, copy everything, paste into your project root,
-allow replace.
+This DISCARDS all previous Learning Record UI integration attempts
+(the routed screen, the Dashboard chip, the "+ Add Lesson" button) and
+replaces them entirely, per explicit direction. Apply the same way:
+extract, copy everything, paste into your project root, allow
+replace.
 
 -----------------------------------
-WHERE TO FIND THE FEATURE NOW
+CHECKLIST — RUN BEFORE THIS WAS PACKAGED (all confirmed passing
+against the real, executed application code before this ZIP was
+created — see "How this was verified" below)
 
-Open any classroom. You will see a **"+ Add Lesson"** button, always,
-in one of two places depending on classroom state:
+☑ I can see the Manage Lessons button.
+☑ Clicking it opens the Learning Record page.
+☑ I can create a Subject.
+☑ I can create a Unit.
+☑ I can create a Lesson.
+☑ I can toggle Taught / Not Taught.
 
-  - Classroom with students: on the right side of the "Continue
-    Working" card's header (top area of the Dashboard).
-  - Classroom with zero students yet: same "+ Add Lesson" button,
+-----------------------------------
+WHERE TO FIND THE FEATURE
+
+Open any classroom. You will immediately see a large blue button:
+
+    📚 Manage Lessons
+
+  - Classroom with students: at the very top of the "Continue
+    Working" card — above its own heading, not tucked into a header
+    row.
+  - Classroom with zero students yet: same button, same label,
     directly below the "Add Students" welcome card.
 
-Click it. It opens the Learning Record screen immediately — Subjects
-list, with Add/Rename/Delete, drilling into Units, then Concepts, with
-the Taught/Not Taught toggle.
+Click it. It replaces the screen with "Learning Record" — Science,
+Maths, English, and Social Science are already there, each with a
+"+ Add Unit" button. No routing involved: this is a direct function
+call, not a URL.
 
 -----------------------------------
 Files Added
 
-(Unchanged from previous deliveries)
+(Unchanged from previous deliveries — Phase 1 architecture)
 - js/config/learningRecordConfig.js
 - js/models/LearningConcept.js
 - js/models/LearningUnit.js
 - js/models/LearningSubject.js
 - js/models/StudentConceptRecord.js
-- js/ui/views/LearningRecordView.js
 - docs/LEARNING_RECORD.md
 
 -----------------------------------
@@ -39,95 +55,108 @@ Files Modified
 Unchanged from previous deliveries:
 - js/models/Student.js
 - js/models/Classroom.js
-- js/ui/router.js
-- js/main.js
+- js/services/learningRecordService.js
+- js/services/learningRecordTeacherService.js
+- js/services/learningRecordStudentService.js
 
-Changed in THIS delivery:
-- js/ui/components/ContinueWorkingWidget.js
-    Added a header row (heading left, "+ Add Lesson" primary button
-    right) — the same header-row pattern already used by Recognition
-    Wall's "View All" button.
+Changed in THIS delivery (the full rebuild):
+- js/ui/views/LearningRecordView.js
+    Fully rewritten. No router, no URL, no route params anywhere in
+    this file. Manages its own Subject/Unit navigation as local
+    variables and re-renders itself directly. Seeds Science / Maths /
+    English / Social Science automatically the first time a
+    classroom's Learning Record is opened with nothing in it yet.
+    Stripped down to exactly Subject/Unit/Lesson CRUD + the Taught
+    toggle — no counts, no percentages, nothing else.
 - js/ui/views/DashboardView.js
-    Wired the new button through to Learning Record on both the
-    normal Dashboard and the zero-student welcome screen (relabeled
-    from "Build Your Learning Record →" to "+ Add Lesson" for
-    consistency). Also fixes a real bug — see "A Second Bug Found"
-    below.
+    Calls LearningRecordView directly via a local closure — no prop
+    threaded through main.js. Old "Learning Record" Teaching-section
+    chip removed entirely. New button wired on both the normal
+    Dashboard and the zero-student welcome screen.
+- js/ui/components/ContinueWorkingWidget.js
+    New "📚 Manage Lessons" button — large, blue, first element in the
+    card, above the heading.
+- js/main.js
+    All Learning Record routing removed: deleted from
+    CLASSROOM_ROUTE_NAMES, deleted its dispatch block, deleted the now
+    -unused import.
+- js/ui/router.js
+    Deleted the learning-record URL parsing branch. A stale bookmark
+    to the old URL now falls through to the Dashboard instead of
+    erroring.
 - css/styles.css
-    Header-row wrap safety on narrow widths, button spacing.
+    New button styling; new, fully self-contained styles for the
+    rewritten view (does not reuse Settings'/Setup Wizard's shared
+    classes, so this screen can't be silently affected by unrelated
+    future changes there).
 - CHANGELOG.md
-    New entry for this round.
+    New entry for this rebuild.
 
 -----------------------------------
 Files Deleted
 
-- (none)
+- (none — old code paths were removed in-place, not left as separate
+  files)
 
 -----------------------------------
 What changed
 
-Learning Record is no longer nested inside a conditional Dashboard
-section. "+ Add Lesson" is now a primary, always-visible button, in
-the Continue Working card for a classroom with students, and on the
-welcome screen for a classroom with none.
-
-A SECOND BUG FOUND AND FIXED while re-verifying this: the function
-that fills in the Continue Working card had its own early return —
-`if (resolvedEntries.length === 0) return;` — meaning the entire card,
-and therefore the button now living inside it, would never render at
-all for any teacher who has never opened a notebook yet. That's
-probably the single most common state for a real or newly-created
-classroom, and exactly the condition most likely to be hit on first
-test. Fixed by removing that early return; the card always renders
-now, falling back to its existing "Notebooks you open will show up
-here" empty message when there's nothing else to show.
-
-The old "Learning Record" chip in the Dashboard's Teaching section
-(from the previous delivery) was left in place, not removed — it
-isn't asked to be removed, and having a second working entry point is
-extra discoverability, not a conflict. Worth deciding later whether to
-remove it now that "+ Add Lesson" is the primary path.
+Previous integration attempts relied on the app's router — twice, a
+small wiring gap in that router/dispatch layer made the feature
+unreachable even though everything else about it worked. Per explicit
+direction, this is now a completely different, simpler architecture:
+one button, calling one function, that renders directly into the
+Dashboard's own container and hands back a single `onClose` callback
+to return. There is no URL for this feature anymore, and nothing that
+depends on a route name being registered in more than one place.
 
 -----------------------------------
 What to test
 
-□ Open a classroom with ZERO students, ZERO recent notebooks —
-  confirm "+ Add Lesson" is visible (this exact combination is what
-  the second bug hid)
-□ Open a classroom WITH students, ZERO recent notebooks — confirm
-  "+ Add Lesson" is visible in the Continue Working card
-□ Open a classroom WITH students AND at least one recently-opened
-  notebook — confirm "+ Add Lesson" still appears alongside the
-  notebook chips, not replaced by them
-□ Click "+ Add Lesson" from each of the above — confirm it opens
-  Learning Record every time, never a blank/placeholder/dead screen
-□ Create Subject / Unit / Concept
-□ Mark Concept Taught / Not Taught
-□ Rename and Delete at each level (confirm cascade delete for
-  Unit/Subject)
-□ Refresh the browser on a deep link
-  (#/classroom/{id}/learning-record/{subjectId}/{unitId}) — loads
-  directly, no redirect
+□ Open a classroom with students — "📚 Manage Lessons" appears at the
+  top of the Continue Working card immediately, no scrolling
+□ Open a classroom with zero students — same button appears below the
+  Add Students card
+□ Click it — Learning Record opens, showing Science / Maths / English
+  / Social Science already listed
+□ Create a new Subject
+□ Click "+ Add Unit" on a subject — create a Unit
+□ Click "+ Add Lesson" on a unit — create a Lesson
+□ Toggle a Lesson between "○ Not Taught" and "✓ Taught"
+□ Rename a Subject / Unit / Lesson
+□ Delete a Subject / Unit / Lesson (confirm cascade delete)
+□ Click "Back to Dashboard" — returns to the Dashboard, Manage Lessons
+  button still there
+□ Confirm the OLD #/classroom/{id}/learning-record bookmark (if you
+  had one saved) now just opens the Dashboard instead of erroring
+
+-----------------------------------
+How this was verified
+
+No browser or network access exists in this environment at all — so,
+as with the last two deliveries, verification means actually executing
+the real, unmodified application code under Node (not re-reading it),
+using a test-only transformation of main.js that exposes its internal
+routing function without changing the file you're receiving. This
+round, ran the exact 6-item checklist you specified, end to end,
+against a classroom with students and zero recent notebooks (the exact
+condition that broke this twice before) — plus two additional checks:
+that returning via "Back to Dashboard" leaves the Manage Lessons button
+still present, and that the same button-and-click sequence also works
+from the zero-student welcome screen. All 8 checks passed against the
+real code before this ZIP was created.
+
+What this environment still cannot do is click through it in an actual
+browser — that's the one remaining gap, same as every previous
+delivery.
 
 -----------------------------------
 Known limitations
 
-- Still verified by executing the real, unmodified application code
-  under Node (no browser available in this environment at all,
-  including no way to install one) rather than a live browser
-  click-through. This round specifically: rendered the real Dashboard
-  for a zero-student classroom and a has-students-zero-notebooks
-  classroom, found the real "+ Add Lesson" button in both, clicked it,
-  and confirmed Learning Record actually opened in both cases — this
-  is exactly the scenario the second bug broke, and it's now confirmed
-  fixed against the actual code, not just re-read. Also re-ran the
-  full Learning Record CRUD script as a regression check. A real
-  browser click-through is still the one thing that hasn't happened
-  and should before relying on this in front of a class.
-- No Timeline logging yet for taught-status changes (unchanged).
-- No notebook-status UI yet (unchanged — service-layer support
-  exists, no screen for it yet).
-- The older Teaching-section "Learning Record" chip still exists
-  alongside the new button (see "What changed" above) — not a bug,
-  just an open product question about whether to remove it.
+- No Timeline logging for taught-status changes (unchanged from
+  Phase 1).
+- No notebook-status UI (unchanged — service-layer support exists, no
+  screen for it yet).
+- No student-facing UI, no Learning Hub integration, no analytics —
+  all deliberately excluded per instruction.
 -----------------------------------

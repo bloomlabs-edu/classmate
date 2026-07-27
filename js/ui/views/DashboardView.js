@@ -53,6 +53,7 @@ import { createGroupsWidgetElement } from '../components/GroupsWidget.js';
 import { createClassModeWidgetElement } from '../components/ClassModeWidget.js';
 import { createTeachingSectionElement } from '../components/TeachingSection.js';
 import { createClassroomSectionElement } from '../components/ClassroomSection.js';
+import { renderLearningRecordView } from './LearningRecordView.js';
 
 export function renderDashboardView(container, props) {
   const {
@@ -69,12 +70,25 @@ export function renderDashboardView(container, props) {
     onSelectNotebook,
     onOpenRecognition,
     onOpenActivities,
-    onOpenLearningRecord,
     onSelectPendingTask,
     onSelectStudent,
   } = props;
 
   container.innerHTML = '';
+
+  // Learning Record's entry point — a direct function call into
+  // ui/views/LearningRecordView.js, not a route. This is deliberate:
+  // see that file's own header comment for why, after this feature's
+  // entry point broke twice in a row on router/dispatch wiring (see
+  // this project's CHANGELOG). `onClose` simply re-renders this same
+  // Dashboard from scratch; there's no URL state to restore and none
+  // is needed.
+  function openManageLessons() {
+    renderLearningRecordView(container, {
+      classroom,
+      onClose: () => renderDashboardView(container, props),
+    });
+  }
 
   // Every teaching-time feature (Start Class Mode, Continue Working,
   // Recognition Wall, Weekly Snapshot, Groups, Subjects, Reports) is
@@ -97,7 +111,7 @@ export function renderDashboardView(container, props) {
       onOpenStudentAccess,
       onOpenSettingsGroups,
       onOpenSettingsNotebooks,
-    }, onOpenLearningRecord);
+    }, openManageLessons);
     return;
   }
 
@@ -196,20 +210,13 @@ export function renderDashboardView(container, props) {
     content.appendChild(createPendingTasksWidgetElement({ classroom, onSelectTask: onSelectPendingTask }));
   }
 
-  // One "Teaching" section, always shown once there's a roster —
-  // Learning Record is always included (independent of Notebook
-  // Tracker setup, see docs/LEARNING_RECORD.md); the Subjects widget
-  // and Activities link only join it once notebook subjects exist,
-  // same condition as before. Built as one section with conditional
-  // children, not two separate createTeachingSectionElement() calls,
-  // since that would render two identical "Teaching" headings stacked
-  // on top of each other.
-  const teachingChildren = [];
   if (hasSubjectsConfigured) {
-    teachingChildren.push(createSubjectsWidgetElement({ classroom, onOpenNotebookTracker }), createActivitiesLink(onOpenActivities));
+    content.appendChild(
+      createTeachingSectionElement({
+        children: [createSubjectsWidgetElement({ classroom, onOpenNotebookTracker }), createActivitiesLink(onOpenActivities)],
+      })
+    );
   }
-  teachingChildren.push(createLearningRecordLink(onOpenLearningRecord));
-  content.appendChild(createTeachingSectionElement({ children: teachingChildren }));
 
   // Student Access and Settings are persistent, evergreen navigation
   // actions, not data widgets summarizing activity — they always
@@ -225,7 +232,7 @@ export function renderDashboardView(container, props) {
   wrapper.appendChild(content);
   container.appendChild(wrapper);
 
-  loadContinueWorking(classroom, currentUser, secondaryContentSlot, onSelectNotebook, onOpenLearningRecord);
+  loadContinueWorking(classroom, currentUser, secondaryContentSlot, onSelectNotebook, openManageLessons);
 }
 
 /**
@@ -233,20 +240,19 @@ export function renderDashboardView(container, props) {
  * deliberately nothing but a celebratory heading and whatever
  * ui/components/TeachingAssistant.js decides to render (which, with
  * no students yet, will always be its "add students" recommendation
- * at full-card priority), PLUS one deliberate exception: a Learning
- * Record link (see ui/views/LearningRecordView.js,
- * docs/LEARNING_RECORD.md). Every other Dashboard feature suppressed
- * here — Start Class Mode, Recognition, Groups, Notebook Tracker — is
- * genuinely a teaching-time feature with nothing to act on without a
- * roster. Learning Record is not: building a syllabus (Subjects ->
- * Units -> Concepts) is independent of whether any students have been
- * added yet, and a teacher very plausibly wants to do this *before*
- * importing a roster, not after. Omitting it here would mean the
- * feature has no visible entry point at all on a brand-new classroom
- * — exactly the gap that was reported and is being fixed by this
- * change.
+ * at full-card priority), PLUS one deliberate exception: the "Manage
+ * Lessons" button into Learning Record (see
+ * ui/views/LearningRecordView.js, docs/LEARNING_RECORD.md). Every
+ * other Dashboard feature suppressed here — Start Class Mode,
+ * Recognition, Groups, Notebook Tracker — is genuinely a teaching-time
+ * feature with nothing to act on without a roster. Learning Record is
+ * not: building a syllabus (Subjects -> Units -> Lessons) is
+ * independent of whether any students have been added yet, and a
+ * teacher very plausibly wants to do this *before* importing a
+ * roster, not after. Omitting it here would mean the feature has no
+ * visible entry point at all on a brand-new classroom.
  */
-function renderPreRosterWelcome(container, classroom, assistantCallbacks, onOpenLearningRecord) {
+function renderPreRosterWelcome(container, classroom, assistantCallbacks, onManageLessons) {
   const wrapper = document.createElement('div');
   wrapper.className = 'pre-roster-welcome';
 
@@ -264,13 +270,13 @@ function renderPreRosterWelcome(container, classroom, assistantCallbacks, onOpen
   const assistantSlot = document.createElement('div');
   wrapper.appendChild(assistantSlot);
 
-  if (onOpenLearningRecord) {
-    const learningRecordLink = document.createElement('button');
-    learningRecordLink.type = 'button';
-    learningRecordLink.className = 'btn btn--primary pre-roster-welcome__learning-record-link';
-    learningRecordLink.textContent = '+ Add Lesson';
-    learningRecordLink.addEventListener('click', onOpenLearningRecord);
-    wrapper.appendChild(learningRecordLink);
+  if (onManageLessons) {
+    const manageLessonsButton = document.createElement('button');
+    manageLessonsButton.type = 'button';
+    manageLessonsButton.className = 'btn btn--primary pre-roster-welcome__manage-lessons-button';
+    manageLessonsButton.textContent = '\ud83d\udcda Manage Lessons';
+    manageLessonsButton.addEventListener('click', onManageLessons);
+    wrapper.appendChild(manageLessonsButton);
   }
 
   container.appendChild(wrapper);
@@ -310,21 +316,6 @@ function createActivitiesLink(onOpenActivities) {
   return button;
 }
 
-/**
- * Shortcut into the Learning Record teacher workflow (see
- * ui/views/LearningRecordView.js, docs/LEARNING_RECORD.md). Its own
- * always-visible Teaching section rather than nested alongside
- * Activities above — see this file's call site for why.
- */
-function createLearningRecordLink(onOpenLearningRecord) {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'dashboard-widget__chip';
-  button.textContent = 'Learning Record';
-  button.addEventListener('click', onOpenLearningRecord);
-  return button;
-}
-
 function createStudentAccessButton(onOpenStudentAccess) {
   const button = document.createElement('button');
   button.type = 'button';
@@ -343,7 +334,7 @@ function createSettingsButton(onOpenSettings) {
   return button;
 }
 
-async function loadContinueWorking(classroom, currentUser, slot, onSelectNotebook, onAddLesson) {
+async function loadContinueWorking(classroom, currentUser, slot, onSelectNotebook, onManageLessons) {
   const allEntries = await continueWorkingService.getRecentOnce(currentUser?.uid);
   const classroomEntries = allEntries.filter((entry) => entry.classroomId === classroom.id);
 
@@ -361,6 +352,6 @@ async function loadContinueWorking(classroom, currentUser, slot, onSelectNoteboo
   // early here whenever a teacher had no recent notebooks at all,
   // which would have hidden that button for exactly the teachers most
   // likely to be new to the app.
-  slot.appendChild(createContinueWorkingWidgetElement({ entries: resolvedEntries, onOpenNotebook: onSelectNotebook, onAddLesson }));
+  slot.appendChild(createContinueWorkingWidgetElement({ entries: resolvedEntries, onOpenNotebook: onSelectNotebook, onManageLessons }));
 }
 

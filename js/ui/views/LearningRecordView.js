@@ -1,281 +1,312 @@
 /**
  * ui/views/LearningRecordView.js
  *
- * The teacher-facing Learning Record screen — Phase 2 of Milestone 3
- * (see docs/LEARNING_RECORD.md for the full architecture this sits on
- * top of). Three drill-down levels sharing one route
- * (#/classroom/{id}/learning-record/{subjectId?}/{unitId?} — see
- * ui/router.js):
+ * The Learning Record screen — Subjects, each with Units, each with
+ * Lessons (Concepts), each markable Taught / Not Taught. Add/Rename/
+ * Delete at every level. Nothing else — no analytics, no percentages,
+ * no student-facing content, no Learning Hub reference, by explicit
+ * instruction (see this project's CHANGELOG for the full history of
+ * this feature's UI integration).
  *
- *   subjectId absent            -> Subject list
- *   subjectId present, no unit  -> that Subject's Unit list
- *   subjectId + unitId present  -> that Unit's Concept list, with
- *                                  each concept's taught/not-taught
- *                                  toggle
+ * Deliberately self-contained: this file owns its own drill-down
+ * state (which subject/unit is open) as plain local variables in a
+ * closure, re-rendering itself into the same container on every
+ * change. No router, no URL, no route dispatch, and no callback
+ * threading beyond the one `onClose` this file is handed — by
+ * explicit instruction, after this feature's entry point broke twice
+ * in a row on router/dispatch wiring. There is nothing here that can
+ * be "missing from an allow-list somewhere else"; every transition in
+ * this screen is a direct function call within this one file.
  *
- * Add/Edit/Delete at every level. No taught/not-taught control exists
- * above the Concept level — a Subject or Unit has no status of its
- * own, only its concepts do (see models/LearningConcept.js).
+ * Reached by calling renderLearningRecordView(container, { classroom,
+ * onClose }) directly — see ui/views/DashboardView.js's "Manage
+ * Lessons" button, which is the only caller. `onClose` re-renders
+ * whatever was on screen before (the Dashboard); this file has no
+ * opinion about what that is.
  *
- * Everything here goes through learningRecordTeacherService.js only —
+ * Every mutation goes through learningRecordTeacherService.js only —
  * never learningRecordStudentService.js — matching the structural
- * teacher/student split documented in docs/LEARNING_RECORD.md. No
- * student-facing UI, no Learning Hub reference, and no analytics
- * beyond the plain "X of Y taught" count already exposed by
- * learningRecordService.js — all deliberately out of scope for this
- * phase.
- *
- * Same mutate-then-save-then-rerender convention as
- * ui/views/SettingsView.js: every action calls a
- * learningRecordTeacherService.js function, then
- * workspaceService.save(classroom), then rerender().
+ * teacher/student split documented in docs/LEARNING_RECORD.md.
  */
 
 import * as workspaceService from '../../services/workspaceService.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
 import * as learningRecordTeacherService from '../../services/learningRecordTeacherService.js';
-import { CONCEPT_STATUS_LABELS } from '../../config/learningRecordConfig.js';
 import { createIcon } from '../components/Icon.js';
 
-export function renderLearningRecordView(container, { classroom, subjectId, unitId, onNavigate, onBack }) {
+const DEFAULT_SUBJECT_NAMES = ['Science', 'Maths', 'English', 'Social Science'];
+
+/**
+ * A brand-new classroom's Learning Record starts completely empty.
+ * Rather than showing a bare "no subjects yet" screen the very first
+ * time a teacher opens this, seed the four subjects every Teach For
+ * India classroom already has, so the initial screen matches exactly
+ * what's expected — Science / Maths / English / Social Science, each
+ * ready for its own Units. This only ever runs once: after the first
+ * subject exists (whether one of these four or a teacher's own),
+ * nothing here runs again.
+ */
+function ensureDefaultSubjects(classroom) {
+  if (learningRecordService.getSubjects(classroom).length > 0) return false;
+  DEFAULT_SUBJECT_NAMES.forEach((title) => learningRecordTeacherService.createSubject(classroom, { title }));
+  return true;
+}
+
+export function renderLearningRecordView(container, { classroom, onClose }) {
+  // Local, in-memory drill-down state — not the URL, not a route
+  // param. See this file's header comment for why.
+  let openSubjectId = null;
+  let openUnitId = null;
+
+  if (ensureDefaultSubjects(classroom)) {
+    workspaceService.save(classroom);
+  }
+
+  function rerender() {
+    renderScreen(container, classroom, openSubjectId, openUnitId, {
+      onClose,
+      onOpenSubject: (subjectId) => {
+        openSubjectId = subjectId;
+        openUnitId = null;
+        rerender();
+      },
+      onOpenUnit: (unitId) => {
+        openUnitId = unitId;
+        rerender();
+      },
+      onBackToSubjects: () => {
+        openSubjectId = null;
+        openUnitId = null;
+        rerender();
+      },
+      onBackToUnits: () => {
+        openUnitId = null;
+        rerender();
+      },
+      rerender,
+    });
+  }
+
+  rerender();
+}
+
+function renderScreen(container, classroom, openSubjectId, openUnitId, handlers) {
   container.innerHTML = '';
 
-  const rerender = () => renderLearningRecordView(container, { classroom, subjectId, unitId, onNavigate, onBack });
+  const subject = openSubjectId ? learningRecordService.getSubjectById(classroom, openSubjectId) : null;
+  const unit = openUnitId ? learningRecordService.getUnitById(classroom, openUnitId) : null;
 
   const wrapper = document.createElement('div');
   wrapper.className = 'learning-record-view';
 
   const header = document.createElement('header');
-  header.className = 'wizard-step-header';
+  header.className = 'learning-record-view__header';
 
-  const backButton = document.createElement('button');
-  backButton.type = 'button';
-  backButton.className = 'btn btn--text';
-  backButton.appendChild(createIcon('arrow-left'));
+  const closeButton = document.createElement('button');
+  closeButton.type = 'button';
+  closeButton.className = 'btn btn--text';
+  closeButton.appendChild(createIcon('arrow-left'));
+  closeButton.append('Back to Dashboard');
+  closeButton.addEventListener('click', handlers.onClose);
+  header.appendChild(closeButton);
 
-  let title = 'Learning Record';
-  const subject = subjectId ? learningRecordService.getSubjectById(classroom, subjectId) : null;
-  const unit = unitId ? learningRecordService.getUnitById(classroom, unitId) : null;
+  const title = document.createElement('h1');
+  title.className = 'learning-record-view__title';
+  title.textContent = 'Learning Record';
+  header.appendChild(title);
 
-  if (unit && subject) {
-    backButton.append('Back to ' + subject.title);
-    backButton.addEventListener('click', () => onNavigate(subjectId, null));
-    title = `${subject.title} \u203a ${unit.title}`;
-  } else if (subject) {
-    backButton.append('Back to Learning Record');
-    backButton.addEventListener('click', () => onNavigate(null, null));
-    title = subject.title;
-  } else {
-    backButton.append('Back to Dashboard');
-    backButton.addEventListener('click', onBack);
-  }
-
-  const titleEl = document.createElement('h1');
-  titleEl.className = 'wizard-step-header__title';
-  titleEl.textContent = title;
-
-  header.append(backButton, titleEl);
   wrapper.appendChild(header);
 
-  const content = document.createElement('div');
-  content.className = 'settings-content';
-
   if (unit && subject) {
-    renderConceptsLevel(content, classroom, subject, unit, rerender);
+    const breadcrumb = document.createElement('p');
+    breadcrumb.className = 'learning-record-view__breadcrumb';
+    const backToSubjects = document.createElement('button');
+    backToSubjects.type = 'button';
+    backToSubjects.className = 'btn btn--text';
+    backToSubjects.textContent = 'Subjects';
+    backToSubjects.addEventListener('click', handlers.onBackToSubjects);
+    breadcrumb.appendChild(backToSubjects);
+    breadcrumb.append(' \u203a ' + subject.title + ' \u203a ' + unit.title);
+    wrapper.appendChild(breadcrumb);
+
+    wrapper.appendChild(renderLessonsLevel(classroom, unit, handlers));
   } else if (subject) {
-    renderUnitsLevel(content, classroom, subject, rerender, onNavigate);
+    const breadcrumb = document.createElement('p');
+    breadcrumb.className = 'learning-record-view__breadcrumb';
+    const backToSubjects = document.createElement('button');
+    backToSubjects.type = 'button';
+    backToSubjects.className = 'btn btn--text';
+    backToSubjects.textContent = 'Subjects';
+    backToSubjects.addEventListener('click', handlers.onBackToSubjects);
+    breadcrumb.appendChild(backToSubjects);
+    breadcrumb.append(' \u203a ' + subject.title);
+    wrapper.appendChild(breadcrumb);
+
+    wrapper.appendChild(renderUnitsLevel(classroom, subject, handlers));
   } else {
-    renderSubjectsLevel(content, classroom, rerender, onNavigate);
+    wrapper.appendChild(renderSubjectsLevel(classroom, handlers));
   }
 
-  wrapper.appendChild(content);
   container.appendChild(wrapper);
 }
 
-// ---- Level 1: Subjects --------------------------------------------
+// ---- Subjects -------------------------------------------------------
 
-function renderSubjectsLevel(content, classroom, rerender, onNavigate) {
+function renderSubjectsLevel(classroom, handlers) {
   const section = document.createElement('div');
-  section.className = 'settings-section';
-
-  const intro = document.createElement('p');
-  intro.className = 'wizard-step__intro';
-  intro.textContent = 'Build your syllabus: Subjects, then Units within each subject, then Concepts within each unit.';
-  section.appendChild(intro);
+  section.className = 'learning-record-view__section';
 
   const subjects = learningRecordService.getSubjects(classroom);
 
-  if (subjects.length === 0) {
-    const empty = document.createElement('p');
-    empty.className = 'settings-section__meta';
-    empty.textContent = 'No subjects yet \u2014 add your first one below (e.g. Science, Maths, English, Social Science).';
-    section.appendChild(empty);
-  }
-
-  const list = document.createElement('ul');
-  list.className = 'settings-editable-list';
-
-  subjects.forEach((subject) => {
-    const item = document.createElement('li');
-    item.className = 'settings-editable-list__item';
-
-    const input = createRenameInput(subject.title, (newTitle) => {
-      learningRecordTeacherService.renameSubject(classroom, subject.id, newTitle);
-      workspaceService.save(classroom);
-    });
-
-    const openButton = document.createElement('button');
-    openButton.type = 'button';
-    openButton.className = 'btn btn--ghost';
-    openButton.textContent = 'Open Units';
-    openButton.addEventListener('click', () => onNavigate(subject.id, null));
-
-    const removeButton = createRemoveButton(`Delete "${subject.title}"? Its units and concepts will be deleted too.`, () => {
-      learningRecordTeacherService.deleteSubject(classroom, subject.id);
-      workspaceService.save(classroom);
-      rerender();
-    });
-
-    item.append(input, openButton, removeButton);
-    list.appendChild(item);
+  subjects.forEach((subj) => {
+    section.appendChild(renderSubjectBlock(classroom, subj, handlers));
   });
 
-  section.appendChild(list);
   section.appendChild(
-    createAddForm('New subject name', 'Add Subject', (title) => {
+    createAddForm('New subject name (e.g. Science)', '+ Add Subject', (title) => {
       learningRecordTeacherService.createSubject(classroom, { title });
       workspaceService.save(classroom);
-      rerender();
+      handlers.rerender();
     })
   );
 
-  content.appendChild(section);
+  return section;
 }
 
-// ---- Level 2: Units within a Subject -------------------------------
+function renderSubjectBlock(classroom, subj, handlers) {
+  const block = document.createElement('div');
+  block.className = 'learning-record-view__subject-block';
 
-function renderUnitsLevel(content, classroom, subject, rerender, onNavigate) {
-  const section = document.createElement('div');
-  section.className = 'settings-section';
+  const row = document.createElement('div');
+  row.className = 'learning-record-view__row';
 
-  const intro = document.createElement('p');
-  intro.className = 'wizard-step__intro';
-  intro.textContent = `Units within ${subject.title}.`;
-  section.appendChild(intro);
+  const input = createRenameInput(subj.title, (newTitle) => {
+    learningRecordTeacherService.renameSubject(classroom, subj.id, newTitle);
+    workspaceService.save(classroom);
+  });
+  input.classList.add('learning-record-view__subject-name');
 
-  if (subject.units.length === 0) {
-    const empty = document.createElement('p');
-    empty.className = 'settings-section__meta';
-    empty.textContent = 'No units yet \u2014 add one below (e.g. Force and Pressure).';
-    section.appendChild(empty);
+  const openUnitsButton = document.createElement('button');
+  openUnitsButton.type = 'button';
+  openUnitsButton.className = 'btn btn--primary';
+  openUnitsButton.textContent = '+ Add Unit';
+  openUnitsButton.addEventListener('click', () => handlers.onOpenSubject(subj.id));
+
+  const removeButton = createRemoveButton(`Delete "${subj.title}"? Its units and lessons will be deleted too.`, () => {
+    learningRecordTeacherService.deleteSubject(classroom, subj.id);
+    workspaceService.save(classroom);
+    handlers.rerender();
+  });
+
+  row.append(input, openUnitsButton, removeButton);
+  block.appendChild(row);
+
+  if (subj.units.length > 0) {
+    const unitList = document.createElement('ul');
+    unitList.className = 'learning-record-view__unit-preview-list';
+    subj.units.forEach((u) => {
+      const item = document.createElement('li');
+      const link = document.createElement('button');
+      link.type = 'button';
+      link.className = 'learning-record-view__unit-preview-link';
+      link.textContent = u.title;
+      link.addEventListener('click', () => handlers.onOpenSubject(subj.id));
+      item.appendChild(link);
+      unitList.appendChild(item);
+    });
+    block.appendChild(unitList);
   }
 
-  const list = document.createElement('ul');
-  list.className = 'settings-editable-list';
+  return block;
+}
+
+// ---- Units -----------------------------------------------------------
+
+function renderUnitsLevel(classroom, subject, handlers) {
+  const section = document.createElement('div');
+  section.className = 'learning-record-view__section';
 
   subject.units.forEach((unit) => {
-    const item = document.createElement('li');
-    item.className = 'settings-editable-list__item';
+    const row = document.createElement('div');
+    row.className = 'learning-record-view__row';
 
     const input = createRenameInput(unit.title, (newTitle) => {
       learningRecordTeacherService.renameUnit(classroom, unit.id, newTitle);
       workspaceService.save(classroom);
     });
 
-    const openButton = document.createElement('button');
-    openButton.type = 'button';
-    openButton.className = 'btn btn--ghost';
-    openButton.textContent = 'Open Concepts';
-    openButton.addEventListener('click', () => onNavigate(subject.id, unit.id));
+    const openLessonsButton = document.createElement('button');
+    openLessonsButton.type = 'button';
+    openLessonsButton.className = 'btn btn--primary';
+    openLessonsButton.textContent = '+ Add Lesson';
+    openLessonsButton.addEventListener('click', () => handlers.onOpenUnit(unit.id));
 
-    const removeButton = createRemoveButton(`Delete "${unit.title}"? Its concepts will be deleted too.`, () => {
+    const removeButton = createRemoveButton(`Delete "${unit.title}"? Its lessons will be deleted too.`, () => {
       learningRecordTeacherService.deleteUnit(classroom, subject.id, unit.id);
       workspaceService.save(classroom);
-      rerender();
+      handlers.rerender();
     });
 
-    item.append(input, openButton, removeButton);
-    list.appendChild(item);
+    row.append(input, openLessonsButton, removeButton);
+    section.appendChild(row);
   });
 
-  section.appendChild(list);
   section.appendChild(
-    createAddForm('New unit name', 'Add Unit', (title) => {
+    createAddForm('New unit name', '+ Add Unit', (title) => {
       learningRecordTeacherService.createUnit(classroom, subject.id, { title });
       workspaceService.save(classroom);
-      rerender();
+      handlers.rerender();
     })
   );
 
-  content.appendChild(section);
+  return section;
 }
 
-// ---- Level 3: Concepts within a Unit --------------------------------
+// ---- Lessons (Concepts) ------------------------------------------------
 
-function renderConceptsLevel(content, classroom, subject, unit, rerender) {
+function renderLessonsLevel(classroom, unit, handlers) {
   const section = document.createElement('div');
-  section.className = 'settings-section';
-
-  const taughtCount = unit.concepts.filter((concept) => concept.status === 'taught').length;
-  const intro = document.createElement('p');
-  intro.className = 'wizard-step__intro';
-  intro.textContent =
-    unit.concepts.length > 0
-      ? `Concepts within ${unit.title} \u2014 ${taughtCount} of ${unit.concepts.length} taught.`
-      : `Concepts within ${unit.title}.`;
-  section.appendChild(intro);
-
-  if (unit.concepts.length === 0) {
-    const empty = document.createElement('p');
-    empty.className = 'settings-section__meta';
-    empty.textContent = 'No concepts yet \u2014 add one below (e.g. Force, Pressure, Friction, Viscosity).';
-    section.appendChild(empty);
-  }
-
-  const list = document.createElement('ul');
-  list.className = 'settings-editable-list';
+  section.className = 'learning-record-view__section';
 
   unit.concepts.forEach((concept) => {
-    const item = document.createElement('li');
-    item.className = 'settings-editable-list__item learning-record-concept-row';
+    const row = document.createElement('div');
+    row.className = 'learning-record-view__row';
 
     const input = createRenameInput(concept.title, (newTitle) => {
       learningRecordTeacherService.renameConcept(classroom, concept.id, newTitle);
       workspaceService.save(classroom);
     });
 
+    const isTaught = concept.status === 'taught';
     const taughtToggle = document.createElement('button');
     taughtToggle.type = 'button';
-    const isTaught = concept.status === 'taught';
     taughtToggle.className = 'learning-record-taught-toggle' + (isTaught ? ' learning-record-taught-toggle--taught' : '');
-    taughtToggle.textContent = CONCEPT_STATUS_LABELS[concept.status] || CONCEPT_STATUS_LABELS.not_taught;
+    taughtToggle.textContent = isTaught ? '\u2713 Taught' : '\u25cb Not Taught';
     taughtToggle.addEventListener('click', () => {
-      const newStatus = isTaught ? 'not_taught' : 'taught';
-      learningRecordTeacherService.setConceptTaughtStatus(classroom, concept.id, newStatus);
+      learningRecordTeacherService.setConceptTaughtStatus(classroom, concept.id, isTaught ? 'not_taught' : 'taught');
       workspaceService.save(classroom);
-      rerender();
+      handlers.rerender();
     });
 
     const removeButton = createRemoveButton(`Delete "${concept.title}"?`, () => {
       learningRecordTeacherService.deleteConcept(classroom, unit.id, concept.id);
       workspaceService.save(classroom);
-      rerender();
+      handlers.rerender();
     });
 
-    item.append(input, taughtToggle, removeButton);
-    list.appendChild(item);
+    row.append(input, taughtToggle, removeButton);
+    section.appendChild(row);
   });
 
-  section.appendChild(list);
   section.appendChild(
-    createAddForm('New concept name', 'Add Concept', (title) => {
+    createAddForm('New lesson name (e.g. Friction)', '+ Add Lesson', (title) => {
       learningRecordTeacherService.createConcept(classroom, unit.id, { title });
       workspaceService.save(classroom);
-      rerender();
+      handlers.rerender();
     })
   );
 
-  content.appendChild(section);
+  return section;
 }
 
 // ---- Shared small helpers -------------------------------------------
@@ -309,7 +340,7 @@ function createRemoveButton(confirmMessage, onConfirmed) {
 
 function createAddForm(placeholder, buttonLabel, onAdd) {
   const form = document.createElement('div');
-  form.className = 'settings-add-form';
+  form.className = 'learning-record-view__add-form';
 
   const input = document.createElement('input');
   input.type = 'text';
@@ -323,7 +354,6 @@ function createAddForm(placeholder, buttonLabel, onAdd) {
     const value = input.value.trim();
     if (!value) return;
     onAdd(value);
-    input.value = '';
   });
 
   form.append(input, button);

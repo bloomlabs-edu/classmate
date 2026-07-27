@@ -2857,3 +2857,47 @@ Same real-execution method as the previous entry, extended to cover the specific
 ### Future TODOs
 - (Carried over, unchanged): all items from the previous entries.
 - New, from this entry: consider whether the older Teaching-section "Learning Record" chip should be removed now that "+ Add Lesson" is the primary entry point, or left as a secondary path — not decided here, left as-is pending a product call.
+
+---
+
+## Learning Record — Discarded Router-Based Integration, Rebuilt as a Self-Contained "📚 Manage Lessons" Action
+
+**Context:** after two rounds of router/dispatch-wiring bugs, explicit direction was given to stop patching the previous approach and rebuild the integration from scratch as a directly-callable, unmissable action rather than a routed screen.
+
+### What Changed
+- **`ui/views/LearningRecordView.js` fully rewritten** to be entirely self-contained: no route, no URL, no `router.navigate()` anywhere in this file. It manages its own Subject/Unit drill-down as plain local variables in a closure and re-renders itself directly into whatever container it's handed. The only thing it's given is `onClose`. There is nothing in this file that can be "missing from an allow-list somewhere else" — every transition is a direct function call within this one file.
+- **All routing plumbing for this feature removed**: `'learningRecord'` deleted from `main.js`'s `CLASSROOM_ROUTE_NAMES`, its dispatch block deleted, the `learning-record` URL parsing branch deleted from `router.js` (a stale bookmark to the old URL now just falls through to the dashboard, rather than erroring), the now-dead `renderLearningRecordView` import removed from `main.js`.
+- **`ui/views/DashboardView.js` now calls `LearningRecordView` directly** via a local `openManageLessons()` closure defined right where the Dashboard is rendered — no callback prop threaded through `main.js` at all.
+- **The old Teaching-section "Learning Record" chip removed entirely** (discarded, not deprecated).
+- **New "📚 Manage Lessons" button** — large, blue, with a shadow, the first element inside the Continue Working card (above its own heading), not a chip inside a header row. Same button, same label, on the zero-student pre-roster welcome screen.
+- **Default subjects seeded automatically**: a classroom with zero Learning Record subjects gets Science / Maths / English / Social Science created the first time the screen opens, matching the requested initial screen exactly rather than an empty list.
+- Screen simplified to remove anything beyond Subject/Unit/Lesson CRUD and the Taught/Not Taught toggle — no taught-count summary text, no percentages, nothing else, per explicit instruction.
+
+### Files Modified/Rewritten
+- `js/ui/views/LearningRecordView.js` — full rewrite (self-contained, no router).
+- `js/ui/views/DashboardView.js` — direct call wiring, default subjects, new button, old chip removed.
+- `js/ui/components/ContinueWorkingWidget.js` — new prominent button.
+- `js/main.js` — routing plumbing removed.
+- `js/ui/router.js` — routing plumbing removed.
+- `css/styles.css` — new button styling, new self-contained styles for the rewritten view (deliberately not reusing Settings'/Setup Wizard's shared classes, so a future change to either never silently affects this screen).
+
+### Breaking Changes
+The old `#/classroom/{id}/learning-record` URL no longer opens Learning Record (falls through to the Dashboard instead). Nothing else depended on that URL existing.
+
+### Regression Verification
+Ran the exact checklist specified before packaging, against the real, complete, unmodified application code (same test-only `main.js`-export technique as the previous two entries) — a classroom with students and zero recent notebooks (the condition that broke this twice before):
+1. "📚 Manage Lessons" button visible — PASS
+2. Clicking it opens the Learning Record page — PASS
+3. Default Science/Maths/English/Social Science subjects present on first open — PASS
+4. Create a Subject — PASS
+5. Create a Unit inside a Subject — PASS
+6. Create 4 Lessons inside a Unit — PASS
+7. Toggle Taught / Not Taught (both directions) — PASS
+8. "Back to Dashboard" returns to the Dashboard, with the Manage Lessons button still present — PASS
+9. Repeated the button-visible-and-opens-the-screen check starting from the zero-student welcome screen — PASS
+
+All 9 pass against real, executed code — not a re-read of the source.
+
+### Future TODOs
+- (Carried over, unchanged): all items from the previous entries.
+- New, from this entry: none.

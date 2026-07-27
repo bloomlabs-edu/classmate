@@ -41,7 +41,6 @@ import { renderSetupWizardView } from './ui/views/SetupWizardView.js';
 import { renderStudentProfileView } from './ui/views/StudentProfileView.js';
 import { renderStudentAccessView } from './ui/views/StudentAccessView.js';
 import { renderActivitiesListView, renderActivityRosterView } from './ui/views/ActivitiesView.js';
-import { renderLearningRecordView } from './ui/views/LearningRecordView.js';
 import { renderNotebookTrackerView } from './ui/views/NotebookTrackerView.js';
 import { renderNotebookRegisterView } from './ui/views/NotebookRegisterView.js';
 import { renderNotebookTimelineView } from './ui/views/NotebookTimelineView.js';
@@ -174,7 +173,6 @@ const CLASSROOM_ROUTE_NAMES = [
   'notebookTracker',
   'notebookRegister',
   'notebookTimeline',
-  'learningRecord',
 ];
 
 function renderLoadingScreen(container) {
@@ -286,7 +284,6 @@ function renderRoute(route) {
           router.navigate(`/classroom/${classroom.id}/notebooks/${subjectId}/${notebookTypeId}`),
         onOpenRecognition: () => router.navigate(`/classroom/${classroom.id}/recognition`),
         onOpenActivities: () => router.navigate(`/classroom/${classroom.id}/activities`),
-        onOpenLearningRecord: () => router.navigate(`/classroom/${classroom.id}/learning-record`),
         onSelectPendingTask: (taskTypeId, item) => {
           if (item.activityId) {
             router.navigate(`/classroom/${classroom.id}/activities/${item.activityId}`);
@@ -364,17 +361,6 @@ function renderRoute(route) {
         activityId: route.activityId,
         onBack: () => router.navigate(`/classroom/${classroom.id}/activities`),
         onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
-      });
-    } else if (route.name === 'learningRecord') {
-      renderLearningRecordView(appContainer, {
-        classroom,
-        subjectId: route.subjectId,
-        unitId: route.unitId,
-        onNavigate: (subjectId, unitId) => {
-          const segments = [subjectId, unitId].filter(Boolean);
-          router.navigate(`/classroom/${classroom.id}/learning-record${segments.length ? '/' + segments.join('/') : ''}`);
-        },
-        onBack: () => router.navigate(`/classroom/${classroom.id}`),
       });
     } else if (route.name === 'notebookTracker') {
       renderNotebookTrackerView(appContainer, {

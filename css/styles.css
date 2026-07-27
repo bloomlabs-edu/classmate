@@ -1218,6 +1218,99 @@ select:focus-visible,
   color: #2e7d32;
 }
 
+/* Learning Record screen — see ui/views/LearningRecordView.js. Fully
+   self-contained: deliberately does not reuse Settings'/Setup Wizard's
+   shared classes, so a future change to either of those never
+   silently affects this screen (or vice versa). */
+.learning-record-view {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 0 1.5rem 3rem;
+}
+.learning-record-view__header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem 0;
+}
+.learning-record-view__title {
+  font-size: 1.3rem;
+  font-weight: var(--font-weight-black);
+  margin: 0;
+}
+.learning-record-view__breadcrumb {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  margin: 0 0 1.25rem;
+}
+.learning-record-view__breadcrumb .btn {
+  padding: 0;
+  font-size: 0.9rem;
+  font-weight: var(--font-weight-bold);
+}
+.learning-record-view__section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.learning-record-view__subject-block {
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+}
+.learning-record-view__row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.learning-record-view__row input[type='text'] {
+  flex: 1;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+.learning-record-view__subject-name {
+  font-size: 1.05rem;
+  font-weight: var(--font-weight-bold);
+}
+.learning-record-view__unit-preview-list {
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0 0 0 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.learning-record-view__unit-preview-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-align: left;
+}
+.learning-record-view__unit-preview-link:hover {
+  text-decoration: underline;
+}
+.learning-record-view__add-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+}
+.learning-record-view__add-form input[type='text'] {
+  flex: 1;
+  min-width: 160px;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+
 .settings-add-form {
   display: flex;
   flex-wrap: wrap;
@@ -3380,8 +3473,22 @@ button.wizard-checklist__row:hover {
 .dashboard-widget__header-row .dashboard-widget__heading {
   margin: 0;
 }
-.dashboard-widget__add-lesson-button {
-  white-space: nowrap;
+.dashboard-widget__manage-lessons-button {
+  display: block;
+  width: 100%;
+  margin-bottom: 1rem;
+  padding: 1rem 1.25rem;
+  border: none;
+  border-radius: 14px;
+  background-color: #1565C0;
+  color: #ffffff;
+  font-size: 1.15rem;
+  font-weight: var(--font-weight-black);
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(21, 101, 192, 0.35);
+}
+.dashboard-widget__manage-lessons-button:hover {
+  background-color: #0d4d94;
 }
 
 /* Classroom Dashboard header (Phase 4) — Primary Action / Secondary
@@ -4468,8 +4575,20 @@ button.wizard-checklist__row:hover {
   font-weight: var(--font-weight-black);
   margin: 0 0 1.5rem;
 }
-.pre-roster-welcome__learning-record-link {
+.pre-roster-welcome__manage-lessons-button {
   margin-top: 1.5rem;
+  padding: 1rem 1.75rem;
+  border: none;
+  border-radius: 14px;
+  background-color: #1565C0;
+  color: #ffffff;
+  font-size: 1.1rem;
+  font-weight: var(--font-weight-black);
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(21, 101, 192, 0.35);
+}
+.pre-roster-welcome__manage-lessons-button:hover {
+  background-color: #0d4d94;
 }
 
 /* Settings' richer empty state - icon + title + message, used where a plain one-line message (see .empty-state) isn't enough, e.g. the Students tab before any students exist */
