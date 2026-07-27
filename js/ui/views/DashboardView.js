@@ -69,6 +69,7 @@ export function renderDashboardView(container, props) {
     onSelectNotebook,
     onOpenRecognition,
     onOpenActivities,
+    onOpenLearningRecord,
     onSelectPendingTask,
     onSelectStudent,
   } = props;
@@ -195,13 +196,20 @@ export function renderDashboardView(container, props) {
     content.appendChild(createPendingTasksWidgetElement({ classroom, onSelectTask: onSelectPendingTask }));
   }
 
+  // One "Teaching" section, always shown once there's a roster —
+  // Learning Record is always included (independent of Notebook
+  // Tracker setup, see docs/LEARNING_RECORD.md); the Subjects widget
+  // and Activities link only join it once notebook subjects exist,
+  // same condition as before. Built as one section with conditional
+  // children, not two separate createTeachingSectionElement() calls,
+  // since that would render two identical "Teaching" headings stacked
+  // on top of each other.
+  const teachingChildren = [];
   if (hasSubjectsConfigured) {
-    content.appendChild(
-      createTeachingSectionElement({
-        children: [createSubjectsWidgetElement({ classroom, onOpenNotebookTracker }), createActivitiesLink(onOpenActivities)],
-      })
-    );
+    teachingChildren.push(createSubjectsWidgetElement({ classroom, onOpenNotebookTracker }), createActivitiesLink(onOpenActivities));
   }
+  teachingChildren.push(createLearningRecordLink(onOpenLearningRecord));
+  content.appendChild(createTeachingSectionElement({ children: teachingChildren }));
 
   // Student Access and Settings are persistent, evergreen navigation
   // actions, not data widgets summarizing activity — they always
@@ -284,6 +292,21 @@ function createActivitiesLink(onOpenActivities) {
   button.className = 'dashboard-widget__chip';
   button.textContent = 'Activities';
   button.addEventListener('click', onOpenActivities);
+  return button;
+}
+
+/**
+ * Shortcut into the Learning Record teacher workflow (see
+ * ui/views/LearningRecordView.js, docs/LEARNING_RECORD.md). Its own
+ * always-visible Teaching section rather than nested alongside
+ * Activities above — see this file's call site for why.
+ */
+function createLearningRecordLink(onOpenLearningRecord) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'dashboard-widget__chip';
+  button.textContent = 'Learning Record';
+  button.addEventListener('click', onOpenLearningRecord);
   return button;
 }
 

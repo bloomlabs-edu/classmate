@@ -18,6 +18,7 @@
  *   #/classroom/{id}/notebooks/{subjectId}/{typeId}/{dateKey?}        -> register view (today if dateKey omitted)
  *   #/classroom/{id}/notebooks/{subjectId}/{typeId}/timeline/{yearMonth?} -> timeline view (current month if omitted)
  *   #/classroom/{id}/recognition/{period?}/{categoryId?}     -> recognition screen (defaults resolved by the view itself)
+ *   #/classroom/{id}/learning-record/{subjectId?}/{unitId?}  -> Learning Record (subject list, or drilled into a subject/unit — see ui/views/LearningRecordView.js)
  * Deep links work on refresh since the route is derived from the URL,
  * not from in-memory state.
  *
@@ -87,6 +88,9 @@ function resolvePathParts(parts) {
         return { name: 'notebookTimeline', classroomId: parts[1], subjectId, notebookTypeId, yearMonth: parts[6] || null };
       }
       return { name: 'notebookRegister', classroomId: parts[1], subjectId, notebookTypeId, dateKey: parts[5] || null };
+    }
+    if (parts[2] === 'learning-record') {
+      return { name: 'learningRecord', classroomId: parts[1], subjectId: parts[3] || null, unitId: parts[4] || null };
     }
     return { name: 'dashboard', classroomId: parts[1] };
   }

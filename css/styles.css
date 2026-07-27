@@ -1199,6 +1199,25 @@ select:focus-visible,
   font-weight: var(--font-weight-medium);
 }
 
+/* Learning Record — see ui/views/LearningRecordView.js */
+.learning-record-taught-toggle {
+  flex-shrink: 0;
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  background-color: #F3F4F6;
+  color: var(--color-muted);
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.learning-record-taught-toggle--taught {
+  background-color: #EAF7EC;
+  border-color: #2e7d32;
+  color: #2e7d32;
+}
+
 .settings-add-form {
   display: flex;
   flex-wrap: wrap;
