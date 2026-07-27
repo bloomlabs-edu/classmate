@@ -121,7 +121,7 @@ export function renderSettingsView(container, { classroom, currentUser, section,
   // presentation change, not a rewrite of what any of them already do
   // correctly.
   const sectionRenderers = {
-    class: (el, cls, rr) => renderClassSection(el, cls, rr, onOpenStudentAccess, currentUser),
+    class: (el, cls, rr) => renderClassSection(el, cls, rr, onOpenStudentAccess, currentUser, onSelectStudent),
     learning: (el, cls, rr) => renderLearningSection(el, cls, rr),
     classroom: (el, cls, rr) => renderClassroomSection(el, cls, rr, currentUser, onDeleted, onReopenSetupWizard),
   };
@@ -141,7 +141,7 @@ export function renderSettingsView(container, { classroom, currentUser, section,
  * heading so the page still reads as three distinct topics, not one
  * undifferentiated list.
  */
-function renderClassSection(content, classroom, rerender, onOpenStudentAccess, currentUser) {
+function renderClassSection(content, classroom, rerender, onOpenStudentAccess, currentUser, onSelectStudent) {
   const studentsWrapper = document.createElement('div');
   const studentsHeading = document.createElement('h2');
   studentsHeading.className = 'settings-page-heading';

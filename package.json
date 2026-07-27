@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@dicebear/core": "^10.3.0"
+  }
+}

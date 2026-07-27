@@ -19,9 +19,11 @@ import * as workspaceService from '../../services/workspaceService.js';
 import * as classroomImportService from '../../services/classroomImportService.js';
 import { ClassroomImportError } from '../../services/classroomImportService.js';
 import * as teamService from '../../services/teamService.js';
+import * as studentService from '../../services/studentService.js';
 import * as bucketService from '../../services/bucketService.js';
 import * as scoringSettingsService from '../../services/scoringSettingsService.js';
 import * as setupProgressService from '../../services/setupProgressService.js';
+import { getOrCreateUngroupedTeam } from '../../services/classroomService.js';
 import { BUCKET_KEYS, BUCKET_LABELS } from '../../config/bucketConfig.js';
 import { DEFAULT_GROUP_COLORS, getDefaultGroupColor } from '../../config/groupColorConfig.js';
 import { openImportPreviewModal } from '../components/ImportPreviewModal.js';
@@ -44,6 +46,19 @@ const STEP_LABELS = {
 // step can offer to import it. Keyed by classroom id since more than one
 // classroom's wizard could theoretically be mid-flow across tabs.
 const pendingImportBucketsByClassroomId = new Map();
+
+/**
+ * Every step after Import Students assumes a real roster exists —
+ * assigning buckets, customizing groups, configuring scoring, and
+ * inviting co-teachers all only make sense once there's a class to
+ * apply them to. Used to gate both the overview checklist (so those
+ * rows aren't clickable yet) and direct step navigation (so advancing
+ * past an empty Import Students step can't land on a screen that
+ * doesn't make sense with nothing in it).
+ */
+function hasAnyStudents(classroom) {
+  return classroom.teams.some((team) => team.students.length > 0);
+}
 
 export function renderSetupWizardView(container, { classroom, step, onNavigateStep, onFinish }) {
   container.innerHTML = '';
@@ -92,13 +107,16 @@ function renderOverview(container, classroom, { onNavigateStep, onFinish }) {
     createChecklistRow({ label: 'Classroom Details', done: true, interactive: false })
   );
 
+  const studentsExist = hasAnyStudents(classroom);
+
   STEP_KEYS.forEach((key) => {
     const done = setupProgressService.isStepDone(classroom, key);
+    const gated = key !== 'importStudents' && !studentsExist;
     checklist.appendChild(
       createChecklistRow({
-        label: STEP_LABELS[key],
+        label: STEP_LABELS[key] + (gated ? ' (add students first)' : ''),
         done,
-        interactive: true,
+        interactive: !gated,
         onClick: () => onNavigateStep(key),
       })
     );
@@ -138,6 +156,15 @@ function createChecklistRow({ label, done, interactive, onClick }) {
 }
 
 function renderStepScreen(container, classroom, step, { onNavigateStep, onFinish }) {
+  if (step !== 'importStudents' && !hasAnyStudents(classroom)) {
+    // Nothing to assign buckets to, group, or configure scoring for
+    // yet — send the teacher back to the checklist rather than a step
+    // screen that wouldn't make sense with an empty roster. See
+    // hasAnyStudents()'s doc comment.
+    onNavigateStep(null);
+    return;
+  }
+
   const wrapper = document.createElement('div');
   wrapper.className = 'wizard-step-screen';
 
@@ -258,11 +285,68 @@ function renderImportStudentsStep(content, classroom, { advance }) {
   skipButton.textContent = 'Skip this step';
   skipButton.addEventListener('click', advance);
 
+  const orDivider = document.createElement('p');
+  orDivider.className = 'wizard-step__divider';
+  orDivider.textContent = 'or';
+  content.append(chooseButton, fileInput, orDivider);
+
+  renderManualStudentEntry(content, classroom, advance);
+
   const actions = document.createElement('div');
   actions.className = 'wizard-step__actions';
-  actions.append(chooseButton, skipButton);
+  actions.append(skipButton);
+  content.appendChild(actions);
+}
 
-  content.append(actions, fileInput);
+/**
+ * The alternative to CSV import for a teacher with no file to upload
+ * — a plain "one name per line" textarea. Every name entered lands in
+ * the classroom's Ungrouped bucket (the same reserved holding team
+ * every other path into this app already uses for a student without
+ * a group yet — see classroomService.getOrCreateUngroupedTeam()), so
+ * there's nothing new downstream needs to know about; a teacher can
+ * sort them into real groups afterward from Customize Groups or
+ * Settings.
+ */
+function renderManualStudentEntry(content, classroom, advance) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'wizard-manual-entry';
+
+  const label = document.createElement('label');
+  label.className = 'wizard-manual-entry__label';
+  label.textContent = 'Add students manually \u2014 one name per line';
+  wrapper.appendChild(label);
+
+  const textarea = document.createElement('textarea');
+  textarea.className = 'wizard-manual-entry__textarea';
+  textarea.rows = 6;
+  textarea.placeholder = 'Aarav Sharma\nDiya Patel\nKabir Khan';
+  wrapper.appendChild(textarea);
+
+  const addButton = document.createElement('button');
+  addButton.type = 'button';
+  addButton.className = 'btn btn--primary';
+  addButton.textContent = 'Add Students';
+  addButton.addEventListener('click', () => {
+    const names = textarea.value
+      .split('\n')
+      .map((name) => name.trim())
+      .filter(Boolean);
+
+    if (names.length === 0) {
+      window.alert('Enter at least one student name first.');
+      return;
+    }
+
+    const ungroupedTeam = getOrCreateUngroupedTeam(classroom);
+    names.forEach((name) => studentService.addStudent(ungroupedTeam, name));
+    setupProgressService.markStepDone(classroom, 'importStudents');
+    workspaceService.save(classroom);
+    advance();
+  });
+  wrapper.appendChild(addButton);
+
+  content.appendChild(wrapper);
 }
 
 function renderAssignBucketsStep(content, classroom, { advance }) {
