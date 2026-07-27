@@ -225,7 +225,7 @@ export function renderDashboardView(container, props) {
   wrapper.appendChild(content);
   container.appendChild(wrapper);
 
-  loadContinueWorking(classroom, currentUser, secondaryContentSlot, onSelectNotebook);
+  loadContinueWorking(classroom, currentUser, secondaryContentSlot, onSelectNotebook, onOpenLearningRecord);
 }
 
 /**
@@ -267,8 +267,8 @@ function renderPreRosterWelcome(container, classroom, assistantCallbacks, onOpen
   if (onOpenLearningRecord) {
     const learningRecordLink = document.createElement('button');
     learningRecordLink.type = 'button';
-    learningRecordLink.className = 'btn btn--ghost pre-roster-welcome__learning-record-link';
-    learningRecordLink.textContent = 'Build Your Learning Record \u2192';
+    learningRecordLink.className = 'btn btn--primary pre-roster-welcome__learning-record-link';
+    learningRecordLink.textContent = '+ Add Lesson';
     learningRecordLink.addEventListener('click', onOpenLearningRecord);
     wrapper.appendChild(learningRecordLink);
   }
@@ -343,7 +343,7 @@ function createSettingsButton(onOpenSettings) {
   return button;
 }
 
-async function loadContinueWorking(classroom, currentUser, slot, onSelectNotebook) {
+async function loadContinueWorking(classroom, currentUser, slot, onSelectNotebook, onAddLesson) {
   const allEntries = await continueWorkingService.getRecentOnce(currentUser?.uid);
   const classroomEntries = allEntries.filter((entry) => entry.classroomId === classroom.id);
 
@@ -354,7 +354,13 @@ async function loadContinueWorking(classroom, currentUser, slot, onSelectNoteboo
   }));
 
   slot.innerHTML = '';
-  if (resolvedEntries.length === 0) return;
-  slot.appendChild(createContinueWorkingWidgetElement({ entries: resolvedEntries, onOpenNotebook: onSelectNotebook }));
+  // Always rendered now, regardless of whether there are any recent
+  // notebooks — this card carries the "+ Add Lesson" entry point into
+  // Learning Record (see ContinueWorkingWidget.js's own doc comment),
+  // which must always be visible. Previously this function returned
+  // early here whenever a teacher had no recent notebooks at all,
+  // which would have hidden that button for exactly the teachers most
+  // likely to be new to the app.
+  slot.appendChild(createContinueWorkingWidgetElement({ entries: resolvedEntries, onOpenNotebook: onSelectNotebook, onAddLesson }));
 }
 

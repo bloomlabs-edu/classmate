@@ -3374,9 +3374,14 @@ button.wizard-checklist__row:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
 }
 .dashboard-widget__header-row .dashboard-widget__heading {
   margin: 0;
+}
+.dashboard-widget__add-lesson-button {
+  white-space: nowrap;
 }
 
 /* Classroom Dashboard header (Phase 4) — Primary Action / Secondary

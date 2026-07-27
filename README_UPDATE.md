@@ -1,70 +1,25 @@
 -----------------------------------
 Feature:
-Learning Record – Phase 2 (Teacher Workflow) — Routing Fix
+Learning Record – Phase 2 REVISED: "+ Add Lesson" as a First-Class Action
 
-This supersedes both previous deliveries. This one fixes a real bug
-that the previous round's testing didn't catch because it tested each
-file in isolation rather than the actual click path through main.js.
-Apply the same way: extract, copy everything, paste into your project
-root, allow replace.
+This supersedes all previous Learning Record deliveries. Apply the
+same way: extract, copy everything, paste into your project root,
+allow replace.
 
 -----------------------------------
-THE ACTUAL BUG THIS TIME
+WHERE TO FIND THE FEATURE NOW
 
-`main.js` keeps an explicit allow-list, `CLASSROOM_ROUTE_NAMES`, that
-every classroom-scoped route must appear in before its dispatch logic
-ever runs. `'learningRecord'` was missing from that list. The route
-parsed correctly, the button existed and called the right callback,
-and a matching dispatch branch for it genuinely existed further down
-in the same function — but because the route name wasn't on the
-allow-list, that whole block was skipped and execution fell through to
-the Home/Welcome screen instead. This is why it looked like nothing
-was wired at all, even though most of it actually was.
+Open any classroom. You will see a **"+ Add Lesson"** button, always,
+in one of two places depending on classroom state:
 
-Fixed with one line: `'learningRecord'` added to `CLASSROOM_ROUTE_NAMES`
-in `js/main.js`.
+  - Classroom with students: on the right side of the "Continue
+    Working" card's header (top area of the Dashboard).
+  - Classroom with zero students yet: same "+ Add Lesson" button,
+    directly below the "Add Students" welcome card.
 
------------------------------------
-HOW THIS WAS VERIFIED THIS TIME (read this if you don't trust it yet)
-
-Previous rounds tested `router.js`'s parsing, `DashboardView.js`'s
-rendering, and `LearningRecordView.js`'s CRUD logic — each in
-isolation, each genuinely passing. That's exactly why this bug slipped
-through: none of those tests exercised `main.js`'s own dispatch logic,
-which is where the actual break was.
-
-This time: built a test-only transformation of the real `main.js`
-source (never modifying the file you're receiving) that exposes its
-internal `renderRoute()` function for direct testing, registered a
-real classroom, and then, against the real, complete code:
-
-1. Rendered the real Dashboard.
-2. Found the real "Learning Record" button in the resulting output and
-   called `.click()` on it (not a simulated click — the actual DOM
-   event handler `main.js` wires up).
-3. Confirmed the click set the URL to
-   `/classroom/{id}/learning-record`.
-4. Re-ran `renderRoute()` (simulating the re-render the real router
-   fires on a hash change) and confirmed `LearningRecordView` actually
-   mounted. Before the fix, this exact step failed and produced the
-   Home/Welcome screen instead — reproducing the report exactly.
-5. Repeated the same full path starting from the zero-student
-   pre-roster screen.
-6. Additionally tested a direct deep-link straight to a Concept level
-   (as if refreshing a bookmarked URL) and the Back button from there
-   — both correct.
-
-All six now pass against the real application code.
-
------------------------------------
-WHERE TO FIND THE FEATURE (unchanged from last time)
-
-  - Classroom with NO students yet: "Build Your Learning Record →"
-    button below the Add Students card.
-  - Classroom WITH students: "Learning Record" chip in the Dashboard's
-    Teaching section.
-
-Either one now actually opens the feature.
+Click it. It opens the Learning Record screen immediately — Subjects
+list, with Add/Rename/Delete, drilling into Units, then Concepts, with
+the Taught/Not Taught toggle.
 
 -----------------------------------
 Files Added
@@ -85,15 +40,23 @@ Unchanged from previous deliveries:
 - js/models/Student.js
 - js/models/Classroom.js
 - js/ui/router.js
-- js/ui/views/DashboardView.js
-- css/styles.css
-
-Changed again in THIS delivery (the actual fix):
 - js/main.js
-    Added 'learningRecord' to CLASSROOM_ROUTE_NAMES. This is the one
-    change in this package that matters.
+
+Changed in THIS delivery:
+- js/ui/components/ContinueWorkingWidget.js
+    Added a header row (heading left, "+ Add Lesson" primary button
+    right) — the same header-row pattern already used by Recognition
+    Wall's "View All" button.
+- js/ui/views/DashboardView.js
+    Wired the new button through to Learning Record on both the
+    normal Dashboard and the zero-student welcome screen (relabeled
+    from "Build Your Learning Record →" to "+ Add Lesson" for
+    consistency). Also fixes a real bug — see "A Second Bug Found"
+    below.
+- css/styles.css
+    Header-row wrap safety on narrow widths, button spacing.
 - CHANGELOG.md
-    Added the entry documenting this root cause and how it was found.
+    New entry for this round.
 
 -----------------------------------
 Files Deleted
@@ -103,35 +66,68 @@ Files Deleted
 -----------------------------------
 What changed
 
-One line in `js/main.js`. See "THE ACTUAL BUG THIS TIME" above.
+Learning Record is no longer nested inside a conditional Dashboard
+section. "+ Add Lesson" is now a primary, always-visible button, in
+the Continue Working card for a classroom with students, and on the
+welcome screen for a classroom with none.
+
+A SECOND BUG FOUND AND FIXED while re-verifying this: the function
+that fills in the Continue Working card had its own early return —
+`if (resolvedEntries.length === 0) return;` — meaning the entire card,
+and therefore the button now living inside it, would never render at
+all for any teacher who has never opened a notebook yet. That's
+probably the single most common state for a real or newly-created
+classroom, and exactly the condition most likely to be hit on first
+test. Fixed by removing that early return; the card always renders
+now, falling back to its existing "Notebooks you open will show up
+here" empty message when there's nothing else to show.
+
+The old "Learning Record" chip in the Dashboard's Teaching section
+(from the previous delivery) was left in place, not removed — it
+isn't asked to be removed, and having a second working entry point is
+extra discoverability, not a conflict. Worth deciding later whether to
+remove it now that "+ Add Lesson" is the primary path.
 
 -----------------------------------
 What to test
 
-□ Classroom with ZERO students → "Build Your Learning Record →" opens
-  the feature (not the Home/Welcome screen)
-□ Classroom WITH students → "Learning Record" chip opens the feature
+□ Open a classroom with ZERO students, ZERO recent notebooks —
+  confirm "+ Add Lesson" is visible (this exact combination is what
+  the second bug hid)
+□ Open a classroom WITH students, ZERO recent notebooks — confirm
+  "+ Add Lesson" is visible in the Continue Working card
+□ Open a classroom WITH students AND at least one recently-opened
+  notebook — confirm "+ Add Lesson" still appears alongside the
+  notebook chips, not replaced by them
+□ Click "+ Add Lesson" from each of the above — confirm it opens
+  Learning Record every time, never a blank/placeholder/dead screen
 □ Create Subject / Unit / Concept
 □ Mark Concept Taught / Not Taught
-□ Rename at each level
-□ Delete at each level (confirm cascade delete for Unit/Subject)
+□ Rename and Delete at each level (confirm cascade delete for
+  Unit/Subject)
 □ Refresh the browser on a deep link
-  (#/classroom/{id}/learning-record/{subjectId}/{unitId}) — should
-  load directly to that Concepts screen, not redirect anywhere
-□ Back navigation at each level
+  (#/classroom/{id}/learning-record/{subjectId}/{unitId}) — loads
+  directly, no redirect
 
 -----------------------------------
 Known limitations
 
-- Still not clicked through in an actual browser — this environment
-  has no network access at all. What's different this round: rather
-  than trusting isolated per-file tests (which is exactly how this bug
-  got missed once already), the fix was verified by executing the real
-  main.js's actual routing function end-to-end, reproducing the
-  reported failure first, then confirming the fix resolves it. That's
-  meaningfully stronger evidence than before, but it is still
-  JS-execution-under-Node, not a browser.
+- Still verified by executing the real, unmodified application code
+  under Node (no browser available in this environment at all,
+  including no way to install one) rather than a live browser
+  click-through. This round specifically: rendered the real Dashboard
+  for a zero-student classroom and a has-students-zero-notebooks
+  classroom, found the real "+ Add Lesson" button in both, clicked it,
+  and confirmed Learning Record actually opened in both cases — this
+  is exactly the scenario the second bug broke, and it's now confirmed
+  fixed against the actual code, not just re-read. Also re-ran the
+  full Learning Record CRUD script as a regression check. A real
+  browser click-through is still the one thing that hasn't happened
+  and should before relying on this in front of a class.
 - No Timeline logging yet for taught-status changes (unchanged).
 - No notebook-status UI yet (unchanged — service-layer support
   exists, no screen for it yet).
+- The older Teaching-section "Learning Record" chip still exists
+  alongside the new button (see "What changed" above) — not a bug,
+  just an open product question about whether to remove it.
 -----------------------------------

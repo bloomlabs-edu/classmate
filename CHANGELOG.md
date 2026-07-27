@@ -2828,3 +2828,32 @@ All of the above now passes end-to-end against the real, complete application ro
 ### Future TODOs
 - (Carried over, unchanged): all items from the previous entries.
 - New, from this entry: none.
+
+---
+
+## Learning Record Phase 2 — Redesigned as a First-Class "+ Add Lesson" Action
+
+**Context:** after two rounds of integration bugs (a missing widget wire-up, then a missing route allow-list entry), the decision was made to stop relying on a nested, easy-to-miss Dashboard chip and instead give Learning Record a permanent, unmissable action button, per explicit direction.
+
+### What Changed
+- **"+ Add Lesson"** is now a primary button on the right side of the **Continue Working** card's header, using the same header-row pattern Recognition Wall's "View All" already established (`.dashboard-widget__header-row`).
+- Also present on the zero-student pre-roster welcome screen, relabeled from "Build Your Learning Record →" to the same "+ Add Lesson" wording, so the entry point looks and reads identically in every Dashboard state.
+- The previous Teaching-section "Learning Record" chip was left in place rather than removed — it isn't asked to be removed, and a second working entry point is strictly additional discoverability, not a conflict. Worth a deliberate decision to remove if it now reads as redundant.
+
+### A Second Real Bug Found During This Pass
+While re-verifying, `loadContinueWorking()` (the function that fills in the Continue Working card) had its own early return: `if (resolvedEntries.length === 0) return;` — meaning the whole card, and now the "+ Add Lesson" button living inside it, would never render at all for any teacher who has never opened a notebook yet. Almost certainly the majority case for a new or recently-created classroom — exactly the scenario most likely to be tested first. Fixed by removing the early return; the card (and button) now always renders, showing its existing empty-state message when there's nothing to show.
+
+### Files Modified
+- `js/ui/components/ContinueWorkingWidget.js` — added the header row and "+ Add Lesson" button.
+- `js/ui/views/DashboardView.js` — threaded `onAddLesson` into `loadContinueWorking()`/the widget call; removed the early return described above; relabeled the pre-roster button.
+- `css/styles.css` — header-row wrap safety, button spacing.
+
+### Breaking Changes
+None. The Continue Working card now always renders (previously it silently didn't when there was nothing to show) — this is the fix above, not a separate behavior change, and its own empty state already existed and is unaffected.
+
+### Regression Verification
+Same real-execution method as the previous entry, extended to cover the specific failure mode this bug represented: ran the full click path (render Dashboard → find "+ Add Lesson" → click → confirm Learning Record opens) against the real, unmodified `main.js`, `DashboardView.js`, and `ContinueWorkingWidget.js`, for two cases — a zero-student classroom, and a classroom with students but zero recent notebook entries (the exact condition that previously hid the button entirely). Both pass. Also re-ran the full Learning Record CRUD script (add/rename/delete Subject/Unit/Concept, toggle taught status) against the real `LearningRecordView.js` as a regression check — still passes, unaffected by this round's changes.
+
+### Future TODOs
+- (Carried over, unchanged): all items from the previous entries.
+- New, from this entry: consider whether the older Teaching-section "Learning Record" chip should be removed now that "+ Add Lesson" is the primary entry point, or left as a secondary path — not decided here, left as-is pending a product call.
