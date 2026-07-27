@@ -481,7 +481,15 @@ function renderStudentsSection(content, classroom, rerender, onOpenStudentAccess
     return;
   }
 
-  classroom.teams.forEach((team) => {
+  // Same reasoning as GroupsWidget.js and Class Mode's team-card grid:
+  // a team with zero students would render as a heading with nothing
+  // underneath it — an empty box, not useful information here. Such a
+  // team is still fully manageable (renamed, colored, removed) from
+  // Settings' own Groups tab; it simply won't have a block on this
+  // student-focused list until it actually has a student in it.
+  classroom.teams
+    .filter((team) => team.students.length > 0)
+    .forEach((team) => {
     const teamBlock = document.createElement('div');
     teamBlock.className = 'settings-team-block';
 
