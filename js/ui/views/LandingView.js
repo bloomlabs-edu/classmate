@@ -86,10 +86,15 @@ function createJourneyCard({ icon, category, title, description, buttonLabel, on
   button.type = 'button';
   button.className = 'btn btn--primary btn--large';
   button.textContent = buttonLabel;
-  // Categories that define their own "button" brand color (distinct
-  // from the softer icon color) override the default primary-blue
-  // button styling — Student's button stays the bolder ff9b65 the
-  // icon badge itself doesn't use, per this app's CHANGELOG.
+  // Categories that define their own "button" brand color override the
+  // default primary-blue button styling, which is tied to each
+  // teacher's personal accent-color preference (see
+  // services/accentColorService.js) and would otherwise make this
+  // pre-login landing screen's buttons vary per teacher. Teacher's
+  // button color matches the landing title's own hardcoded blue (see
+  // styles.css's .landing-view__title-class) and the Teacher icon
+  // badge above it; Student's button stays the bolder ff9b65 its icon
+  // badge doesn't use, per this app's CHANGELOG.
   const categoryButtonColor = ICON_CATEGORIES[category]?.button;
   if (categoryButtonColor) {
     button.style.backgroundColor = categoryButtonColor;

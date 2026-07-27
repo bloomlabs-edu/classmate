@@ -115,7 +115,7 @@ export function createIcon(name, { size = 20, strokeWidth = 2, className = '' } 
  * within one context rather than distinct categories to tell apart.
  */
 export const ICON_CATEGORIES = Object.freeze({
-  teacher: { icon: '#1565C0', tint: '#E6F1FB' },
+  teacher: { icon: '#1565C0', tint: '#E6F1FB', button: '#1565C0' },
   student: { icon: '#BF5F1A', tint: '#FDEEE0', button: '#ff9b65' },
   groups: { icon: '#0F9E8E', tint: '#E1F5F1' },
   notebook: { icon: '#6D5AC4', tint: '#EEEBFB' },
