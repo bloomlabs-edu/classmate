@@ -88,6 +88,26 @@
  *                    genuinely blocked pending authentication approval;
  *                    this code only ever grants read-only roster
  *                    visibility, never a `members` entry.
+ *   deviceResetPin - a third, separately-scoped code: a short numeric
+ *                    PIN gating changes to which students a *device*
+ *                    trusts (see services/studentDeviceService.js's
+ *                    trusted-device model). A device can hold a small,
+ *                    capped set of approved student profiles — e.g. two
+ *                    siblings sharing one family phone — and switching
+ *                    between already-approved profiles never needs
+ *                    this PIN; only adding or removing a profile from
+ *                    an already-claimed device does. Deliberately a
+ *                    different secret from classroomStudentJoinCode
+ *                    above — that code is meant to be posted on a board
+ *                    for the whole class to read and use freely for
+ *                    the device's very first profile; this one exists
+ *                    specifically to stop a casual second use of that
+ *                    same public code from silently reassigning (or
+ *                    adding onto) a device someone else already
+ *                    claimed. Never grants classroom membership or any
+ *                    Firestore write of its own — see
+ *                    services/classroomService.js's
+ *                    ensureDeviceResetPin().
  *   settings       - classroom-level settings: bucket scoring, point
  *                    scoring, badge catalog, and Setup Wizard progress —
  *                    see config/classroomDefaults.js for the defaults,
@@ -118,6 +138,7 @@ export function createClassroom({
   notebookChecks = {},
   classroomJoinCode = null,
   classroomStudentJoinCode = null,
+  deviceResetPin = null,
   settings = buildDefaultSettings(),
 } = {}) {
   return {
@@ -139,6 +160,7 @@ export function createClassroom({
     notebookChecks,
     classroomJoinCode,
     classroomStudentJoinCode,
+    deviceResetPin,
     settings,
   };
 }

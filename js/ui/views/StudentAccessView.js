@@ -55,7 +55,12 @@ export function renderStudentAccessView(container, { classroom, onBack, onSelect
   const content = document.createElement('div');
   content.className = 'wizard-step-content';
 
-  content.appendChild(createInviteStudentsCard(classroom, () => renderStudentAccessView(container, { classroom, onBack })));
+  content.appendChild(
+    createInviteStudentsCard(classroom, () => renderStudentAccessView(container, { classroom, onBack, onSelectStudent }))
+  );
+  content.appendChild(
+    createDeviceSecurityCard(classroom, () => renderStudentAccessView(container, { classroom, onBack, onSelectStudent }))
+  );
 
   const allStudents = classroom.teams.flatMap((team) => team.students);
   if (allStudents.length === 0) {
@@ -164,6 +169,69 @@ function createInviteStudentsCard(classroom, rerender) {
   actions.appendChild(copyCodeButton);
 
   card.appendChild(actions);
+  return card;
+}
+
+/**
+ * The Device Reset PIN — gates adding or removing a student profile
+ * on a device that already trusts at least one student (see
+ * services/studentDeviceService.js's trusted-device model). A teacher
+ * reads this aloud when, say, a second sibling wants to add their own
+ * profile onto a family phone that already has one approved. Switching
+ * between profiles already approved on a device never needs this.
+ */
+function createDeviceSecurityCard(classroom, rerender) {
+  const card = document.createElement('div');
+  card.className = 'settings-section device-security-card';
+
+  const heading = document.createElement('h2');
+  heading.className = 'settings-page-heading';
+  heading.textContent = 'Device Security';
+  card.appendChild(heading);
+
+  const description = document.createElement('p');
+  description.className = 'settings-section__meta';
+  description.textContent =
+    "A device remembers up to 3 approved students (handy for siblings sharing a phone). Switching between them is free \u2014 but adding or removing a student on a device that's already claimed needs this PIN, so students can't casually add or remove each other.";
+  card.appendChild(description);
+
+  if (!classroom.deviceResetPin) {
+    // Same reasoning as the invite code above: generated only in
+    // direct response to this click, never as a side effect of
+    // rendering this page.
+    const generateButton = document.createElement('button');
+    generateButton.type = 'button';
+    generateButton.className = 'btn btn--primary';
+    generateButton.textContent = 'Generate Device Reset PIN';
+    generateButton.addEventListener('click', () => {
+      classroomService.ensureDeviceResetPin(classroom);
+      workspaceService.save(classroom);
+      rerender();
+    });
+    card.appendChild(generateButton);
+    return card;
+  }
+
+  const pinDisplay = document.createElement('div');
+  pinDisplay.className = 'invite-students-card__code';
+  pinDisplay.textContent = classroom.deviceResetPin;
+  card.appendChild(pinDisplay);
+
+  const regenerateButton = document.createElement('button');
+  regenerateButton.type = 'button';
+  regenerateButton.className = 'btn btn--ghost';
+  regenerateButton.textContent = 'Generate New PIN';
+  regenerateButton.addEventListener('click', () => {
+    const confirmed = window.confirm(
+      'Generate a new PIN? Any device that hasn\u2019t used the current PIN yet will need the new one instead.'
+    );
+    if (!confirmed) return;
+    classroomService.regenerateDeviceResetPin(classroom);
+    workspaceService.save(classroom);
+    rerender();
+  });
+  card.appendChild(regenerateButton);
+
   return card;
 }
 

@@ -318,6 +318,22 @@ export function createStudentJoinCodeMapping(code, classroomId) {
 }
 
 /**
+ * Checks a PIN a student (or whoever's holding the device) entered
+ * against this classroom's Device Reset PIN — see
+ * services/studentDeviceService.js's trusted-device model and
+ * models/Classroom.js's doc comment on `deviceResetPin` for the full
+ * reasoning. Read-only, so unlike markStudentJoinedPortal() below this
+ * doesn't touch the unauthenticated-write permission gap at all — a
+ * device already reads this same classroom document to resolve its
+ * roster in the first place.
+ */
+export async function verifyDeviceResetPin(classroomId, enteredPin) {
+  const classroom = await repository.getClassroomOnce(classroomId);
+  if (!classroom || !classroom.deviceResetPin) return false;
+  return String(enteredPin).trim() === String(classroom.deviceResetPin).trim();
+}
+
+/**
  * Resolves a student join code to the classroom it belongs to —
  * read-only, and deliberately not the same operation as
  * joinClassroomByCode() above: no membership is added, no account is

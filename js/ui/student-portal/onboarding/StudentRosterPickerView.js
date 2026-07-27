@@ -1,16 +1,19 @@
 /**
  * ui/student-portal/onboarding/StudentRosterPickerView.js
  *
- * "Choose your name" — a generic name-tap picker, reused for two
- * moments in the new join flow: picking a name off a classroom's real
- * roster right after a join code resolves, and (if this device has
- * more than one remembered profile) picking which one to use today.
- * Deliberately mirrors StudentPickerView.js's visual pattern (same CSS
- * classes, same avatar treatment) for consistency, but takes a plain
- * onSelect callback and a plain list of student refs rather than
- * calling into studentIdentityService.js — this flow has no identity
- * layer to call into at all, by design (see
- * StudentJoinClassroomView.js's doc comment for the full reasoning).
+ * "Choose your name" — a generic name-tap picker, reused for three
+ * moments in the join/identity flow: picking a name off a classroom's
+ * real roster right after a join code resolves, picking which
+ * already-approved profile to use today when a device has more than
+ * one (see services/studentDeviceService.js's trusted-device model),
+ * and picking a new name to add to an already-claimed device from
+ * StudentManageProfilesView.js. Deliberately mirrors
+ * StudentPickerView.js's visual pattern (same CSS classes, same
+ * avatar treatment) for consistency, but takes a plain onSelect
+ * callback and a plain list of student refs rather than calling into
+ * studentIdentityService.js — this flow has no identity layer to call
+ * into at all, by design (see StudentJoinClassroomView.js's doc
+ * comment for the full reasoning).
  */
 
 import { createAvatarElement } from '../../components/AvatarDisplay.js';

@@ -28,7 +28,7 @@ import { renderWelcomeView } from './ui/views/WelcomeView.js';
 import { renderLandingView } from './ui/views/LandingView.js';
 import { renderStudentPortalShell } from './ui/student-portal/StudentPortalShell.js';
 import { renderStudentDeviceFlow } from './ui/student-portal/onboarding/StudentDeviceFlow.js';
-import { renderStudentRosterPickerView } from './ui/student-portal/onboarding/StudentRosterPickerView.js';
+import { renderStudentManageProfilesView } from './ui/student-portal/views/StudentManageProfilesView.js';
 import * as studentDeviceService from './services/studentDeviceService.js';
 import { renderStudentJourneyView } from './ui/student-portal/views/StudentJourneyView.js';
 import { renderStudentTeamView } from './ui/student-portal/views/StudentTeamView.js';
@@ -196,24 +196,18 @@ function renderStudentPortalMain(route) {
         renderStudentTeamView(content);
       } else if (route.section === 'avatar-builder') {
         renderStudentAvatarBuilderView(content, {
-          studentId: studentDeviceService.getLastActiveProfile()?.studentId,
+          studentId: studentDeviceService.getActiveProfile()?.studentId,
           onBack: () => router.navigate('/student/profile'),
+        });
+      } else if (route.section === 'manage-students') {
+        renderStudentManageProfilesView(content, {
+          onBack: () => router.navigate('/student/profile'),
+          onProfilesChanged: () => renderRoute(router.getCurrentRoute()),
         });
       } else if (route.section === 'profile') {
         renderStudentPortalProfileView(content, {
           onCustomizeAvatar: () => router.navigate('/student/avatar-builder'),
-          onSwitchStudent: async () => {
-            const remembered = studentDeviceService.getRememberedProfiles();
-            if (remembered.length < 2) return; // nothing to switch to
-            renderStudentRosterPickerView(content, {
-              title: "Who's using ClassMate today?",
-              students: remembered,
-              onSelect: (studentRef) => {
-                studentDeviceService.setLastActiveProfile(studentRef);
-                renderRoute(router.getCurrentRoute());
-              },
-            });
-          },
+          onManageStudents: () => router.navigate('/student/manage-students'),
         });
       } else {
         renderStudentJourneyView(content);

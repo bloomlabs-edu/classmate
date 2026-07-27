@@ -30,3 +30,22 @@ export function generateJoinCode() {
   }
   return code;
 }
+
+/**
+ * A short numeric PIN a teacher reads aloud to approve adding or
+ * removing a student profile on an already-claimed device (see
+ * services/studentDeviceService.js's trusted-device model). Numeric
+ * and short deliberately — this gets typed on a phone's number pad in
+ * front of the class, not copy-pasted, so it should be quick to say
+ * and quick to enter. Not a security boundary against a determined
+ * attacker; a low-friction "the teacher was actually asked" gate.
+ */
+const DEVICE_RESET_PIN_LENGTH = 4;
+
+export function generateDeviceResetPin() {
+  let pin = '';
+  for (let i = 0; i < DEVICE_RESET_PIN_LENGTH; i++) {
+    pin += Math.floor(Math.random() * 10);
+  }
+  return pin;
+}

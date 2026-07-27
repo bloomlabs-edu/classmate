@@ -6,20 +6,21 @@
  * own values, so a future change to how this data is computed only
  * ever touches this one file.
  *
- * Live Firestore data, resolved from the current device's remembered
- * profile (see studentDeviceService.js's getLastActiveProfile() —
- * {classroomId, studentId}) via workspaceService.getClassroomOnce(), a
- * direct one-time read matching how resolveStudentJoinCode() and
- * markStudentJoinedPortal() already read for a student device with no
- * Firebase Auth. Every number here is computed with the same
- * studentProgressService.js functions Recognition Wall and Weekly
- * Snapshot already use on the teacher side — reusing existing
- * Firestore-backed logic rather than a parallel calculation, matching
- * this project's stated data philosophy.
+ * Live Firestore data, resolved from the current device's active
+ * profile (see studentDeviceService.js's trusted-device model —
+ * getActiveProfile() returns {classroomId, studentId}) via
+ * workspaceService.getClassroomOnce(), a direct one-time read matching
+ * how resolveStudentJoinCode() and markStudentJoinedPortal() already
+ * read for a student device with no Firebase Auth. Every number here
+ * is computed with the same studentProgressService.js functions
+ * Recognition Wall and Weekly Snapshot already use on the teacher
+ * side — reusing existing Firestore-backed logic rather than a
+ * parallel calculation, matching this project's stated data
+ * philosophy.
  *
  * Every function returns null (not a fabricated number) when there's
- * no remembered profile, no matching classroom, or no matching
- * student — callers render an empty state rather than a fake value.
+ * no active profile, no matching classroom, or no matching student —
+ * callers render an empty state rather than a fake value.
  */
 
 import * as workspaceService from './workspaceService.js';
@@ -30,7 +31,7 @@ import { getWeekRange } from '../utils/dateHelpers.js';
 import { listRecognitionCategoriesForPeriod } from '../config/recognitionCategories.js';
 
 async function loadCurrentStudentAndClassroom() {
-  const profile = studentDeviceService.getLastActiveProfile();
+  const profile = studentDeviceService.getActiveProfile();
   if (!profile) return null;
 
   const classroom = await workspaceService.getClassroomOnce(profile.classroomId);

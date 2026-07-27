@@ -2,7 +2,7 @@
  * ui/student-portal/views/StudentProfileView.js
  *
  * A lightweight settings page: avatar, name, classroom, group, role,
- * plus "Customize Avatar" and "Switch Student" actions.
+ * plus "Customize Avatar" and "Manage Students" actions.
  *
  * The avatar shown here is always the illustrated 2D avatar (custom
  * or default) — never initials — since this is the student's own
@@ -20,7 +20,7 @@
 import { getCurrentStudentProfile } from '../../../services/studentPortalDataService.js';
 import { createAvatarElement } from '../../components/AvatarDisplay.js';
 
-export async function renderStudentProfileView(container, { onSwitchStudent, onCustomizeAvatar }) {
+export async function renderStudentProfileView(container, { onManageStudents, onCustomizeAvatar }) {
   container.innerHTML = '';
 
   const profile = await getCurrentStudentProfile();
@@ -70,13 +70,13 @@ export async function renderStudentProfileView(container, { onSwitchStudent, onC
   );
   wrapper.appendChild(details);
 
-  if (onSwitchStudent) {
-    const joinAnotherButton = document.createElement('button');
-    joinAnotherButton.type = 'button';
-    joinAnotherButton.className = 'btn btn--ghost student-profile__join-another';
-    joinAnotherButton.textContent = 'Switch Student';
-    joinAnotherButton.addEventListener('click', onSwitchStudent);
-    wrapper.appendChild(joinAnotherButton);
+  if (onManageStudents) {
+    const manageStudentsButton = document.createElement('button');
+    manageStudentsButton.type = 'button';
+    manageStudentsButton.className = 'btn btn--ghost student-profile__join-another';
+    manageStudentsButton.textContent = 'Manage Students';
+    manageStudentsButton.addEventListener('click', onManageStudents);
+    wrapper.appendChild(manageStudentsButton);
   }
 
   container.appendChild(wrapper);

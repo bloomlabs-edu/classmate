@@ -1,84 +1,147 @@
 /**
  * services/studentDeviceService.js
  *
- * The entire mechanism behind the new classroom-code student join
- * flow: not an identity system, just a browser remembering which
- * student profile(s) it last opened — the same shape as how a shared
- * TV remembers which streaming-service profile was last selected.
- * Deliberately separate from studentIdentityService.js, which remains
- * untouched and still backs the (now secondary) Google + PIN/
- * invitation-link parent flow — this file has no dependency on
- * IdentityProvider, ConsentProvider, or StudentLinkRepository at all,
- * and nothing in it should ever grow one. If a future authenticated-
- * parent-account layer is added, it belongs alongside this file, not
- * inside it — see this project's CHANGELOG for the architecture
- * discussion this implements.
+ * The "trusted device" model behind the Student Portal's identity
+ * flow — redesigned from an earlier, unbounded version (see this
+ * project's CHANGELOG for the security review that led here). Still
+ * not an identity system: no PIN, sign-in, or consent check lives in
+ * here, and this file has no dependency on IdentityProvider,
+ * ConsentProvider, or StudentLinkRepository. It's purely local
+ * bookkeeping about which small set of students a *device* trusts.
  *
- * Stores a plain array of student refs — [{ classroomId, studentId,
- * studentName }] — in localStorage. No PIN, no token, no sign-in, no
- * consent check. A student ref here is nothing more than "this device
- * has looked at this profile before."
+ * The model, in one paragraph: a device can hold up to
+ * MAX_APPROVED_PROFILES approved student profiles, all from the same
+ * classroom (e.g. two siblings sharing one family phone). The very
+ * first profile ever added to a fresh device is free — that's normal
+ * onboarding, already gated by the classroom's public student join
+ * code (see StudentJoinClassroomView.js), and requiring anything more
+ * for it would break the frictionless "enter code, pick your name,
+ * done" flow this app has deliberately protected elsewhere. Every
+ * profile *after* the first — or removing one — means the device is
+ * already claimed by someone, so it requires the classroom's Device
+ * Reset PIN (verified via workspaceService.verifyDeviceResetPin(),
+ * which does touch Firestore — deliberately kept out of this file,
+ * which stays pure localStorage). Switching between profiles already
+ * approved on this device is always free; no PIN, ever.
+ *
+ * This file only enforces the *structural* rules (capacity, same-
+ * classroom membership) and owns the storage. It does not know or
+ * care whether a PIN was checked — callers (StudentDeviceFlow.js,
+ * StudentManageProfilesView.js) are responsible for verifying the PIN
+ * first when the situation calls for it, then calling
+ * addApprovedProfile()/removeApprovedProfile() once that's done.
  */
 
-const STORAGE_KEY = 'bloomLabsDeviceStudentProfiles';
+const APPROVED_PROFILES_KEY = 'bloomLabsDeviceApprovedProfiles';
+const ACTIVE_PROFILE_ID_KEY = 'bloomLabsDeviceActiveStudentId';
 
-function readProfiles() {
+/** A device holds at most this many approved students at once — enough for a couple of siblings sharing a phone, small enough that a lost/found device can't accumulate an unbounded roster of names. */
+export const MAX_APPROVED_PROFILES = 3;
+
+function readApproved() {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(APPROVED_PROFILES_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch (error) {
-    console.error('[studentDeviceService] Failed to read remembered profiles:', error);
+    console.error('[studentDeviceService] Failed to read approved profiles:', error);
     return [];
   }
 }
 
-function writeProfiles(profiles) {
+function writeApproved(profiles) {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles));
+    window.localStorage.setItem(APPROVED_PROFILES_KEY, JSON.stringify(profiles));
   } catch (error) {
-    console.error('[studentDeviceService] Failed to save remembered profiles:', error);
+    console.error('[studentDeviceService] Failed to save approved profiles:', error);
   }
 }
 
-/** Every student profile this device has opened before. */
-export function getRememberedProfiles() {
-  return readProfiles();
+/** Every student profile this device currently trusts (0 to MAX_APPROVED_PROFILES). */
+export function getApprovedProfiles() {
+  return readApproved();
 }
 
-/** Records that this device has opened a profile — safe to call repeatedly for the same student, it won't duplicate. */
-export function rememberProfile(studentRef) {
-  const profiles = readProfiles();
-  if (profiles.some((ref) => ref.studentId === studentRef.studentId)) return;
-  writeProfiles([...profiles, studentRef]);
+/** True only for a completely fresh device — the one case where adding a profile needs no PIN. */
+export function isFreshDevice() {
+  return readApproved().length === 0;
 }
 
-/** Removes one profile from this device's remembered list — the "forget this device" affordance for a shared/handed-down device. */
-export function forgetProfile(studentId) {
-  writeProfiles(readProfiles().filter((ref) => ref.studentId !== studentId));
+/** True once a device already holds the maximum number of approved profiles. */
+export function isAtCapacity() {
+  return readApproved().length >= MAX_APPROVED_PROFILES;
 }
 
-/** Clears every remembered profile on this device. */
-export function forgetAllProfiles() {
-  writeProfiles([]);
+/**
+ * Adds a student to this device's trusted circle.
+ *
+ * Callers are responsible for PIN policy — see this file's header
+ * comment. This function only enforces the structural rules and
+ * trusts that the caller has already done whatever verification the
+ * situation required (none, for a fresh device; a verified PIN,
+ * otherwise).
+ *
+ * Returns { success: true } if the profile is now approved (including
+ * if it already was — safe to call repeatedly), or
+ * { success: false, reason: 'DIFFERENT_CLASSROOM' | 'AT_CAPACITY' }.
+ */
+export function addApprovedProfile(studentRef) {
+  const approved = readApproved();
+
+  if (approved.some((p) => p.studentId === studentRef.studentId)) {
+    return { success: true }; // already approved — no-op
+  }
+
+  if (approved.length > 0 && !approved.every((p) => p.classroomId === studentRef.classroomId)) {
+    return { success: false, reason: 'DIFFERENT_CLASSROOM' };
+  }
+
+  if (approved.length >= MAX_APPROVED_PROFILES) {
+    return { success: false, reason: 'AT_CAPACITY' };
+  }
+
+  writeApproved([...approved, studentRef]);
+  return { success: true };
 }
 
-const LAST_ACTIVE_KEY = 'bloomLabsDeviceLastActiveStudent';
+/** Removes one profile from this device's trusted circle. Caller must already have verified the PIN — see this file's header comment. */
+export function removeApprovedProfile(studentId) {
+  writeApproved(readApproved().filter((p) => p.studentId !== studentId));
+  if (getActiveProfile()?.studentId === studentId) {
+    clearActiveProfile();
+  }
+}
 
-/** Which profile this device most recently used — lets a single-child device skip the picker and go straight in. */
-export function getLastActiveProfile() {
+/** Clears every approved profile on this device — e.g. re-provisioning it for a different classroom entirely. Caller must already have verified the PIN. */
+export function clearAllApprovedProfiles() {
+  writeApproved([]);
+  clearActiveProfile();
+}
+
+/** Which approved profile is currently signed in on this device, or null. */
+export function getActiveProfile() {
   try {
-    const raw = window.localStorage.getItem(LAST_ACTIVE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const activeId = window.localStorage.getItem(ACTIVE_PROFILE_ID_KEY);
+    if (!activeId) return null;
+    return readApproved().find((p) => p.studentId === activeId) || null;
   } catch (error) {
-    console.error('[studentDeviceService] Failed to read last-active profile:', error);
+    console.error('[studentDeviceService] Failed to read active profile:', error);
     return null;
   }
 }
 
-export function setLastActiveProfile(studentRef) {
+/** Marks a profile as the one currently signed in — must already be an approved profile on this device. */
+export function setActiveProfile(studentRef) {
   try {
-    window.localStorage.setItem(LAST_ACTIVE_KEY, JSON.stringify(studentRef));
+    window.localStorage.setItem(ACTIVE_PROFILE_ID_KEY, studentRef.studentId);
   } catch (error) {
-    console.error('[studentDeviceService] Failed to save last-active profile:', error);
+    console.error('[studentDeviceService] Failed to save active profile:', error);
+  }
+}
+
+function clearActiveProfile() {
+  try {
+    window.localStorage.removeItem(ACTIVE_PROFILE_ID_KEY);
+  } catch (error) {
+    console.error('[studentDeviceService] Failed to clear active profile:', error);
   }
 }

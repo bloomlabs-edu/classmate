@@ -4155,6 +4155,96 @@ button.wizard-checklist__row:hover {
   font-weight: var(--font-weight-bold);
 }
 
+/* Device Reset PIN prompt — see StudentDevicePinPromptView.js */
+.student-pin-prompt {
+  max-width: 380px;
+  margin: 0 auto;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  padding: 2rem 1.5rem;
+  gap: 0.85rem;
+}
+.student-pin-prompt__title {
+  font-size: 1.5rem;
+  font-weight: var(--font-weight-black);
+  text-align: center;
+  margin: 0.5rem 0 0;
+}
+.student-pin-prompt__message {
+  color: var(--color-muted);
+  text-align: center;
+  line-height: 1.5;
+  margin: 0 0 0.5rem;
+}
+.student-pin-prompt__input {
+  font-family: 'Courier New', monospace;
+  font-size: 1.6rem;
+  letter-spacing: 0.3em;
+  text-align: center;
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+.student-pin-prompt__error {
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+  text-align: center;
+  min-height: 1.2em;
+  margin: 0;
+}
+
+/* Manage Students — see StudentManageProfilesView.js */
+.student-manage-profiles__subtitle {
+  color: var(--color-muted);
+  line-height: 1.5;
+  margin: 0.25rem 0 1.25rem;
+}
+.student-manage-profiles__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+.student-manage-profiles__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 0.6rem 0.75rem 0.6rem 1rem;
+  box-shadow: 0 4px 16px rgba(184, 99, 26, 0.08);
+}
+.student-manage-profiles__switch {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+.student-manage-profiles__name {
+  font-size: 1.05rem;
+  font-weight: var(--font-weight-bold);
+}
+.student-manage-profiles__remove {
+  flex-shrink: 0;
+}
+.student-manage-profiles__add-section {
+  text-align: center;
+}
+.student-manage-profiles__note {
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
 /* Student Access — connection-status-first onboarding dashboard */
 .student-access-list {
   display: flex;

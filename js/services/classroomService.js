@@ -26,7 +26,7 @@ import { DEFAULT_BADGE_CATALOG } from '../config/badgeConfig.js';
 import * as memberService from './memberService.js';
 import { MEMBER_ROLES } from '../config/memberRoles.js';
 import * as notebookService from './notebookService.js';
-import { generateJoinCode } from '../utils/idGenerator.js';
+import { generateJoinCode, generateDeviceResetPin } from '../utils/idGenerator.js';
 
 export class ClassroomValidationError extends Error {}
 
@@ -252,6 +252,30 @@ export function ensureStudentJoinCode(classroom) {
   if (classroom.classroomStudentJoinCode) return false;
   classroom.classroomStudentJoinCode = generateJoinCode();
   return true;
+}
+
+/**
+ * Same lazy-generation pattern as the two functions above, for the
+ * Device Reset PIN that gates changes to a device's trusted-profile
+ * set (see services/studentDeviceService.js and models/Classroom.js's
+ * doc comment on `deviceResetPin` for the full reasoning). A short
+ * numeric PIN, not a join code — see utils/idGenerator.js's
+ * generateDeviceResetPin().
+ */
+export function ensureDeviceResetPin(classroom) {
+  if (classroom.deviceResetPin) return false;
+  classroom.deviceResetPin = generateDeviceResetPin();
+  return true;
+}
+
+/**
+ * A teacher-initiated rotation — e.g. the PIN was shared too widely,
+ * or a new school year should start clean. Always generates a new
+ * value, unlike ensureDeviceResetPin() which only fills in a missing
+ * one.
+ */
+export function regenerateDeviceResetPin(classroom) {
+  classroom.deviceResetPin = generateDeviceResetPin();
 }
 
 /**

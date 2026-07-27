@@ -1,21 +1,23 @@
 /**
  * ui/student-portal/onboarding/StudentDeviceFlow.js
  *
- * The new default entry to the Student Portal — replacing
- * StudentOnboardingFlow.js's PIN-first sequence as the front door,
- * per this project's CHANGELOG (the multi-round architecture
- * discussion this implements). Walks: does this device already
- * remember one or more profiles? -> if more than one, pick which one
- * to use today -> if none yet, enter a classroom code -> pick a name
- * off the real roster -> remember it on this device and mark it
- * joined (teacher-visible) -> done.
+ * The default entry to the Student Portal. Walks: does this device
+ * already have an approved profile? -> if exactly one, resume as that
+ * student automatically -> if more than one (siblings sharing a
+ * device — see services/studentDeviceService.js's trusted-device
+ * model), show a small avatar picker among just those approved
+ * profiles -> if none yet, this is a fresh device: enter a classroom
+ * code -> pick a name off the real roster -> approve it on this
+ * device (free — a fresh device's first profile needs no PIN, see
+ * studentDeviceService.js's header comment) and mark it joined
+ * (teacher-visible) -> done.
  *
- * StudentOnboardingFlow.js itself is untouched and still reachable —
- * it now backs a secondary, explicitly-authenticated parent-connection
- * path, not the default one. This file has no dependency on it, on
- * studentIdentityService.js, or on any identity/consent/PIN machinery
- * — see studentDeviceService.js's own doc comment for why that
- * separation is deliberate, not incidental.
+ * Adding a *second* or third profile to an already-claimed device, or
+ * removing one, happens elsewhere — see
+ * StudentManageProfilesView.js — and does require the classroom's
+ * Device Reset PIN. This file only ever adds a profile PIN-free in
+ * the one case that's always safe: a device with nothing approved
+ * yet.
  */
 
 import * as studentDeviceService from '../../../services/studentDeviceService.js';
@@ -24,20 +26,20 @@ import { renderStudentJoinClassroomView } from './StudentJoinClassroomView.js';
 import { renderStudentRosterPickerView } from './StudentRosterPickerView.js';
 
 export async function renderStudentDeviceFlow(container, { onResolved }) {
-  const remembered = studentDeviceService.getRememberedProfiles();
+  const approved = studentDeviceService.getApprovedProfiles();
 
-  if (remembered.length === 1) {
-    studentDeviceService.setLastActiveProfile(remembered[0]);
-    onResolved(remembered[0]);
+  if (approved.length === 1) {
+    studentDeviceService.setActiveProfile(approved[0]);
+    onResolved(approved[0]);
     return;
   }
 
-  if (remembered.length > 1) {
+  if (approved.length > 1) {
     renderStudentRosterPickerView(container, {
       title: "Who's using ClassMate today?",
-      students: remembered,
+      students: approved,
       onSelect: (studentRef) => {
-        studentDeviceService.setLastActiveProfile(studentRef);
+        studentDeviceService.setActiveProfile(studentRef);
         onResolved(studentRef);
       },
     });
@@ -54,8 +56,11 @@ export async function renderStudentDeviceFlow(container, { onResolved }) {
           studentName: student.name,
         })),
         onSelect: async (studentRef) => {
-          studentDeviceService.rememberProfile(studentRef);
-          studentDeviceService.setLastActiveProfile(studentRef);
+          // Always succeeds here — this branch only runs for a fresh
+          // device (0 approved profiles), the one case that needs no
+          // PIN. See this file's header comment.
+          studentDeviceService.addApprovedProfile(studentRef);
+          studentDeviceService.setActiveProfile(studentRef);
           await workspaceService.markStudentJoinedPortal(studentRef.classroomId, studentRef.studentId);
           onResolved(studentRef);
         },
