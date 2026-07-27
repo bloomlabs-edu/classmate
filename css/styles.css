@@ -3988,6 +3988,191 @@ button.wizard-checklist__row:hover {
   color: var(--color-muted);
 }
 
+/* Dashboard's two equally-prominent entry points, stacked — see
+   ContinueWorkingWidget.js's own doc comment for why these are
+   deliberately separate buttons, not one button with a mode. */
+.dashboard-widget__primary-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+.dashboard-widget__create-lesson-button {
+  display: block;
+  width: 100%;
+  padding: 1rem 1.25rem;
+  border: none;
+  border-radius: 14px;
+  background-color: #b8631a;
+  color: #ffffff;
+  font-size: 1.15rem;
+  font-weight: var(--font-weight-black);
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(184, 99, 26, 0.35);
+}
+.dashboard-widget__create-lesson-button:hover {
+  background-color: #964f13;
+}
+
+/* Pre-roster welcome screen — same two buttons, side by side (see
+   ui/views/DashboardView.js's renderPreRosterWelcome()) */
+.pre-roster-welcome__actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+.pre-roster-welcome__create-lesson-button {
+  background-color: #b8631a;
+  box-shadow: 0 4px 14px rgba(184, 99, 26, 0.35);
+}
+.pre-roster-welcome__create-lesson-button:hover {
+  background-color: #964f13;
+}
+
+/* Lesson Studio — see ui/views/LessonStudioView.js */
+.lesson-studio {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0 1.5rem 3rem;
+}
+.lesson-studio__header {
+  padding: 1.25rem 0 0.5rem;
+}
+.lesson-studio__title {
+  font-size: 1.4rem;
+  font-weight: var(--font-weight-black);
+  margin: 0.75rem 0 1.25rem;
+}
+.lesson-studio__section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.lesson-studio__section-heading {
+  font-size: 1rem;
+  font-weight: var(--font-weight-black);
+  margin: 0.5rem 0 0;
+}
+.lesson-studio__onboarding-heading {
+  font-size: 1.3rem;
+  font-weight: var(--font-weight-black);
+  margin: 0.5rem 0 0.25rem;
+}
+.lesson-studio__onboarding-steps {
+  margin: 0 0 0.5rem;
+  padding-left: 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  color: var(--color-ink);
+}
+.lesson-studio__step-heading {
+  font-size: 1.1rem;
+  font-weight: var(--font-weight-black);
+  margin: 0.25rem 0 0.5rem;
+}
+.lesson-studio__choice-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.6rem;
+}
+.lesson-studio__choice-option {
+  padding: 1rem 0.9rem;
+  border: 2px solid var(--color-border);
+  border-radius: 14px;
+  background-color: #ffffff;
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+  text-align: center;
+}
+.lesson-studio__choice-option:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.lesson-studio__name-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.lesson-studio__name-form input[type='text'] {
+  flex: 1;
+  min-width: 220px;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font-size: 1rem;
+}
+.lesson-studio__continue-card {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+  text-align: left;
+  background-color: #FDEEDF;
+  border: 1px solid #f5d9b8;
+  border-radius: 16px;
+  padding: 1rem 1.15rem;
+  cursor: pointer;
+  font-family: inherit;
+  color: #b8631a;
+}
+.lesson-studio__continue-card:hover {
+  border-color: #b8631a;
+}
+.lesson-studio__continue-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.lesson-studio__continue-title {
+  font-weight: var(--font-weight-black);
+  color: var(--color-ink);
+}
+.lesson-studio__continue-meta {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+.lesson-studio__recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.lesson-studio__recent-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  text-align: left;
+  background-color: #ffffff;
+  border-radius: 14px;
+  padding: 0.75rem 1rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+  cursor: pointer;
+  font-family: inherit;
+}
+.lesson-studio__recent-row:hover {
+  box-shadow: 0 4px 16px rgba(21, 101, 192, 0.18);
+}
+.lesson-studio__recent-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.lesson-studio__recent-title {
+  font-weight: var(--font-weight-bold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lesson-studio__recent-meta {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
 /* Classroom Dashboard header (Phase 4) — Primary Action / Secondary
    Content slots, in addition to the existing classroom context block.
    Structural only, matching this whole feature's "no visual polish yet"

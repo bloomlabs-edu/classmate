@@ -56,6 +56,7 @@ import { createClassroomSectionElement } from '../components/ClassroomSection.js
 import { renderLearningRecordView } from './LearningRecordView.js';
 import { renderConceptWorkspaceView } from './ConceptWorkspaceView.js';
 import { renderReadingEditorView } from './ReadingEditorView.js';
+import { renderLessonStudioView } from './LessonStudioView.js';
 import * as resourceService from '../../services/resourceService.js';
 
 export function renderDashboardView(container, props) {
@@ -90,6 +91,19 @@ export function renderDashboardView(container, props) {
     renderLearningRecordView(container, {
       classroom,
       onClose: () => renderDashboardView(container, props),
+    });
+  }
+
+  // Lesson Studio — the dedicated, obvious front door to actually
+  // *writing* lesson content (see ui/views/LessonStudioView.js's own
+  // header comment for why this is a separate button from Manage
+  // Lessons, not a mode of it). Same self-contained direct-call
+  // pattern as openManageLessons above.
+  function openLessonStudio() {
+    renderLessonStudioView(container, {
+      classroom,
+      onBack: () => renderDashboardView(container, props),
+      onOpenManageLessons: openManageLessons,
     });
   }
 
@@ -156,7 +170,7 @@ export function renderDashboardView(container, props) {
       onOpenStudentAccess,
       onOpenSettingsGroups,
       onOpenSettingsNotebooks,
-    }, openManageLessons);
+    }, openManageLessons, openLessonStudio);
     return;
   }
 
@@ -277,7 +291,7 @@ export function renderDashboardView(container, props) {
   wrapper.appendChild(content);
   container.appendChild(wrapper);
 
-  loadContinueWorking(classroom, currentUser, secondaryContentSlot, onSelectNotebook, openManageLessons, resourceService.getMostRecentlyEditedResource(classroom), openRecentResource);
+  loadContinueWorking(classroom, currentUser, secondaryContentSlot, onSelectNotebook, openManageLessons, openLessonStudio, resourceService.getMostRecentlyEditedResource(classroom), openRecentResource);
 }
 
 /**
@@ -297,7 +311,7 @@ export function renderDashboardView(container, props) {
  * roster, not after. Omitting it here would mean the feature has no
  * visible entry point at all on a brand-new classroom.
  */
-function renderPreRosterWelcome(container, classroom, assistantCallbacks, onManageLessons) {
+function renderPreRosterWelcome(container, classroom, assistantCallbacks, onManageLessons, onCreateLesson) {
   const wrapper = document.createElement('div');
   wrapper.className = 'pre-roster-welcome';
 
@@ -315,13 +329,29 @@ function renderPreRosterWelcome(container, classroom, assistantCallbacks, onMana
   const assistantSlot = document.createElement('div');
   wrapper.appendChild(assistantSlot);
 
-  if (onManageLessons) {
-    const manageLessonsButton = document.createElement('button');
-    manageLessonsButton.type = 'button';
-    manageLessonsButton.className = 'btn btn--primary pre-roster-welcome__manage-lessons-button';
-    manageLessonsButton.textContent = '\ud83d\udcda Manage Lessons';
-    manageLessonsButton.addEventListener('click', onManageLessons);
-    wrapper.appendChild(manageLessonsButton);
+  if (onManageLessons || onCreateLesson) {
+    const actionsRow = document.createElement('div');
+    actionsRow.className = 'pre-roster-welcome__actions-row';
+
+    if (onManageLessons) {
+      const manageLessonsButton = document.createElement('button');
+      manageLessonsButton.type = 'button';
+      manageLessonsButton.className = 'btn btn--primary pre-roster-welcome__manage-lessons-button';
+      manageLessonsButton.textContent = '\ud83d\udcda Manage Lessons';
+      manageLessonsButton.addEventListener('click', onManageLessons);
+      actionsRow.appendChild(manageLessonsButton);
+    }
+
+    if (onCreateLesson) {
+      const createLessonButton = document.createElement('button');
+      createLessonButton.type = 'button';
+      createLessonButton.className = 'btn btn--primary pre-roster-welcome__create-lesson-button';
+      createLessonButton.textContent = '\u270f\ufe0f Create Lesson';
+      createLessonButton.addEventListener('click', onCreateLesson);
+      actionsRow.appendChild(createLessonButton);
+    }
+
+    wrapper.appendChild(actionsRow);
   }
 
   container.appendChild(wrapper);
@@ -379,7 +409,7 @@ function createSettingsButton(onOpenSettings) {
   return button;
 }
 
-async function loadContinueWorking(classroom, currentUser, slot, onSelectNotebook, onManageLessons, recentResource, onOpenRecentResource) {
+async function loadContinueWorking(classroom, currentUser, slot, onSelectNotebook, onManageLessons, onCreateLesson, recentResource, onOpenRecentResource) {
   const allEntries = await continueWorkingService.getRecentOnce(currentUser?.uid);
   const classroomEntries = allEntries.filter((entry) => entry.classroomId === classroom.id);
 
@@ -402,6 +432,7 @@ async function loadContinueWorking(classroom, currentUser, slot, onSelectNoteboo
       entries: resolvedEntries,
       onOpenNotebook: onSelectNotebook,
       onManageLessons,
+      onCreateLesson,
       recentResource,
       onOpenRecentResource,
     })

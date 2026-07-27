@@ -99,12 +99,19 @@ export function moveResourceDown(concept, resourceId) {
  * there. Returns null when nothing has ever been edited, which is the
  * honest starting state for a fresh classroom, not something to fake
  * a placeholder for.
+ *
+ * Optional `type` filter — Lesson Studio's "Continue Writing" (see
+ * ui/views/LessonStudioView.js) wants the most recent *Reading*
+ * specifically, since that space is about lessons, not every resource
+ * type; the Dashboard's own generic shortcut calls this with no
+ * filter, since it means "whatever a teacher touched last," full stop.
  */
-export function getMostRecentlyEditedResource(classroom) {
+export function getMostRecentlyEditedResource(classroom, { type } = {}) {
   let best = null;
 
   getAllConcepts(classroom).forEach(({ subject, unit, concept }) => {
     getResources(concept).forEach((resource) => {
+      if (type && resource.type !== type) return;
       const updatedAt = resource.updatedAt || resource.createdAt;
       if (!best || new Date(updatedAt) > new Date(best.resource.updatedAt || best.resource.createdAt)) {
         best = { resource, concept, unit, subject };
@@ -113,4 +120,29 @@ export function getMostRecentlyEditedResource(classroom) {
   });
 
   return best;
+}
+
+/**
+ * Every resource of one type across the whole classroom, each with
+ * its concept/unit/subject context, most-recently-edited first,
+ * capped at `limit` — what Lesson Studio's "Recent Lessons" list
+ * reads from (filtered to `type: 'reading'`, since that's the only
+ * type with real lesson content today).
+ */
+export function getRecentResourcesByType(classroom, type, limit = 5) {
+  const matches = [];
+
+  getAllConcepts(classroom).forEach(({ subject, unit, concept }) => {
+    getResources(concept).forEach((resource) => {
+      if (resource.type === type) matches.push({ resource, concept, unit, subject });
+    });
+  });
+
+  matches.sort((a, b) => {
+    const aTime = new Date(a.resource.updatedAt || a.resource.createdAt);
+    const bTime = new Date(b.resource.updatedAt || b.resource.createdAt);
+    return bTime - aTime;
+  });
+
+  return matches.slice(0, limit);
 }
