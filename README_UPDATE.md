@@ -1,75 +1,99 @@
 -----------------------------------
 Feature:
-Learning Record – Phase 2 (Teacher Workflow) — Integration Fix
+Learning Record – Phase 2 (Teacher Workflow) — Routing Fix
 
-This is a corrected re-delivery. The previous ZIP contained the actual
-feature but it had no working entry point on a classroom with zero
-students — see "What changed" below for the root cause. This package
-supersedes the previous one entirely; apply it the same way (extract,
-copy everything, paste into your project root, allow replace).
+This supersedes both previous deliveries. This one fixes a real bug
+that the previous round's testing didn't catch because it tested each
+file in isolation rather than the actual click path through main.js.
+Apply the same way: extract, copy everything, paste into your project
+root, allow replace.
 
 -----------------------------------
-WHERE TO FIND THE FEATURE AFTER APPLYING THIS UPDATE
+THE ACTUAL BUG THIS TIME
 
-Open any classroom, then:
+`main.js` keeps an explicit allow-list, `CLASSROOM_ROUTE_NAMES`, that
+every classroom-scoped route must appear in before its dispatch logic
+ever runs. `'learningRecord'` was missing from that list. The route
+parsed correctly, the button existed and called the right callback,
+and a matching dispatch branch for it genuinely existed further down
+in the same function — but because the route name wasn't on the
+allow-list, that whole block was skipped and execution fell through to
+the Home/Welcome screen instead. This is why it looked like nothing
+was wired at all, even though most of it actually was.
 
-  - If the classroom has NO students yet:
-      You'll see the normal "Welcome to [Classroom Name]" screen.
-      Directly below the "Add Students" card, there is now a button:
-          "Build Your Learning Record →"
-      Click it.
+Fixed with one line: `'learningRecord'` added to `CLASSROOM_ROUTE_NAMES`
+in `js/main.js`.
 
-  - If the classroom already has students:
-      Scroll down the Dashboard to the "Teaching" section (same area
-      as the existing "Activities" shortcut). You'll see a chip/button
-      labeled:
-          "Learning Record"
-      Click it.
+-----------------------------------
+HOW THIS WAS VERIFIED THIS TIME (read this if you don't trust it yet)
 
-Either path takes you to the same screen: Subjects list → tap "Open
-Units" on a subject → Units list → tap "Open Concepts" on a unit →
-Concepts list with Add/Rename/Delete and the Taught/Not Taught toggle.
+Previous rounds tested `router.js`'s parsing, `DashboardView.js`'s
+rendering, and `LearningRecordView.js`'s CRUD logic — each in
+isolation, each genuinely passing. That's exactly why this bug slipped
+through: none of those tests exercised `main.js`'s own dispatch logic,
+which is where the actual break was.
 
-Direct URL (once you know a classroom's id), if you'd rather type it:
-  #/classroom/{classroomId}/learning-record
+This time: built a test-only transformation of the real `main.js`
+source (never modifying the file you're receiving) that exposes its
+internal `renderRoute()` function for direct testing, registered a
+real classroom, and then, against the real, complete code:
+
+1. Rendered the real Dashboard.
+2. Found the real "Learning Record" button in the resulting output and
+   called `.click()` on it (not a simulated click — the actual DOM
+   event handler `main.js` wires up).
+3. Confirmed the click set the URL to
+   `/classroom/{id}/learning-record`.
+4. Re-ran `renderRoute()` (simulating the re-render the real router
+   fires on a hash change) and confirmed `LearningRecordView` actually
+   mounted. Before the fix, this exact step failed and produced the
+   Home/Welcome screen instead — reproducing the report exactly.
+5. Repeated the same full path starting from the zero-student
+   pre-roster screen.
+6. Additionally tested a direct deep-link straight to a Concept level
+   (as if refreshing a bookmarked URL) and the Back button from there
+   — both correct.
+
+All six now pass against the real application code.
+
+-----------------------------------
+WHERE TO FIND THE FEATURE (unchanged from last time)
+
+  - Classroom with NO students yet: "Build Your Learning Record →"
+    button below the Add Students card.
+  - Classroom WITH students: "Learning Record" chip in the Dashboard's
+    Teaching section.
+
+Either one now actually opens the feature.
 
 -----------------------------------
 Files Added
 
-Phase 1 — architecture (unchanged from previous delivery):
+(Unchanged from previous deliveries)
 - js/config/learningRecordConfig.js
 - js/models/LearningConcept.js
 - js/models/LearningUnit.js
 - js/models/LearningSubject.js
 - js/models/StudentConceptRecord.js
-
-Phase 2 — teacher UI (unchanged from previous delivery):
 - js/ui/views/LearningRecordView.js
-
-Docs:
 - docs/LEARNING_RECORD.md
 
 -----------------------------------
 Files Modified
 
-Unchanged from the previous delivery:
+Unchanged from previous deliveries:
 - js/models/Student.js
 - js/models/Classroom.js
 - js/ui/router.js
-- js/main.js
+- js/ui/views/DashboardView.js
+- css/styles.css
 
 Changed again in THIS delivery (the actual fix):
-- js/ui/views/DashboardView.js
-    The zero-student ("pre-roster") welcome screen now also renders
-    the Learning Record entry point. Previously the entry point only
-    existed in the post-roster Dashboard, which never renders at all
-    for a classroom with no students yet — see "What changed" below.
-- css/styles.css
-    Small spacing addition for the new pre-roster link.
+- js/main.js
+    Added 'learningRecord' to CLASSROOM_ROUTE_NAMES. This is the one
+    change in this package that matters.
 - CHANGELOG.md
-    Added a new entry documenting the bug and the fix, and reordered
-    the previous entry to its correct chronological position (it had
-    been inserted mid-file rather than appended at the end).
+    Added the entry documenting this root cause and how it was found.
 
 -----------------------------------
 Files Deleted
@@ -79,64 +103,35 @@ Files Deleted
 -----------------------------------
 What changed
 
-Root cause of "no visible entry anywhere": `DashboardView.js` replaces
-its ENTIRE contents with a minimal welcome screen for any classroom
-with zero students — by design, since every other Dashboard feature
-(Start Class Mode, Recognition, Groups, Notebook Tracker) genuinely
-needs a roster to do anything useful. Learning Record was wired into
-the *normal* (post-roster) Dashboard only, so on a brand-new or still-
-empty classroom — the most likely first thing to test — it had no
-entry point at all.
-
-Fix: the pre-roster welcome screen now also shows a "Build Your
-Learning Record →" link, since syllabus-building doesn't require any
-students to exist. The post-roster entry point from before is
-unchanged and still there once a classroom has a roster.
+One line in `js/main.js`. See "THE ACTUAL BUG THIS TIME" above.
 
 -----------------------------------
 What to test
 
-□ Open a classroom with ZERO students — confirm "Build Your Learning
-  Record →" appears below the Add Students card
-□ Open a classroom WITH students — confirm "Learning Record" appears
-  in the Teaching section
-□ Create Subject
-□ Create Unit (inside a Subject)
-□ Create Concept (inside a Unit)
-□ Mark Concept as Taught
-□ Mark Concept back to Not Taught
-□ Rename a Subject / Unit / Concept
-□ Delete a Concept
-□ Delete a Unit (confirm its Concepts are removed too)
-□ Delete a Subject (confirm its Units and Concepts are removed too)
-□ Back navigation at each level lands in the right place
-□ Refreshing the browser on a deep link
-  (#/classroom/{id}/learning-record/{subjectId}/{unitId}) loads the
-  right screen directly
+□ Classroom with ZERO students → "Build Your Learning Record →" opens
+  the feature (not the Home/Welcome screen)
+□ Classroom WITH students → "Learning Record" chip opens the feature
+□ Create Subject / Unit / Concept
+□ Mark Concept Taught / Not Taught
+□ Rename at each level
+□ Delete at each level (confirm cascade delete for Unit/Subject)
+□ Refresh the browser on a deep link
+  (#/classroom/{id}/learning-record/{subjectId}/{unitId}) — should
+  load directly to that Concepts screen, not redirect anywhere
+□ Back navigation at each level
 
 -----------------------------------
 Known limitations
 
-- Still not tested in an actual browser — this environment has no
-  network access at all, including to install any browser-testing
-  tool. What changed this round: rather than relying on reading the
-  code (which is exactly how the previous miss happened), the actual,
-  unmodified project files were executed under Node this time, using a
-  minimal hand-built DOM shim and a loader that stubs only the three
-  Firebase CDN imports (nothing about this project's own code was
-  faked). Against that real execution: the router correctly resolved
-  all Learning Record URLs, the real Dashboard produced a working,
-  clickable "Learning Record" entry in both the zero-student and
-  has-students cases, and a full scripted run through the real
-  LearningRecordView.js — add Subject, rename it, add a Unit, add 4
-  Concepts, mark one Taught, toggle it back, delete a Concept, delete
-  the Unit (confirmed its concepts were removed too), delete the
-  Subject — passed all 11 steps against real data. This is stronger
-  evidence than a code read, but it is still not the same as clicking
-  through it in an actual browser, which should still happen before
-  relying on this in front of a class.
-- No Timeline logging yet for taught-status changes (unchanged from
-  previous delivery — see learningRecordTeacherService.js).
-- No notebook-status UI yet (unchanged from previous delivery — the
-  service-layer support exists, no screen for it yet).
+- Still not clicked through in an actual browser — this environment
+  has no network access at all. What's different this round: rather
+  than trusting isolated per-file tests (which is exactly how this bug
+  got missed once already), the fix was verified by executing the real
+  main.js's actual routing function end-to-end, reproducing the
+  reported failure first, then confirming the fix resolves it. That's
+  meaningfully stronger evidence than before, but it is still
+  JS-execution-under-Node, not a browser.
+- No Timeline logging yet for taught-status changes (unchanged).
+- No notebook-status UI yet (unchanged — service-layer support
+  exists, no screen for it yet).
 -----------------------------------

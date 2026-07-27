@@ -174,6 +174,7 @@ const CLASSROOM_ROUTE_NAMES = [
   'notebookTracker',
   'notebookRegister',
   'notebookTimeline',
+  'learningRecord',
 ];
 
 function renderLoadingScreen(container) {

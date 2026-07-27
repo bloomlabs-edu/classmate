@@ -2796,3 +2796,35 @@ Still not tested in a real browser (no network access in this environment at all
 ### Future TODOs
 - (Carried over, unchanged): all items from the previous entry.
 - New, from this entry: none — this was purely a discoverability bug in already-built code.
+
+---
+
+## Learning Record Phase 2 — Fixed: Route Never Actually Dispatched (`CLASSROOM_ROUTE_NAMES`)
+
+**Context:** reported again as unreachable after the previous fix, despite `onOpenLearningRecord` being correctly wired in both `DashboardView.js` and `main.js`, and the router correctly parsing the URL. This time verified by actually executing the full click path end-to-end — render Dashboard → click "Learning Record" → re-render on the new route — against the real, unmodified `main.js`, rather than testing `router.js`, `DashboardView.js`, and `LearningRecordView.js` in isolation as the previous round had. That stronger test caught what the isolated tests couldn't.
+
+### Root Cause
+`main.js` gates all classroom-scoped routes behind an explicit allow-list, `CLASSROOM_ROUTE_NAMES`, before the big `if/else if` chain that actually dispatches each route to its view. `'learningRecord'` was never added to that list — so even though the route correctly parsed to `{ name: 'learningRecord', ... }`, and even though a matching `else if (route.name === 'learningRecord')` branch genuinely existed further down calling `renderLearningRecordView`, execution never reached it. The whole gated block was skipped entirely, and control fell through to `main.js`'s bottom-of-function fallback — the Home/Welcome screen — which is exactly the "goes nowhere" experience reported. This is the same *class* of bug as the earlier `onSelectStudent` crash and the pre-roster miss: a new feature needs to be registered in more than one place, and one of those places was missed.
+
+### Fix
+Added `'learningRecord'` to `CLASSROOM_ROUTE_NAMES` in `main.js`. One line.
+
+### Files Modified
+- `js/main.js`
+
+### Breaking Changes
+None.
+
+### Regression Verification
+This is the one that matters most this round: built a test-only transformation of the real `main.js` source (never touching the shipped file) that exports its private `renderRoute()` function and adds a state-setter for its module-private `currentUser`/`appContainer`/`workspaceLoading` variables, so the actual routing logic could be exercised directly rather than read. Registered a real classroom via `classroomService.upsertClassroom()`, then, against the real, complete function chain:
+- Rendered the Dashboard, found the real "Learning Record" button, and called `.click()` on it.
+- Confirmed the click set `window.location.hash` to the right URL.
+- Called `renderRoute()` again (simulating the hashchange the real router fires) and confirmed `LearningRecordView` actually mounted this time — before this fix, this exact step failed and landed on the Home/Welcome screen instead, reproducing the report precisely.
+- Repeated the same full click path from the zero-student pre-roster screen — also passes.
+- Additionally verified a direct deep-link straight to a Concept level (`.../learning-record/{subjectId}/{unitId}`, as if refreshing a bookmarked URL) renders the right subject/unit/concept data, and that the Back button returns to the correct parent level.
+
+All of the above now passes end-to-end against the real, complete application routing logic — not an isolated piece of it.
+
+### Future TODOs
+- (Carried over, unchanged): all items from the previous entries.
+- New, from this entry: none.
