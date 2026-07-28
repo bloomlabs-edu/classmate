@@ -25,13 +25,19 @@
  *     A fresh install shows a real, informative empty state here
  *     instead of hardcoded sample cards.
  *   - ➕ Contribute Curriculum — the upload flow (capture standardized
- *     metadata -> Upload PDF or start blank -> Extract -> Review ->
- *     Submit). Extract now means reading only the first 10 pages and
- *     parsing the Table of Contents for Unit Number, Title, and
- *     Starting Page (see services/curriculumPdfParsingService.js's
- *     own header comment for why this replaced scanning a whole
- *     ~700,000-character textbook for heading patterns). Submitting
- *     does *not* add anything to the Library — it goes to
+ *     metadata -> Upload PDF -> Extract -> Detect Table of Contents ->
+ *     Detect Anchors -> Review Units -> Save Draft). This entire
+ *     sequence now runs through
+ *     services/curriculumImportSession.js, an orchestrator that calls
+ *     each single-responsibility service in turn — this view never
+ *     calls pdfExtractionService, tableOfContentsService, or
+ *     anchorDetectionService directly. Vertical Slice milestone:
+ *     Concept Extraction and Publish for this new pipeline are later
+ *     milestones — "Save Draft" is as far as this path currently
+ *     goes, persisted and resumable via draftCurriculumService, not
+ *     yet reachable from here. "Start From Scratch" (no PDF) still
+ *     uses the older curriculumPackBuilderService-based flow below,
+ *     untouched, all the way through Submit.
  *     services/curriculumSubmissionsService.js with status
  *     'pending_review' instead.
  *   - 🔍 Review Submissions — where 'pending_review' actually becomes
@@ -58,9 +64,9 @@
  */
 
 import * as curriculumLibraryService from '../../services/curriculumLibraryService.js';
-import * as curriculumPdfParsingService from '../../services/curriculumPdfParsingService.js';
 import * as curriculumPackBuilderService from '../../services/curriculumPackBuilderService.js';
 import * as curriculumSubmissionsService from '../../services/curriculumSubmissionsService.js';
+import { createCurriculumImportSession } from '../../services/curriculumImportSession.js';
 import { createIcon } from '../components/Icon.js';
 import { createCurriculumExplorerPanel } from '../components/CurriculumExplorerPanel.js';
 import { showToast } from '../components/Toast.js';
@@ -81,9 +87,18 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
   let draft = null;
   let extractError = null;
   let submittedContribution = null;
-  let pendingMetadata = null; // held between "Upload & Extract" and "Continue to Parsing"
-  let extractionDiagnostics = null; // { pageTexts, fullText, pageCount }
-  let parsingFailureDiagnostics = null; // { candidateLines } — only set when parsing finds zero units
+
+  // Vertical Slice milestone: the new Upload-PDF path (Upload -> Extract
+  // -> Table of Contents -> Anchor Detection -> Review Units -> Save
+  // Draft) runs through this orchestrator instead of the old
+  // draft/curriculumPackBuilderService flow above — see
+  // services/curriculumImportSession.js's own header comment for why
+  // this file only ever calls its methods, never the domain services
+  // underneath it directly. "Start From Scratch" (no PDF) still uses
+  // the older `draft` object above, untouched — this milestone is
+  // specifically about the PDF path.
+  let importSession = null;
+  let importFailureReason = null;
 
   // Review Submissions state.
   let selectedSubmission = null;
@@ -103,8 +118,8 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
         extractError,
         submittedContribution,
         selectedSubmission,
-        extractionDiagnostics,
-        parsingFailureDiagnostics,
+        importSession,
+        importFailureReason,
       },
       {
         onBack,
@@ -175,49 +190,55 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
           rerender();
         },
         onUploadPdf: async (metadata, file) => {
-          pendingMetadata = metadata;
           extractError = null;
-          extractionDiagnostics = null;
-          parsingFailureDiagnostics = null;
+          importFailureReason = null;
           mode = 'contribute-extracting';
           rerender();
           try {
-            const { pageTexts, fullText, totalPageCount, pagesRead } = await curriculumPdfParsingService.extractTextFromPdf(file);
-            extractionDiagnostics = { pageTexts, fullText, totalPageCount, pagesRead };
-            mode = 'contribute-diagnostics';
+            importSession = createCurriculumImportSession();
+            await importSession.startImport({ metadata, pdfFile: file, pdfFileName: file.name });
+            await importSession.detectStructure();
+            const importedDraft = importSession.getDraft();
+            mode = importedDraft.tocDetectionFailed ? 'contribute-import-failed' : 'contribute-review-units';
           } catch (error) {
-            console.error('[CurriculumManagementView] PDF extraction failed:', error);
-            extractError = `Couldn't read that PDF (${error.message || error}). You can still add units and concepts manually below.`;
-            draft = curriculumPackBuilderService.createDraftPack(metadata);
-            mode = 'contribute-review';
+            console.error('[CurriculumManagementView] PDF import failed:', error);
+            importFailureReason = error.message || String(error);
+            mode = 'contribute-import-failed';
           }
           rerender();
         },
-        onContinueToParsing: () => {
-          const result = curriculumPdfParsingService.parseTableOfContents(extractionDiagnostics.fullText);
-          draft = curriculumPackBuilderService.createDraftPack(pendingMetadata);
-          if (result.units.length > 0) {
-            // The last unit's endPage is only known once resolved
-            // against the PDF's real total length — see
-            // parseTableOfContents()'s own doc comment on why it can't
-            // know that itself (it only ever sees the first 10 pages).
-            const resolvedUnits = result.units.map((unit) => ({
-              ...unit,
-              endPage: unit.endPage ?? extractionDiagnostics.totalPageCount,
-            }));
-            curriculumPackBuilderService.loadUnitsFromTableOfContents(draft, resolvedUnits);
-            mode = 'contribute-review';
-          } else {
-            parsingFailureDiagnostics = {
-              tocFound: result.found,
-              reason: result.reason || null,
-            };
-            mode = 'contribute-parsing-failed';
-          }
-          rerender();
-        },
-        onContinueToManualEntry: () => {
+        onGoToManualEntryFromImportFailure: () => {
+          draft = curriculumPackBuilderService.createDraftPack(importSession?.getDraft()?.metadata || {});
           mode = 'contribute-review';
+          rerender();
+        },
+        onRenameImportUnit: (unitId, title) => {
+          importSession.renameUnit(unitId, title);
+          rerender();
+        },
+        onDeleteImportUnit: (unitId) => {
+          importSession.deleteUnit(unitId);
+          rerender();
+        },
+        onMoveImportUnitUp: (unitId) => {
+          importSession.moveUnitUp(unitId);
+          rerender();
+        },
+        onMoveImportUnitDown: (unitId) => {
+          importSession.moveUnitDown(unitId);
+          rerender();
+        },
+        onAddImportUnit: (title) => {
+          importSession.addUnit(title);
+          rerender();
+        },
+        onResolveAnchor: async (unitId, chosenPage) => {
+          await importSession.resolveAnchor(unitId, chosenPage);
+          rerender();
+        },
+        onSaveDraftAndFinish: async () => {
+          await importSession.saveDraft();
+          mode = 'contribute-draft-saved';
           rerender();
         },
         onAddUnit: (title) => {
@@ -316,8 +337,9 @@ function renderView(container, mode, state, handlers) {
       'preview-structure': 'curriculum-details',
       'contribute-create': 'hub',
       'contribute-extracting': 'contribute-create',
-      'contribute-diagnostics': 'contribute-create',
-      'contribute-parsing-failed': 'contribute-diagnostics',
+      'contribute-import-failed': 'contribute-create',
+      'contribute-review-units': 'contribute-create',
+      'contribute-draft-saved': 'hub',
       'contribute-review': 'contribute-create',
       'contribute-submitted': 'hub',
       'review-list': 'hub',
@@ -348,10 +370,12 @@ function renderView(container, mode, state, handlers) {
     wrapper.appendChild(renderContributeCreateStep(handlers));
   } else if (mode === 'contribute-extracting') {
     wrapper.appendChild(renderExtractingStep());
-  } else if (mode === 'contribute-diagnostics') {
-    wrapper.appendChild(renderExtractionDiagnosticsStep(state.extractionDiagnostics, handlers));
-  } else if (mode === 'contribute-parsing-failed') {
-    wrapper.appendChild(renderParsingFailedStep(state.parsingFailureDiagnostics, handlers));
+  } else if (mode === 'contribute-import-failed') {
+    wrapper.appendChild(renderImportFailedStep(state, handlers));
+  } else if (mode === 'contribute-review-units') {
+    wrapper.appendChild(renderReviewUnitsStep(state.importSession.getDraft(), handlers));
+  } else if (mode === 'contribute-draft-saved') {
+    wrapper.appendChild(renderDraftSavedStep(state.importSession.getDraft(), handlers));
   } else if (mode === 'contribute-review') {
     wrapper.appendChild(renderContributeReviewStep(state, handlers));
   } else if (mode === 'contribute-submitted') {
@@ -843,164 +867,223 @@ function renderExtractingStep() {
   section.className = 'curriculum-management__section';
   const message = document.createElement('p');
   message.className = 'curriculum-management__intro';
-  message.textContent = 'Reading the PDF\u2026';
+  message.textContent = 'Processing\u2026';
   section.appendChild(message);
   return section;
 }
 
 /**
- * Shown after extraction completes, before any parsing runs at all —
- * "the parser should operate only after the extracted text is
- * visible" (explicit instruction, after two rounds of parser fixes
- * each individually verified but neither resolving a real, repeated
- * failure). This screen exists to answer one question definitively,
- * with evidence instead of another guess: did text extraction itself
- * actually work?
+ * Shown when the PDF import pipeline couldn't proceed automatically —
+ * either extraction itself threw (see `importFailureReason`), or
+ * extraction succeeded but no Table of Contents could be found in the
+ * first pages at all (see services/curriculumImportSession.js's
+ * `tocDetectionFailed`/`tocDetectionReason`). Deliberately plain and
+ * teacher-facing — no regex text, no character counts; a normal
+ * teacher should never see either of those (see
+ * services/debugModeService.js for where that detail belongs
+ * instead, once this screen is gated behind it).
  */
-function renderExtractionDiagnosticsStep(diagnostics, handlers) {
-  const { pageTexts, fullText, totalPageCount, pagesRead } = diagnostics;
+function renderImportFailedStep(state, handlers) {
   const section = document.createElement('div');
   section.className = 'curriculum-management__section';
 
   const heading = document.createElement('p');
   heading.className = 'curriculum-management__step-heading';
-  heading.textContent = 'Extraction Diagnostics';
+  heading.textContent = 'Couldn\u2019t process that PDF automatically';
   section.appendChild(heading);
 
-  const note = document.createElement('p');
-  note.className = 'curriculum-management__intro';
-  note.textContent = `Only the first ${pagesRead} of ${totalPageCount} total pages are read \u2014 the Table of Contents already states every unit's number, title, and starting page, so scanning the rest of the book was never necessary.`;
-  section.appendChild(note);
-
-  const summaryCard = document.createElement('div');
-  summaryCard.className = 'curriculum-management__details-card';
-  summaryCard.appendChild(createDetailRow('Total pages in the PDF', String(totalPageCount)));
-  summaryCard.appendChild(createDetailRow('Pages actually read', String(pagesRead)));
-  summaryCard.appendChild(createDetailRow('Total characters extracted', fullText.length.toLocaleString()));
-  section.appendChild(summaryCard);
-
-  const perPageHeading = document.createElement('p');
-  perPageHeading.className = 'curriculum-management__intro';
-  perPageHeading.textContent = 'Characters extracted per page:';
-  section.appendChild(perPageHeading);
-
-  const perPageList = document.createElement('div');
-  perPageList.className = 'curriculum-management__diagnostics-page-list';
-  pageTexts.forEach((pageText, index) => {
-    const row = document.createElement('div');
-    row.className = 'curriculum-management__diagnostics-page-row';
-    const label = document.createElement('span');
-    label.textContent = `Page ${index + 1}`;
-    const count = document.createElement('span');
-    count.className = 'curriculum-management__diagnostics-page-count';
-    count.textContent = `${pageText.length.toLocaleString()} characters`;
-    row.append(label, count);
-    perPageList.appendChild(row);
-  });
-  section.appendChild(perPageList);
-
-  const previewHeading = document.createElement('p');
-  previewHeading.className = 'curriculum-management__intro';
-  previewHeading.textContent = 'Preview \u2014 first 5 pages of extracted text:';
-  section.appendChild(previewHeading);
-
-  pageTexts.slice(0, 5).forEach((pageText, index) => {
-    const pageBlock = document.createElement('div');
-    pageBlock.className = 'curriculum-management__diagnostics-preview-block';
-    const label = document.createElement('p');
-    label.className = 'curriculum-management__diagnostics-preview-label';
-    label.textContent = `Page ${index + 1}`;
-    const text = document.createElement('pre');
-    text.className = 'curriculum-management__diagnostics-preview-text';
-    text.textContent = pageText || '(no text extracted from this page)';
-    pageBlock.append(label, text);
-    section.appendChild(pageBlock);
-  });
-
-  const actions = document.createElement('div');
-  actions.className = 'curriculum-management__details-actions';
-
-  const downloadButton = document.createElement('button');
-  downloadButton.type = 'button';
-  downloadButton.className = 'btn btn--ghost';
-  downloadButton.textContent = 'Download Extracted Text (.txt)';
-  downloadButton.addEventListener('click', () => downloadExtractedText(fullText));
-  actions.appendChild(downloadButton);
-
-  const continueButton = document.createElement('button');
-  continueButton.type = 'button';
-  continueButton.className = 'btn btn--primary';
-  continueButton.textContent = 'Continue to Parsing';
-  continueButton.addEventListener('click', handlers.onContinueToParsing);
-  actions.appendChild(continueButton);
-
-  section.appendChild(actions);
-
-  return section;
-}
-
-function downloadExtractedText(fullText) {
-  const blob = new Blob([fullText], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = 'extracted-text.txt';
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
-/**
- * Shown only when extraction succeeded (real text came back from the
- * first 10 pages) but no Table of Contents could be parsed from
- * it — the scientific-debugging screen for this approach: whether a
- * Contents heading was found at all, and the specific reason parsing
- * stopped where it did (see
- * services/curriculumPdfParsingService.js's parseTableOfContents()
- * for exactly what each reason means). No regex text is shown here
- * anymore — there's nothing to run against the whole document; the
- * only question left is whether the first 10 pages contained a
- * recognizable Contents table at all.
- */
-function renderParsingFailedStep(diagnostics, handlers) {
-  const { tocFound, reason } = diagnostics;
-  const section = document.createElement('div');
-  section.className = 'curriculum-management__section';
-
-  const heading = document.createElement('p');
-  heading.className = 'curriculum-management__step-heading';
-  heading.textContent = 'Table of Contents Diagnostics';
-  section.appendChild(heading);
-
-  const summary = document.createElement('p');
-  summary.className = 'curriculum-management__intro';
-  summary.textContent = 'Units detected: 0. Text extraction succeeded (you saw it on the previous screen), but a curriculum structure couldn\u2019t be built from it.';
-  section.appendChild(summary);
-
-  const statusCard = document.createElement('div');
-  statusCard.className = 'curriculum-management__details-card';
-  statusCard.appendChild(
-    createDetailRow('"Table of Contents" or "Contents" heading found in the first 10 pages', tocFound ? 'Yes' : 'No')
-  );
-  if (reason) {
-    statusCard.appendChild(createDetailRow('Reason parsing stopped', reason));
-  }
-  section.appendChild(statusCard);
-
-  const explanation = document.createElement('p');
-  explanation.className = 'curriculum-management__intro';
-  explanation.textContent = tocFound
-    ? 'The Contents heading was there, but its table didn\u2019t match the Unit / Title / Page shape this looks for. Check the extracted text preview on the previous screen to see exactly what\u2019s there.'
-    : 'No "Table of Contents" or "Contents" heading was found in the first 10 pages at all. If this book\u2019s Contents page is genuinely further in, that\u2019s a real limitation of only reading the first 10 pages \u2014 worth telling me if so.';
-  section.appendChild(explanation);
+  const message = document.createElement('p');
+  message.className = 'curriculum-management__intro';
+  const draft = state.importSession?.getDraft();
+  message.textContent =
+    state.importFailureReason ||
+    (draft?.tocDetectionReason
+      ? `Couldn't find a Table of Contents in the first pages of this PDF. ${draft.tocDetectionReason}`
+      : "Couldn't find a Table of Contents in the first pages of this PDF.");
+  section.appendChild(message);
 
   const manualButton = document.createElement('button');
   manualButton.type = 'button';
   manualButton.className = 'btn btn--primary';
   manualButton.textContent = 'Continue to Manual Entry';
-  manualButton.addEventListener('click', handlers.onContinueToManualEntry);
+  manualButton.addEventListener('click', handlers.onGoToManualEntryFromImportFailure);
   section.appendChild(manualButton);
+
+  return section;
+}
+
+/**
+ * Stage 4 — Review Units. Shows every unit the Table of Contents and
+ * Anchor Detection together produced: title (renameable), the printed
+ * page a teacher recognizes, and its status. A confirmed unit needs
+ * no attention at all. A unit still needing review gets an inline
+ * prompt — candidate pages as quick choices when Anchor Detection
+ * found some, otherwise a plain page-number field — resolved
+ * independently of every other unit, so one ambiguous unit never
+ * blocks reviewing (or saving) the rest. No concepts anywhere on this
+ * screen yet — that's a later stage, run only once a teacher actually
+ * reaches a given unit (see services/conceptExtractionService.js).
+ */
+function renderReviewUnitsStep(draft, handlers) {
+  const section = document.createElement('div');
+  section.className = 'curriculum-management__section';
+
+  const heading = document.createElement('p');
+  heading.className = 'curriculum-management__step-heading';
+  heading.textContent = `Review Units \u2014 ${draft.metadata.curriculumName}`;
+  section.appendChild(heading);
+
+  const needsReviewCount = draft.units.filter((u) => u.status === 'anchor_needs_review').length;
+  const intro = document.createElement('p');
+  intro.className = 'curriculum-management__intro';
+  intro.textContent =
+    needsReviewCount > 0
+      ? `${draft.units.length} units found. ${needsReviewCount} need a quick look below \u2014 everything else is ready.`
+      : `${draft.units.length} units found and confirmed automatically.`;
+  section.appendChild(intro);
+
+  const unitList = document.createElement('div');
+  unitList.className = 'curriculum-management__import-unit-list';
+  draft.units.forEach((unit, index) => {
+    unitList.appendChild(renderImportUnitRow(draft, unit, index, handlers));
+  });
+  section.appendChild(unitList);
+
+  section.appendChild(
+    createAddForm('New unit title', '+ Add Unit', (title) => handlers.onAddImportUnit(title))
+  );
+
+  const saveButton = document.createElement('button');
+  saveButton.type = 'button';
+  saveButton.className = 'btn btn--primary';
+  saveButton.textContent = 'Save Draft';
+  saveButton.addEventListener('click', handlers.onSaveDraftAndFinish);
+  section.appendChild(saveButton);
+
+  return section;
+}
+
+function renderImportUnitRow(draft, unit, index, handlers) {
+  const row = document.createElement('div');
+  row.className = 'curriculum-management__import-unit-row';
+
+  const topLine = document.createElement('div');
+  topLine.className = 'curriculum-management__import-unit-top-line';
+
+  const reorder = createReorderButtons(
+    index === 0,
+    index === draft.units.length - 1,
+    () => handlers.onMoveImportUnitUp(unit.id),
+    () => handlers.onMoveImportUnitDown(unit.id)
+  );
+  topLine.appendChild(reorder);
+
+  const titleInput = createRenameInput(unit.title, (newTitle) => handlers.onRenameImportUnit(unit.id, newTitle));
+  titleInput.classList.add('curriculum-management__unit-title-input');
+  topLine.appendChild(titleInput);
+
+  if (unit.tocPage != null) {
+    const pageEl = document.createElement('span');
+    pageEl.className = 'curriculum-management__unit-page-range';
+    pageEl.textContent = `starts page ${unit.tocPage}`;
+    topLine.appendChild(pageEl);
+  }
+
+  const statusEl = document.createElement('span');
+  statusEl.className =
+    'curriculum-management__import-unit-status' +
+    (unit.status === 'anchor_needs_review' ? ' curriculum-management__import-unit-status--needs-review' : '');
+  statusEl.textContent = unit.status === 'anchor_needs_review' ? 'Needs a quick check' : '\u2713 Confirmed';
+  topLine.appendChild(statusEl);
+
+  const deleteButton = document.createElement('button');
+  deleteButton.type = 'button';
+  deleteButton.className = 'btn btn--text btn--danger-text';
+  deleteButton.textContent = 'Delete Unit';
+  deleteButton.addEventListener('click', () => {
+    if (!window.confirm(`Delete "${unit.title}"?`)) return;
+    handlers.onDeleteImportUnit(unit.id);
+  });
+  topLine.appendChild(deleteButton);
+
+  row.appendChild(topLine);
+
+  if (unit.status === 'anchor_needs_review') {
+    row.appendChild(renderAnchorResolutionPrompt(unit, handlers));
+  }
+
+  return row;
+}
+
+function renderAnchorResolutionPrompt(unit, handlers) {
+  const prompt = document.createElement('div');
+  prompt.className = 'curriculum-management__anchor-prompt';
+
+  const label = document.createElement('span');
+  label.className = 'curriculum-management__anchor-prompt-label';
+  label.textContent = `Couldn't confirm exactly where "${unit.title}" starts \u2014 which page is it?`;
+  prompt.appendChild(label);
+
+  if (unit.anchorCandidates && unit.anchorCandidates.length > 0) {
+    const choices = document.createElement('div');
+    choices.className = 'curriculum-management__anchor-prompt-choices';
+    unit.anchorCandidates.forEach((page) => {
+      const choiceButton = document.createElement('button');
+      choiceButton.type = 'button';
+      choiceButton.className = 'curriculum-management__anchor-prompt-choice';
+      choiceButton.textContent = `Page ${page}`;
+      choiceButton.addEventListener('click', () => handlers.onResolveAnchor(unit.id, page));
+      choices.appendChild(choiceButton);
+    });
+    prompt.appendChild(choices);
+  }
+
+  const manualEntry = document.createElement('div');
+  manualEntry.className = 'curriculum-management__anchor-prompt-manual';
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.min = '1';
+  input.placeholder = 'Page number';
+  const confirmButton = document.createElement('button');
+  confirmButton.type = 'button';
+  confirmButton.className = 'btn btn--ghost';
+  confirmButton.textContent = 'Confirm';
+  confirmButton.addEventListener('click', () => {
+    const page = Number(input.value);
+    if (!page || page < 1) {
+      showToast('Enter a valid page number first');
+      return;
+    }
+    handlers.onResolveAnchor(unit.id, page);
+  });
+  manualEntry.append(input, confirmButton);
+  prompt.appendChild(manualEntry);
+
+  return prompt;
+}
+
+/** Stage 5's confirmation — the draft is safely persisted and resumable; concept extraction and publishing are later milestones, not reachable from here yet. */
+function renderDraftSavedStep(draft, handlers) {
+  const section = document.createElement('div');
+  section.className = 'curriculum-management__section';
+
+  const heading = document.createElement('p');
+  heading.className = 'curriculum-management__step-heading';
+  heading.textContent = '\u2705 Draft Saved';
+  section.appendChild(heading);
+
+  const message = document.createElement('p');
+  message.className = 'curriculum-management__intro';
+  const confirmedCount = draft.units.filter((u) => u.status === 'anchor_confirmed').length;
+  message.textContent = `${draft.metadata.curriculumName} \u2014 ${draft.units.length} units saved (${confirmedCount} confirmed). You can come back to this draft later; nothing is lost. Concept extraction and publishing come in a later milestone.`;
+  section.appendChild(message);
+
+  const doneButton = document.createElement('button');
+  doneButton.type = 'button';
+  doneButton.className = 'btn btn--primary';
+  doneButton.textContent = 'Back to Curriculum Management';
+  doneButton.addEventListener('click', handlers.onGoToHub);
+  section.appendChild(doneButton);
 
   return section;
 }
