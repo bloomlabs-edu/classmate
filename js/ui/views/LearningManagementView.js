@@ -63,11 +63,17 @@ import { renderConceptWorkspaceView } from './ConceptWorkspaceView.js';
 import { renderLearningRecordView } from './LearningRecordView.js';
 
 export function renderLearningManagementView(container, { classrooms, onBack }) {
-  // 'choose-class' (always the entry point), 'choose-subject', or
-  // 'explorer' (the combined accordion). Nothing here ever asks which
-  // curriculum to use — see this file's header comment.
-  let mode = 'choose-class';
-  let selectedClassroom = null;
+  // Choose Class only earns its place when there's an actual choice to
+  // make — a teacher running one classroom should never be asked to
+  // pick it. See the entry-point logic just below.
+  const singleClassroomMode = classrooms.length === 1;
+
+  // 'choose-class' (skipped entirely in singleClassroomMode — see
+  // above), 'choose-subject', or 'explorer' (the combined accordion).
+  // Nothing here ever asks which curriculum to use — see this file's
+  // header comment.
+  let mode = singleClassroomMode ? 'choose-subject' : 'choose-class';
+  let selectedClassroom = singleClassroomMode ? classrooms[0] : null;
   let selectedSubject = null;
   let source = null; // 'custom' | 'library' — decided automatically, never picked
   let selectedPack = null;
@@ -78,7 +84,7 @@ export function renderLearningManagementView(container, { classrooms, onBack }) 
     renderView(
       container,
       mode,
-      { classrooms, selectedClassroom, selectedSubject, source, selectedPack, loadError, expandedUnitId },
+      { classrooms, selectedClassroom, selectedSubject, source, selectedPack, loadError, expandedUnitId, singleClassroomMode },
       {
         onBack,
         onChooseClass: (classroom) => {
@@ -179,13 +185,15 @@ function renderView(container, mode, state, handlers) {
   const header = document.createElement('header');
   header.className = 'learning-management__header';
 
+  const isEntryStep = mode === 'choose-class' || (mode === 'choose-subject' && state.singleClassroomMode);
+
   const backButton = document.createElement('button');
   backButton.type = 'button';
   backButton.className = 'btn btn--text';
   backButton.appendChild(createIcon('arrow-left'));
-  backButton.append(mode === 'choose-class' ? 'Back to Dashboard' : 'Back');
+  backButton.append(isEntryStep ? 'Back to Dashboard' : 'Back');
   backButton.addEventListener('click', () => {
-    if (mode === 'choose-class') return handlers.onBack();
+    if (isEntryStep) return handlers.onBack();
     const previous = { 'choose-subject': 'choose-class', explorer: 'choose-subject' }[mode];
     handlers.onBackTo(previous);
   });
