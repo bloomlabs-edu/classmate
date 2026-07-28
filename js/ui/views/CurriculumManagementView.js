@@ -174,12 +174,24 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
             const extractedUnits = curriculumPdfParsingService.parseTextIntoUnits(rawText);
             curriculumPackBuilderService.loadExtractedUnitsIntoDraft(draft, extractedUnits);
             if (extractedUnits.length === 0) {
+              // Diagnostic detail, not just a generic message — this
+              // distinguishes two very different real causes: pdf.js
+              // extracting little or no text at all (worker/CORS/load
+              // failure, often silent rather than a thrown error) vs.
+              // text extracting fine but not matching either heading
+              // shape parseTextIntoUnits() recognizes. Whichever it is
+              // is now visible on screen, not just in a console log
+              // nobody may think to open.
+              const charCount = rawText.length;
+              const preview = rawText.trim().slice(0, 160).replace(/\s+/g, ' ');
               extractError =
-                "Couldn't find any \"Unit N\" or \"Chapter N\" headings in this PDF. You can still add units and concepts manually below.";
+                charCount < 50
+                  ? `Couldn't find any "Unit N" or "Chapter N" headings in this PDF — and only ${charCount} characters of text were extracted at all, which usually means the PDF reader itself didn't load correctly rather than the heading search failing. Try again, and if this repeats, the extracted-text preview is: "${preview || '(nothing)'}"`
+                  : `Couldn't find any "Unit N" or "Chapter N" headings in this PDF (${charCount.toLocaleString()} characters were extracted, so the reader worked — the heading shape just didn't match). You can still add units and concepts manually below. Extracted text starts with: "${preview}"`;
             }
           } catch (error) {
             console.error('[CurriculumManagementView] PDF extraction failed:', error);
-            extractError = "Couldn't read that PDF. You can still add units and concepts manually below.";
+            extractError = `Couldn't read that PDF (${error.message || error}). You can still add units and concepts manually below.`;
           }
           mode = 'contribute-review';
           rerender();
