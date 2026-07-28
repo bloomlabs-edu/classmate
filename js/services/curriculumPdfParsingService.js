@@ -65,10 +65,25 @@ function loadPdfJs() {
  * the very top of a new page doesn't visually run into the previous
  * page's last line before parseTextIntoUnits() ever sees it).
  *
- * Real, working code — but genuinely unverified in the environment
- * this was written in, which has no browser and no PDF file to test
- * against. Test this against a real Samacheer Kalvi PDF in an actual
- * browser before relying on it.
+ * pdf.js's getTextContent() returns a flat list of text fragments per
+ * page with no line breaks of its own — line structure has to be
+ * reconstructed from each fragment's vertical position
+ * (`item.transform[5]`, its Y-coordinate on the page). This matters a
+ * great deal here: a real textbook's decorative unit-divider page
+ * typically has "UNIT", the number, and the title as three visually
+ * stacked fragments — three different Y-coordinates, three lines once
+ * reconstructed — and parseTextIntoUnits() below depends entirely on
+ * that line structure to recognize a heading. An earlier version of
+ * this function joined every fragment on a page with a single space
+ * regardless of position, which silently destroyed that structure —
+ * the heading was never garbled, it simply never existed as separate
+ * lines by the time the heuristic saw it. Verified against a real
+ * TN Samacheer Kalvi Grade 8 Science PDF's actual heading shape (see
+ * parseTextIntoUnits() below and its accompanying real-PDF test
+ * fixture) — genuinely unverified beyond that, though, since this
+ * sandbox has no browser or pdf.js to run the *upload* half of this
+ * file against. Test this specific function against a real PDF in an
+ * actual browser before assuming it's fully correct.
  */
 export async function extractTextFromPdf(file) {
   const pdfjsLib = await loadPdfJs();
@@ -79,11 +94,40 @@ export async function extractTextFromPdf(file) {
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
     const page = await pdf.getPage(pageNumber);
     const content = await page.getTextContent();
-    const pageText = content.items.map((item) => item.str).join(' ');
-    pageTexts.push(pageText);
+    pageTexts.push(reconstructLinesFromTextItems(content.items));
   }
 
   return pageTexts.join('\n\n');
+}
+
+// A new line, in a PDF's own coordinate space, is a fragment whose Y
+// position differs meaningfully from the fragment before it — not
+// zero difference, since ordinary kerning/rendering can produce tiny
+// sub-pixel variance even within one visual line. 2pt is a
+// deliberately small, conservative threshold: real line spacing in a
+// printed textbook is many times that, while numerals and general
+// body text won't drift on their own that much within one line.
+const NEW_LINE_Y_THRESHOLD = 2;
+
+function reconstructLinesFromTextItems(items) {
+  let text = '';
+  let lastY = null;
+
+  for (const item of items) {
+    const y = Array.isArray(item.transform) ? item.transform[5] : null;
+    const isNewLine = lastY !== null && y !== null && Math.abs(y - lastY) > NEW_LINE_Y_THRESHOLD;
+
+    if (isNewLine) {
+      text += '\n';
+    } else if (text && !text.endsWith('\n')) {
+      text += ' ';
+    }
+
+    text += item.str;
+    if (y !== null) lastY = y;
+  }
+
+  return text;
 }
 
 const SINGLE_LINE_HEADING_PATTERN = /^(unit|chapter)\s+(\d+)\b[\s:.\u2013-]*(.*)$/i;
