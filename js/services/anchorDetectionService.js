@@ -29,17 +29,45 @@
  *      its first guess, which converges fast once even one unit is
  *      confirmed, without ever assuming that offset must hold for
  *      units it hasn't checked yet.
- *   2. Search a small window of candidate pages around that guess for
- *      the actual multi-line "UNIT / number / TITLE" heading shape
- *      already verified against this app's real test PDF (see
- *      isHeadingForUnit() below) — not a lighter check, the same
- *      pattern matching used everywhere else in this app.
- *   3. Classify: exactly one matching page -> confirmed, real
+ *   2. Search a small window of candidate pages around that guess,
+ *      running Anchor Verification (see below) against each one.
+ *   3. Classify: exactly one verified page -> confirmed, real
  *      evidence. Zero matches -> widen the window once, retry; still
  *      zero -> needs_review with no candidates. More than one match
  *      -> needs_review with every matching page offered as a choice
  *      (a title recurring elsewhere, most commonly in a
  *      cross-reference, is the usual cause).
+ *
+ * Anchor Verification — a deliberately separate step from Table of
+ * Contents parsing, not a replacement for it. A predicted page is a
+ * *guess*; verification is what turns a guess into evidence. Given a
+ * candidate page, it opens that page plus a small window around it
+ * (today: the very next page too, in case a heading sits right at a
+ * page boundary) and looks for strong, independent textual signals
+ * that this genuinely is where the unit starts — not just one strict
+ * pattern, several:
+ *   - The full multi-line divider shape ("UNIT" / "3" / "LIGHT" as
+ *     three separate lines) already verified against a real textbook
+ *     — still the strongest signal by itself.
+ *   - An inline heading on one line ("Unit 3", "Chapter 3" — number
+ *     attached, no title required alongside it) — a different, valid
+ *     way a real heading can render that the divider-only check above
+ *     would otherwise miss entirely.
+ *   - The expected title text itself ("LIGHT") appearing prominently
+ *     on the page — weaker alone (a title can legitimately be
+ *     mentioned in passing on an unrelated page), but real
+ *     corroborating evidence alongside either signal above.
+ * These combine into a confidence score, not a bare yes/no — see
+ * verifyAnchorPage() below for the exact weights.
+ *
+ * This step is deliberately structured as one swappable function,
+ * verifyAnchorPage(), the same pattern
+ * services/conceptExtractionService.js's extractConcepts() already
+ * uses: today's implementation is entirely text-based (pattern
+ * matching on extracted text, no AI, no model), but nothing else in
+ * this file needs to change if a future version instead rendered the
+ * candidate page as an image and used a visual check — only this one
+ * function's internals would.
  *
  * Returns
  *   {
@@ -57,6 +85,8 @@ import * as pdfExtractionService from './pdfExtractionService.js';
 const INITIAL_WINDOW_SIZE = 5; // pages searched on either side of the first guess
 const WIDENED_WINDOW_SIZE = 12; // one retry, wider, before giving up and asking the teacher
 const MAX_FORWARD_SEARCH_FOR_FIRST_UNIT = 15; // how far past its own tocPage the very first unit will search
+const VERIFICATION_WINDOW_PAGES = 1; // how many extra pages past the candidate itself get pulled in as context — see verifyAnchorPage()
+const VERIFICATION_CONFIDENCE_THRESHOLD = 0.5; // a candidate page needs at least this much combined signal weight to count as verified
 
 export async function detectAnchors(pdfHandle, tocUnits) {
   const anchors = [];
@@ -105,28 +135,71 @@ async function searchWindow(pdfHandle, tocUnit, guess, windowSize, isFirstUnit, 
 
   const matches = [];
   for (let page = lowerBound; page <= upperBound; page++) {
-    const { fullText } = await pdfExtractionService.extractPageRange(pdfHandle, page, page);
-    if (isHeadingForUnit(fullText, tocUnit)) {
-      matches.push(page);
-    }
+    const result = await verifyAnchorPage(pdfHandle, page, tocUnit, totalPages);
+    if (result.isMatch) matches.push(page);
   }
   return matches;
 }
 
-// The same multi-line "UNIT" / number / TITLE shape already verified
+/**
+ * The swappable verification strategy — see this file's own header
+ * comment. Today: entirely text-based, opening the candidate page
+ * plus a small window of extra pages around it (see
+ * VERIFICATION_WINDOW_PAGES) and scoring several independent textual
+ * signals rather than trusting one strict pattern alone. A future
+ * visual verifier would keep this exact same function signature
+ * (`(pdfHandle, page, tocUnit, totalPages) -> { isMatch, confidence, signals }`)
+ * and nothing calling it would need to change.
+ */
+async function verifyAnchorPage(pdfHandle, page, tocUnit, totalPages) {
+  const windowEnd = Math.min(totalPages, page + VERIFICATION_WINDOW_PAGES);
+  const { pageTexts } = await pdfExtractionService.extractPageRange(pdfHandle, page, windowEnd);
+  const ownLines = pageTexts[0].split('\n').map((line) => line.trim());
+  const extraLines = pageTexts.slice(1).flatMap((text) => text.split('\n').map((line) => line.trim()));
+  // The signal's own anchor point (where "UNIT" appears, where "Unit 3"
+  // appears, where the bare title appears) must be found within the
+  // candidate page's own text — never in the extra window pages.
+  // Otherwise checking page P (window P, P+1) and page P+1 (window
+  // P+1, P+2) both independently "see" whatever heading actually sits
+  // on P+1, and both wrongly report a match for the same real anchor.
+  // The extra window pages exist only so title continuation logic can
+  // read a little further when a heading happens to sit right at the
+  // very end of a page — never as a second, independent place to
+  // start looking.
+  const lines = [...ownLines, ...extraLines];
+
+  const signals = [];
+  let confidence = 0;
+
+  if (hasDividerStyleHeading(lines, tocUnit, ownLines.length)) {
+    signals.push('divider_style_heading');
+    confidence += 0.7;
+  }
+  if (hasInlineHeading(ownLines, tocUnit)) {
+    signals.push('inline_heading');
+    confidence += 0.6;
+  }
+  if (hasTitleTextPresent(ownLines, tocUnit)) {
+    signals.push('title_text_present');
+    confidence += 0.3;
+  }
+
+  confidence = Math.min(1, confidence);
+  return { isMatch: confidence >= VERIFICATION_CONFIDENCE_THRESHOLD, confidence, signals };
+}
+
+// Signal 1 (strongest): the multi-line divider shape already verified
 // against a real textbook (see services/tableOfContentsService.js's
 // own header comment for why a heading extracts as three separate
-// lines, not one) — except now checking for a *specific*, already-known
-// unit rather than discovering an unknown one. The title match is
-// deliberately tolerant (case-insensitive, ignoring surrounding
-// whitespace) rather than exact, since a heading's own casing or
-// spacing can differ slightly from how the same title appears in the
-// Contents table.
-function isHeadingForUnit(pageText, tocUnit) {
-  const lines = pageText.split('\n').map((line) => line.trim());
+// lines, not one) — "UNIT" / matching number / matching title, each
+// its own line. The title match is deliberately tolerant
+// (case-insensitive, ignoring surrounding whitespace) rather than
+// exact, since a heading's own casing or spacing can differ slightly
+// from how the same title appears in the Contents table.
+function hasDividerStyleHeading(lines, tocUnit, ownLineCount = lines.length) {
   const expectedTitle = tocUnit.title.trim().toLowerCase();
 
-  for (let i = 0; i < lines.length; i++) {
+  for (let i = 0; i < ownLineCount; i++) {
     if (!/^(unit|chapter)$/i.test(lines[i])) continue;
 
     let j = i + 1;
@@ -148,4 +221,39 @@ function isHeadingForUnit(pageText, tocUnit) {
   }
 
   return false;
+}
+
+// Signal 2: an inline heading — "Unit 3" or "Chapter 3" with the
+// number attached on one line, no separate title line required
+// alongside it. A real, different way a heading can render that the
+// divider-only check above would otherwise never match — a book
+// whose in-body chapter openings use this style, even if its Table of
+// Contents itself used a completely different layout, is exactly the
+// case this signal exists for.
+const INLINE_HEADING_PATTERN = /^(unit|chapter)\s+(\d+)\b/i;
+
+function hasInlineHeading(lines, tocUnit) {
+  return lines.some((line) => {
+    const match = line.match(INLINE_HEADING_PATTERN);
+    return match && Number(match[2]) === tocUnit.number;
+  });
+}
+
+// Signal 3 (corroborating only, never sufficient alone): the expected
+// title text appears somewhere on the page, prominently enough to
+// plausibly be a heading rather than an incidental mention — a
+// standalone line, mostly uppercase or title-cased, reasonably short.
+// Deliberately weighted lower than either heading signal above: a
+// title can legitimately be mentioned in passing ("as we saw in the
+// Light chapter...") on a page that isn't actually where that unit
+// starts, so this alone never crosses the verification threshold.
+function hasTitleTextPresent(lines, tocUnit) {
+  const expectedTitle = tocUnit.title.trim().toLowerCase();
+  if (!expectedTitle) return false;
+
+  return lines.some((line) => {
+    if (!line || line.length > 60) return false;
+    const isShoutyOrTitleCased = line === line.toUpperCase() || /^[A-Z][a-z]/.test(line);
+    return isShoutyOrTitleCased && line.trim().toLowerCase() === expectedTitle;
+  });
 }
