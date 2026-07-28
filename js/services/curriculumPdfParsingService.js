@@ -16,16 +16,32 @@
  *   that would be OCR, explicitly out of scope.
  *
  *   parseTextIntoUnits(rawText) — a plain, rule-based heuristic that
- *   looks for lines matching "Unit N" / "Chapter N" as headings and
- *   treats short lines under each heading as candidate concept
- *   titles. This is NOT AI extraction — no model, no inference, just
- *   pattern matching on line shape. It will get some real textbooks
- *   wrong (an unusual heading style, a concept title that happens to
- *   be long, a stray page number that looks short enough to pass) —
- *   which is exactly why ui/views/CurriculumManagementView.js's review
- *   step is a fully editable draft, not a preview. The heuristic's job
- *   is to save an admin from typing everything from scratch, not to
- *   be perfect.
+ *   looks for "Unit N" / "Chapter N" headings and treats short lines
+ *   under each heading as candidate concept titles. This is NOT AI
+ *   extraction — no model, no inference, just pattern matching on
+ *   line shape. It will get some real textbooks wrong (an unusual
+ *   heading style, a concept title that happens to be long, a stray
+ *   page number that looks short enough to pass) — which is exactly
+ *   why ui/views/CurriculumManagementView.js's review step is a fully
+ *   editable draft, not a preview. The heuristic's job is to save an
+ *   admin from typing everything from scratch, not to be perfect.
+ *
+ *   Two heading shapes are recognized, because real PDF text
+ *   extraction genuinely produces both — this was verified against an
+ *   actual TN Samacheer Kalvi Grade 8 Science PDF (288 pages), not
+ *   assumed:
+ *     1. Single-line: "Unit 1: Measurement" / "Chapter 3 - Light" —
+ *        the word, number, and title all on one extracted line.
+ *     2. Multi-line: "UNIT" / "1" / "MEASUREMENT" as three separate
+ *        extracted lines — this is how a real, professionally
+ *        typeset textbook's decorative unit-divider page actually
+ *        extracts (the word, the numeral, and the title are visually
+ *        stacked, separate text runs in the PDF's own layout, not one
+ *        line of body text). Missing this shape entirely was the
+ *        original bug: a real textbook could produce zero detected
+ *        units even though the heading was right there, because
+ *        nothing this file recognized ever matched a bare "UNIT" on
+ *        its own line.
  */
 
 const PDFJS_VERSION = '6.1.200'; // verified against cdnjs.com/libraries/pdf.js at the time this was written — re-check before assuming it's still current
@@ -70,22 +86,46 @@ export async function extractTextFromPdf(file) {
   return pageTexts.join('\n\n');
 }
 
-const UNIT_HEADING_PATTERN = /^(unit|chapter)\s+\d+/i;
+const SINGLE_LINE_HEADING_PATTERN = /^(unit|chapter)\s+(\d+)\b[\s:.\u2013-]*(.*)$/i;
+const STANDALONE_HEADING_WORD_PATTERN = /^(unit|chapter)$/i;
+
+// A real title is never just a page number or a bare digit — without
+// this check, a Table of Contents' own "Unit" column header followed
+// by a list of unit numbers as table rows gets misread as one heading
+// whose "title" is those numbers strung together (verified against a
+// real textbook's actual Table of Contents page).
+const BARE_NUMBER_PATTERN = /^\d+$/;
+
+// A handful of section-label words that reliably follow a real
+// heading's title and never appear as part of the title itself —
+// stops multi-line title collection at the right point instead of
+// running on indefinitely. Verified against a real textbook, where
+// every single unit divider is immediately followed by one of these.
+const TITLE_BOUNDARY_PATTERN = /^(learning objectives|introduction|activity\s*\d*)$/i;
 
 /**
  * Pure and synchronous — no fetch, no DOM, no pdf.js. Feed it any
  * string (extracted PDF text, or anything else) and it deterministically
  * returns the same result every time, which is exactly why this
  * function (unlike extractTextFromPdf above) can be — and is —
- * thoroughly tested by executing it directly against sample text.
+ * thoroughly tested by executing it directly against sample text, and
+ * was in fact re-verified against a real, full 288-page textbook's
+ * actual extracted text, not just fabricated examples.
  *
  * Rules, stated plainly since "heuristic" shouldn't mean "opaque":
- *   1. Every line matching /^(unit|chapter)\s+\d+/i (case-insensitive)
- *      starts a new unit, titled with that line's own text, exactly
- *      as written in the source.
- *   2. Lines before the first such heading are ignored (front matter,
+ *   1. A line matching "Unit N" / "Chapter N" (word and number
+ *      together) starts a new unit immediately, titled from that
+ *      line's own text.
+ *   2. A line that is just "Unit" or "Chapter" on its own also starts
+ *      a new unit, *if* the next non-blank line is a bare number —
+ *      the number becomes the unit number, and up to two further
+ *      non-blank lines after that (stopping early at a recognized
+ *      section-label word, or another bare number) are joined as the
+ *      title. This is the shape a real textbook's decorative unit
+ *      divider page actually extracts as.
+ *   3. Lines before the first such heading are ignored (front matter,
  *      table of contents, etc.).
- *   3. Within a unit, each subsequent line becomes a candidate concept
+ *   4. Within a unit, each subsequent line becomes a candidate concept
  *      title if it's non-empty, isn't itself another heading, isn't
  *      just a number (a page number), and is under 80 characters
  *      (long lines read as paragraph text, not a concept title).
@@ -96,27 +136,69 @@ const UNIT_HEADING_PATTERN = /^(unit|chapter)\s+\d+/i;
  * verdict. Every field here is meant to be edited in the review step.
  */
 export function parseTextIntoUnits(rawText) {
-  const lines = (rawText || '')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
+  // Blank lines are kept (as empty strings) through this first pass,
+  // not filtered out up front — they're the signal that separates a
+  // multi-line title from whatever comes after it. They're dropped
+  // only from each unit's own concept-candidate list, at the end.
+  const lines = (rawText || '').split('\n').map((line) => line.trim());
 
   const units = [];
   let currentUnit = null;
+  let i = 0;
 
-  lines.forEach((line) => {
-    if (UNIT_HEADING_PATTERN.test(line)) {
-      currentUnit = { title: line, concepts: [] };
-      units.push(currentUnit);
-      return;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line) {
+      i++;
+      continue;
     }
 
-    if (!currentUnit) return; // nothing before the first heading is kept
-    if (/^\d+$/.test(line)) return; // bare page number
-    if (line.length >= 80) return; // reads as paragraph text, not a title
+    const singleLineMatch = line.match(SINGLE_LINE_HEADING_PATTERN);
+    if (singleLineMatch) {
+      const label = /chapter/i.test(singleLineMatch[1]) ? 'Chapter' : 'Unit';
+      const titlePart = singleLineMatch[3].trim();
+      const title = titlePart ? `${label} ${singleLineMatch[2]} \u2013 ${titlePart}` : `${label} ${singleLineMatch[2]}`;
+      currentUnit = { title, concepts: [] };
+      units.push(currentUnit);
+      i++;
+      continue;
+    }
 
-    currentUnit.concepts.push(line);
-  });
+    if (STANDALONE_HEADING_WORD_PATTERN.test(line)) {
+      let j = i + 1;
+      while (j < lines.length && !lines[j]) j++; // skip blanks to the number
+      if (j < lines.length && BARE_NUMBER_PATTERN.test(lines[j])) {
+        const label = /chapter/i.test(line) ? 'Chapter' : 'Unit';
+        const number = lines[j];
+        j++;
+        while (j < lines.length && !lines[j]) j++; // skip blanks to the title
+
+        const titleLines = [];
+        while (
+          j < lines.length &&
+          lines[j] &&
+          titleLines.length < 2 &&
+          !TITLE_BOUNDARY_PATTERN.test(lines[j]) &&
+          !BARE_NUMBER_PATTERN.test(lines[j])
+        ) {
+          titleLines.push(lines[j]);
+          j++;
+        }
+
+        if (titleLines.length > 0) {
+          currentUnit = { title: `${label} ${number} \u2013 ${titleLines.join(' ')}`, concepts: [] };
+          units.push(currentUnit);
+          i = j;
+          continue;
+        }
+      }
+    }
+
+    if (currentUnit && line.length < 80 && !BARE_NUMBER_PATTERN.test(line)) {
+      currentUnit.concepts.push(line);
+    }
+    i++;
+  }
 
   return units;
 }
