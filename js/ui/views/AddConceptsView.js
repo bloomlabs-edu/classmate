@@ -49,7 +49,7 @@ export function renderAddConceptsView(container, { classroom, unit, onBack }) {
   let mode = 'source-picker';
   let selectedCurriculum = null;
   let selectedGrade = null;
-  let selectedSubjectEntry = null; // { id, name, packFile }
+  let selectedSubjectEntry = null; // { id, name, submissionId }
   let selectedPack = null; // fetched pack content
   let selectedSourceUnit = null; // the curriculum pack's own unit, not the target classroom unit
   let checkedTitles = null; // Set<string>, only meaningful during 'review'
@@ -81,7 +81,7 @@ export function renderAddConceptsView(container, { classroom, unit, onBack }) {
           selectedSubjectEntry = subjectEntry;
           loadError = null;
           try {
-            selectedPack = await curriculumLibraryService.getPack(subjectEntry.packFile);
+            selectedPack = await curriculumLibraryService.getPack(subjectEntry.submissionId);
           } catch (error) {
             console.error('[AddConceptsView] Failed to load curriculum pack:', error);
             loadError = "Couldn't load this subject's units. Check your connection and try again.";

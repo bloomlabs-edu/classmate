@@ -9,6 +9,10 @@
  *
  * Deliberately short and generic rather than exhaustive — "Other"
  * exists precisely so this list doesn't need to cover everything.
+ * "Maths" (not "Mathematics") matches
+ * ui/views/LearningRecordView.js's own DEFAULT_SUBJECT_NAMES exactly
+ * — the two lists disagreeing on wording once caused the same subject
+ * to appear twice (once auto-seeded, once offered here as if new).
  *
  * No logic here, only data — same convention as
  * config/resourceTypeConfig.js and config/learningRecordConfig.js.
@@ -16,7 +20,7 @@
 
 export const COMMON_SUBJECTS = Object.freeze([
   'Science',
-  'Mathematics',
+  'Maths',
   'English',
   'Social Science',
   'Hindi',

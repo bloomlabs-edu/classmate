@@ -2,13 +2,19 @@
  * services/curriculumPackBuilderService.js
  *
  * Manages a Curriculum Pack while an admin is building it in
- * ui/views/CurriculumManagementView.js — before it's a real file on
- * disk. A draft's units/concepts are plain objects with ids (for
- * stable UI keys while editing), unlike the final exported JSON,
- * where a unit's concepts are a plain string array — exactly matching
- * the shape services/curriculumLibraryService.js and
- * data/curriculum/*.json already use. exportPackJson() is the one
- * place that difference gets flattened out.
+ * ui/views/CurriculumManagementView.js's Contribute Curriculum flow —
+ * before it's a real, published entry in the Curriculum Library.
+ * createDraftPack() captures the full standardized metadata set
+ * up front, before any extraction happens — Curriculum Name, Board,
+ * Grade, Subject, Academic Year, Version, Language, Publisher — so a
+ * published curriculum never has placeholder or back-filled fields.
+ *
+ * A draft's units/concepts are plain objects with ids (for stable UI
+ * keys while editing), unlike the final exported JSON, where a unit's
+ * concepts are a plain string array — exactly matching the shape
+ * services/curriculumSubmissionsService.js stores and
+ * services/curriculumLibraryService.js reads. exportPackJson() is the
+ * one place that difference gets flattened out.
  *
  * Same mutate-in-place convention as every other service in this
  * app's editing screens: functions here mutate the draft object
@@ -25,11 +31,16 @@
 
 import { generateId } from '../utils/idGenerator.js';
 
-export function createDraftPack({ curriculumName, gradeName, subjectName }) {
+export function createDraftPack({ curriculumName, board, gradeName, subjectName, academicYear, versionLabel, language, publisher }) {
   return {
     curriculumName,
+    board,
     gradeName,
     subjectName,
+    academicYear,
+    versionLabel,
+    language,
+    publisher,
     units: [],
   };
 }
@@ -108,7 +119,7 @@ export function moveDraftConceptDown(draft, unitId, conceptId) {
   [unit.concepts[index], unit.concepts[index + 1]] = [unit.concepts[index + 1], unit.concepts[index]];
 }
 
-function slugify(text) {
+export function slugify(text) {
   return text
     .toLowerCase()
     .trim()
@@ -117,51 +128,30 @@ function slugify(text) {
 }
 
 /**
- * Produces the exact JSON shape data/curriculum/*.json pack files
- * already use — services/curriculumLibraryService.js's getPack() and
- * materializeUnitAndConcept() read this shape directly, with no
- * awareness this builder exists.
+ * Produces the exact JSON shape services/curriculumLibraryService.js's
+ * getPublishedLibrary() groups by curriculum+version — see this
+ * project's Curriculum Library Data Integrity milestone. Every field
+ * a curriculum card and its Details screen show (Board, Academic
+ * Year, Version, Language, Publisher) is captured here, not
+ * back-filled later — a published curriculum never has placeholder
+ * metadata.
  */
 export function exportPackJson(draft) {
   const id = `${slugify(draft.curriculumName)}-${slugify(draft.gradeName)}-${slugify(draft.subjectName)}`;
   return {
     id,
     curriculum: draft.curriculumName,
+    board: draft.board,
     grade: draft.gradeName,
     subject: draft.subjectName,
+    academicYear: draft.academicYear,
+    versionLabel: draft.versionLabel,
+    language: draft.language,
+    publisher: draft.publisher,
     units: draft.units.map((unit) => ({
       id: slugify(unit.title),
       title: unit.title,
       concepts: unit.concepts.map((concept) => concept.title),
     })),
-  };
-}
-
-/**
- * The manifest.json entry an admin needs to add by hand — see
- * ui/views/CurriculumManagementView.js's Save step for why this is a
- * copyable snippet rather than a live write: a static site has no
- * server to write a new file to at runtime. If the curriculum/grade
- * already exists in the live manifest, only the `subjects` array
- * entry needs merging in, not this whole structure — the Save screen
- * says so explicitly.
- */
-export function exportManifestSnippet(draft, packFileName) {
-  return {
-    id: slugify(draft.curriculumName),
-    name: draft.curriculumName,
-    grades: [
-      {
-        id: slugify(draft.gradeName),
-        name: draft.gradeName,
-        subjects: [
-          {
-            id: slugify(draft.subjectName),
-            name: draft.subjectName,
-            packFile: packFileName,
-          },
-        ],
-      },
-    ],
   };
 }

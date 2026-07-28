@@ -65,9 +65,10 @@
  *                    Library milestone): a classroom references a
  *                    specific *version* of a curriculum from the
  *                    global library (see
- *                    services/curriculumLibraryService.js,
- *                    data/curriculum/manifest.json's Official/
- *                    Community/Curriculum/Version structure) —
+ *                    services/curriculumLibraryService.js's
+ *                    Official/Community/Curriculum/Version structure,
+ *                    built from actually-published submissions — see
+ *                    services/curriculumSubmissionsService.js) —
  *                    deliberately just two permanent IDs, never a copy
  *                    of the curriculum's actual data, so a classroom
  *                    can stay on the edition it started the year with

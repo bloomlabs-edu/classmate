@@ -19,20 +19,25 @@
  *     Preview Structure reuses the *exact same* explorer Learning
  *     Management uses (see ui/components/CurriculumExplorerPanel.js)
  *     — no second viewer. No upload capability anywhere in this
- *     screen or its children.
- *   - ➕ Contribute Curriculum — the renamed upload flow (Upload PDF ->
- *     Extract -> Review -> Submit). Submitting does *not* add
- *     anything to the Library — it goes to
- *     services/contributedCurriculaService.js with status
- *     'pending_review' instead. This milestone still simulates the
- *     review step rather than building real reviewer tooling — a
- *     future phase's actual "review submissions" screen belongs here,
- *     reading from that same pending store, alongside version
- *     management (publishing a new version of an existing curriculum,
- *     retiring an old one) as this workspace's next real
- *     administrative capabilities. Neither is built yet; this file's
- *     job is staying the one place they'll eventually live, not
- *     pretending they exist today.
+ *     screen or its children. Curriculum Library Data Integrity
+ *     milestone: this screen only ever shows curricula that are
+ *     actually published — see services/curriculumSubmissionsService.js.
+ *     A fresh install shows a real, informative empty state here
+ *     instead of hardcoded sample cards.
+ *   - ➕ Contribute Curriculum — the upload flow (capture standardized
+ *     metadata -> Upload PDF or start blank -> Extract -> Review ->
+ *     Submit). Submitting does *not* add anything to the Library — it
+ *     goes to services/curriculumSubmissionsService.js with status
+ *     'pending_review' instead.
+ *   - 🔍 Review Submissions — where 'pending_review' actually becomes
+ *     'published'. An admin opens a pending submission, decides
+ *     Official vs. Community, and publishes it — the one and only way
+ *     anything ever reaches Browse Curriculum Library. This milestone
+ *     still doesn't build a rejection flow, an audit trail, or
+ *     multi-reviewer coordination — "the important part is the
+ *     architecture" carries over from the earlier milestone that
+ *     first introduced this pending/published split. What's real now:
+ *     the publish step itself, not a simulation of it.
  *
  * A classroom's curriculum assignment still only ever stores
  * `{ curriculumId, versionId }` (see models/Classroom.js) — never a
@@ -50,7 +55,7 @@
 import * as curriculumLibraryService from '../../services/curriculumLibraryService.js';
 import * as curriculumPdfParsingService from '../../services/curriculumPdfParsingService.js';
 import * as curriculumPackBuilderService from '../../services/curriculumPackBuilderService.js';
-import * as contributedCurriculaService from '../../services/contributedCurriculaService.js';
+import * as curriculumSubmissionsService from '../../services/curriculumSubmissionsService.js';
 import { createIcon } from '../components/Icon.js';
 import { createCurriculumExplorerPanel } from '../components/CurriculumExplorerPanel.js';
 import { showToast } from '../components/Toast.js';
@@ -72,6 +77,9 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
   let extractError = null;
   let submittedContribution = null;
 
+  // Review Submissions state.
+  let selectedSubmission = null;
+
   function rerender() {
     renderView(
       container,
@@ -86,6 +94,7 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
         draft,
         extractError,
         submittedContribution,
+        selectedSubmission,
       },
       {
         onBack,
@@ -130,7 +139,7 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
           previewSubjectEntry = subjectEntry;
           loadError = null;
           try {
-            previewPack = await curriculumLibraryService.getPack(subjectEntry.packFile);
+            previewPack = await curriculumLibraryService.getPack(subjectEntry.submissionId);
           } catch (error) {
             console.error('[CurriculumManagementView] Failed to load pack for preview:', error);
             loadError = "Couldn't load this subject's structure. Check your connection and try again.";
@@ -150,13 +159,13 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
           mode = 'contribute-create';
           rerender();
         },
-        onCreateDraft: (curriculumName, gradeName, subjectName) => {
-          draft = curriculumPackBuilderService.createDraftPack({ curriculumName, gradeName, subjectName });
+        onCreateDraft: (metadata) => {
+          draft = curriculumPackBuilderService.createDraftPack(metadata);
           mode = 'contribute-review';
           rerender();
         },
-        onUploadPdf: async (curriculumName, gradeName, subjectName, file) => {
-          draft = curriculumPackBuilderService.createDraftPack({ curriculumName, gradeName, subjectName });
+        onUploadPdf: async (metadata, file) => {
+          draft = curriculumPackBuilderService.createDraftPack(metadata);
           extractError = null;
           mode = 'contribute-extracting';
           rerender();
@@ -215,8 +224,25 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
         },
         onSubmitContribution: () => {
           const packJson = curriculumPackBuilderService.exportPackJson(draft);
-          submittedContribution = contributedCurriculaService.submitContribution(packJson);
+          submittedContribution = curriculumSubmissionsService.submitContribution(packJson);
           mode = 'contribute-submitted';
+          rerender();
+        },
+        onGoToReview: () => {
+          selectedSubmission = null;
+          mode = 'review-list';
+          rerender();
+        },
+        onSelectSubmission: (submission) => {
+          selectedSubmission = submission;
+          expandedUnitId = null;
+          mode = 'review-detail';
+          rerender();
+        },
+        onPublishSubmission: (reviewStatus) => {
+          curriculumSubmissionsService.publishSubmission(selectedSubmission.id, { reviewStatus });
+          showToast(`${selectedSubmission.packJson.curriculum} published`);
+          mode = 'review-list';
           rerender();
         },
         onBackTo: (targetMode) => {
@@ -256,6 +282,8 @@ function renderView(container, mode, state, handlers) {
       'contribute-extracting': 'contribute-create',
       'contribute-review': 'contribute-create',
       'contribute-submitted': 'hub',
+      'review-list': 'hub',
+      'review-detail': 'review-list',
     }[mode];
     handlers.onBackTo(previous);
   });
@@ -286,6 +314,10 @@ function renderView(container, mode, state, handlers) {
     wrapper.appendChild(renderContributeReviewStep(state, handlers));
   } else if (mode === 'contribute-submitted') {
     wrapper.appendChild(renderContributeSubmittedStep(state.submittedContribution));
+  } else if (mode === 'review-list') {
+    wrapper.appendChild(renderReviewListStep(handlers));
+  } else if (mode === 'review-detail') {
+    wrapper.appendChild(renderReviewDetailStep(state.selectedSubmission, state.expandedUnitId, handlers));
   } else {
     wrapper.appendChild(renderHubStep(handlers));
   }
@@ -301,14 +333,24 @@ function renderHubStep(handlers) {
 
   const intro = document.createElement('p');
   intro.className = 'curriculum-management__intro';
-  intro.textContent = 'Browse and contribute curricula. This is a separate, occasional workspace — not part of daily lesson prep.';
+  intro.textContent = 'Browse, contribute, and review curricula. This is a separate, occasional workspace — not part of daily lesson prep.';
   section.appendChild(intro);
 
   const grid = document.createElement('div');
   grid.className = 'curriculum-management__hub-grid';
 
+  const pendingCount = curriculumSubmissionsService.getPendingSubmissions().length;
+
   grid.appendChild(createHubCard('\ud83d\udcda', 'Browse Curriculum Library', 'Official and community curricula', handlers.onGoToBrowse));
   grid.appendChild(createHubCard('\u2795', 'Contribute Curriculum', 'Submit a curriculum for review', handlers.onGoToContribute));
+  grid.appendChild(
+    createHubCard(
+      '\ud83d\udd0d',
+      'Review Submissions',
+      pendingCount > 0 ? `${pendingCount} awaiting review` : 'Nothing waiting right now',
+      handlers.onGoToReview
+    )
+  );
 
   section.appendChild(grid);
   return section;
@@ -359,8 +401,12 @@ function renderBrowseStep(handlers) {
     .getLibrary()
     .then(({ official, community }) => {
       loadingNote.remove();
-      section.appendChild(renderCurriculumSection('Official', official, handlers));
-      section.appendChild(renderCurriculumSection('Community', community, handlers));
+      if (official.length === 0 && community.length === 0) {
+        section.appendChild(renderBrowseEmptyState(handlers));
+        return;
+      }
+      if (official.length > 0) section.appendChild(renderCurriculumSection('Official', official, handlers));
+      if (community.length > 0) section.appendChild(renderCurriculumSection('Community', community, handlers));
     })
     .catch((error) => {
       console.error('[CurriculumManagementView] Failed to load the library:', error);
@@ -368,6 +414,36 @@ function renderBrowseStep(handlers) {
     });
 
   return section;
+}
+
+function renderBrowseEmptyState(handlers) {
+  const wrap = document.createElement('div');
+  wrap.className = 'curriculum-management__empty-state';
+
+  const icon = document.createElement('span');
+  icon.className = 'curriculum-management__empty-state-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = '\ud83d\udcda';
+  wrap.appendChild(icon);
+
+  const title = document.createElement('p');
+  title.className = 'curriculum-management__empty-state-title';
+  title.textContent = 'The Curriculum Library is empty';
+  wrap.appendChild(title);
+
+  const message = document.createElement('p');
+  message.className = 'curriculum-management__empty-state-message';
+  message.textContent = 'Nothing has been uploaded and published yet. Contribute a curriculum to get started — once it\u2019s reviewed and published, it\u2019ll show up here.';
+  wrap.appendChild(message);
+
+  const uploadButton = document.createElement('button');
+  uploadButton.type = 'button';
+  uploadButton.className = 'btn btn--primary';
+  uploadButton.textContent = 'Upload Curriculum';
+  uploadButton.addEventListener('click', handlers.onGoToContribute);
+  wrap.appendChild(uploadButton);
+
+  return wrap;
 }
 
 function renderCurriculumSection(label, curricula, handlers) {
@@ -466,6 +542,8 @@ function renderCurriculumDetailsStep(curriculum, handlers) {
     card.appendChild(createDetailRow('Grades', gradeNames.join(', ')));
     card.appendChild(createDetailRow('Subjects', subjectNames.join('\n')));
     card.appendChild(createDetailRow('Version', latestVersion.versionLabel));
+    card.appendChild(createDetailRow('Academic Year', latestVersion.academicYear));
+    card.appendChild(createDetailRow('Language', latestVersion.language));
 
     const actions = document.createElement('div');
     actions.className = 'curriculum-management__details-actions';
@@ -607,10 +685,56 @@ function renderContributeCreateStep(handlers) {
   const form = document.createElement('div');
   form.className = 'curriculum-management__create-form';
 
+  // Standardized metadata, captured up front — before any extraction
+  // happens — so a published curriculum never has placeholder or
+  // back-filled fields. See services/curriculumPackBuilderService.js's
+  // createDraftPack() for the exact shape this feeds.
   const curriculumInput = createLabeledInput('Curriculum name', 'e.g. Samacheer Kalvi');
+  const boardInput = createLabeledInput('Board', 'e.g. Tamil Nadu State Board');
   const gradeInput = createLabeledInput('Grade', 'e.g. Grade 8');
   const subjectInput = createLabeledInput('Subject', 'e.g. Science');
-  form.append(curriculumInput.wrapper, gradeInput.wrapper, subjectInput.wrapper);
+  const academicYearInput = createLabeledInput('Academic Year', 'e.g. 2026\u201327');
+  const versionInput = createLabeledInput('Version', 'e.g. 2026');
+  const languageInput = createLabeledInput('Language', 'e.g. English');
+  const publisherInput = createLabeledInput('Publisher', 'e.g. Tamil Nadu School Education Department');
+  form.append(
+    curriculumInput.wrapper,
+    boardInput.wrapper,
+    gradeInput.wrapper,
+    subjectInput.wrapper,
+    academicYearInput.wrapper,
+    versionInput.wrapper,
+    languageInput.wrapper,
+    publisherInput.wrapper
+  );
+
+  function readMetadata() {
+    return {
+      curriculumName: curriculumInput.input.value.trim(),
+      board: boardInput.input.value.trim(),
+      gradeName: gradeInput.input.value.trim(),
+      subjectName: subjectInput.input.value.trim(),
+      academicYear: academicYearInput.input.value.trim(),
+      versionLabel: versionInput.input.value.trim(),
+      language: languageInput.input.value.trim(),
+      publisher: publisherInput.input.value.trim(),
+    };
+  }
+
+  function validateMetadata(metadata) {
+    const requiredLabels = {
+      curriculumName: 'Curriculum name',
+      board: 'Board',
+      gradeName: 'Grade',
+      subjectName: 'Subject',
+      academicYear: 'Academic Year',
+      versionLabel: 'Version',
+      language: 'Language',
+      publisher: 'Publisher',
+    };
+    const missing = Object.entries(requiredLabels).find(([key]) => !metadata[key]);
+    return missing ? missing[1] : null;
+  }
 
   const fileLabel = document.createElement('label');
   fileLabel.className = 'curriculum-management__file-label';
@@ -626,19 +750,18 @@ function renderContributeCreateStep(handlers) {
   uploadButton.className = 'btn btn--primary';
   uploadButton.textContent = 'Upload & Extract';
   uploadButton.addEventListener('click', () => {
-    const curriculumName = curriculumInput.input.value.trim();
-    const gradeName = gradeInput.input.value.trim();
-    const subjectName = subjectInput.input.value.trim();
-    const file = fileInput.files[0];
-    if (!curriculumName || !gradeName || !subjectName) {
-      showToast('Fill in curriculum, grade, and subject first');
+    const metadata = readMetadata();
+    const missingLabel = validateMetadata(metadata);
+    if (missingLabel) {
+      showToast(`${missingLabel} is required`);
       return;
     }
+    const file = fileInput.files[0];
     if (!file) {
       showToast('Choose a PDF first, or use "Start From Scratch" below');
       return;
     }
-    handlers.onUploadPdf(curriculumName, gradeName, subjectName, file);
+    handlers.onUploadPdf(metadata, file);
   });
   form.appendChild(uploadButton);
 
@@ -647,14 +770,13 @@ function renderContributeCreateStep(handlers) {
   blankButton.className = 'btn btn--ghost';
   blankButton.textContent = 'Start From Scratch (no PDF)';
   blankButton.addEventListener('click', () => {
-    const curriculumName = curriculumInput.input.value.trim();
-    const gradeName = gradeInput.input.value.trim();
-    const subjectName = subjectInput.input.value.trim();
-    if (!curriculumName || !gradeName || !subjectName) {
-      showToast('Fill in curriculum, grade, and subject first');
+    const metadata = readMetadata();
+    const missingLabel = validateMetadata(metadata);
+    if (missingLabel) {
+      showToast(`${missingLabel} is required`);
       return;
     }
-    handlers.onCreateDraft(curriculumName, gradeName, subjectName);
+    handlers.onCreateDraft(metadata);
   });
   form.appendChild(blankButton);
 
@@ -879,6 +1001,131 @@ function renderContributeSubmittedStep(contribution) {
   explanation.textContent =
     'This won\u2019t appear in the Curriculum Library until it\u2019s reviewed and approved. You can check back here — contributions aren\u2019t published automatically.';
   section.appendChild(explanation);
+
+  return section;
+}
+
+// ---- Review Submissions ------------------------------------------------
+
+function renderReviewListStep(handlers) {
+  const section = document.createElement('div');
+  section.className = 'curriculum-management__section';
+
+  const heading = document.createElement('p');
+  heading.className = 'curriculum-management__step-heading';
+  heading.textContent = 'Review Submissions';
+  section.appendChild(heading);
+
+  const pending = curriculumSubmissionsService.getPendingSubmissions();
+
+  if (pending.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'curriculum-management__intro';
+    empty.textContent = 'Nothing is waiting for review right now.';
+    section.appendChild(empty);
+    return section;
+  }
+
+  const list = document.createElement('div');
+  list.className = 'curriculum-management__review-list';
+  pending.forEach((submission) => {
+    list.appendChild(createReviewListRow(submission, handlers));
+  });
+  section.appendChild(list);
+
+  return section;
+}
+
+function createReviewListRow(submission, handlers) {
+  const { packJson } = submission;
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'curriculum-management__review-row';
+
+  const titleEl = document.createElement('span');
+  titleEl.className = 'curriculum-management__review-row-title';
+  titleEl.textContent = `${packJson.curriculum} \u00b7 ${packJson.grade} \u00b7 ${packJson.subject}`;
+  row.appendChild(titleEl);
+
+  const metaEl = document.createElement('span');
+  metaEl.className = 'curriculum-management__review-row-meta';
+  metaEl.textContent = `${packJson.publisher} \u00b7 Version ${packJson.versionLabel} \u00b7 Submitted ${formatSubmittedDate(submission.submittedAt)}`;
+  row.appendChild(metaEl);
+
+  row.addEventListener('click', () => handlers.onSelectSubmission(submission));
+  return row;
+}
+
+function formatSubmittedDate(isoDate) {
+  try {
+    return new Date(isoDate).toLocaleDateString();
+  } catch {
+    return isoDate;
+  }
+}
+
+function renderReviewDetailStep(submission, expandedUnitId, handlers) {
+  const { packJson } = submission;
+  const section = document.createElement('div');
+  section.className = 'curriculum-management__section';
+
+  const heading = document.createElement('p');
+  heading.className = 'curriculum-management__step-heading';
+  heading.textContent = `${packJson.curriculum} \u00b7 ${packJson.grade} \u00b7 ${packJson.subject}`;
+  section.appendChild(heading);
+
+  const card = document.createElement('div');
+  card.className = 'curriculum-management__details-card';
+  card.appendChild(createDetailRow('Publisher', packJson.publisher));
+  card.appendChild(createDetailRow('Board', packJson.board));
+  card.appendChild(createDetailRow('Grade', packJson.grade));
+  card.appendChild(createDetailRow('Subject', packJson.subject));
+  card.appendChild(createDetailRow('Academic Year', packJson.academicYear));
+  card.appendChild(createDetailRow('Version', packJson.versionLabel));
+  card.appendChild(createDetailRow('Language', packJson.language));
+  card.appendChild(createDetailRow('Submitted', formatSubmittedDate(submission.submittedAt)));
+  section.appendChild(card);
+
+  const structureHeading = document.createElement('p');
+  structureHeading.className = 'curriculum-management__intro';
+  structureHeading.textContent = `${packJson.units.length} unit${packJson.units.length === 1 ? '' : 's'} submitted for review:`;
+  section.appendChild(structureHeading);
+
+  // Read-only inspection, same shared explorer Learning Management
+  // and Preview Structure both use — see
+  // ui/components/CurriculumExplorerPanel.js's own doc comment.
+  const normalizedUnits = packJson.units.map((unit) => ({
+    id: unit.id,
+    title: unit.title,
+    concepts: unit.concepts.map((conceptTitle) => ({ id: conceptTitle, title: conceptTitle })),
+  }));
+  section.appendChild(
+    createCurriculumExplorerPanel({
+      units: normalizedUnits,
+      expandedUnitId,
+      onToggleUnit: handlers.onToggleUnit,
+      readOnly: true,
+    })
+  );
+
+  const actions = document.createElement('div');
+  actions.className = 'curriculum-management__details-actions';
+
+  const publishOfficialButton = document.createElement('button');
+  publishOfficialButton.type = 'button';
+  publishOfficialButton.className = 'btn btn--primary';
+  publishOfficialButton.textContent = '\u2b50 Publish as Official';
+  publishOfficialButton.addEventListener('click', () => handlers.onPublishSubmission('official'));
+  actions.appendChild(publishOfficialButton);
+
+  const publishCommunityButton = document.createElement('button');
+  publishCommunityButton.type = 'button';
+  publishCommunityButton.className = 'btn btn--ghost';
+  publishCommunityButton.textContent = 'Publish as Community';
+  publishCommunityButton.addEventListener('click', () => handlers.onPublishSubmission('community'));
+  actions.appendChild(publishCommunityButton);
+
+  section.appendChild(actions);
 
   return section;
 }
