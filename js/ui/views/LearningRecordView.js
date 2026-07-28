@@ -33,6 +33,7 @@ import * as workspaceService from '../../services/workspaceService.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
 import * as learningRecordTeacherService from '../../services/learningRecordTeacherService.js';
 import { createIcon } from '../components/Icon.js';
+import { createSubjectPickerElement } from '../components/SubjectPicker.js';
 import { renderConceptWorkspaceView, createTaughtToggle } from './ConceptWorkspaceView.js';
 import { renderAddConceptsView } from './AddConceptsView.js';
 
@@ -165,10 +166,13 @@ function renderSubjectsLevel(classroom, handlers) {
   });
 
   section.appendChild(
-    createAddForm('New subject name (e.g. Science)', '+ Add Subject', (title) => {
-      learningRecordTeacherService.createSubject(classroom, { title });
-      workspaceService.save(classroom);
-      handlers.rerender();
+    createSubjectPickerElement({
+      existingSubjectTitles: subjects.map((subj) => subj.title),
+      onAddSubject: (title) => {
+        learningRecordTeacherService.createSubject(classroom, { title });
+        workspaceService.save(classroom);
+        handlers.rerender();
+      },
     })
   );
 

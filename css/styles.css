@@ -5913,3 +5913,54 @@ button.wizard-checklist__row:hover {
 .assign-curriculum-prompt__detail-value {
   font-size: 1rem;
 }
+
+/* SubjectPicker — buttons first, "Other" reveals free text. See
+   ui/components/SubjectPicker.js's own doc comment on why this
+   pattern is Subject-specific, and on the CSS visibility mistake this
+   file is deliberately structured to avoid repeating. */
+.subject-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.subject-picker__grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.subject-picker__option {
+  padding: 0.6rem 1rem;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background-color: #ffffff;
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+}
+.subject-picker__option:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.subject-picker__option--other {
+  border-style: dashed;
+  color: var(--color-muted);
+}
+/* No `display` set here on purpose — this element has nothing to
+   hide/show by default (it simply isn't visible until the
+   `--visible` class below is added), so there's no rule here that
+   could conflict with a `hidden` attribute the way
+   ui/components/NewClassroomModal.js's curriculum picker once did. */
+.subject-picker__custom-form {
+  display: none;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.subject-picker__custom-form--visible {
+  display: flex;
+}
+.subject-picker__custom-form input[type='text'] {
+  flex: 1;
+  min-width: 200px;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}

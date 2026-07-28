@@ -58,6 +58,7 @@ import { getResourceTypeIcon } from '../../config/resourceTypeConfig.js';
 import { getDisplayName } from '../../services/classroomService.js';
 import { createIcon } from '../components/Icon.js';
 import { createCurriculumExplorerPanel } from '../components/CurriculumExplorerPanel.js';
+import { createSubjectPickerElement } from '../components/SubjectPicker.js';
 import { renderReadingEditorView } from './ReadingEditorView.js';
 import { renderConceptWorkspaceView } from './ConceptWorkspaceView.js';
 import { renderLearningRecordView } from './LearningRecordView.js';
@@ -270,10 +271,13 @@ function renderChooseSubjectStep(classroom, handlers) {
   }
 
   section.appendChild(
-    createInlineAddForm('New subject name (e.g. Science)', '+ Add Subject', (title) => {
-      const subject = learningRecordTeacherService.createSubject(classroom, { title });
-      workspaceService.save(classroom);
-      handlers.onChooseSubject(subject);
+    createSubjectPickerElement({
+      existingSubjectTitles: subjects.map((subject) => subject.title),
+      onAddSubject: (title) => {
+        const subject = learningRecordTeacherService.createSubject(classroom, { title });
+        workspaceService.save(classroom);
+        handlers.onChooseSubject(subject);
+      },
     })
   );
 
