@@ -6023,3 +6023,106 @@ button.wizard-checklist__row:hover {
   font-size: 0.82rem;
   color: var(--color-muted);
 }
+
+/* Extraction & Parsing Diagnostics — see
+   ui/views/CurriculumManagementView.js's renderExtractionDiagnosticsStep()
+   and renderParsingFailedStep(). Debugging screens, deliberately plain
+   and monospace-leaning where it shows raw extracted data. */
+.curriculum-management__diagnostics-page-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  max-height: 200px;
+  overflow-y: auto;
+  background-color: #ffffff;
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+}
+.curriculum-management__diagnostics-page-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  padding: 0.15rem 0;
+}
+.curriculum-management__diagnostics-page-count {
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+.curriculum-management__diagnostics-preview-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.curriculum-management__diagnostics-preview-label {
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+  margin: 0;
+}
+.curriculum-management__diagnostics-preview-text {
+  background-color: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  max-height: 160px;
+  overflow-y: auto;
+  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--color-ink);
+  margin: 0;
+}
+.curriculum-management__diagnostics-pattern-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.curriculum-management__diagnostics-pattern-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  background-color: #ffffff;
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+}
+.curriculum-management__diagnostics-pattern-label {
+  font-size: 0.82rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+}
+.curriculum-management__diagnostics-pattern-code {
+  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+  font-size: 0.8rem;
+  word-break: break-all;
+  color: var(--color-primary);
+}
+.curriculum-management__diagnostics-candidate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.curriculum-management__diagnostics-candidate-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  background-color: #ffffff;
+  border-radius: 10px;
+  padding: 0.6rem 0.85rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+}
+.curriculum-management__diagnostics-candidate-line-number {
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+}
+.curriculum-management__diagnostics-candidate-context {
+  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+  font-size: 0.8rem;
+  word-break: break-word;
+}

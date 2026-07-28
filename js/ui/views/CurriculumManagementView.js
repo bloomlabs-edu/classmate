@@ -76,6 +76,9 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
   let draft = null;
   let extractError = null;
   let submittedContribution = null;
+  let pendingMetadata = null; // held between "Upload & Extract" and "Continue to Parsing"
+  let extractionDiagnostics = null; // { pageTexts, fullText, pageCount }
+  let parsingFailureDiagnostics = null; // { candidateLines } — only set when parsing finds zero units
 
   // Review Submissions state.
   let selectedSubmission = null;
@@ -95,6 +98,8 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
         extractError,
         submittedContribution,
         selectedSubmission,
+        extractionDiagnostics,
+        parsingFailureDiagnostics,
       },
       {
         onBack,
@@ -165,34 +170,39 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
           rerender();
         },
         onUploadPdf: async (metadata, file) => {
-          draft = curriculumPackBuilderService.createDraftPack(metadata);
+          pendingMetadata = metadata;
           extractError = null;
+          extractionDiagnostics = null;
+          parsingFailureDiagnostics = null;
           mode = 'contribute-extracting';
           rerender();
           try {
-            const rawText = await curriculumPdfParsingService.extractTextFromPdf(file);
-            const extractedUnits = curriculumPdfParsingService.parseTextIntoUnits(rawText);
-            curriculumPackBuilderService.loadExtractedUnitsIntoDraft(draft, extractedUnits);
-            if (extractedUnits.length === 0) {
-              // Diagnostic detail, not just a generic message — this
-              // distinguishes two very different real causes: pdf.js
-              // extracting little or no text at all (worker/CORS/load
-              // failure, often silent rather than a thrown error) vs.
-              // text extracting fine but not matching either heading
-              // shape parseTextIntoUnits() recognizes. Whichever it is
-              // is now visible on screen, not just in a console log
-              // nobody may think to open.
-              const charCount = rawText.length;
-              const preview = rawText.trim().slice(0, 160).replace(/\s+/g, ' ');
-              extractError =
-                charCount < 50
-                  ? `Couldn't find any "Unit N" or "Chapter N" headings in this PDF — and only ${charCount} characters of text were extracted at all, which usually means the PDF reader itself didn't load correctly rather than the heading search failing. Try again, and if this repeats, the extracted-text preview is: "${preview || '(nothing)'}"`
-                  : `Couldn't find any "Unit N" or "Chapter N" headings in this PDF (${charCount.toLocaleString()} characters were extracted, so the reader worked — the heading shape just didn't match). You can still add units and concepts manually below. Extracted text starts with: "${preview}"`;
-            }
+            const { pageTexts, fullText } = await curriculumPdfParsingService.extractTextFromPdf(file);
+            extractionDiagnostics = { pageTexts, fullText, pageCount: pageTexts.length };
+            mode = 'contribute-diagnostics';
           } catch (error) {
             console.error('[CurriculumManagementView] PDF extraction failed:', error);
             extractError = `Couldn't read that PDF (${error.message || error}). You can still add units and concepts manually below.`;
+            draft = curriculumPackBuilderService.createDraftPack(metadata);
+            mode = 'contribute-review';
           }
+          rerender();
+        },
+        onContinueToParsing: () => {
+          const extractedUnits = curriculumPdfParsingService.parseTextIntoUnits(extractionDiagnostics.fullText);
+          draft = curriculumPackBuilderService.createDraftPack(pendingMetadata);
+          if (extractedUnits.length > 0) {
+            curriculumPackBuilderService.loadExtractedUnitsIntoDraft(draft, extractedUnits);
+            mode = 'contribute-review';
+          } else {
+            parsingFailureDiagnostics = {
+              candidateLines: curriculumPdfParsingService.findHeadingCandidateLines(extractionDiagnostics.fullText, 20),
+            };
+            mode = 'contribute-parsing-failed';
+          }
+          rerender();
+        },
+        onContinueToManualEntry: () => {
           mode = 'contribute-review';
           rerender();
         },
@@ -292,6 +302,8 @@ function renderView(container, mode, state, handlers) {
       'preview-structure': 'curriculum-details',
       'contribute-create': 'hub',
       'contribute-extracting': 'contribute-create',
+      'contribute-diagnostics': 'contribute-create',
+      'contribute-parsing-failed': 'contribute-diagnostics',
       'contribute-review': 'contribute-create',
       'contribute-submitted': 'hub',
       'review-list': 'hub',
@@ -322,6 +334,10 @@ function renderView(container, mode, state, handlers) {
     wrapper.appendChild(renderContributeCreateStep(handlers));
   } else if (mode === 'contribute-extracting') {
     wrapper.appendChild(renderExtractingStep());
+  } else if (mode === 'contribute-diagnostics') {
+    wrapper.appendChild(renderExtractionDiagnosticsStep(state.extractionDiagnostics, handlers));
+  } else if (mode === 'contribute-parsing-failed') {
+    wrapper.appendChild(renderParsingFailedStep(state.parsingFailureDiagnostics, handlers));
   } else if (mode === 'contribute-review') {
     wrapper.appendChild(renderContributeReviewStep(state, handlers));
   } else if (mode === 'contribute-submitted') {
@@ -813,8 +829,187 @@ function renderExtractingStep() {
   section.className = 'curriculum-management__section';
   const message = document.createElement('p');
   message.className = 'curriculum-management__intro';
-  message.textContent = 'Reading the PDF and looking for units\u2026';
+  message.textContent = 'Reading the PDF\u2026';
   section.appendChild(message);
+  return section;
+}
+
+/**
+ * Shown after extraction completes, before any parsing runs at all —
+ * "the parser should operate only after the extracted text is
+ * visible" (explicit instruction, after two rounds of parser fixes
+ * each individually verified but neither resolving a real, repeated
+ * failure). This screen exists to answer one question definitively,
+ * with evidence instead of another guess: did text extraction itself
+ * actually work?
+ */
+function renderExtractionDiagnosticsStep(diagnostics, handlers) {
+  const { pageTexts, fullText, pageCount } = diagnostics;
+  const section = document.createElement('div');
+  section.className = 'curriculum-management__section';
+
+  const heading = document.createElement('p');
+  heading.className = 'curriculum-management__step-heading';
+  heading.textContent = 'Extraction Diagnostics';
+  section.appendChild(heading);
+
+  const summaryCard = document.createElement('div');
+  summaryCard.className = 'curriculum-management__details-card';
+  summaryCard.appendChild(createDetailRow('Total pages', String(pageCount)));
+  summaryCard.appendChild(createDetailRow('Total characters extracted', fullText.length.toLocaleString()));
+  section.appendChild(summaryCard);
+
+  const perPageHeading = document.createElement('p');
+  perPageHeading.className = 'curriculum-management__intro';
+  perPageHeading.textContent = 'Characters extracted per page:';
+  section.appendChild(perPageHeading);
+
+  const perPageList = document.createElement('div');
+  perPageList.className = 'curriculum-management__diagnostics-page-list';
+  pageTexts.forEach((pageText, index) => {
+    const row = document.createElement('div');
+    row.className = 'curriculum-management__diagnostics-page-row';
+    const label = document.createElement('span');
+    label.textContent = `Page ${index + 1}`;
+    const count = document.createElement('span');
+    count.className = 'curriculum-management__diagnostics-page-count';
+    count.textContent = `${pageText.length.toLocaleString()} characters`;
+    row.append(label, count);
+    perPageList.appendChild(row);
+  });
+  section.appendChild(perPageList);
+
+  const previewHeading = document.createElement('p');
+  previewHeading.className = 'curriculum-management__intro';
+  previewHeading.textContent = 'Preview \u2014 first 5 pages of extracted text:';
+  section.appendChild(previewHeading);
+
+  pageTexts.slice(0, 5).forEach((pageText, index) => {
+    const pageBlock = document.createElement('div');
+    pageBlock.className = 'curriculum-management__diagnostics-preview-block';
+    const label = document.createElement('p');
+    label.className = 'curriculum-management__diagnostics-preview-label';
+    label.textContent = `Page ${index + 1}`;
+    const text = document.createElement('pre');
+    text.className = 'curriculum-management__diagnostics-preview-text';
+    text.textContent = pageText || '(no text extracted from this page)';
+    pageBlock.append(label, text);
+    section.appendChild(pageBlock);
+  });
+
+  const actions = document.createElement('div');
+  actions.className = 'curriculum-management__details-actions';
+
+  const downloadButton = document.createElement('button');
+  downloadButton.type = 'button';
+  downloadButton.className = 'btn btn--ghost';
+  downloadButton.textContent = 'Download Extracted Text (.txt)';
+  downloadButton.addEventListener('click', () => downloadExtractedText(fullText));
+  actions.appendChild(downloadButton);
+
+  const continueButton = document.createElement('button');
+  continueButton.type = 'button';
+  continueButton.className = 'btn btn--primary';
+  continueButton.textContent = 'Continue to Parsing';
+  continueButton.addEventListener('click', handlers.onContinueToParsing);
+  actions.appendChild(continueButton);
+
+  section.appendChild(actions);
+
+  return section;
+}
+
+function downloadExtractedText(fullText) {
+  const blob = new Blob([fullText], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'extracted-text.txt';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Shown only when extraction succeeded (real text came back) but
+ * parsing still found zero units — the scientific-debugging screen:
+ * exactly how many units were found (zero), the exact regular
+ * expressions that were actually run (not a description of them —
+ * the real RegExp objects, via
+ * services/curriculumPdfParsingService.js's DIAGNOSTIC_PATTERNS), and
+ * the first 20 lines that at least contain the word "unit" or
+ * "chapter" so a near miss is visible instead of guessed at.
+ */
+function renderParsingFailedStep(diagnostics, handlers) {
+  const { candidateLines } = diagnostics;
+  const section = document.createElement('div');
+  section.className = 'curriculum-management__section';
+
+  const heading = document.createElement('p');
+  heading.className = 'curriculum-management__step-heading';
+  heading.textContent = 'Parsing Diagnostics';
+  section.appendChild(heading);
+
+  const summary = document.createElement('p');
+  summary.className = 'curriculum-management__intro';
+  summary.textContent = 'Units detected: 0. Text extraction succeeded (you saw it on the previous screen), but nothing matched the heading patterns below.';
+  section.appendChild(summary);
+
+  const patternsHeading = document.createElement('p');
+  patternsHeading.className = 'curriculum-management__intro';
+  patternsHeading.textContent = 'The exact regular expressions used:';
+  section.appendChild(patternsHeading);
+
+  const patternsList = document.createElement('div');
+  patternsList.className = 'curriculum-management__diagnostics-pattern-list';
+  Object.entries(curriculumPdfParsingService.DIAGNOSTIC_PATTERNS).forEach(([name, pattern]) => {
+    const row = document.createElement('div');
+    row.className = 'curriculum-management__diagnostics-pattern-row';
+    const label = document.createElement('span');
+    label.className = 'curriculum-management__diagnostics-pattern-label';
+    label.textContent = name;
+    const code = document.createElement('code');
+    code.className = 'curriculum-management__diagnostics-pattern-code';
+    code.textContent = pattern.toString();
+    row.append(label, code);
+    patternsList.appendChild(row);
+  });
+  section.appendChild(patternsList);
+
+  const candidatesHeading = document.createElement('p');
+  candidatesHeading.className = 'curriculum-management__intro';
+  candidatesHeading.textContent =
+    candidateLines.length > 0
+      ? `The first ${candidateLines.length} line${candidateLines.length === 1 ? '' : 's'} containing "unit" or "chapter" (near misses \u2014 none matched the patterns above):`
+      : 'The word "unit" or "chapter" doesn\u2019t appear anywhere in the extracted text at all.';
+  section.appendChild(candidatesHeading);
+
+  if (candidateLines.length > 0) {
+    const candidatesList = document.createElement('div');
+    candidatesList.className = 'curriculum-management__diagnostics-candidate-list';
+    candidateLines.forEach((candidate) => {
+      const row = document.createElement('div');
+      row.className = 'curriculum-management__diagnostics-candidate-row';
+      const lineNumberEl = document.createElement('span');
+      lineNumberEl.className = 'curriculum-management__diagnostics-candidate-line-number';
+      lineNumberEl.textContent = `Line ${candidate.lineNumber}`;
+      const contextEl = document.createElement('span');
+      contextEl.className = 'curriculum-management__diagnostics-candidate-context';
+      contextEl.textContent = candidate.context;
+      row.append(lineNumberEl, contextEl);
+      candidatesList.appendChild(row);
+    });
+    section.appendChild(candidatesList);
+  }
+
+  const manualButton = document.createElement('button');
+  manualButton.type = 'button';
+  manualButton.className = 'btn btn--primary';
+  manualButton.textContent = 'Continue to Manual Entry';
+  manualButton.addEventListener('click', handlers.onContinueToManualEntry);
+  section.appendChild(manualButton);
+
   return section;
 }
 

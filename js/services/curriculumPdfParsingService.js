@@ -60,10 +60,18 @@ function loadPdfJs() {
 }
 
 /**
- * Reads every page of an uploaded PDF File and returns its full text,
- * pages joined by a blank line (so a heading that happens to sit at
- * the very top of a new page doesn't visually run into the previous
- * page's last line before parseTextIntoUnits() ever sees it).
+ * Reads every page of an uploaded PDF File and returns per-page text
+ * plus the full joined text — see this file's own
+ * services/curriculumPdfParsingService.js header comment on why the
+ * caller (ui/views/CurriculumManagementView.js) shows this raw
+ * extraction result to an admin *before* any parsing runs, rather
+ * than jumping straight to "found N units" or "found nothing": after
+ * two rounds of parser fixes that each tested correctly in isolation
+ * but didn't resolve a real user's repeated failure, the actual
+ * priority became confirming what pdf.js extracted at all, not
+ * guessing at another heuristic. Nothing about the parsing logic
+ * changed here — this is strictly visibility into what already
+ * happens, surfaced earlier than before.
  *
  * pdf.js's getTextContent() returns a flat list of text fragments per
  * page with no line breaks of its own — line structure has to be
@@ -83,7 +91,17 @@ function loadPdfJs() {
  * fixture) — genuinely unverified beyond that, though, since this
  * sandbox has no browser or pdf.js to run the *upload* half of this
  * file against. Test this specific function against a real PDF in an
- * actual browser before assuming it's fully correct.
+ * actual browser before assuming it's fully correct — which is
+ * precisely why the new diagnostics screen exists: to make that
+ * verification visible to whoever actually can run it, instead of
+ * requiring a round trip through me to find out what happened.
+ *
+ * Returns `{ pageTexts: string[], fullText: string }` — `pageTexts`
+ * is one entry per PDF page, in order; `fullText` is every page
+ * joined by a blank line (so a heading sitting at the very top of a
+ * new page doesn't visually run into the previous page's last line
+ * before parseTextIntoUnits() ever sees it) — this is the exact same
+ * string the parser has always received, unchanged.
  */
 export async function extractTextFromPdf(file) {
   const pdfjsLib = await loadPdfJs();
@@ -97,7 +115,7 @@ export async function extractTextFromPdf(file) {
     pageTexts.push(reconstructLinesFromTextItems(content.items));
   }
 
-  return pageTexts.join('\n\n');
+  return { pageTexts, fullText: pageTexts.join('\n\n') };
 }
 
 // A new line, in a PDF's own coordinate space, is a fragment whose Y
@@ -301,4 +319,42 @@ export function parseTextIntoUnits(rawText) {
   const unitsFromLines = parseUnitsFromLines(rawText);
   if (unitsFromLines.length > 0) return unitsFromLines;
   return parseUnitsFromFlattenedText(rawText);
+}
+
+/**
+ * Every regular expression parseTextIntoUnits() actually uses,
+ * exposed by name for display only — see
+ * ui/views/CurriculumManagementView.js's "parsing found nothing"
+ * diagnostics screen. Nothing here is a copy; these are literally the
+ * same RegExp objects the parser runs, so what an admin sees on
+ * screen can never drift from what actually executed.
+ */
+export const DIAGNOSTIC_PATTERNS = {
+  'Single-line heading (e.g. "Unit 1: Measurement")': SINGLE_LINE_HEADING_PATTERN,
+  'Standalone heading word (e.g. "UNIT" on its own line)': STANDALONE_HEADING_WORD_PATTERN,
+  'Title-line boundary (stops multi-line title collection)': TITLE_BOUNDARY_PATTERN,
+  'Flattened-text fallback (line-break independent)': FLATTENED_HEADING_PATTERN,
+};
+
+/**
+ * Diagnostic only — never used by parseTextIntoUnits() itself. When
+ * parsing finds zero units, this answers the next question an admin
+ * actually has: "the word 'unit' is clearly in this book somewhere,
+ * so why didn't anything match?" Returns up to `limit` lines
+ * (case-insensitively) containing "unit" or "chapter" as a whole
+ * word, each with a couple of lines of surrounding context, so a near
+ * miss is visible instead of an admin having to guess why the exact
+ * regexes above didn't fire.
+ */
+export function findHeadingCandidateLines(rawText, limit = 20) {
+  const lines = (rawText || '').split('\n').map((line) => line.trim());
+  const candidates = [];
+
+  for (let i = 0; i < lines.length && candidates.length < limit; i++) {
+    if (!/\b(unit|chapter)\b/i.test(lines[i])) continue;
+    const context = [lines[i - 1], lines[i], lines[i + 1]].filter((line) => line !== undefined);
+    candidates.push({ lineNumber: i + 1, line: lines[i], context: context.join(' \u2502 ') });
+  }
+
+  return candidates;
 }
