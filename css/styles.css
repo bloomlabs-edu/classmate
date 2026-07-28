@@ -5801,6 +5801,9 @@ button.wizard-checklist__row:hover {
   max-height: 220px;
   overflow-y: auto;
 }
+.modal__curriculum-options[hidden] {
+  display: none;
+}
 .modal__curriculum-option {
   display: flex;
   flex-direction: column;
