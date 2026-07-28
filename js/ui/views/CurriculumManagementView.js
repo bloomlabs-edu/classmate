@@ -26,8 +26,13 @@
  *     instead of hardcoded sample cards.
  *   - ➕ Contribute Curriculum — the upload flow (capture standardized
  *     metadata -> Upload PDF or start blank -> Extract -> Review ->
- *     Submit). Submitting does *not* add anything to the Library — it
- *     goes to services/curriculumSubmissionsService.js with status
+ *     Submit). Extract now means reading only the first 10 pages and
+ *     parsing the Table of Contents for Unit Number, Title, and
+ *     Starting Page (see services/curriculumPdfParsingService.js's
+ *     own header comment for why this replaced scanning a whole
+ *     ~700,000-character textbook for heading patterns). Submitting
+ *     does *not* add anything to the Library — it goes to
+ *     services/curriculumSubmissionsService.js with status
  *     'pending_review' instead.
  *   - 🔍 Review Submissions — where 'pending_review' actually becomes
  *     'published'. An admin opens a pending submission, decides
@@ -177,8 +182,8 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
           mode = 'contribute-extracting';
           rerender();
           try {
-            const { pageTexts, fullText } = await curriculumPdfParsingService.extractTextFromPdf(file);
-            extractionDiagnostics = { pageTexts, fullText, pageCount: pageTexts.length };
+            const { pageTexts, fullText, totalPageCount, pagesRead } = await curriculumPdfParsingService.extractTextFromPdf(file);
+            extractionDiagnostics = { pageTexts, fullText, totalPageCount, pagesRead };
             mode = 'contribute-diagnostics';
           } catch (error) {
             console.error('[CurriculumManagementView] PDF extraction failed:', error);
@@ -189,14 +194,23 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
           rerender();
         },
         onContinueToParsing: () => {
-          const extractedUnits = curriculumPdfParsingService.parseTextIntoUnits(extractionDiagnostics.fullText);
+          const result = curriculumPdfParsingService.parseTableOfContents(extractionDiagnostics.fullText);
           draft = curriculumPackBuilderService.createDraftPack(pendingMetadata);
-          if (extractedUnits.length > 0) {
-            curriculumPackBuilderService.loadExtractedUnitsIntoDraft(draft, extractedUnits);
+          if (result.units.length > 0) {
+            // The last unit's endPage is only known once resolved
+            // against the PDF's real total length — see
+            // parseTableOfContents()'s own doc comment on why it can't
+            // know that itself (it only ever sees the first 10 pages).
+            const resolvedUnits = result.units.map((unit) => ({
+              ...unit,
+              endPage: unit.endPage ?? extractionDiagnostics.totalPageCount,
+            }));
+            curriculumPackBuilderService.loadUnitsFromTableOfContents(draft, resolvedUnits);
             mode = 'contribute-review';
           } else {
             parsingFailureDiagnostics = {
-              candidateLines: curriculumPdfParsingService.findHeadingCandidateLines(extractionDiagnostics.fullText, 20),
+              tocFound: result.found,
+              reason: result.reason || null,
             };
             mode = 'contribute-parsing-failed';
           }
@@ -844,7 +858,7 @@ function renderExtractingStep() {
  * actually work?
  */
 function renderExtractionDiagnosticsStep(diagnostics, handlers) {
-  const { pageTexts, fullText, pageCount } = diagnostics;
+  const { pageTexts, fullText, totalPageCount, pagesRead } = diagnostics;
   const section = document.createElement('div');
   section.className = 'curriculum-management__section';
 
@@ -853,9 +867,15 @@ function renderExtractionDiagnosticsStep(diagnostics, handlers) {
   heading.textContent = 'Extraction Diagnostics';
   section.appendChild(heading);
 
+  const note = document.createElement('p');
+  note.className = 'curriculum-management__intro';
+  note.textContent = `Only the first ${pagesRead} of ${totalPageCount} total pages are read \u2014 the Table of Contents already states every unit's number, title, and starting page, so scanning the rest of the book was never necessary.`;
+  section.appendChild(note);
+
   const summaryCard = document.createElement('div');
   summaryCard.className = 'curriculum-management__details-card';
-  summaryCard.appendChild(createDetailRow('Total pages', String(pageCount)));
+  summaryCard.appendChild(createDetailRow('Total pages in the PDF', String(totalPageCount)));
+  summaryCard.appendChild(createDetailRow('Pages actually read', String(pagesRead)));
   summaryCard.appendChild(createDetailRow('Total characters extracted', fullText.length.toLocaleString()));
   section.appendChild(summaryCard);
 
@@ -932,76 +952,48 @@ function downloadExtractedText(fullText) {
 }
 
 /**
- * Shown only when extraction succeeded (real text came back) but
- * parsing still found zero units — the scientific-debugging screen:
- * exactly how many units were found (zero), the exact regular
- * expressions that were actually run (not a description of them —
- * the real RegExp objects, via
- * services/curriculumPdfParsingService.js's DIAGNOSTIC_PATTERNS), and
- * the first 20 lines that at least contain the word "unit" or
- * "chapter" so a near miss is visible instead of guessed at.
+ * Shown only when extraction succeeded (real text came back from the
+ * first 10 pages) but no Table of Contents could be parsed from
+ * it — the scientific-debugging screen for this approach: whether a
+ * Contents heading was found at all, and the specific reason parsing
+ * stopped where it did (see
+ * services/curriculumPdfParsingService.js's parseTableOfContents()
+ * for exactly what each reason means). No regex text is shown here
+ * anymore — there's nothing to run against the whole document; the
+ * only question left is whether the first 10 pages contained a
+ * recognizable Contents table at all.
  */
 function renderParsingFailedStep(diagnostics, handlers) {
-  const { candidateLines } = diagnostics;
+  const { tocFound, reason } = diagnostics;
   const section = document.createElement('div');
   section.className = 'curriculum-management__section';
 
   const heading = document.createElement('p');
   heading.className = 'curriculum-management__step-heading';
-  heading.textContent = 'Parsing Diagnostics';
+  heading.textContent = 'Table of Contents Diagnostics';
   section.appendChild(heading);
 
   const summary = document.createElement('p');
   summary.className = 'curriculum-management__intro';
-  summary.textContent = 'Units detected: 0. Text extraction succeeded (you saw it on the previous screen), but nothing matched the heading patterns below.';
+  summary.textContent = 'Units detected: 0. Text extraction succeeded (you saw it on the previous screen), but a curriculum structure couldn\u2019t be built from it.';
   section.appendChild(summary);
 
-  const patternsHeading = document.createElement('p');
-  patternsHeading.className = 'curriculum-management__intro';
-  patternsHeading.textContent = 'The exact regular expressions used:';
-  section.appendChild(patternsHeading);
-
-  const patternsList = document.createElement('div');
-  patternsList.className = 'curriculum-management__diagnostics-pattern-list';
-  Object.entries(curriculumPdfParsingService.DIAGNOSTIC_PATTERNS).forEach(([name, pattern]) => {
-    const row = document.createElement('div');
-    row.className = 'curriculum-management__diagnostics-pattern-row';
-    const label = document.createElement('span');
-    label.className = 'curriculum-management__diagnostics-pattern-label';
-    label.textContent = name;
-    const code = document.createElement('code');
-    code.className = 'curriculum-management__diagnostics-pattern-code';
-    code.textContent = pattern.toString();
-    row.append(label, code);
-    patternsList.appendChild(row);
-  });
-  section.appendChild(patternsList);
-
-  const candidatesHeading = document.createElement('p');
-  candidatesHeading.className = 'curriculum-management__intro';
-  candidatesHeading.textContent =
-    candidateLines.length > 0
-      ? `The first ${candidateLines.length} line${candidateLines.length === 1 ? '' : 's'} containing "unit" or "chapter" (near misses \u2014 none matched the patterns above):`
-      : 'The word "unit" or "chapter" doesn\u2019t appear anywhere in the extracted text at all.';
-  section.appendChild(candidatesHeading);
-
-  if (candidateLines.length > 0) {
-    const candidatesList = document.createElement('div');
-    candidatesList.className = 'curriculum-management__diagnostics-candidate-list';
-    candidateLines.forEach((candidate) => {
-      const row = document.createElement('div');
-      row.className = 'curriculum-management__diagnostics-candidate-row';
-      const lineNumberEl = document.createElement('span');
-      lineNumberEl.className = 'curriculum-management__diagnostics-candidate-line-number';
-      lineNumberEl.textContent = `Line ${candidate.lineNumber}`;
-      const contextEl = document.createElement('span');
-      contextEl.className = 'curriculum-management__diagnostics-candidate-context';
-      contextEl.textContent = candidate.context;
-      row.append(lineNumberEl, contextEl);
-      candidatesList.appendChild(row);
-    });
-    section.appendChild(candidatesList);
+  const statusCard = document.createElement('div');
+  statusCard.className = 'curriculum-management__details-card';
+  statusCard.appendChild(
+    createDetailRow('"Table of Contents" or "Contents" heading found in the first 10 pages', tocFound ? 'Yes' : 'No')
+  );
+  if (reason) {
+    statusCard.appendChild(createDetailRow('Reason parsing stopped', reason));
   }
+  section.appendChild(statusCard);
+
+  const explanation = document.createElement('p');
+  explanation.className = 'curriculum-management__intro';
+  explanation.textContent = tocFound
+    ? 'The Contents heading was there, but its table didn\u2019t match the Unit / Title / Page shape this looks for. Check the extracted text preview on the previous screen to see exactly what\u2019s there.'
+    : 'No "Table of Contents" or "Contents" heading was found in the first 10 pages at all. If this book\u2019s Contents page is genuinely further in, that\u2019s a real limitation of only reading the first 10 pages \u2014 worth telling me if so.';
+  section.appendChild(explanation);
 
   const manualButton = document.createElement('button');
   manualButton.type = 'button';
@@ -1071,6 +1063,13 @@ function renderUnitBlock(draft, unit, unitIndex, handlers) {
   const titleInput = createRenameInput(unit.title, (newTitle) => handlers.onRenameUnit(unit.id, newTitle));
   titleInput.classList.add('curriculum-management__unit-title-input');
   row.appendChild(titleInput);
+
+  if (unit.startPage != null) {
+    const pageRangeEl = document.createElement('span');
+    pageRangeEl.className = 'curriculum-management__unit-page-range';
+    pageRangeEl.textContent = unit.endPage != null ? `pages ${unit.startPage}\u2013${unit.endPage}` : `page ${unit.startPage}`;
+    row.appendChild(pageRangeEl);
+  }
 
   const deleteButton = document.createElement('button');
   deleteButton.type = 'button';

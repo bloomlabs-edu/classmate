@@ -21,12 +21,16 @@
  * directly; ui/views/CurriculumManagementView.js re-renders after
  * calling them.
  *
- * This file has no idea a PDF or a heuristic parser exists —
- * loadExtractedUnitsIntoDraft() takes the exact same
- * `{ title, concepts: string[] }[]` shape
- * services/curriculumPdfParsingService.js's parseTextIntoUnits()
- * returns, but nothing stops a future "Paste Text" or manually-typed
- * source from producing that same shape and using this same function.
+ * Table of Contents Extraction milestone: a unit built from a PDF
+ * arrives with a page range (`startPage`/`endPage`) but no concepts —
+ * see loadUnitsFromTableOfContents() and
+ * services/curriculumPdfParsingService.js's parseTableOfContents()
+ * for why. A unit added by hand has no page range at all
+ * (`startPage`/`endPage` both `null`) — there's no PDF page it came
+ * from. Both shapes flow through exportPackJson() the same way, so a
+ * published curriculum's units always carry whatever page range
+ * information exists for them, ready for whenever concept extraction
+ * by page range actually gets built.
  */
 
 import { generateId } from '../utils/idGenerator.js';
@@ -46,16 +50,26 @@ export function createDraftPack({ curriculumName, board, gradeName, subjectName,
 }
 
 /** Replaces the draft's units wholesale with the parser's output — used right after a PDF is processed, before any manual editing has happened. */
-export function loadExtractedUnitsIntoDraft(draft, extractedUnits) {
-  draft.units = extractedUnits.map((unit) => ({
+/**
+ * Builds a draft's units directly from a parsed Table of Contents
+ * (see services/curriculumPdfParsingService.js's parseTableOfContents())
+ * — each unit arrives with a real title and page range but,
+ * deliberately, no concepts yet: concept extraction is a separate,
+ * later step (see that file's own header comment), not something this
+ * milestone does at curriculum-creation time.
+ */
+export function loadUnitsFromTableOfContents(draft, tocUnits) {
+  draft.units = tocUnits.map((tocUnit) => ({
     id: generateId(),
-    title: unit.title,
-    concepts: unit.concepts.map((title) => ({ id: generateId(), title })),
+    title: tocUnit.title,
+    concepts: [],
+    startPage: tocUnit.startPage,
+    endPage: tocUnit.endPage,
   }));
 }
 
-export function addDraftUnit(draft, title) {
-  const unit = { id: generateId(), title, concepts: [] };
+export function addDraftUnit(draft, title, { startPage = null, endPage = null } = {}) {
+  const unit = { id: generateId(), title, concepts: [], startPage, endPage };
   draft.units.push(unit);
   return unit;
 }
@@ -152,6 +166,8 @@ export function exportPackJson(draft) {
       id: slugify(unit.title),
       title: unit.title,
       concepts: unit.concepts.map((concept) => concept.title),
+      startPage: unit.startPage ?? null,
+      endPage: unit.endPage ?? null,
     })),
   };
 }
