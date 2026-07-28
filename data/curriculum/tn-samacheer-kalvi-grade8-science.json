@@ -1,0 +1,49 @@
+{
+  "_comment": "Sample/illustrative curriculum pack — unit and concept titles are representative of a general Grade 8 science course, not transcribed from an official syllabus document. Review against the actual current Samacheer Kalvi textbook before relying on this for real classroom planning; treat it as a working starting point, not an authoritative source.",
+  "id": "tn-samacheer-kalvi-grade8-science",
+  "curriculum": "Samacheer Kalvi",
+  "grade": "Grade 8",
+  "subject": "Science",
+  "units": [
+    {
+      "id": "unit-1-measurement",
+      "title": "Unit 1 \u2013 Measurement",
+      "concepts": ["Units of Measurement", "Measuring Length", "Measuring Mass", "Measuring Time"]
+    },
+    {
+      "id": "unit-2-force-and-pressure",
+      "title": "Unit 2 \u2013 Force and Pressure",
+      "concepts": ["Force", "Pressure", "Friction", "Viscosity"]
+    },
+    {
+      "id": "unit-3-light",
+      "title": "Unit 3 \u2013 Light",
+      "concepts": ["Reflection", "Plane Mirror", "Lateral Inversion", "Spherical Mirrors"]
+    },
+    {
+      "id": "unit-4-electricity",
+      "title": "Unit 4 \u2013 Electricity",
+      "concepts": ["Electric Current", "Electric Circuits", "Conductors and Insulators", "Effects of Electric Current"]
+    },
+    {
+      "id": "unit-5-atomic-structure",
+      "title": "Unit 5 \u2013 Atomic Structure",
+      "concepts": ["Structure of the Atom", "Atomic Number and Mass Number", "Isotopes", "Valency"]
+    },
+    {
+      "id": "unit-6-acids-bases-and-salts",
+      "title": "Unit 6 \u2013 Acids, Bases and Salts",
+      "concepts": ["Properties of Acids", "Properties of Bases", "Neutralisation", "Common Salts"]
+    },
+    {
+      "id": "unit-7-nutrition-and-respiration-in-animals",
+      "title": "Unit 7 \u2013 Nutrition and Respiration in Animals",
+      "concepts": ["Nutrition in Animals", "The Digestive System", "Respiration in Animals"]
+    },
+    {
+      "id": "unit-8-plant-and-animal-kingdom",
+      "title": "Unit 8 \u2013 Plant and Animal Kingdom",
+      "concepts": ["Classification of Plants", "Classification of Animals"]
+    }
+  ]
+}

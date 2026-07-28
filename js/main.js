@@ -17,6 +17,7 @@
  */
 
 import * as workspaceService from './services/workspaceService.js';
+import * as curriculumLibraryService from './services/curriculumLibraryService.js';
 import * as authService from './services/authService.js';
 import * as continueWorkingService from './services/continueWorkingService.js';
 import * as accentColorService from './services/accentColorService.js';
@@ -35,6 +36,8 @@ import { renderStudentTeamView } from './ui/student-portal/views/StudentTeamView
 import { renderStudentAvatarBuilderView } from './ui/student-portal/views/StudentAvatarBuilderView.js';
 import { renderStudentProfileView as renderStudentPortalProfileView } from './ui/student-portal/views/StudentProfileView.js';
 import { renderHomeView } from './ui/views/HomeView.js';
+import { renderCurriculumManagementView } from './ui/views/CurriculumManagementView.js';
+import { renderLearningManagementView } from './ui/views/LearningManagementView.js';
 import { renderTrackerView } from './ui/views/TrackerView.js';
 import { renderSettingsView } from './ui/views/SettingsView.js';
 import { renderSetupWizardView } from './ui/views/SetupWizardView.js';
@@ -117,8 +120,20 @@ function handleSignOut() {
   });
 }
 
-function handleNewClassroom() {
+async function handleNewClassroom() {
+  let curriculumOptions = [];
+  try {
+    curriculumOptions = await curriculumLibraryService.getAssignableCurriculumOptions();
+  } catch (error) {
+    console.error('[main] Failed to load curriculum options for classroom creation:', error);
+    // Falls through with an empty list — the modal shows "No curricula
+    // available yet" and blocks creation rather than crashing, since
+    // Curriculum is a required field and there's genuinely nothing to
+    // pick from a network failure until it resolves.
+  }
+
   openNewClassroomModal({
+    curriculumOptions,
     onCreate: (details, close) => {
       try {
         const classroom = workspaceService.createClassroom(details, currentUser);
@@ -258,6 +273,19 @@ function renderRoute(route) {
 
   if (workspaceLoading) {
     renderLoadingScreen(appContainer);
+    return;
+  }
+
+  if (route.name === 'curriculumManagement') {
+    renderCurriculumManagementView(appContainer, {
+      onBack: () => router.navigate('/teacher'),
+      onOpenLearningManagement: () => {
+        renderLearningManagementView(appContainer, {
+          classrooms: workspaceService.getState().classrooms,
+          onBack: () => router.navigate('/curriculum-management'),
+        });
+      },
+    });
     return;
   }
 
@@ -410,6 +438,7 @@ function renderRoute(route) {
       onSelectClassroom: (id) => router.navigate(`/classroom/${id}`),
       onNewClassroom: handleNewClassroom,
       onJoinClassroom: handleJoinClassroom,
+      onOpenCurriculumManagement: () => router.navigate('/curriculum-management'),
     });
   }
 }

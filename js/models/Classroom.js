@@ -59,6 +59,30 @@
  *                    `notebookConfig` below is shaped. Completely
  *                    independent of Learning Hub — see
  *                    docs/LEARNING_RECORD.md.
+ *   curriculumAssignment - null, or { curriculumId, versionId } —
+ *                    "schools/classes don't own curricula, they browse,
+ *                    install, and assign them" (Global Curriculum
+ *                    Library milestone): a classroom references a
+ *                    specific *version* of a curriculum from the
+ *                    global library (see
+ *                    services/curriculumLibraryService.js,
+ *                    data/curriculum/manifest.json's Official/
+ *                    Community/Curriculum/Version structure) —
+ *                    deliberately just two permanent IDs, never a copy
+ *                    of the curriculum's actual data, so a classroom
+ *                    can stay on the edition it started the year with
+ *                    even after a newer version is published. Set once
+ *                    via Curriculum Management's "Assign to Class"
+ *                    step (see setCurriculumAssignment()), then read
+ *                    automatically by Learning Management (see
+ *                    ui/views/LearningManagementView.js) so a teacher
+ *                    is never asked which curriculum to browse — it's
+ *                    inherited from the classroom, not chosen per
+ *                    lesson. `null` means no curriculum has been
+ *                    assigned yet, in which case Learning Management
+ *                    falls back to manual Unit/Concept creation
+ *                    automatically, with no picker shown for that
+ *                    fallback either.
  *   notebookConfig - { subjects: [{id, name}], notebookTypes: [{id,
  *                    subjectId, name}] } — the classroom's configurable
  *                    notebook taxonomy (see
@@ -152,6 +176,7 @@ export function createClassroom({
   teams = [],
   learningActivities = [],
   learningRecord = { subjects: [] },
+  curriculumAssignment = null,
   notebookConfig = { subjects: [], notebookTypes: [] },
   notebooks = {},
   notebookCheckTemplates = {},
@@ -175,6 +200,7 @@ export function createClassroom({
     teams,
     learningActivities,
     learningRecord,
+    curriculumAssignment,
     notebookConfig,
     notebooks,
     notebookCheckTemplates,

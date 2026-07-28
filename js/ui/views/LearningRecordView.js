@@ -34,6 +34,7 @@ import * as learningRecordService from '../../services/learningRecordService.js'
 import * as learningRecordTeacherService from '../../services/learningRecordTeacherService.js';
 import { createIcon } from '../components/Icon.js';
 import { renderConceptWorkspaceView, createTaughtToggle } from './ConceptWorkspaceView.js';
+import { renderAddConceptsView } from './AddConceptsView.js';
 
 const DEFAULT_SUBJECT_NAMES = ['Science', 'Maths', 'English', 'Social Science'];
 
@@ -322,6 +323,24 @@ function renderLessonsLevel(container, classroom, subject, unit, handlers) {
       handlers.rerender();
     })
   );
+
+  // Bulk import — Curriculum Library v1 (see ui/views/AddConceptsView.js).
+  // A separate, distinct action from the single "+ Add Lesson" form
+  // above: that one is for typing a single concept by hand; this one
+  // is for importing a whole chapter's worth at once.
+  const addConceptsButton = document.createElement('button');
+  addConceptsButton.type = 'button';
+  addConceptsButton.className = 'btn btn--primary learning-record-view__add-concepts-button';
+  addConceptsButton.appendChild(createIcon('graduation-cap', { size: 16 }));
+  addConceptsButton.append(' Add Concepts');
+  addConceptsButton.addEventListener('click', () => {
+    renderAddConceptsView(container, {
+      classroom,
+      unit,
+      onBack: handlers.rerender,
+    });
+  });
+  section.appendChild(addConceptsButton);
 
   return section;
 }

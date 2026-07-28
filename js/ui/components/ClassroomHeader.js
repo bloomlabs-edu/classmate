@@ -9,13 +9,14 @@
  *   ├── Secondary Content  — supporting, glanceable content
  *   └── Classroom Context  — classroom name/subtitle
  *
- * This phase fills Primary Action with the existing "Start Class Mode"
- * button (ui/components/ClassModeWidget.js) and Secondary Content with
- * the existing ContinueWorkingWidget — both *relocated* here from their
- * previous positions on the Dashboard, not duplicated. Neither slot
- * knows or cares what's inside it; each just accepts a pre-built DOM
- * element, so a future phase can put something else in either slot
- * without this file changing at all.
+ * As of the Information Architecture milestone, ui/views/DashboardView.js
+ * no longer fills either action slot — both "Start Class Mode" and the
+ * "📚 Curriculum" button that used to live here are now two of the
+ * three equally-weighted primary-module cards rendered just below this
+ * header instead (see renderPrimaryModulesSection() in that file).
+ * This component's slots remain fully functional and unchanged; a
+ * future phase is free to fill either one again without this file
+ * changing at all.
  */
 
 export function createClassroomHeaderElement({ classroomContext, primaryAction, secondaryContent }) {

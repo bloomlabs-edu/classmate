@@ -18,6 +18,9 @@
  *   #/classroom/{id}/notebooks/{subjectId}/{typeId}/{dateKey?}        -> register view (today if dateKey omitted)
  *   #/classroom/{id}/notebooks/{subjectId}/{typeId}/timeline/{yearMonth?} -> timeline view (current month if omitted)
  *   #/classroom/{id}/recognition/{period?}/{categoryId?}     -> recognition screen (defaults resolved by the view itself)
+ *   #/curriculum-management                   -> Curriculum Management (admin tool — create/review/save Curriculum
+ *                                                 Packs; not classroom-scoped, since a pack is shared across every
+ *                                                 classroom, not owned by one — see ui/views/CurriculumManagementView.js)
  * Deep links work on refresh since the route is derived from the URL,
  * not from in-memory state.
  *
@@ -98,6 +101,10 @@ function resolvePathParts(parts) {
 
   if (parts[0] === 'teacher') {
     return { name: 'home' };
+  }
+
+  if (parts[0] === 'curriculum-management') {
+    return { name: 'curriculumManagement' };
   }
 
   if (parts[0] === 'student') {

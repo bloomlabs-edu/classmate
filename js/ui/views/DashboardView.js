@@ -3,14 +3,39 @@
  *
  * The Classroom Dashboard — the default landing page for a classroom.
  *
- * Phase 4 refinement: the two highest-frequency needs — starting Class
- * Mode, and picking up where a notebook was left off — are now in the
- * header itself (ui/components/ClassroomHeader.js's Primary Action and
- * Secondary Content slots), visible with zero scrolling the instant a
- * teacher opens the classroom. Both are *relocated* from their previous
- * mid-page positions, not duplicated — Start Class Mode no longer
- * appears in the Teaching section, and Continue Working no longer
- * appears as its own section further down the page.
+ * Information Architecture milestone: a teacher should immediately see
+ * that ClassMate has three separate responsibilities, as three
+ * equally-weighted cards, replacing every previous Dashboard entry
+ * point (the header used to carry "Start Class Mode" as its Primary
+ * Action and, across earlier milestones, "📚 Manage Lessons,"
+ * "✏️ Create Lesson," a "Continue Working" card, and later a single
+ * "📚 Curriculum" button as Secondary Content — all of that collapses
+ * into these three cards now):
+ *
+ *   ▶ Classroom Management  — running today's class. For now, this is
+ *     exactly the existing Class Mode workflow (onStartClassMode),
+ *     unchanged — just presented as one of three cards instead of a
+ *     standalone header button.
+ *   📚 Learning Management  — preparing learning materials and
+ *     supporting students. See ui/views/LearningManagementView.js —
+ *     this absorbs what the old "📚 Curriculum" button did (Manage
+ *     Lessons and the recent-resource shortcut both still exist,
+ *     reached from inside it).
+ *   ⚙️ Curriculum Management — configuring the curriculum structure
+ *     itself (install/upload/edit packs, assign a curriculum to a
+ *     class). Used occasionally, not part of daily teaching — see
+ *     ui/views/CurriculumManagementView.js. Also reachable from
+ *     Teacher Home (ui/views/HomeView.js), since a curriculum pack
+ *     isn't classroom-specific data; this Dashboard card is a second,
+ *     equally-convenient door to the exact same screen.
+ *
+ * `canAccessCurriculumManagement` (see renderPrimaryModulesSection())
+ * is the intentional hook for a future permission system — hardcoded
+ * `true` for every teacher today, by explicit instruction not to
+ * implement real permissions yet. When that system exists, computing
+ * this one boolean (teacher vs. school admin) is the entire change
+ * needed to show or hide this card; nothing else here should need to
+ * change.
  *
  * Structured around the four questions the Dashboard should answer, in
  * order:
@@ -29,35 +54,24 @@
  * existing service or view rather than duplicating functionality.
  * Notebook Tracker, Settings (all its tabs), Learning Activities, and
  * Class Mode are all reached through here, never reimplemented here.
- *
- * Continue Working is still the one piece that loads asynchronously —
- * see services/continueWorkingService.js's getRecentOnce() doc comment
- * for why this is a one-time read rather than a live subscription. The
- * rest of the Dashboard (including the header's Primary Action) renders
- * immediately; only the header's Secondary Content slot fills in once
- * that read resolves.
  */
 
-import * as notebookConfigService from '../../services/notebookConfigService.js';
+import * as workspaceService from '../../services/workspaceService.js';
 import * as pendingTaskService from '../../services/pendingTaskService.js';
-import * as continueWorkingService from '../../services/continueWorkingService.js';
 import { renderTeachingAssistant } from '../components/TeachingAssistant.js';
 import { getDisplayName, getDisplaySubtitle } from '../../services/classroomService.js';
 import { createClassroomHeaderElement } from '../components/ClassroomHeader.js';
 import { createRecognitionWidgetElement } from '../components/RecognitionWidget.js';
 import { createWeeklySnapshotWidgetElement } from '../components/WeeklySnapshotWidget.js';
-import { createContinueWorkingWidgetElement } from '../components/ContinueWorkingWidget.js';
 import { createPendingTasksWidgetElement } from '../components/PendingTasksWidget.js';
 import { createSubjectsWidgetElement } from '../components/SubjectsWidget.js';
 import { createGroupsWidgetElement } from '../components/GroupsWidget.js';
-import { createClassModeWidgetElement } from '../components/ClassModeWidget.js';
 import { createTeachingSectionElement } from '../components/TeachingSection.js';
 import { createClassroomSectionElement } from '../components/ClassroomSection.js';
-import { renderLearningRecordView } from './LearningRecordView.js';
-import { renderConceptWorkspaceView } from './ConceptWorkspaceView.js';
-import { renderReadingEditorView } from './ReadingEditorView.js';
-import { renderLessonStudioView } from './LessonStudioView.js';
-import * as resourceService from '../../services/resourceService.js';
+import { renderLearningManagementView } from './LearningManagementView.js';
+import { renderCurriculumManagementView } from './CurriculumManagementView.js';
+import { renderAssignCurriculumPromptView } from './AssignCurriculumPromptView.js';
+import * as curriculumLibraryService from '../../services/curriculumLibraryService.js';
 
 export function renderDashboardView(container, props) {
   const {
@@ -71,7 +85,6 @@ export function renderDashboardView(container, props) {
     onOpenNotebookTracker,
     onOpenGroups,
     onStartClassMode,
-    onSelectNotebook,
     onOpenRecognition,
     onOpenActivities,
     onSelectPendingTask,
@@ -80,76 +93,41 @@ export function renderDashboardView(container, props) {
 
   container.innerHTML = '';
 
-  // Learning Record's entry point — a direct function call into
-  // ui/views/LearningRecordView.js, not a route. This is deliberate:
-  // see that file's own header comment for why, after this feature's
-  // entry point broke twice in a row on router/dispatch wiring (see
-  // this project's CHANGELOG). `onClose` simply re-renders this same
-  // Dashboard from scratch; there's no URL state to restore and none
-  // is needed.
-  function openManageLessons() {
-    renderLearningRecordView(container, {
-      classroom,
-      onClose: () => renderDashboardView(container, props),
+  // The future permission hook — see this file's own header comment.
+  // Always true today; a future permission system replaces this one
+  // line with a real check and nothing else here needs to change.
+  const canAccessCurriculumManagement = true;
+
+  function openLearningManagement() {
+    renderLearningManagementView(container, {
+      classrooms: workspaceService.getState().classrooms,
+      onBack: () => renderDashboardView(container, props),
     });
   }
 
-  // Lesson Studio — the dedicated, obvious front door to actually
-  // *writing* lesson content (see ui/views/LessonStudioView.js's own
-  // header comment for why this is a separate button from Manage
-  // Lessons, not a mode of it). Same self-contained direct-call
-  // pattern as openManageLessons above.
-  function openLessonStudio() {
-    renderLessonStudioView(container, {
+  function openCurriculumManagement() {
+    renderCurriculumManagementView(container, {
+      onBack: () => renderDashboardView(container, props),
+      onOpenLearningManagement: openLearningManagement,
+    });
+  }
+
+  // The one-time prompt for a classroom that predates Curriculum being
+  // a required field at creation (see
+  // ui/components/NewClassroomModal.js, ui/views/AssignCurriculumPromptView.js's
+  // own header comment). Gated purely on whether an assignment exists
+  // — once one does, this function and the banner that calls it simply
+  // never render again for this classroom.
+  const needsCurriculumAssignment = !curriculumLibraryService.getCurriculumAssignment(classroom);
+
+  function openAssignCurriculumPrompt() {
+    renderAssignCurriculumPromptView(container, {
       classroom,
       onBack: () => renderDashboardView(container, props),
-      onOpenManageLessons: openManageLessons,
     });
   }
 
-  // The Dashboard's "Continue Working" shortcut to whatever a teacher
-  // actually touched last, across the whole classroom, regardless of
-  // type — see services/resourceService.js's
-  // getMostRecentlyEditedResource() and
-  // ContinueWorkingWidget.js's own doc comment for why this is the
-  // finishing step of the Reading Editor milestone, not a separate
-  // feature. Jumps straight into the resource's real editor when one
-  // exists (Reading, today); for any other type — no editor yet —
-  // lands on that resource's Details tab instead, the most useful
-  // screen available for it, via the same Concept Workspace every
-  // other path into a resource already uses.
-  function openRecentResource({ resource, subject, unit, concept }) {
-    function backToConceptWorkspace() {
-      renderConceptWorkspaceView(container, {
-        classroom,
-        subject,
-        unit,
-        concept,
-        initialResourceId: resource.id,
-        // "Back to [Unit]" from here deliberately returns to the
-        // Dashboard rather than reconstructing Learning Record's own
-        // Subject/Unit navigation state — that state lives inside
-        // LearningRecordView.js's own closure and isn't designed to
-        // be entered mid-way from outside it. A teacher jumping in via
-        // this shortcut backing out to the Dashboard (one level above
-        // where they started) is an honest simplification, not a
-        // broken breadcrumb.
-        onBack: () => renderDashboardView(container, props),
-      });
-    }
-
-    if (resource.type === 'reading') {
-      renderReadingEditorView(container, {
-        classroom,
-        resource,
-        onBack: backToConceptWorkspace,
-      });
-    } else {
-      backToConceptWorkspace();
-    }
-  }
-
-  // Every teaching-time feature (Start Class Mode, Continue Working,
+  // Every teaching-time feature (Start Class Mode, Recognition,
   // Recognition Wall, Weekly Snapshot, Groups, Subjects, Reports) is
   // suppressed entirely until the classroom has a usable roster — "a
   // newly created classroom is still in the setup phase, not the
@@ -170,7 +148,7 @@ export function renderDashboardView(container, props) {
       onOpenStudentAccess,
       onOpenSettingsGroups,
       onOpenSettingsNotebooks,
-    }, openManageLessons, openLessonStudio);
+    }, openLearningManagement, canAccessCurriculumManagement ? openCurriculumManagement : null, needsCurriculumAssignment ? openAssignCurriculumPrompt : null);
     return;
   }
 
@@ -209,13 +187,17 @@ export function renderDashboardView(container, props) {
     classroomContext.appendChild(motto);
   }
 
-  const secondaryContentSlot = document.createElement('div');
+  wrapper.appendChild(createClassroomHeaderElement({ classroomContext }));
+
+  if (needsCurriculumAssignment) {
+    wrapper.appendChild(createAssignCurriculumBanner(openAssignCurriculumPrompt));
+  }
 
   wrapper.appendChild(
-    createClassroomHeaderElement({
-      classroomContext,
-      primaryAction: createClassModeWidgetElement({ onStartClassMode }),
-      secondaryContent: secondaryContentSlot,
+    renderPrimaryModulesSection({
+      onStartClassMode,
+      onOpenLearningManagement: openLearningManagement,
+      onOpenCurriculumManagement: canAccessCurriculumManagement ? openCurriculumManagement : null,
     })
   );
 
@@ -290,8 +272,101 @@ export function renderDashboardView(container, props) {
 
   wrapper.appendChild(content);
   container.appendChild(wrapper);
+}
 
-  loadContinueWorking(classroom, currentUser, secondaryContentSlot, onSelectNotebook, openManageLessons, openLessonStudio, resourceService.getMostRecentlyEditedResource(classroom), openRecentResource);
+/**
+ * The three equally-weighted cards that are now the Dashboard's only
+ * entry points into anything beyond what's already visible on this
+ * page — see this file's own header comment for the full reasoning
+ * and what each one replaces.
+ */
+/**
+ * The one-time nudge for a classroom created before Curriculum was a
+ * required field — see ui/views/AssignCurriculumPromptView.js's own
+ * header comment. Deliberately its own small, unmissable banner (not
+ * folded into the Teaching Assistant's recommendation engine) since
+ * it's a one-off migration prompt, not an ongoing "what should I do
+ * next" recommendation.
+ */
+function createAssignCurriculumBanner(onOpen) {
+  const banner = document.createElement('div');
+  banner.className = 'assign-curriculum-banner';
+
+  const text = document.createElement('span');
+  text.className = 'assign-curriculum-banner__text';
+  text.textContent = 'This class doesn\u2019t have a curriculum yet.';
+  banner.appendChild(text);
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn btn--primary assign-curriculum-banner__button';
+  button.textContent = 'Assign Curriculum';
+  button.addEventListener('click', onOpen);
+  banner.appendChild(button);
+
+  return banner;
+}
+
+function renderPrimaryModulesSection({ onStartClassMode, onOpenLearningManagement, onOpenCurriculumManagement }) {
+  const section = document.createElement('div');
+  section.className = 'primary-modules';
+
+  section.appendChild(
+    createPrimaryModuleCard({
+      icon: '\u25b6',
+      label: 'Classroom Management',
+      description: 'Run today\u2019s class',
+      onClick: onStartClassMode,
+    })
+  );
+
+  section.appendChild(
+    createPrimaryModuleCard({
+      icon: '\ud83d\udcda',
+      label: 'Learning Management',
+      description: 'Prepare lessons, support students',
+      onClick: onOpenLearningManagement,
+    })
+  );
+
+  if (onOpenCurriculumManagement) {
+    section.appendChild(
+      createPrimaryModuleCard({
+        icon: '\u2699\ufe0f',
+        label: 'Curriculum Management',
+        description: 'Install, upload, assign curriculum',
+        onClick: onOpenCurriculumManagement,
+        muted: true, // "used occasionally" — see this file's header comment on why the entry-point *card* still matches the other two in size, just not in color/emphasis
+      })
+    );
+  }
+
+  return section;
+}
+
+function createPrimaryModuleCard({ icon, label, description, onClick, muted = false }) {
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'primary-module-card' + (muted ? ' primary-module-card--muted' : '');
+
+  const iconEl = document.createElement('span');
+  iconEl.className = 'primary-module-card__icon';
+  iconEl.setAttribute('aria-hidden', 'true');
+  iconEl.textContent = icon;
+  card.appendChild(iconEl);
+
+  const labelEl = document.createElement('span');
+  labelEl.className = 'primary-module-card__label';
+  labelEl.textContent = label;
+  card.appendChild(labelEl);
+
+  const descriptionEl = document.createElement('span');
+  descriptionEl.className = 'primary-module-card__description';
+  descriptionEl.textContent = description;
+  card.appendChild(descriptionEl);
+
+  card.addEventListener('click', onClick);
+  return card;
 }
 
 /**
@@ -299,19 +374,20 @@ export function renderDashboardView(container, props) {
  * deliberately nothing but a celebratory heading and whatever
  * ui/components/TeachingAssistant.js decides to render (which, with
  * no students yet, will always be its "add students" recommendation
- * at full-card priority), PLUS one deliberate exception: the "Manage
- * Lessons" button into Learning Record (see
- * ui/views/LearningRecordView.js, docs/LEARNING_RECORD.md). Every
- * other Dashboard feature suppressed here — Start Class Mode,
- * Recognition, Groups, Notebook Tracker — is genuinely a teaching-time
- * feature with nothing to act on without a roster. Learning Record is
- * not: building a syllabus (Subjects -> Units -> Lessons) is
- * independent of whether any students have been added yet, and a
- * teacher very plausibly wants to do this *before* importing a
- * roster, not after. Omitting it here would mean the feature has no
- * visible entry point at all on a brand-new classroom.
+ * at full-card priority), PLUS two deliberate exceptions: Learning
+ * Management and Curriculum Management (see
+ * ui/views/LearningManagementView.js,
+ * ui/views/CurriculumManagementView.js). Classroom Management (Class
+ * Mode) is genuinely a teaching-time feature with nothing to act on
+ * without a roster, so it's omitted here, matching every other
+ * teaching-time feature suppressed on this screen — Recognition,
+ * Groups, Notebook Tracker. Curriculum work is not: building a
+ * syllabus (Subjects -> Units -> Concepts) or setting up a curriculum
+ * assignment is independent of whether any students have been added
+ * yet, and a teacher very plausibly wants to do either *before*
+ * importing a roster, not after.
  */
-function renderPreRosterWelcome(container, classroom, assistantCallbacks, onManageLessons, onCreateLesson) {
+function renderPreRosterWelcome(container, classroom, assistantCallbacks, onOpenLearningManagement, onOpenCurriculumManagement, onOpenAssignCurriculumPrompt) {
   const wrapper = document.createElement('div');
   wrapper.className = 'pre-roster-welcome';
 
@@ -326,29 +402,33 @@ function renderPreRosterWelcome(container, classroom, assistantCallbacks, onMana
 
   wrapper.append(emoji, title);
 
+  if (onOpenAssignCurriculumPrompt) {
+    wrapper.appendChild(createAssignCurriculumBanner(onOpenAssignCurriculumPrompt));
+  }
+
   const assistantSlot = document.createElement('div');
   wrapper.appendChild(assistantSlot);
 
-  if (onManageLessons || onCreateLesson) {
+  if (onOpenLearningManagement || onOpenCurriculumManagement) {
     const actionsRow = document.createElement('div');
     actionsRow.className = 'pre-roster-welcome__actions-row';
 
-    if (onManageLessons) {
-      const manageLessonsButton = document.createElement('button');
-      manageLessonsButton.type = 'button';
-      manageLessonsButton.className = 'btn btn--primary pre-roster-welcome__manage-lessons-button';
-      manageLessonsButton.textContent = '\ud83d\udcda Manage Lessons';
-      manageLessonsButton.addEventListener('click', onManageLessons);
-      actionsRow.appendChild(manageLessonsButton);
+    if (onOpenLearningManagement) {
+      const learningManagementButton = document.createElement('button');
+      learningManagementButton.type = 'button';
+      learningManagementButton.className = 'btn btn--primary pre-roster-welcome__curriculum-button';
+      learningManagementButton.textContent = '\ud83d\udcda Learning Management';
+      learningManagementButton.addEventListener('click', onOpenLearningManagement);
+      actionsRow.appendChild(learningManagementButton);
     }
 
-    if (onCreateLesson) {
-      const createLessonButton = document.createElement('button');
-      createLessonButton.type = 'button';
-      createLessonButton.className = 'btn btn--primary pre-roster-welcome__create-lesson-button';
-      createLessonButton.textContent = '\u270f\ufe0f Create Lesson';
-      createLessonButton.addEventListener('click', onCreateLesson);
-      actionsRow.appendChild(createLessonButton);
+    if (onOpenCurriculumManagement) {
+      const curriculumManagementButton = document.createElement('button');
+      curriculumManagementButton.type = 'button';
+      curriculumManagementButton.className = 'btn btn--ghost pre-roster-welcome__curriculum-management-button';
+      curriculumManagementButton.textContent = '\u2699\ufe0f Curriculum Management';
+      curriculumManagementButton.addEventListener('click', onOpenCurriculumManagement);
+      actionsRow.appendChild(curriculumManagementButton);
     }
 
     wrapper.appendChild(actionsRow);
@@ -407,35 +487,5 @@ function createSettingsButton(onOpenSettings) {
   button.textContent = 'Settings';
   button.addEventListener('click', onOpenSettings);
   return button;
-}
-
-async function loadContinueWorking(classroom, currentUser, slot, onSelectNotebook, onManageLessons, onCreateLesson, recentResource, onOpenRecentResource) {
-  const allEntries = await continueWorkingService.getRecentOnce(currentUser?.uid);
-  const classroomEntries = allEntries.filter((entry) => entry.classroomId === classroom.id);
-
-  const resolvedEntries = classroomEntries.map((entry) => ({
-    ...entry,
-    subjectName: notebookConfigService.getSubjectById(classroom, entry.subjectId)?.name || 'Unknown subject',
-    notebookTypeName: notebookConfigService.getNotebookTypeById(classroom, entry.notebookTypeId)?.name || 'Unknown notebook',
-  }));
-
-  slot.innerHTML = '';
-  // Always rendered now, regardless of whether there are any recent
-  // notebooks — this card carries the "+ Add Lesson" entry point into
-  // Learning Record (see ContinueWorkingWidget.js's own doc comment),
-  // which must always be visible. Previously this function returned
-  // early here whenever a teacher had no recent notebooks at all,
-  // which would have hidden that button for exactly the teachers most
-  // likely to be new to the app.
-  slot.appendChild(
-    createContinueWorkingWidgetElement({
-      entries: resolvedEntries,
-      onOpenNotebook: onSelectNotebook,
-      onManageLessons,
-      onCreateLesson,
-      recentResource,
-      onOpenRecentResource,
-    })
-  );
 }
 

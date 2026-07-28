@@ -15,7 +15,7 @@ import {
   getDisplaySubtitle,
 } from '../../services/classroomService.js';
 
-export function renderHomeView(container, { classrooms, onSelectClassroom, onNewClassroom, onJoinClassroom }) {
+export function renderHomeView(container, { classrooms, onSelectClassroom, onNewClassroom, onJoinClassroom, onOpenCurriculumManagement }) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
@@ -61,5 +61,15 @@ export function renderHomeView(container, { classrooms, onSelectClassroom, onNew
   });
 
   wrapper.append(header, grid);
+
+  if (onOpenCurriculumManagement) {
+    const curriculumLink = document.createElement('button');
+    curriculumLink.type = 'button';
+    curriculumLink.className = 'btn btn--text home-view__curriculum-management-link';
+    curriculumLink.textContent = '\u2699\ufe0f Manage Curriculum Packs';
+    curriculumLink.addEventListener('click', onOpenCurriculumManagement);
+    wrapper.appendChild(curriculumLink);
+  }
+
   container.appendChild(wrapper);
 }

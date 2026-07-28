@@ -564,6 +564,11 @@ select:focus-visible,
   display: flex;
   gap: 0.75rem;
 }
+.home-view__curriculum-management-link {
+  display: block;
+  margin: 2rem auto 0;
+  color: var(--color-muted);
+}
 
 .home-view__title {
   font-size: 1.5rem;
@@ -3934,245 +3939,6 @@ button.wizard-checklist__row:hover {
 .dashboard-widget__header-row .dashboard-widget__heading {
   margin: 0;
 }
-.dashboard-widget__manage-lessons-button {
-  display: block;
-  width: 100%;
-  margin-bottom: 1rem;
-  padding: 1rem 1.25rem;
-  border: none;
-  border-radius: 14px;
-  background-color: #1565C0;
-  color: #ffffff;
-  font-size: 1.15rem;
-  font-weight: var(--font-weight-black);
-  cursor: pointer;
-  box-shadow: 0 4px 14px rgba(21, 101, 192, 0.35);
-}
-.dashboard-widget__manage-lessons-button:hover {
-  background-color: #0d4d94;
-}
-
-/* "Continue Working" resource shortcut — see
-   ContinueWorkingWidget.js's own doc comment */
-.dashboard-widget__recent-resource-chip {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  width: 100%;
-  text-align: left;
-  background-color: #EAF2FB;
-  border: 1px solid #d3e4f7;
-  border-radius: 14px;
-  padding: 0.75rem 1rem;
-  margin-bottom: 0.85rem;
-  cursor: pointer;
-  font-family: inherit;
-}
-.dashboard-widget__recent-resource-chip:hover {
-  border-color: var(--color-primary);
-}
-.dashboard-widget__recent-resource-text {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  min-width: 0;
-}
-.dashboard-widget__recent-resource-title {
-  font-weight: var(--font-weight-bold);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.dashboard-widget__recent-resource-meta {
-  font-size: 0.8rem;
-  color: var(--color-muted);
-}
-
-/* Dashboard's two equally-prominent entry points, stacked — see
-   ContinueWorkingWidget.js's own doc comment for why these are
-   deliberately separate buttons, not one button with a mode. */
-.dashboard-widget__primary-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  margin-bottom: 1rem;
-}
-.dashboard-widget__create-lesson-button {
-  display: block;
-  width: 100%;
-  padding: 1rem 1.25rem;
-  border: none;
-  border-radius: 14px;
-  background-color: #b8631a;
-  color: #ffffff;
-  font-size: 1.15rem;
-  font-weight: var(--font-weight-black);
-  cursor: pointer;
-  box-shadow: 0 4px 14px rgba(184, 99, 26, 0.35);
-}
-.dashboard-widget__create-lesson-button:hover {
-  background-color: #964f13;
-}
-
-/* Pre-roster welcome screen — same two buttons, side by side (see
-   ui/views/DashboardView.js's renderPreRosterWelcome()) */
-.pre-roster-welcome__actions-row {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.75rem;
-  margin-top: 1.5rem;
-}
-.pre-roster-welcome__create-lesson-button {
-  background-color: #b8631a;
-  box-shadow: 0 4px 14px rgba(184, 99, 26, 0.35);
-}
-.pre-roster-welcome__create-lesson-button:hover {
-  background-color: #964f13;
-}
-
-/* Lesson Studio — see ui/views/LessonStudioView.js */
-.lesson-studio {
-  max-width: 640px;
-  margin: 0 auto;
-  padding: 0 1.5rem 3rem;
-}
-.lesson-studio__header {
-  padding: 1.25rem 0 0.5rem;
-}
-.lesson-studio__title {
-  font-size: 1.4rem;
-  font-weight: var(--font-weight-black);
-  margin: 0.75rem 0 1.25rem;
-}
-.lesson-studio__section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
-}
-.lesson-studio__section-heading {
-  font-size: 1rem;
-  font-weight: var(--font-weight-black);
-  margin: 0.5rem 0 0;
-}
-.lesson-studio__onboarding-heading {
-  font-size: 1.3rem;
-  font-weight: var(--font-weight-black);
-  margin: 0.5rem 0 0.25rem;
-}
-.lesson-studio__onboarding-steps {
-  margin: 0 0 0.5rem;
-  padding-left: 1.4rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  color: var(--color-ink);
-}
-.lesson-studio__step-heading {
-  font-size: 1.1rem;
-  font-weight: var(--font-weight-black);
-  margin: 0.25rem 0 0.5rem;
-}
-.lesson-studio__choice-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 0.6rem;
-}
-.lesson-studio__choice-option {
-  padding: 1rem 0.9rem;
-  border: 2px solid var(--color-border);
-  border-radius: 14px;
-  background-color: #ffffff;
-  font-weight: var(--font-weight-bold);
-  cursor: pointer;
-  text-align: center;
-}
-.lesson-studio__choice-option:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-.lesson-studio__name-form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-}
-.lesson-studio__name-form input[type='text'] {
-  flex: 1;
-  min-width: 220px;
-  padding: 0.6rem 0.85rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  font-size: 1rem;
-}
-.lesson-studio__continue-card {
-  display: flex;
-  align-items: center;
-  gap: 0.85rem;
-  width: 100%;
-  text-align: left;
-  background-color: #FDEEDF;
-  border: 1px solid #f5d9b8;
-  border-radius: 16px;
-  padding: 1rem 1.15rem;
-  cursor: pointer;
-  font-family: inherit;
-  color: #b8631a;
-}
-.lesson-studio__continue-card:hover {
-  border-color: #b8631a;
-}
-.lesson-studio__continue-text {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  min-width: 0;
-}
-.lesson-studio__continue-title {
-  font-weight: var(--font-weight-black);
-  color: var(--color-ink);
-}
-.lesson-studio__continue-meta {
-  font-size: 0.85rem;
-  color: var(--color-muted);
-}
-.lesson-studio__recent-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-.lesson-studio__recent-row {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  width: 100%;
-  text-align: left;
-  background-color: #ffffff;
-  border-radius: 14px;
-  padding: 0.75rem 1rem;
-  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
-  cursor: pointer;
-  font-family: inherit;
-}
-.lesson-studio__recent-row:hover {
-  box-shadow: 0 4px 16px rgba(21, 101, 192, 0.18);
-}
-.lesson-studio__recent-text {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  min-width: 0;
-}
-.lesson-studio__recent-title {
-  font-weight: var(--font-weight-bold);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.lesson-studio__recent-meta {
-  font-size: 0.8rem;
-  color: var(--color-muted);
-}
-
 /* Classroom Dashboard header (Phase 4) — Primary Action / Secondary
    Content slots, in addition to the existing classroom context block.
    Structural only, matching this whole feature's "no visual polish yet"
@@ -4186,6 +3952,87 @@ button.wizard-checklist__row:hover {
 
 .classroom-header__context {
   flex: 1 1 100%;
+}
+
+/* The three equally-weighted primary-module cards — see
+   ui/views/DashboardView.js's renderPrimaryModulesSection(). Replaces
+   every previous Dashboard entry point (Start Class Mode as a header
+   button, "📚 Manage Lessons," "✏️ Create Lesson," "Continue Working,"
+   and later a single "📚 Curriculum" button). */
+.primary-modules {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+.primary-module-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.75rem 1.25rem;
+  border: none;
+  border-radius: 18px;
+  background-color: #1565C0;
+  color: #ffffff;
+  cursor: pointer;
+  text-align: center;
+  box-shadow: 0 4px 14px rgba(21, 101, 192, 0.35);
+}
+.primary-module-card:hover {
+  background-color: #0d4d94;
+}
+.primary-module-card__icon {
+  font-size: 1.6rem;
+}
+.primary-module-card__label {
+  font-size: 1.05rem;
+  font-weight: var(--font-weight-black);
+}
+.primary-module-card__description {
+  font-size: 0.82rem;
+  opacity: 0.85;
+}
+/* "Used occasionally, not part of daily teaching" — the entry-point
+   *card* is the same size as the other two (equal visual treatment,
+   per explicit instruction), but its color is deliberately muted
+   rather than the same bold primary blue, so a teacher's eye still
+   naturally lands on Classroom/Learning Management first. */
+.primary-module-card--muted {
+  background-color: #E5E7EB;
+  color: var(--color-ink);
+  box-shadow: none;
+}
+.primary-module-card--muted:hover {
+  background-color: #D1D5DB;
+}
+.primary-module-card--muted .primary-module-card__description {
+  opacity: 0.7;
+}
+
+.pre-roster-welcome__curriculum-button {
+  margin-top: 1.5rem;
+  padding: 1rem 1.75rem;
+  border: none;
+  border-radius: 14px;
+  background-color: #1565C0;
+  color: #ffffff;
+  font-size: 1.1rem;
+  font-weight: var(--font-weight-black);
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(21, 101, 192, 0.35);
+}
+.pre-roster-welcome__curriculum-button:hover {
+  background-color: #0d4d94;
+}
+.pre-roster-welcome__curriculum-management-button {
+  margin-top: 1.5rem;
+}
+.pre-roster-welcome__actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
 }
 
 /*
@@ -5257,21 +5104,7 @@ button.wizard-checklist__row:hover {
   font-weight: var(--font-weight-black);
   margin: 0 0 1.5rem;
 }
-.pre-roster-welcome__manage-lessons-button {
-  margin-top: 1.5rem;
-  padding: 1rem 1.75rem;
-  border: none;
-  border-radius: 14px;
-  background-color: #1565C0;
-  color: #ffffff;
-  font-size: 1.1rem;
-  font-weight: var(--font-weight-black);
-  cursor: pointer;
-  box-shadow: 0 4px 14px rgba(21, 101, 192, 0.35);
-}
-.pre-roster-welcome__manage-lessons-button:hover {
-  background-color: #0d4d94;
-}
+
 
 /* Settings' richer empty state - icon + title + message, used where a plain one-line message (see .empty-state) isn't enough, e.g. the Students tab before any students exist */
 .settings-empty-state {
@@ -5391,4 +5224,689 @@ button.wizard-checklist__row:hover {
   flex-direction: column;
   gap: 0.5rem;
   align-items: center;
+}
+
+/* Curriculum Management v1 — see ui/views/CurriculumManagementView.js */
+.curriculum-management {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 1.5rem 3rem;
+}
+.curriculum-management__header {
+  padding: 1.25rem 0 0.5rem;
+}
+.curriculum-management__title {
+  font-size: 1.4rem;
+  font-weight: var(--font-weight-black);
+  margin: 0.75rem 0 1.25rem;
+}
+.curriculum-management__section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.curriculum-management__intro {
+  color: var(--color-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+.curriculum-management__step-heading {
+  font-size: 1.1rem;
+  font-weight: var(--font-weight-black);
+  margin: 0.25rem 0 0.5rem;
+}
+.curriculum-management__extract-note {
+  background-color: #FDEEDF;
+  color: #964f13;
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  margin: 0;
+}
+.curriculum-management__create-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+}
+.curriculum-management__labeled-input {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-weight: var(--font-weight-medium);
+  font-size: 0.85rem;
+}
+.curriculum-management__labeled-input input[type='text'] {
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font-size: 1rem;
+  font-weight: normal;
+}
+.curriculum-management__file-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-weight: var(--font-weight-medium);
+  font-size: 0.85rem;
+}
+.curriculum-management__unit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.curriculum-management__unit-block {
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 1.1rem 1.25rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+}
+.curriculum-management__unit-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+.curriculum-management__unit-title-input {
+  flex: 1;
+  font-weight: var(--font-weight-bold);
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+.curriculum-management__concept-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0 0 0.75rem 2rem;
+}
+.curriculum-management__concept-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.curriculum-management__concept-row input[type='text'] {
+  flex: 1;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+.curriculum-management__reorder {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex-shrink: 0;
+}
+.curriculum-management__reorder-button {
+  background: none;
+  border: none;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.7rem;
+  color: var(--color-muted);
+  cursor: pointer;
+  line-height: 1;
+}
+.curriculum-management__reorder-button:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.curriculum-management__add-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-left: 2rem;
+}
+.curriculum-management__add-form input[type='text'] {
+  flex: 1;
+  min-width: 160px;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+.curriculum-management__download-block {
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 1.25rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+}
+.curriculum-management__download-label {
+  font-weight: var(--font-weight-bold);
+  margin: 0 0 0.6rem;
+}
+.curriculum-management__download-preview {
+  background-color: #F3F4F6;
+  border-radius: 10px;
+  padding: 0.85rem;
+  font-size: 0.8rem;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.curriculum-management__download-actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+
+/* Curriculum View — see ui/views/CurriculumView.js. Single entry
+   point for all curriculum work: Choose Subject -> Choose Curriculum
+   -> the Explorer (one screen, an accordion of Units). */
+.curriculum-view {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 0 1.5rem 3rem;
+}
+.learning-management__header {
+  padding: 1.25rem 0 0.5rem;
+}
+.learning-management__title {
+  font-size: 1.4rem;
+  font-weight: var(--font-weight-black);
+  margin: 0.75rem 0 1.25rem;
+}
+.learning-management__section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.learning-management__step-heading {
+  font-size: 1.1rem;
+  font-weight: var(--font-weight-black);
+  margin: 0.25rem 0 0.5rem;
+}
+.learning-management__error {
+  color: #b3261e;
+}
+.learning-management__choice-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.6rem;
+}
+.learning-management__choice-option {
+  padding: 1rem 0.9rem;
+  border: 2px solid var(--color-border);
+  border-radius: 14px;
+  background-color: #ffffff;
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+  text-align: center;
+}
+.learning-management__choice-option:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.learning-management__inline-add-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.learning-management__inline-add-form input[type='text'] {
+  flex: 1;
+  min-width: 200px;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+.learning-management__manage-lessons-link {
+  text-align: center;
+  color: var(--color-muted);
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
+}
+/* Continue Working, now embedded above the Explorer instead of on the
+   Dashboard — see ui/views/CurriculumView.js's renderExplorerStep() */
+.learning-management__continue-working {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.learning-management__continue-working-label {
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.learning-management__continue-card {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+  text-align: left;
+  background-color: #FDEEDF;
+  border: 1px solid #f5d9b8;
+  border-radius: 16px;
+  padding: 1rem 1.15rem;
+  cursor: pointer;
+  font-family: inherit;
+  color: #b8631a;
+}
+.learning-management__continue-card:hover {
+  border-color: #b8631a;
+}
+.learning-management__continue-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.learning-management__continue-title {
+  font-weight: var(--font-weight-black);
+  color: var(--color-ink);
+}
+.learning-management__continue-meta {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+/* The Explorer's accordion — one screen, Units expand to their
+   Concepts in place. */
+
+
+/* Curriculum Management's hub (Install / Upload / Assign) and Assign
+   Curriculum flow — see ui/views/CurriculumManagementView.js */
+.curriculum-management__hub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.85rem;
+}
+.curriculum-management__hub-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.5rem 1.1rem;
+  border: 2px solid var(--color-border);
+  border-radius: 16px;
+  background-color: #ffffff;
+  cursor: pointer;
+  text-align: center;
+}
+.curriculum-management__hub-card:hover {
+  border-color: var(--color-primary);
+}
+.curriculum-management__hub-card-icon {
+  font-size: 1.6rem;
+}
+.curriculum-management__hub-card-title {
+  font-weight: var(--font-weight-black);
+  font-size: 1rem;
+}
+.curriculum-management__hub-card-description {
+  font-size: 0.82rem;
+  color: var(--color-muted);
+}
+.curriculum-management__assign-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  padding: 1rem 1.1rem;
+  border: 2px solid var(--color-border);
+  border-radius: 14px;
+  background-color: #ffffff;
+  cursor: pointer;
+  text-align: left;
+  font-weight: var(--font-weight-bold);
+}
+.curriculum-management__assign-choice:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.curriculum-management__assign-current {
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-muted);
+}
+
+/* Global Curriculum Library — Browse / Curriculum Details / Assigned
+   Curricula — see ui/views/CurriculumManagementView.js */
+.curriculum-management__error {
+  color: #b3261e;
+}
+.curriculum-management__library-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+.curriculum-management__library-section-heading {
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-black);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin: 0;
+}
+.curriculum-management__curriculum-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.85rem;
+}
+.curriculum-management__curriculum-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  padding: 1.1rem 1.2rem;
+  border: 2px solid var(--color-border);
+  border-radius: 16px;
+  background-color: #ffffff;
+  cursor: pointer;
+  text-align: left;
+}
+.curriculum-management__curriculum-card:hover {
+  border-color: var(--color-primary);
+}
+.curriculum-management__curriculum-card-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.curriculum-management__curriculum-card-name {
+  font-weight: var(--font-weight-black);
+  font-size: 1.05rem;
+}
+.curriculum-management__curriculum-card-meta {
+  font-size: 0.82rem;
+  color: var(--color-muted);
+}
+.curriculum-management__curriculum-card-badge {
+  margin-top: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary);
+  background-color: #EAF2FB;
+  border-radius: var(--radius-pill);
+  padding: 0.2rem 0.6rem;
+}
+.curriculum-management__details-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+}
+.curriculum-management__detail-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.curriculum-management__detail-label {
+  font-size: 0.78rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.curriculum-management__detail-value {
+  font-size: 1rem;
+  white-space: pre-line;
+}
+.curriculum-management__details-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+.curriculum-management__status-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background-color: #EAF7EC;
+  border-radius: 14px;
+  padding: 1rem 1.25rem;
+}
+.curriculum-management__status-label {
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+}
+.curriculum-management__status-value {
+  font-size: 1.05rem;
+  font-weight: var(--font-weight-black);
+  color: #2e7d32;
+}
+
+/* The shared Curriculum Explorer accordion — see
+   ui/components/CurriculumExplorerPanel.js. Used by both Learning
+   Management (live) and Curriculum Management's Preview Structure
+   (read-only) — one implementation, one set of styles. */
+.curriculum-explorer-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.curriculum-explorer-panel__unit-row {
+  background-color: #ffffff;
+  border-radius: 14px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+  overflow: hidden;
+}
+.curriculum-explorer-panel__unit-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.9rem 1.1rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-weight: var(--font-weight-bold);
+  font-family: inherit;
+  font-size: 1rem;
+}
+.curriculum-explorer-panel__unit-toggle svg {
+  flex-shrink: 0;
+  transition: transform var(--duration-fast, 0.15s) var(--ease-standard, ease);
+}
+.curriculum-explorer-panel__unit-toggle--expanded svg {
+  transform: rotate(90deg);
+}
+.curriculum-explorer-panel__unit-toggle span:first-of-type {
+  flex: 1;
+}
+.curriculum-explorer-panel__unit-count {
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-muted);
+}
+.curriculum-explorer-panel__concept-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0 1.1rem 0.9rem 2.5rem;
+}
+.curriculum-explorer-panel__concept-option {
+  text-align: left;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background-color: #ffffff;
+  cursor: pointer;
+  font-family: inherit;
+}
+.curriculum-explorer-panel__concept-option:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.curriculum-explorer-panel__concept-static {
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background-color: #F9FAFB;
+  color: var(--color-muted);
+}
+
+/* The one-time "Assign Curriculum" nudge on a classroom's Dashboard
+   for a classroom created before Curriculum was a required field —
+   see ui/views/DashboardView.js's createAssignCurriculumBanner() */
+.assign-curriculum-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  background-color: #FDEEDF;
+  border: 1px solid #f5d9b8;
+  border-radius: 16px;
+  padding: 1rem 1.25rem;
+  margin: 1rem 0;
+}
+.assign-curriculum-banner__text {
+  font-weight: var(--font-weight-bold);
+  color: #964f13;
+}
+.assign-curriculum-banner__button {
+  flex-shrink: 0;
+}
+
+/* The required Curriculum field in the New Classroom modal — see
+   ui/components/NewClassroomModal.js */
+.modal__curriculum-toggle {
+  width: 100%;
+  text-align: left;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background-color: #ffffff;
+  font-family: inherit;
+  font-size: 0.95rem;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+.modal__curriculum-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.modal__curriculum-toggle--selected {
+  color: var(--color-ink);
+  font-weight: var(--font-weight-bold);
+  border-color: var(--color-primary);
+}
+.modal__curriculum-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.modal__curriculum-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background-color: #ffffff;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+.modal__curriculum-option:hover {
+  border-color: var(--color-primary);
+}
+.modal__curriculum-option-name {
+  font-weight: var(--font-weight-bold);
+}
+.modal__curriculum-option-version {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
+/* The one-time Assign Curriculum prompt (legacy classrooms) — see
+   ui/views/AssignCurriculumPromptView.js */
+.assign-curriculum-prompt {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0 1.5rem 3rem;
+}
+.assign-curriculum-prompt__header {
+  padding: 1.25rem 0 0.5rem;
+}
+.assign-curriculum-prompt__title {
+  font-size: 1.4rem;
+  font-weight: var(--font-weight-black);
+  margin: 0.75rem 0 1.25rem;
+}
+.assign-curriculum-prompt__section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.assign-curriculum-prompt__intro {
+  color: var(--color-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+.assign-curriculum-prompt__error {
+  color: #b3261e;
+}
+.assign-curriculum-prompt__option-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.85rem;
+}
+.assign-curriculum-prompt__option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  padding: 1.1rem 1.2rem;
+  border: 2px solid var(--color-border);
+  border-radius: 16px;
+  background-color: #ffffff;
+  cursor: pointer;
+  text-align: left;
+}
+.assign-curriculum-prompt__option:hover {
+  border-color: var(--color-primary);
+}
+.assign-curriculum-prompt__option-name {
+  font-weight: var(--font-weight-black);
+  font-size: 1.05rem;
+}
+.assign-curriculum-prompt__option-version {
+  font-size: 0.82rem;
+  color: var(--color-muted);
+}
+.assign-curriculum-prompt__confirm-heading {
+  font-size: 1.2rem;
+  font-weight: var(--font-weight-black);
+  margin: 0;
+}
+.assign-curriculum-prompt__confirm-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+}
+.assign-curriculum-prompt__detail-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.assign-curriculum-prompt__detail-label {
+  font-size: 0.78rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.assign-curriculum-prompt__detail-value {
+  font-size: 1rem;
 }

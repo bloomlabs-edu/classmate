@@ -101,7 +101,7 @@ export function moveResourceDown(concept, resourceId) {
  * a placeholder for.
  *
  * Optional `type` filter — Lesson Studio's "Continue Writing" (see
- * ui/views/LessonStudioView.js) wants the most recent *Reading*
+ * ui/views/LearningManagementView.js) wants the most recent *Reading*
  * specifically, since that space is about lessons, not every resource
  * type; the Dashboard's own generic shortcut calls this with no
  * filter, since it means "whatever a teacher touched last," full stop.

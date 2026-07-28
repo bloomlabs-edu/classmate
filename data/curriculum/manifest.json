@@ -1,0 +1,61 @@
+{
+  "_comment": "Curriculum Library manifest — Official and Community curricula, each with a permanent curriculumId and one or more versions, each with its own permanent versionId. Schools/classrooms reference a versionId (see models/Classroom.js's curriculumAssignment field), never the curriculum's data directly, so a school can stay on the edition it started the year with even after a newer version is published. Adding a new curriculum, version, grade, or subject means adding JSON here, never touching services/curriculumLibraryService.js. Sample/illustrative data for this milestone — NCERT, CBSE, Kerala State Board, and Cambridge IGCSE are listed for browsing but have no published version yet (empty versions array) — only Samacheer Kalvi Grade 8 Science has real pack content.",
+  "official": [
+    {
+      "curriculumId": "samacheer-kalvi",
+      "name": "Samacheer Kalvi",
+      "publisher": "Tamil Nadu School Education Department",
+      "board": "Tamil Nadu State Board",
+      "status": "official",
+      "versions": [
+        {
+          "versionId": "samacheer-kalvi-2026",
+          "versionLabel": "2026",
+          "grades": [
+            {
+              "id": "grade-8",
+              "name": "Grade 8",
+              "subjects": [
+                { "id": "science", "name": "Science", "packFile": "tn-samacheer-kalvi-grade8-science.json" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "curriculumId": "ncert",
+      "name": "NCERT",
+      "publisher": "National Council of Educational Research and Training",
+      "board": "CBSE-affiliated / National",
+      "status": "official",
+      "versions": []
+    },
+    {
+      "curriculumId": "cbse",
+      "name": "CBSE",
+      "publisher": "Central Board of Secondary Education",
+      "board": "CBSE",
+      "status": "official",
+      "versions": []
+    }
+  ],
+  "community": [
+    {
+      "curriculumId": "kerala-state-board",
+      "name": "Kerala State Board",
+      "publisher": "Kerala State Council of Educational Research and Training",
+      "board": "Kerala State Board",
+      "status": "community",
+      "versions": []
+    },
+    {
+      "curriculumId": "cambridge-igcse",
+      "name": "Cambridge IGCSE",
+      "publisher": "Cambridge Assessment International Education",
+      "board": "Cambridge IGCSE",
+      "status": "community",
+      "versions": []
+    }
+  ]
+}

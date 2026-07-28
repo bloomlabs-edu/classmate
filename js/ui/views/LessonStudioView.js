@@ -4,112 +4,199 @@
  * The dedicated front door to lesson authoring — reached via the
  * Dashboard's "✏️ Create Lesson" button (see ContinueWorkingWidget.js),
  * a separate, equally prominent button from "📚 Manage Lessons"
- * because they do different things: Manage Lessons builds the
- * syllabus tree; this is specifically about *writing* — creating and
- * resuming Reading lessons. Existing subjects/units/concepts are
- * reused here, never recreated — this view has no syllabus-editing
- * capability of its own, by design (see the "no syllabus yet" empty
- * state below, which points back to Manage Lessons rather than
- * duplicating it).
+ * because they do different things: Manage Lessons is the full
+ * syllabus-management tool (rename, delete, reorder); this is
+ * specifically about *writing* — creating and resuming Reading
+ * lessons, as few clicks away from "I have an idea for a lesson" as
+ * possible.
  *
- * Three states, decided purely by what already exists in the
+ * Curriculum-First Navigation (this milestone): after choosing a
+ * Subject, a teacher chooses *how* to get to a Unit and Concept —
+ * Curriculum Library (browse a real syllabus tree — Curriculum ->
+ * Grade -> Subject -> Unit -> Concept — with nothing to create by
+ * hand) or Custom Curriculum (the original manual funnel: type a Unit
+ * name, type a Concept name). Only Custom Curriculum ever shows an
+ * "+ Add" form; Curriculum Library is pure browsing, all the way down
+ * to a single concept, which is then materialized into the classroom
+ * automatically (see services/curriculumLibraryService.js's
+ * materializeUnitAndConcept() — find-or-create by title, so browsing
+ * the same curriculum concept twice never creates a duplicate) before
+ * landing on the exact same "Start Writing" step either path ends at.
+ * The destination (Lesson Workspace) never changes; only how a
+ * teacher arrives at a Concept does.
+ *
+ * Reuses learningRecordTeacherService.createSubject()/createUnit()/
+ * createConcept() — the exact same functions Manage Lessons itself
+ * calls — so this is a second, faster place to reach existing
+ * functionality, not a second implementation of it. Renaming,
+ * deleting, and reordering the syllabus still only happens in Manage
+ * Lessons (see the hub's "Manage full syllabus" link below).
+ *
+ * Two top-level states, decided purely by what already exists in the
  * classroom — never a mode a teacher has to choose manually:
- *   - No subjects at all yet -> "build your syllabus first," a link
- *     back to Manage Lessons.
- *   - Subjects exist, but no Reading lesson has ever been written ->
- *     the onboarding funnel: Choose Subject -> Choose Unit -> Choose
- *     Concept -> Start Writing.
+ *   - No Reading lesson has ever been written yet -> the onboarding
+ *     funnel, starting the same Choose Subject -> Choose Curriculum
+ *     path described above.
  *   - At least one Reading lesson exists -> the hub: Recent Lessons,
- *     Continue Writing (the single most recent one), Create New
- *     Lesson (the same funnel as onboarding, reused, not duplicated).
+ *     Continue Writing, Create New Lesson (the same funnel, reused).
  *
  * Self-contained, same pattern as every other view in this feature:
  * no router, no URL, local state only for which funnel step is
  * active. Takes the classroom directly and two callbacks: `onBack`
- * (return to the Dashboard) and `onOpenManageLessons` (for the
- * no-syllabus-yet empty state only).
+ * (return to the Dashboard) and `onOpenManageLessons` (the hub's
+ * secondary link to the full syllabus tool).
  */
 
 import * as workspaceService from '../../services/workspaceService.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
+import * as learningRecordTeacherService from '../../services/learningRecordTeacherService.js';
 import * as resourceService from '../../services/resourceService.js';
+import * as curriculumLibraryService from '../../services/curriculumLibraryService.js';
 import { getResourceTypeIcon } from '../../config/resourceTypeConfig.js';
-import { createEmptyStateElement } from '../components/EmptyState.js';
 import { createIcon } from '../components/Icon.js';
 import { renderReadingEditorView } from './ReadingEditorView.js';
 
 export function renderLessonStudioView(container, { classroom, onBack, onOpenManageLessons }) {
-  // 'hub' (default — decided by what already exists), 'choose-subject',
-  // 'choose-unit', 'choose-concept', or 'name-lesson'. selectedSubject/
-  // selectedUnit/selectedConcept only matter alongside the later
-  // funnel steps.
+  // See this file's header comment for the full state list. Only the
+  // fields relevant to the *current* mode are ever read; the rest sit
+  // unused between funnel runs rather than being reset defensively
+  // everywhere, matching the pattern already established for the
+  // Custom Curriculum funnel.
   let mode = 'hub';
   let selectedSubject = null;
-  let selectedUnit = null;
-  let selectedConcept = null;
+  let selectedUnit = null; // Custom Curriculum's chosen Unit
+  let selectedConcept = null; // the Concept about to be named/written, either source
+  let selectedCurriculum = null;
+  let selectedGrade = null;
+  let selectedSubjectEntry = null; // { id, name, packFile }
+  let selectedPack = null;
+  let selectedSourceUnit = null; // the curriculum pack's own unit entry
+  let loadError = null;
 
   function rerender() {
-    renderStudio(container, classroom, mode, { selectedSubject, selectedUnit }, {
-      onBack,
-      onOpenManageLessons,
-      onStartFunnel: () => {
-        mode = 'choose-subject';
-        selectedSubject = null;
-        selectedUnit = null;
-        selectedConcept = null;
-        rerender();
-      },
-      onChooseSubject: (subject) => {
-        selectedSubject = subject;
-        mode = 'choose-unit';
-        rerender();
-      },
-      onChooseUnit: (unit) => {
-        selectedUnit = unit;
-        mode = 'choose-concept';
-        rerender();
-      },
-      onChooseConcept: (concept) => {
-        selectedConcept = concept;
-        mode = 'name-lesson';
-        rerender();
-      },
-      onCreateLesson: (title) => {
-        const resource = resourceService.createResourceOnConcept(selectedConcept, { title, type: 'reading' });
-        workspaceService.save(classroom);
-        renderReadingEditorView(container, {
-          classroom,
-          resource,
-          onBack: () => {
-            mode = 'hub';
-            rerender();
-          },
-        });
-      },
-      onOpenLesson: (resource) => {
-        renderReadingEditorView(container, {
-          classroom,
-          resource,
-          onBack: () => {
-            mode = 'hub';
-            rerender();
-          },
-        });
-      },
-      onBackToHub: () => {
-        mode = 'hub';
-        rerender();
-      },
-      onBackToSubjectChoice: () => {
-        mode = 'choose-subject';
-        selectedUnit = null;
-        rerender();
-      },
-      onBackToUnitChoice: () => {
-        mode = 'choose-unit';
-        rerender();
-      },
-    });
+    renderStudio(
+      container,
+      classroom,
+      mode,
+      { selectedSubject, selectedUnit, selectedCurriculum, selectedGrade, selectedSubjectEntry, selectedPack, selectedSourceUnit, loadError },
+      {
+        onBack,
+        onOpenManageLessons,
+        onStartFunnel: () => {
+          mode = 'choose-subject';
+          selectedSubject = null;
+          selectedUnit = null;
+          selectedConcept = null;
+          rerender();
+        },
+        onChooseSubject: (subject) => {
+          selectedSubject = subject;
+          mode = 'choose-curriculum';
+          rerender();
+        },
+        onPickCustomCurriculum: () => {
+          mode = 'choose-unit';
+          rerender();
+        },
+        onPickCurriculumLibrary: () => {
+          loadError = null;
+          mode = 'cl-choose-curriculum';
+          rerender();
+        },
+
+        // ---- Custom Curriculum (manual, unchanged) ----
+        onChooseUnit: (unit) => {
+          selectedUnit = unit;
+          mode = 'choose-concept';
+          rerender();
+        },
+        onChooseConcept: (concept) => {
+          selectedConcept = concept;
+          mode = 'name-lesson';
+          rerender();
+        },
+        onBackToUnitChoice: () => {
+          mode = 'choose-unit';
+          rerender();
+        },
+
+        // ---- Curriculum Library (browse-only) ----
+        onChooseCurriculum: (curriculum) => {
+          selectedCurriculum = curriculum;
+          mode = 'cl-choose-grade';
+          rerender();
+        },
+        onChooseGrade: (grade) => {
+          selectedGrade = grade;
+          mode = 'cl-choose-subject';
+          rerender();
+        },
+        onChooseSubjectEntry: async (subjectEntry) => {
+          selectedSubjectEntry = subjectEntry;
+          loadError = null;
+          try {
+            selectedPack = await curriculumLibraryService.getPack(subjectEntry.packFile);
+          } catch (error) {
+            console.error('[LessonStudioView] Failed to load curriculum pack:', error);
+            loadError = "Couldn't load this subject's units. Check your connection and try again.";
+          }
+          mode = 'cl-choose-unit';
+          rerender();
+        },
+        onChooseSourceUnit: (sourceUnit) => {
+          selectedSourceUnit = sourceUnit;
+          mode = 'cl-choose-concept';
+          rerender();
+        },
+        onChooseSourceConcept: (conceptTitle) => {
+          // The one place browsing turns into real data — see
+          // materializeUnitAndConcept()'s own doc comment.
+          const { unit, concept } = curriculumLibraryService.materializeUnitAndConcept(
+            classroom,
+            selectedSubject,
+            selectedSourceUnit.title,
+            conceptTitle
+          );
+          workspaceService.save(classroom);
+          selectedUnit = unit;
+          selectedConcept = concept;
+          mode = 'name-lesson';
+          rerender();
+        },
+        onBackTo: (targetMode) => {
+          mode = targetMode;
+          rerender();
+        },
+
+        // ---- Shared final step ----
+        onCreateLesson: (title) => {
+          const resource = resourceService.createResourceOnConcept(selectedConcept, { title, type: 'reading' });
+          workspaceService.save(classroom);
+          renderReadingEditorView(container, {
+            classroom,
+            resource,
+            onBack: () => {
+              mode = 'hub';
+              rerender();
+            },
+          });
+        },
+        onOpenLesson: (resource) => {
+          renderReadingEditorView(container, {
+            classroom,
+            resource,
+            onBack: () => {
+              mode = 'hub';
+              rerender();
+            },
+          });
+        },
+        onBackToHub: () => {
+          mode = 'hub';
+          rerender();
+        },
+      }
+    );
   }
 
   rerender();
@@ -141,10 +228,22 @@ function renderStudio(container, classroom, mode, selection, handlers) {
 
   if (mode === 'choose-subject') {
     wrapper.appendChild(renderChooseSubjectStep(classroom, handlers));
+  } else if (mode === 'choose-curriculum') {
+    wrapper.appendChild(renderChooseCurriculumModeStep(selection.selectedSubject, handlers));
   } else if (mode === 'choose-unit') {
-    wrapper.appendChild(renderChooseUnitStep(selection.selectedSubject, handlers));
+    wrapper.appendChild(renderChooseUnitStep(classroom, selection.selectedSubject, handlers));
   } else if (mode === 'choose-concept') {
-    wrapper.appendChild(renderChooseConceptStep(selection.selectedUnit, handlers));
+    wrapper.appendChild(renderChooseConceptStep(classroom, selection.selectedUnit, handlers));
+  } else if (mode === 'cl-choose-curriculum') {
+    wrapper.appendChild(renderCLCurriculumStep(handlers));
+  } else if (mode === 'cl-choose-grade') {
+    wrapper.appendChild(renderCLGradeStep(selection.selectedCurriculum, handlers));
+  } else if (mode === 'cl-choose-subject') {
+    wrapper.appendChild(renderCLSubjectStep(selection.selectedGrade, handlers));
+  } else if (mode === 'cl-choose-unit') {
+    wrapper.appendChild(renderCLUnitStep(selection, handlers));
+  } else if (mode === 'cl-choose-concept') {
+    wrapper.appendChild(renderCLConceptStep(selection.selectedSourceUnit, handlers));
   } else if (mode === 'name-lesson') {
     wrapper.appendChild(renderNameLessonStep(handlers));
   } else {
@@ -159,22 +258,6 @@ function renderStudio(container, classroom, mode, selection, handlers) {
 function renderHub(classroom, handlers) {
   const section = document.createElement('div');
   section.className = 'lesson-studio__section';
-
-  const hasAnySubjects = learningRecordService.getSubjects(classroom).length > 0;
-
-  if (!hasAnySubjects) {
-    section.appendChild(
-      createEmptyStateElement({ message: "You'll need a Subject, Unit, and Concept before writing a lesson." })
-    );
-
-    const manageLessonsButton = document.createElement('button');
-    manageLessonsButton.type = 'button';
-    manageLessonsButton.className = 'btn btn--primary';
-    manageLessonsButton.textContent = '\ud83d\udcda Build Your Syllabus';
-    manageLessonsButton.addEventListener('click', handlers.onOpenManageLessons);
-    section.appendChild(manageLessonsButton);
-    return section;
-  }
 
   const recentLessons = resourceService.getRecentResourcesByType(classroom, 'reading', 5);
 
@@ -240,6 +323,15 @@ function renderHub(classroom, handlers) {
   createNewButton.addEventListener('click', handlers.onStartFunnel);
   section.appendChild(createNewButton);
 
+  if (handlers.onOpenManageLessons) {
+    const manageLessonsLink = document.createElement('button');
+    manageLessonsLink.type = 'button';
+    manageLessonsLink.className = 'btn btn--text lesson-studio__manage-lessons-link';
+    manageLessonsLink.textContent = 'Need to rename, delete, or reorganize? Manage full syllabus \u2192';
+    manageLessonsLink.addEventListener('click', handlers.onOpenManageLessons);
+    section.appendChild(manageLessonsLink);
+  }
+
   return section;
 }
 
@@ -255,7 +347,7 @@ function renderOnboardingIntro(handlers) {
 
   const steps = document.createElement('ol');
   steps.className = 'lesson-studio__onboarding-steps';
-  ['Choose Subject', 'Choose Unit', 'Choose Concept', 'Start Writing'].forEach((step) => {
+  ['Choose Subject', 'Choose Curriculum', 'Choose Unit & Concept', 'Start Writing'].forEach((step) => {
     const item = document.createElement('li');
     item.textContent = step;
     steps.appendChild(item);
@@ -271,7 +363,7 @@ function renderOnboardingIntro(handlers) {
   return section;
 }
 
-// ---- Funnel steps (shared by onboarding and "Create New Lesson") --------
+// ---- Choose Subject (unchanged) --------------------------------------
 
 function renderChooseSubjectStep(classroom, handlers) {
   const section = document.createElement('div');
@@ -283,22 +375,93 @@ function renderChooseSubjectStep(classroom, handlers) {
   section.appendChild(heading);
 
   const subjects = learningRecordService.getSubjects(classroom);
-  const grid = document.createElement('div');
-  grid.className = 'lesson-studio__choice-grid';
-  subjects.forEach((subject) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'lesson-studio__choice-option';
-    button.textContent = subject.title;
-    button.addEventListener('click', () => handlers.onChooseSubject(subject));
-    grid.appendChild(button);
-  });
-  section.appendChild(grid);
+  if (subjects.length > 0) {
+    const grid = document.createElement('div');
+    grid.className = 'lesson-studio__choice-grid';
+    subjects.forEach((subject) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'lesson-studio__choice-option';
+      button.textContent = subject.title;
+      button.addEventListener('click', () => handlers.onChooseSubject(subject));
+      grid.appendChild(button);
+    });
+    section.appendChild(grid);
+  }
+
+  section.appendChild(
+    createInlineAddForm('New subject name (e.g. Science)', '+ Add Subject', (title) => {
+      const subject = learningRecordTeacherService.createSubject(classroom, { title });
+      workspaceService.save(classroom);
+      handlers.onChooseSubject(subject);
+    })
+  );
 
   return section;
 }
 
-function renderChooseUnitStep(subject, handlers) {
+// ---- Choose Curriculum (NEW) ------------------------------------------
+
+/**
+ * The one new decision this milestone adds to the funnel: how does a
+ * teacher want to reach a Unit and Concept for this Subject? Neither
+ * option is a dead end or a placeholder — Curriculum Library really
+ * browses real data (see the cl-* steps below); Custom Curriculum
+ * really is the exact same manual funnel this app already had.
+ */
+function renderChooseCurriculumModeStep(subject, handlers) {
+  const section = document.createElement('div');
+  section.className = 'lesson-studio__section';
+
+  const heading = document.createElement('p');
+  heading.className = 'lesson-studio__step-heading';
+  heading.textContent = `Choose Curriculum \u2014 ${subject.title}`;
+  section.appendChild(heading);
+
+  const grid = document.createElement('div');
+  grid.className = 'lesson-studio__curriculum-mode-grid';
+
+  const libraryOption = document.createElement('button');
+  libraryOption.type = 'button';
+  libraryOption.className = 'lesson-studio__curriculum-mode-option';
+  libraryOption.appendChild(createIcon('graduation-cap', { size: 24 }));
+  const libraryText = document.createElement('span');
+  libraryText.className = 'lesson-studio__curriculum-mode-text';
+  const libraryTitle = document.createElement('span');
+  libraryTitle.className = 'lesson-studio__curriculum-mode-title';
+  libraryTitle.textContent = 'Curriculum Library';
+  const librarySubtitle = document.createElement('span');
+  librarySubtitle.className = 'lesson-studio__curriculum-mode-subtitle';
+  librarySubtitle.textContent = 'Samacheer Kalvi';
+  libraryText.append(libraryTitle, librarySubtitle);
+  libraryOption.appendChild(libraryText);
+  libraryOption.addEventListener('click', handlers.onPickCurriculumLibrary);
+  grid.appendChild(libraryOption);
+
+  const customOption = document.createElement('button');
+  customOption.type = 'button';
+  customOption.className = 'lesson-studio__curriculum-mode-option';
+  customOption.appendChild(createIcon('palette', { size: 24 }));
+  const customText = document.createElement('span');
+  customText.className = 'lesson-studio__curriculum-mode-text';
+  const customTitle = document.createElement('span');
+  customTitle.className = 'lesson-studio__curriculum-mode-title';
+  customTitle.textContent = '\u2728 Custom Curriculum';
+  const customSubtitle = document.createElement('span');
+  customSubtitle.className = 'lesson-studio__curriculum-mode-subtitle';
+  customSubtitle.textContent = 'Create your own Units and Concepts';
+  customText.append(customTitle, customSubtitle);
+  customOption.appendChild(customText);
+  customOption.addEventListener('click', handlers.onPickCustomCurriculum);
+  grid.appendChild(customOption);
+
+  section.appendChild(grid);
+  return section;
+}
+
+// ---- Custom Curriculum: Choose Unit / Choose Concept (unchanged) -----
+
+function renderChooseUnitStep(classroom, subject, handlers) {
   const section = document.createElement('div');
   section.className = 'lesson-studio__section';
 
@@ -306,8 +469,8 @@ function renderChooseUnitStep(subject, handlers) {
   backButton.type = 'button';
   backButton.className = 'btn btn--text';
   backButton.appendChild(createIcon('arrow-left'));
-  backButton.append('Back to Subjects');
-  backButton.addEventListener('click', handlers.onBackToSubjectChoice);
+  backButton.append('Back to Curriculum Choice');
+  backButton.addEventListener('click', () => handlers.onBackTo('choose-curriculum'));
   section.appendChild(backButton);
 
   const heading = document.createElement('p');
@@ -315,27 +478,32 @@ function renderChooseUnitStep(subject, handlers) {
   heading.textContent = `Choose Unit \u2014 ${subject.title}`;
   section.appendChild(heading);
 
-  if (subject.units.length === 0) {
-    section.appendChild(createEmptyStateElement({ message: `${subject.title} has no units yet. Add one in Manage Lessons first.` }));
-    return section;
+  if (subject.units.length > 0) {
+    const grid = document.createElement('div');
+    grid.className = 'lesson-studio__choice-grid';
+    subject.units.forEach((unit) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'lesson-studio__choice-option';
+      button.textContent = unit.title;
+      button.addEventListener('click', () => handlers.onChooseUnit(unit));
+      grid.appendChild(button);
+    });
+    section.appendChild(grid);
   }
 
-  const grid = document.createElement('div');
-  grid.className = 'lesson-studio__choice-grid';
-  subject.units.forEach((unit) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'lesson-studio__choice-option';
-    button.textContent = unit.title;
-    button.addEventListener('click', () => handlers.onChooseUnit(unit));
-    grid.appendChild(button);
-  });
-  section.appendChild(grid);
+  section.appendChild(
+    createInlineAddForm('New unit name (e.g. Force and Pressure)', '+ Add Unit', (title) => {
+      const unit = learningRecordTeacherService.createUnit(classroom, subject.id, { title });
+      workspaceService.save(classroom);
+      handlers.onChooseUnit(unit);
+    })
+  );
 
   return section;
 }
 
-function renderChooseConceptStep(unit, handlers) {
+function renderChooseConceptStep(classroom, unit, handlers) {
   const section = document.createElement('div');
   section.className = 'lesson-studio__section';
 
@@ -352,25 +520,179 @@ function renderChooseConceptStep(unit, handlers) {
   heading.textContent = `Choose Concept \u2014 ${unit.title}`;
   section.appendChild(heading);
 
-  if (unit.concepts.length === 0) {
-    section.appendChild(createEmptyStateElement({ message: `${unit.title} has no concepts yet. Add one in Manage Lessons first.` }));
-    return section;
+  if (unit.concepts.length > 0) {
+    const grid = document.createElement('div');
+    grid.className = 'lesson-studio__choice-grid';
+    unit.concepts.forEach((concept) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'lesson-studio__choice-option';
+      button.textContent = concept.title;
+      button.addEventListener('click', () => handlers.onChooseConcept(concept));
+      grid.appendChild(button);
+    });
+    section.appendChild(grid);
   }
+
+  section.appendChild(
+    createInlineAddForm('New concept name (e.g. Friction)', '+ Add Concept', (title) => {
+      const concept = learningRecordTeacherService.createConcept(classroom, unit.id, { title });
+      workspaceService.save(classroom);
+      handlers.onChooseConcept(concept);
+    })
+  );
+
+  return section;
+}
+
+// ---- Curriculum Library: browse-only, no add-forms anywhere ----------
+
+function renderCLCurriculumStep(handlers) {
+  const section = document.createElement('div');
+  section.className = 'lesson-studio__section';
+  const heading = document.createElement('p');
+  heading.className = 'lesson-studio__step-heading';
+  heading.textContent = 'Choose a Curriculum';
+  section.appendChild(heading);
+
+  const listEl = document.createElement('div');
+  listEl.className = 'lesson-studio__choice-grid';
+  listEl.textContent = 'Loading\u2026';
+  section.appendChild(listEl);
+
+  curriculumLibraryService
+    .getCurricula()
+    .then((curricula) => {
+      listEl.innerHTML = '';
+      curricula.forEach((curriculum) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'lesson-studio__choice-option';
+        button.textContent = curriculum.name;
+        button.addEventListener('click', () => handlers.onChooseCurriculum(curriculum));
+        listEl.appendChild(button);
+      });
+    })
+    .catch((error) => {
+      console.error('[LessonStudioView] Failed to load curricula:', error);
+      listEl.textContent = "Couldn't load the Curriculum Library. Check your connection and try again.";
+    });
+
+  return section;
+}
+
+function renderCLGradeStep(curriculum, handlers) {
+  const section = document.createElement('div');
+  section.className = 'lesson-studio__section';
+  const heading = document.createElement('p');
+  heading.className = 'lesson-studio__step-heading';
+  heading.textContent = `Choose Grade \u2014 ${curriculum.name}`;
+  section.appendChild(heading);
 
   const grid = document.createElement('div');
   grid.className = 'lesson-studio__choice-grid';
-  unit.concepts.forEach((concept) => {
+  curriculum.grades.forEach((grade) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'lesson-studio__choice-option';
-    button.textContent = concept.title;
-    button.addEventListener('click', () => handlers.onChooseConcept(concept));
+    button.textContent = grade.name;
+    button.addEventListener('click', () => handlers.onChooseGrade(grade));
     grid.appendChild(button);
   });
   section.appendChild(grid);
 
   return section;
 }
+
+function renderCLSubjectStep(grade, handlers) {
+  const section = document.createElement('div');
+  section.className = 'lesson-studio__section';
+  const heading = document.createElement('p');
+  heading.className = 'lesson-studio__step-heading';
+  heading.textContent = `Choose Subject \u2014 ${grade.name}`;
+  section.appendChild(heading);
+
+  const grid = document.createElement('div');
+  grid.className = 'lesson-studio__choice-grid';
+  grade.subjects.forEach((subjectEntry) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'lesson-studio__choice-option';
+    button.textContent = subjectEntry.name;
+    button.addEventListener('click', () => handlers.onChooseSubjectEntry(subjectEntry));
+    grid.appendChild(button);
+  });
+  section.appendChild(grid);
+
+  return section;
+}
+
+function renderCLUnitStep(selection, handlers) {
+  const section = document.createElement('div');
+  section.className = 'lesson-studio__section';
+
+  if (selection.loadError) {
+    const error = document.createElement('p');
+    error.className = 'lesson-studio__error';
+    error.textContent = selection.loadError;
+    section.appendChild(error);
+    return section;
+  }
+
+  const pack = selection.selectedPack;
+  const heading = document.createElement('p');
+  heading.className = 'lesson-studio__step-heading';
+  heading.textContent = 'Choose Unit';
+  section.appendChild(heading);
+
+  const grid = document.createElement('div');
+  grid.className = 'lesson-studio__choice-grid';
+  pack.units.forEach((sourceUnit) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'lesson-studio__choice-option';
+    button.textContent = sourceUnit.title;
+    button.addEventListener('click', () => handlers.onChooseSourceUnit(sourceUnit));
+    grid.appendChild(button);
+  });
+  section.appendChild(grid);
+
+  return section;
+}
+
+function renderCLConceptStep(sourceUnit, handlers) {
+  const section = document.createElement('div');
+  section.className = 'lesson-studio__section';
+
+  const backButton = document.createElement('button');
+  backButton.type = 'button';
+  backButton.className = 'btn btn--text';
+  backButton.appendChild(createIcon('arrow-left'));
+  backButton.append('Back to Units');
+  backButton.addEventListener('click', () => handlers.onBackTo('cl-choose-unit'));
+  section.appendChild(backButton);
+
+  const heading = document.createElement('p');
+  heading.className = 'lesson-studio__step-heading';
+  heading.textContent = `Choose Concept \u2014 ${sourceUnit.title}`;
+  section.appendChild(heading);
+
+  const grid = document.createElement('div');
+  grid.className = 'lesson-studio__choice-grid';
+  sourceUnit.concepts.forEach((conceptTitle) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'lesson-studio__choice-option';
+    button.textContent = conceptTitle;
+    button.addEventListener('click', () => handlers.onChooseSourceConcept(conceptTitle));
+    grid.appendChild(button);
+  });
+  section.appendChild(grid);
+
+  return section;
+}
+
+// ---- Shared final step: name & start writing --------------------------
 
 function renderNameLessonStep(handlers) {
   const section = document.createElement('div');
@@ -403,4 +725,28 @@ function renderNameLessonStep(handlers) {
   input.focus();
 
   return section;
+}
+
+// ---- Shared small helper ----------------------------------------------
+
+function createInlineAddForm(placeholder, buttonLabel, onAdd) {
+  const form = document.createElement('div');
+  form.className = 'lesson-studio__inline-add-form';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = placeholder;
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn btn--ghost';
+  button.textContent = buttonLabel;
+  button.addEventListener('click', () => {
+    const value = input.value.trim();
+    if (!value) return;
+    onAdd(value);
+  });
+
+  form.append(input, button);
+  return form;
 }
