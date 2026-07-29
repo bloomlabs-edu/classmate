@@ -158,6 +158,11 @@ export function createCurriculumIndexSession() {
     curriculumReviewService.moveDraftUnitDown(index, unitId);
   }
 
+  /** The single source of truth for reassigning a unit to a different Part — used by both the Part dropdown and drag-and-drop, never anything else. */
+  function moveUnitToPart(unitId, targetPartId, targetIndex) {
+    curriculumReviewService.moveDraftUnitToPart(index, unitId, targetPartId, targetIndex);
+  }
+
   /**
    * A manually-added unit has no printed page at all — there's no
    * source row it came from. Requires a Part to belong to; if none is
@@ -216,6 +221,7 @@ export function createCurriculumIndexSession() {
     deleteUnit,
     moveUnitUp,
     moveUnitDown,
+    moveUnitToPart,
     addUnit,
     addPart,
     renamePart,

@@ -6044,3 +6044,31 @@ button.wizard-checklist__row:hover {
   border: none;
   padding: 0;
 }
+
+/* Drag-and-drop between Parts (Pointer Events) — see
+   ui/views/CurriculumManagementView.js's attachUnitDragHandlers() */
+.curriculum-management__unit-drag-handle {
+  cursor: grab;
+  color: var(--color-muted);
+  font-size: 1.1rem;
+  padding: 0.2rem 0.35rem;
+  touch-action: none;
+  user-select: none;
+}
+.curriculum-management__unit-drag-handle:active {
+  cursor: grabbing;
+}
+.curriculum-management__import-unit-row--dragging {
+  opacity: 0.5;
+}
+.curriculum-management__part-section--drop-target {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary);
+}
+.curriculum-management__unit-part-select {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font-size: 0.85rem;
+  max-width: 160px;
+}

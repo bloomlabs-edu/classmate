@@ -234,6 +234,10 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
           indexSession.moveUnitDown(unitId);
           rerender();
         },
+        onMoveIndexUnitToPart: (unitId, targetPartId) => {
+          indexSession.moveUnitToPart(unitId, targetPartId);
+          rerender();
+        },
         onAddIndexUnit: (title, partId) => {
           indexSession.addUnit(title, partId);
           rerender();
@@ -1022,6 +1026,7 @@ function renderIndexReviewUnitsStep(index, handlers) {
 function renderIndexPartSection(index, part, handlers, showHeader) {
   const wrap = document.createElement('div');
   wrap.className = 'curriculum-management__part-section';
+  wrap.dataset.partId = part.id;
   if (!showHeader) wrap.classList.add('curriculum-management__part-section--bare');
 
   if (showHeader) {
@@ -1049,7 +1054,7 @@ function renderIndexPartSection(index, part, handlers, showHeader) {
   const unitList = document.createElement('div');
   unitList.className = 'curriculum-management__import-unit-list';
   partUnits.forEach((unit, unitIndexWithinPart) => {
-    unitList.appendChild(renderIndexUnitRow(unit, unitIndexWithinPart, partUnits.length, handlers));
+    unitList.appendChild(renderIndexUnitRow(unit, unitIndexWithinPart, partUnits.length, index.parts, handlers));
   });
   wrap.appendChild(unitList);
 
@@ -1062,12 +1067,20 @@ function renderAddPartForm(handlers) {
   return createAddForm('New part name (e.g. History, Geography)', '+ Add Part', (name) => handlers.onAddPart(name));
 }
 
-function renderIndexUnitRow(unit, unitIndexWithinPart, partUnitCount, handlers) {
+function renderIndexUnitRow(unit, unitIndexWithinPart, partUnitCount, allParts, handlers) {
   const row = document.createElement('div');
   row.className = 'curriculum-management__import-unit-row';
+  row.dataset.unitId = unit.id;
 
   const topLine = document.createElement('div');
   topLine.className = 'curriculum-management__import-unit-top-line';
+
+  const dragHandle = document.createElement('span');
+  dragHandle.className = 'curriculum-management__unit-drag-handle';
+  dragHandle.setAttribute('aria-hidden', 'true'); // decorative only — the Part dropdown below is the real, accessible way to do the same thing
+  dragHandle.textContent = '\u283f';
+  attachUnitDragHandlers(dragHandle, unit, handlers);
+  topLine.appendChild(dragHandle);
 
   const reorder = createReorderButtons(
     unitIndexWithinPart === 0,
@@ -1088,6 +1101,25 @@ function renderIndexUnitRow(unit, unitIndexWithinPart, partUnitCount, handlers) 
     topLine.appendChild(pageEl);
   }
 
+  // The permanent, accessible way to move a unit to a different Part
+  // — works identically for keyboard, screen reader, and touch users,
+  // and is never removed or hidden in favor of dragging; dragging is
+  // an additional shortcut alongside this, not a replacement for it.
+  const partSelect = document.createElement('select');
+  partSelect.className = 'curriculum-management__unit-part-select';
+  partSelect.setAttribute('aria-label', `Move "${unit.title}" to a different part`);
+  allParts.forEach((part) => {
+    const option = document.createElement('option');
+    option.value = part.id;
+    option.textContent = part.name;
+    if (part.id === unit.partId) option.selected = true;
+    partSelect.appendChild(option);
+  });
+  partSelect.addEventListener('change', () => {
+    if (partSelect.value !== unit.partId) handlers.onMoveIndexUnitToPart(unit.id, partSelect.value);
+  });
+  topLine.appendChild(partSelect);
+
   const deleteButton = document.createElement('button');
   deleteButton.type = 'button';
   deleteButton.className = 'btn btn--text btn--danger-text';
@@ -1100,6 +1132,110 @@ function renderIndexUnitRow(unit, unitIndexWithinPart, partUnitCount, handlers) 
 
   row.appendChild(topLine);
   return row;
+}
+
+/**
+ * Pure decision logic, deliberately separated from the DOM/pointer
+ * event wiring below it: given each Part section's own bounding
+ * rectangle (plain data, not DOM elements) and a point, which Part
+ * (if any) contains that point? Kept as its own function specifically
+ * so this can be tested directly with synthetic rect data — real
+ * layout geometry (getBoundingClientRect) can only be exercised in an
+ * actual browser, not in a sandboxed test environment, but this
+ * function's own logic can be verified precisely regardless of that.
+ */
+export function findPartIdUnderPoint(partRects, clientX, clientY) {
+  for (const { partId, rect } of partRects) {
+    if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
+      return partId;
+    }
+  }
+  return null;
+}
+
+const DRAGGING_ROW_CLASS = 'curriculum-management__import-unit-row--dragging';
+const HIGHLIGHTED_PART_CLASS = 'curriculum-management__part-section--drop-target';
+
+/**
+ * Pointer Events, not native HTML5 drag-and-drop — the same event
+ * model already covers mouse, touch, and pen, so touch support is a
+ * matter of future UI polish (larger touch targets, a small drag-start
+ * delay to avoid conflicting with scrolling), not a second
+ * implementation built from scratch later. `setPointerCapture` means
+ * every subsequent pointer event through the end of this drag fires
+ * on this exact handle element, regardless of where the pointer
+ * physically moves — no module-level "which unit is being dragged"
+ * state needs to exist anywhere else in this file.
+ *
+ * Deliberately simple for this milestone, per explicit instruction:
+ * highlight whichever Part the pointer is currently over; on drop,
+ * append the unit to the end of that Part (via
+ * services/curriculumReviewService.js's moveDraftUnitToPart(), the
+ * exact same function the Part dropdown calls) — no insertion-line
+ * precision yet. Dropping outside any Part section is a no-op; the
+ * unit simply stays where it was.
+ *
+ * Verified as correct through careful review, not through an
+ * end-to-end test: this sandbox's DOM shim has no real layout engine
+ * (`getBoundingClientRect`/`querySelectorAll` either don't exist or
+ * are stubbed to return nothing), so the actual pointer gesture is
+ * only ever exercised in a real browser, the same honest limitation
+ * as this app's other browser-only integrations (pdf.js). The one
+ * piece that *is* independently tested is findPartIdUnderPoint()
+ * above, which is where the actual hit-testing decision lives.
+ */
+function attachUnitDragHandlers(handle, unit, handlers) {
+  let isDragging = false;
+  let highlightedElement = null;
+
+  function clearHighlight() {
+    if (highlightedElement) {
+      highlightedElement.classList.remove(HIGHLIGHTED_PART_CLASS);
+      highlightedElement = null;
+    }
+  }
+
+  handle.addEventListener('pointerdown', (event) => {
+    isDragging = true;
+    handle.setPointerCapture(event.pointerId);
+    const row = handle.closest ? handle.closest('.curriculum-management__import-unit-row') : null;
+    if (row) row.classList.add(DRAGGING_ROW_CLASS);
+  });
+
+  handle.addEventListener('pointermove', (event) => {
+    if (!isDragging) return;
+    const partSectionElements = Array.from(document.querySelectorAll('.curriculum-management__part-section'));
+    const partRects = partSectionElements
+      .filter((el) => el.dataset && el.dataset.partId)
+      .map((el) => ({ partId: el.dataset.partId, rect: el.getBoundingClientRect() }));
+
+    const targetPartId = findPartIdUnderPoint(partRects, event.clientX, event.clientY);
+    const targetElement = targetPartId ? partSectionElements.find((el) => el.dataset.partId === targetPartId) : null;
+
+    if (targetElement !== highlightedElement) {
+      clearHighlight();
+      if (targetElement) {
+        targetElement.classList.add(HIGHLIGHTED_PART_CLASS);
+        highlightedElement = targetElement;
+      }
+    }
+  });
+
+  handle.addEventListener('pointerup', (event) => {
+    if (!isDragging) return;
+    isDragging = false;
+    handle.releasePointerCapture(event.pointerId);
+    const row = handle.closest ? handle.closest('.curriculum-management__import-unit-row') : null;
+    if (row) row.classList.remove(DRAGGING_ROW_CLASS);
+
+    if (highlightedElement) {
+      const targetPartId = highlightedElement.dataset.partId;
+      if (targetPartId && targetPartId !== unit.partId) {
+        handlers.onMoveIndexUnitToPart(unit.id, targetPartId);
+      }
+      clearHighlight();
+    }
+  });
 }
 
 /** Stage 3 of Phase 1 — confirmation. Attaching a textbook and extracting concepts are later milestones, not reachable from here yet. */

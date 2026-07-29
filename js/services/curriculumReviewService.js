@@ -112,6 +112,51 @@ export function moveDraftUnitDown(draft, unitId) {
 }
 
 /**
+ * The single source of truth for reassigning a unit to a different
+ * Part — both the drag-and-drop outcome and the "Part" dropdown call
+ * this exact function, never anything else, so the two entry points
+ * can never drift into inconsistent behavior. Splices the unit out of
+ * wherever it currently sits and re-inserts it within the target
+ * Part's own contiguous block — same-Part units must stay contiguous
+ * in the array for moveDraftUnitUp/Down's own guard (comparing
+ * adjacent entries' `partId`) to keep working correctly.
+ *
+ * `targetIndex` is the position *within the target Part's own local
+ * ordering* to insert at — 0 means "become that Part's first unit."
+ * Omitted (or past the end), the unit is appended after that Part's
+ * current last unit — this MVP's only drop behavior ("append to the
+ * end of the target Part"); insertion-line precision is a deliberate,
+ * later enhancement this same function is already shaped to support
+ * without changing its signature.
+ */
+export function moveDraftUnitToPart(draft, unitId, targetPartId, targetIndex = null) {
+  const currentIndex = draft.units.findIndex((u) => u.id === unitId);
+  if (currentIndex === -1) return;
+
+  const [unit] = draft.units.splice(currentIndex, 1);
+  unit.partId = targetPartId;
+
+  const targetPartIndices = [];
+  draft.units.forEach((u, i) => {
+    if (u.partId === targetPartId) targetPartIndices.push(i);
+  });
+
+  let insertAt;
+  if (targetPartIndices.length === 0) {
+    // The target Part has no units yet at all — nothing to be
+    // contiguous with, so simply append to the whole array's end.
+    insertAt = draft.units.length;
+  } else if (targetIndex === null || targetIndex >= targetPartIndices.length) {
+    insertAt = targetPartIndices[targetPartIndices.length - 1] + 1;
+  } else {
+    insertAt = targetPartIndices[targetIndex];
+  }
+
+  draft.units.splice(insertAt, 0, unit);
+  return unit;
+}
+
+/**
  * Combines two Units into one, in the position of whichever one
  * appears first in the draft — for when a Table of Contents lists two
  * entries that are really one lesson. The combined unit's page range
