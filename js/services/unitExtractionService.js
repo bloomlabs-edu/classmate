@@ -65,15 +65,22 @@
  * blank line does, so two real data blocks never accidentally merge
  * into one just because a label sat between them.
  *
- * Part detection: some curricula aren't one flat sequence — Social
- * Science restarts numbering per section (History Unit 1, Geography
- * Unit 1, ...), English organizes into Literature/Grammar/Writing,
- * and so on. See isConfirmedPartHeading() below for the actual
- * multi-signal detection (never uppercase alone, per explicit
- * instruction — real textbooks format headings inconsistently). Every
- * extracted unit carries a `partName` (`null` when no Part heading
- * was ever detected, which the caller treats as a single default
- * "General" part — Science's own workflow never sees a special case).
+ * Part detection is really group *preservation*, not subject
+ * inference: some curricula aren't one flat sequence — Social Science
+ * restarts numbering per section (History Unit 1, Geography Unit 1,
+ * ...), English organizes into Literature/Grammar/Writing, and so on.
+ * If a teacher's input is already organized under real headings, that
+ * structure should carry through untouched, whatever those headings
+ * happen to look like — this file has no business judging whether a
+ * line "looks like" a real subject name (no casing/formatting checks
+ * at all; see isConfirmedPartHeading() below for the one structural
+ * signal actually used). Every extracted unit carries a `partName`
+ * (`null` when no grouping was detectable at all, which the caller
+ * treats as a single default "General" Part — Science's own workflow
+ * never sees a special case). When this can't confidently determine
+ * a grouping, manual reassignment (the Part dropdown and drag-and-drop
+ * in ui/views/CurriculumManagementView.js) is the deliberate fallback,
+ * not a reason for this file to guess harder.
  */
 
 // Recognized as boilerplate, never real unit data — skipped
@@ -186,53 +193,44 @@ function isPlausibleTitle(title) {
  *
  *   - No digits at all in the line, and reasonably short — a real
  *     heading has no unit number and no page number sitting on it.
- *   - Formatting that reads like a heading — mostly uppercase, or
- *     every word capitalized (Title Case) — one signal among several,
- *     not the deciding one.
- *   - Preceded by a blank line in the original text — the closest
- *     proxy available to "visually separated," since this file only
- *     ever sees extracted text, never real layout/typography.
- *   - Genuinely load-bearing, and required rather than optional: is
- *     this line shortly followed by a row whose own Unit Number is 1
- *     — i.e., a brand new sequence actually starting right after it?
+ *   - Genuinely load-bearing, and the *only* requirement: is this
+ *     line shortly followed by a row whose own Unit Number is 1 —
+ *     i.e., a brand new sequence actually starting right after it?
  *     This is what a real Part heading always does and an ordinary
- *     short line essentially never coincidentally does. Verified as
- *     necessary, not just theoretically nice, against a real
- *     textbook: without requiring this specifically, a real book's
- *     own short, Title-Case unit title ("Measurement") was being
- *     mistaken for a Part heading purely from formatting and blank-line
- *     signals alone — those two are kept as confidence-boosters here,
- *     never sufecient by themselves.
+ *     short line essentially never coincidentally does — verified
+ *     sufficient on its own against a real textbook. An earlier
+ *     version of this also required the line to look a certain way
+ *     (mostly uppercase, or Title Case, or preceded by a blank line)
+ *     before trusting it — but that's exactly the kind of "inferring
+ *     what a subject name looks like" this file has no business
+ *     doing. The actual goal is group *preservation*: if a teacher's
+ *     input is already organized under real headings, whatever those
+ *     headings happen to look like, that structure should carry
+ *     through untouched — a heading in lowercase, or one with no
+ *     blank line before it, is exactly as real a grouping as one in
+ *     neat capitals. When no such structure is detectable at all,
+ *     every unit simply falls into a single default "General" Part —
+ *     manual reassignment (see the Part dropdown and drag-and-drop in
+ *     ui/views/CurriculumManagementView.js) is the deliberate fallback
+ *     for whatever this can't confidently determine on its own, not a
+ *     reason to guess harder.
  */
 const HEADING_LOOKAHEAD_WINDOW = 3;
 
 function looksLikeHeadingText(line) {
   return !/\d/.test(line) && line.length >= 2 && line.length <= 50;
 }
-function isMostlyUppercase(line) {
-  const letters = line.replace(/[^A-Za-z]/g, '');
-  if (!letters) return false;
-  return letters.replace(/[^A-Z]/g, '').length / letters.length >= 0.8;
-}
-function isTitleCase(line) {
-  const words = line.split(/\s+/).filter(Boolean);
-  return words.length > 0 && words.every((word) => /^[A-Z]/.test(word));
-}
 
-function isConfirmedPartHeading(line, lines, index, precededByBlank) {
+function isConfirmedPartHeading(line, lines, index) {
   if (!looksLikeHeadingText(line) || isLabelLine(line) || isMonthLine(line)) return false;
 
-  let foundUnitOne = false;
   for (let lookahead = index + 1; lookahead < Math.min(lines.length, index + 1 + HEADING_LOOKAHEAD_WINDOW); lookahead++) {
     const candidate = extractRowFields(lines[lookahead], null);
     if (candidate && !('standaloneNumber' in candidate) && candidate.number === 1) {
-      foundUnitOne = true;
-      break;
+      return true;
     }
   }
-  if (!foundUnitOne) return false;
-
-  return isMostlyUppercase(line) || isTitleCase(line) || precededByBlank[index];
+  return false;
 }
 
 /**
@@ -298,7 +296,7 @@ function extractRowFields(line, pendingStandaloneNumber) {
   return { number: tokenAsInteger(tokens[numberIdx]), title, printedPage: tokenAsInteger(tokens[pageIdx]) };
 }
 
-function extractSameLineRows(lines, precededByBlank) {
+function extractSameLineRows(lines) {
   const results = [];
   const consumed = new Array(lines.length).fill(false);
   let pendingStandaloneNumber = null;
@@ -316,7 +314,7 @@ function extractSameLineRows(lines, precededByBlank) {
       // to end in a number — verified as a real, serious false
       // positive this exact reset exists to prevent.
       pendingStandaloneNumber = null;
-      if (isConfirmedPartHeading(line, lines, i, precededByBlank)) {
+      if (isConfirmedPartHeading(line, lines, i)) {
         currentPartName = line;
         consumed[i] = true;
       }
@@ -420,27 +418,8 @@ function extractColumnMajorRows(remainingLines) {
  * other failed extraction, falling back to manual entry.
  */
 export function extractUnits(rawText) {
-  const rawLines = (rawText || '').split('\n').map((line) => line.trim());
-
-  // Blank lines are dropped from the working line list (same as
-  // before), but whether a line was *preceded* by one is preserved
-  // as a parallel array — one of Part detection's signals (the
-  // closest available proxy for "visually separated," since this
-  // file only ever sees extracted text, never real layout).
-  const lines = [];
-  const precededByBlank = [];
-  let lastLineWasBlank = true; // the very start of the document counts as "nothing before it"
-  for (const line of rawLines) {
-    if (!line) {
-      lastLineWasBlank = true;
-      continue;
-    }
-    lines.push(line);
-    precededByBlank.push(lastLineWasBlank);
-    lastLineWasBlank = false;
-  }
-
-  const { results: sameLineResults, consumed } = extractSameLineRows(lines, precededByBlank);
+  const lines = (rawText || '').split('\n').map((line) => line.trim()).filter(Boolean);
+  const { results: sameLineResults, consumed } = extractSameLineRows(lines);
   const remainingLines = lines.filter((_, i) => !consumed[i]);
   const columnResults = extractColumnMajorRows(remainingLines);
   return [...sameLineResults, ...columnResults];
