@@ -11,7 +11,7 @@
  * Browse Curriculum Library screen any other way.
  *
  * A submission is a reviewed pack (see
- * services/curriculumPackBuilderService.js's exportPackJson(), which
+ * services/curriculumReviewService.js's exportPackJson(), which
  * captures the full standardized metadata — Curriculum Name, Board,
  * Grade, Subject, Academic Year, Version, Language, Publisher —
  * before extraction even happens) plus a lifecycle:

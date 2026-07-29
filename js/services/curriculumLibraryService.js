@@ -56,7 +56,7 @@
 
 import * as learningRecordTeacherService from './learningRecordTeacherService.js';
 import * as curriculumSubmissionsService from './curriculumSubmissionsService.js';
-import { slugify } from './curriculumPackBuilderService.js';
+import { slugify } from './curriculumReviewService.js';
 
 /**
  * Groups every published submission into the Official/Community ->

@@ -5255,13 +5255,6 @@ button.wizard-checklist__row:hover {
   font-weight: var(--font-weight-black);
   margin: 0.25rem 0 0.5rem;
 }
-.curriculum-management__extract-note {
-  background-color: #FDEEDF;
-  color: #964f13;
-  border-radius: 12px;
-  padding: 0.85rem 1rem;
-  margin: 0;
-}
 .curriculum-management__create-form {
   display: flex;
   flex-direction: column;
@@ -5292,44 +5285,10 @@ button.wizard-checklist__row:hover {
   font-weight: var(--font-weight-medium);
   font-size: 0.85rem;
 }
-.curriculum-management__unit-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
-}
-.curriculum-management__unit-block {
-  background-color: #ffffff;
-  border-radius: 16px;
-  padding: 1.1rem 1.25rem;
-  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
-}
-.curriculum-management__unit-row {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin-bottom: 0.75rem;
-}
 .curriculum-management__unit-title-input {
   flex: 1;
   font-weight: var(--font-weight-bold);
   padding: 0.5rem 0.7rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-}
-.curriculum-management__concept-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  margin: 0 0 0.75rem 2rem;
-}
-.curriculum-management__concept-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.curriculum-management__concept-row input[type='text'] {
-  flex: 1;
-  padding: 0.45rem 0.65rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
 }
@@ -5626,24 +5585,6 @@ button.wizard-checklist__row:hover {
   flex-wrap: wrap;
   gap: 0.6rem;
   margin-top: 0.5rem;
-}
-.curriculum-management__status-card {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  background-color: #EAF7EC;
-  border-radius: 14px;
-  padding: 1rem 1.25rem;
-}
-.curriculum-management__status-label {
-  font-size: 0.85rem;
-  font-weight: var(--font-weight-bold);
-  color: var(--color-muted);
-}
-.curriculum-management__status-value {
-  font-size: 1.05rem;
-  font-weight: var(--font-weight-black);
-  color: #2e7d32;
 }
 
 /* The shared Curriculum Explorer accordion — see
@@ -5998,53 +5939,6 @@ button.wizard-checklist__row:hover {
    ui/views/CurriculumManagementView.js's renderExtractionDiagnosticsStep()
    and renderParsingFailedStep(). Debugging screens, deliberately plain
    and monospace-leaning where it shows raw extracted data. */
-.curriculum-management__diagnostics-page-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  max-height: 200px;
-  overflow-y: auto;
-  background-color: #ffffff;
-  border-radius: 12px;
-  padding: 0.75rem 1rem;
-  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
-}
-.curriculum-management__diagnostics-page-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.85rem;
-  padding: 0.15rem 0;
-}
-.curriculum-management__diagnostics-page-count {
-  color: var(--color-muted);
-  font-variant-numeric: tabular-nums;
-}
-.curriculum-management__diagnostics-preview-block {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-.curriculum-management__diagnostics-preview-label {
-  font-size: 0.8rem;
-  font-weight: var(--font-weight-bold);
-  color: var(--color-muted);
-  margin: 0;
-}
-.curriculum-management__diagnostics-preview-text {
-  background-color: #ffffff;
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  padding: 0.85rem 1rem;
-  max-height: 160px;
-  overflow-y: auto;
-  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
-  font-size: 0.78rem;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--color-ink);
-  margin: 0;
-}
 
 .curriculum-management__unit-page-range {
   font-size: 0.78rem;
@@ -6077,54 +5971,4 @@ button.wizard-checklist__row:hover {
   align-items: center;
   gap: 0.75rem;
   flex-wrap: wrap;
-}
-.curriculum-management__import-unit-status {
-  font-size: 0.78rem;
-  font-weight: var(--font-weight-bold);
-  color: #2e7d32;
-  white-space: nowrap;
-}
-.curriculum-management__import-unit-status--needs-review {
-  color: #b8631a;
-}
-.curriculum-management__anchor-prompt {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  background-color: #FDEEDF;
-  border: 1px solid #f5d9b8;
-  border-radius: 12px;
-  padding: 0.85rem 1rem;
-}
-.curriculum-management__anchor-prompt-label {
-  font-size: 0.85rem;
-  font-weight: var(--font-weight-bold);
-  color: #964f13;
-}
-.curriculum-management__anchor-prompt-choices {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-.curriculum-management__anchor-prompt-choice {
-  padding: 0.5rem 0.9rem;
-  border: 2px solid var(--color-border);
-  border-radius: var(--radius-pill);
-  background-color: #ffffff;
-  font-weight: var(--font-weight-bold);
-  cursor: pointer;
-}
-.curriculum-management__anchor-prompt-choice:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-.curriculum-management__anchor-prompt-manual {
-  display: flex;
-  gap: 0.5rem;
-}
-.curriculum-management__anchor-prompt-manual input {
-  width: 140px;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
 }

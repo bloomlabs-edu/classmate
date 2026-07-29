@@ -1,0 +1,114 @@
+/**
+ * services/curriculumIndexRepository.js
+ *
+ * Two-Phase Curriculum Import redesign. Storage only, for exactly one
+ * domain object: a Curriculum Index — curriculum metadata and a list
+ * of Units (number, title, printed page). No PDF, no concepts, no
+ * textbook edition information, ever. This is what makes a Curriculum
+ * Index reusable across multiple textbook editions: it has nothing in
+ * it that's specific to any one printing.
+ *
+ * services/curriculumIndexSession.js is the only orchestrator that
+ * calls this file. Every other Phase 1 concern — extracting units
+ * from a PDF or pasted text, letting a teacher rename/reorder/delete/
+ * add units — happens in that orchestrator or in
+ * services/curriculumReviewService.js (reused as-is; its unit
+ * mutation functions only ever touch `id`/`title`/array position, so
+ * they work identically here even though a Curriculum Index's units
+ * carry different extra fields than a Textbook's do).
+ *
+ * A CurriculumIndex record:
+ *   {
+ *     id, status: 'draft' | 'saved', createdAt, updatedAt,
+ *     curriculum: { name, board, grade, subject },
+ *     units: [{ id, number, title, printedPage }],
+ *   }
+ *
+ * Metadata ownership, per the agreed domain model: name, board,
+ * grade, and subject are stable across editions and live here.
+ * Publisher, language, academic year, and version label belong to a
+ * specific printing and will live on the Textbook record instead
+ * (Milestone 2) — not duplicated here.
+ *
+ * A separate IndexedDB database from the older combined-draft store
+ * (services/draftCurriculumService.js), not a new object store
+ * grafted onto it — keeping each repository's own schema and version
+ * history fully independent, per "repositories should manage storage
+ * only" and "services should remain loosely coupled."
+ */
+
+import { generateId } from '../utils/idGenerator.js';
+import { getCurrentIsoDate } from '../utils/dateHelpers.js';
+
+const DB_NAME = 'classmate-curriculum-index';
+const DB_VERSION = 1;
+const STORE_NAME = 'curriculumIndices';
+
+let dbPromise = null;
+
+function openDatabase() {
+  if (!dbPromise) {
+    dbPromise = new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+        }
+      };
+      request.onsuccess = (event) => resolve(event.target.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+  return dbPromise;
+}
+
+function runRequest(mode, useStore) {
+  return openDatabase().then(
+    (db) =>
+      new Promise((resolve, reject) => {
+        const transaction = db.transaction(STORE_NAME, mode);
+        const store = transaction.objectStore(STORE_NAME);
+        const request = useStore(store);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      })
+  );
+}
+
+/** Starts a brand-new Curriculum Index — Phase 1, right after a teacher provides curriculum metadata. */
+export async function createIndex({ curriculum }) {
+  const now = getCurrentIsoDate();
+  const index = {
+    id: generateId(),
+    status: 'draft',
+    createdAt: now,
+    updatedAt: now,
+    curriculum,
+    units: [],
+  };
+  await runRequest('readwrite', (store) => store.put(index));
+  return index;
+}
+
+/** Persists whatever the caller's current in-memory Curriculum Index looks like right now. */
+export async function saveIndex(index) {
+  index.updatedAt = getCurrentIsoDate();
+  await runRequest('readwrite', (store) => store.put(index));
+  return index;
+}
+
+export async function getIndex(indexId) {
+  const result = await runRequest('readonly', (store) => store.get(indexId));
+  return result || null;
+}
+
+/** Every saved Curriculum Index, most recently updated first — for a future "choose which curriculum to attach a textbook to" screen (Milestone 2). */
+export async function listIndexes() {
+  const all = await runRequest('readonly', (store) => store.getAll());
+  return all.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+}
+
+export async function deleteIndex(indexId) {
+  await runRequest('readwrite', (store) => store.delete(indexId));
+}

@@ -24,22 +24,21 @@
  *     actually published — see services/curriculumSubmissionsService.js.
  *     A fresh install shows a real, informative empty state here
  *     instead of hardcoded sample cards.
- *   - ➕ Contribute Curriculum — the upload flow (capture standardized
- *     metadata -> Upload PDF -> Extract -> Detect Table of Contents ->
- *     Detect Anchors -> Review Units -> Save Draft). This entire
- *     sequence now runs through
- *     services/curriculumImportSession.js, an orchestrator that calls
- *     each single-responsibility service in turn — this view never
- *     calls pdfExtractionService, tableOfContentsService, or
- *     anchorDetectionService directly. Vertical Slice milestone:
- *     Concept Extraction and Publish for this new pipeline are later
- *     milestones — "Save Draft" is as far as this path currently
- *     goes, persisted and resumable via draftCurriculumService, not
- *     yet reachable from here. "Start From Scratch" (no PDF) still
- *     uses the older curriculumPackBuilderService-based flow below,
- *     untouched, all the way through Submit.
- *     services/curriculumSubmissionsService.js with status
- *     'pending_review' instead.
+ *   - ➕ Create Curriculum — Two-Phase Curriculum Import redesign,
+ *     Milestone 1: builds a Curriculum Index only (curriculum
+ *     metadata plus a reviewed list of Units) — no textbook, no
+ *     anchor detection, no concept extraction anywhere in this flow.
+ *     A teacher provides curriculum metadata (name, board, grade,
+ *     subject — the fields stable across textbook editions) and
+ *     either uploads a TOC PDF or pastes TOC text; both converge on
+ *     the same services/tableOfContentsService.js extraction. Runs
+ *     entirely through services/curriculumIndexSession.js, which is
+ *     the only thing that calls pdfExtractionService,
+ *     tableOfContentsService, or curriculumReviewService directly —
+ *     this view never does. "Save Curriculum Index" is as far as this
+ *     path goes for now; attaching a textbook, locating unit
+ *     boundaries, and extracting concepts are later milestones
+ *     (Milestone 2+), deliberately not reachable from here yet.
  *   - 🔍 Review Submissions — where 'pending_review' actually becomes
  *     'published'. An admin opens a pending submission, decides
  *     Official vs. Community, and publishes it — the one and only way
@@ -64,9 +63,8 @@
  */
 
 import * as curriculumLibraryService from '../../services/curriculumLibraryService.js';
-import * as curriculumPackBuilderService from '../../services/curriculumPackBuilderService.js';
 import * as curriculumSubmissionsService from '../../services/curriculumSubmissionsService.js';
-import { createCurriculumImportSession } from '../../services/curriculumImportSession.js';
+import { createCurriculumIndexSession } from '../../services/curriculumIndexSession.js';
 import { createIcon } from '../components/Icon.js';
 import { createCurriculumExplorerPanel } from '../components/CurriculumExplorerPanel.js';
 import { showToast } from '../components/Toast.js';
@@ -83,22 +81,18 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
   let expandedUnitId = null;
   let loadError = null;
 
-  // Contribute state.
-  let draft = null;
-  let extractError = null;
-  let submittedContribution = null;
-
-  // Vertical Slice milestone: the new Upload-PDF path (Upload -> Extract
-  // -> Table of Contents -> Anchor Detection -> Review Units -> Save
-  // Draft) runs through this orchestrator instead of the old
-  // draft/curriculumPackBuilderService flow above — see
-  // services/curriculumImportSession.js's own header comment for why
-  // this file only ever calls its methods, never the domain services
-  // underneath it directly. "Start From Scratch" (no PDF) still uses
-  // the older `draft` object above, untouched — this milestone is
-  // specifically about the PDF path.
-  let importSession = null;
-  let importFailureReason = null;
+  // Two-Phase Curriculum Import redesign, Milestone 1 — "Create
+  // Curriculum" now means building a Curriculum Index only (Phase 1):
+  // metadata -> Upload TOC PDF or Paste TOC Text -> extract Units ->
+  // Review Units -> Save. No textbook, no anchor detection, no
+  // concept extraction anywhere in this flow — those are Phase 2/3
+  // (Milestone 2+), deliberately not reachable yet. Runs entirely
+  // through this one orchestrator — see
+  // services/curriculumIndexSession.js's own header comment for why
+  // this view never calls tableOfContentsService, pdfExtractionService,
+  // curriculumReviewService, or curriculumIndexRepository directly.
+  let indexSession = null;
+  let indexExtractionReason = null; // set only if every parsing strategy found nothing at all
 
   // Review Submissions state.
   let selectedSubmission = null;
@@ -114,12 +108,9 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
         previewPack,
         expandedUnitId,
         loadError,
-        draft,
-        extractError,
-        submittedContribution,
         selectedSubmission,
-        importSession,
-        importFailureReason,
+        indexSession,
+        indexExtractionReason,
       },
       {
         onBack,
@@ -177,112 +168,61 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
           expandedUnitId = expandedUnitId === unitId ? null : unitId;
           rerender();
         },
-        onGoToContribute: () => {
-          draft = null;
-          extractError = null;
-          submittedContribution = null;
-          mode = 'contribute-create';
+        onGoToCreateIndex: () => {
+          indexSession = null;
+          indexExtractionReason = null;
+          mode = 'index-create';
           rerender();
         },
-        onCreateDraft: (metadata) => {
-          draft = curriculumPackBuilderService.createDraftPack(metadata);
-          mode = 'contribute-review';
-          rerender();
-        },
-        onUploadPdf: async (metadata, file) => {
-          extractError = null;
-          importFailureReason = null;
-          mode = 'contribute-extracting';
+        onStartIndex: async ({ curriculum, pdfFile, pastedText }) => {
+          indexSession = createCurriculumIndexSession();
+          await indexSession.startIndex({ curriculum });
+          mode = 'index-extracting';
           rerender();
           try {
-            importSession = createCurriculumImportSession();
-            await importSession.startImport({ metadata, pdfFile: file, pdfFileName: file.name });
-            await importSession.detectStructure();
-            const importedDraft = importSession.getDraft();
-            mode = importedDraft.tocDetectionFailed ? 'contribute-import-failed' : 'contribute-review-units';
+            const result = pdfFile
+              ? await indexSession.extractUnitsFromPdf(pdfFile)
+              : await indexSession.extractUnitsFromPastedText(pastedText);
+            if (result.units.length > 0) {
+              mode = 'index-review-units';
+            } else {
+              indexExtractionReason = result.reason || 'Couldn\u2019t find a Table of Contents in what was provided.';
+              mode = 'index-extraction-failed';
+            }
           } catch (error) {
-            console.error('[CurriculumManagementView] PDF import failed:', error);
-            importFailureReason = error.message || String(error);
-            mode = 'contribute-import-failed';
+            console.error('[CurriculumManagementView] Curriculum Index extraction failed:', error);
+            indexExtractionReason = error.message || String(error);
+            mode = 'index-extraction-failed';
           }
           rerender();
         },
-        onGoToManualEntryFromImportFailure: () => {
-          draft = curriculumPackBuilderService.createDraftPack(importSession?.getDraft()?.metadata || {});
-          mode = 'contribute-review';
+        onContinueToManualUnitEntry: () => {
+          mode = 'index-review-units';
           rerender();
         },
-        onRenameImportUnit: (unitId, title) => {
-          importSession.renameUnit(unitId, title);
+        onRenameIndexUnit: (unitId, title) => {
+          indexSession.renameUnit(unitId, title);
           rerender();
         },
-        onDeleteImportUnit: (unitId) => {
-          importSession.deleteUnit(unitId);
+        onDeleteIndexUnit: (unitId) => {
+          indexSession.deleteUnit(unitId);
           rerender();
         },
-        onMoveImportUnitUp: (unitId) => {
-          importSession.moveUnitUp(unitId);
+        onMoveIndexUnitUp: (unitId) => {
+          indexSession.moveUnitUp(unitId);
           rerender();
         },
-        onMoveImportUnitDown: (unitId) => {
-          importSession.moveUnitDown(unitId);
+        onMoveIndexUnitDown: (unitId) => {
+          indexSession.moveUnitDown(unitId);
           rerender();
         },
-        onAddImportUnit: (title) => {
-          importSession.addUnit(title);
+        onAddIndexUnit: (title) => {
+          indexSession.addUnit(title);
           rerender();
         },
-        onResolveAnchor: async (unitId, chosenPage) => {
-          await importSession.resolveAnchor(unitId, chosenPage);
-          rerender();
-        },
-        onSaveDraftAndFinish: async () => {
-          await importSession.saveDraft();
-          mode = 'contribute-draft-saved';
-          rerender();
-        },
-        onAddUnit: (title) => {
-          curriculumPackBuilderService.addDraftUnit(draft, title);
-          rerender();
-        },
-        onRenameUnit: (unitId, title) => {
-          curriculumPackBuilderService.renameDraftUnit(draft, unitId, title);
-        },
-        onDeleteUnit: (unitId) => {
-          curriculumPackBuilderService.deleteDraftUnit(draft, unitId);
-          rerender();
-        },
-        onMoveUnitUp: (unitId) => {
-          curriculumPackBuilderService.moveDraftUnitUp(draft, unitId);
-          rerender();
-        },
-        onMoveUnitDown: (unitId) => {
-          curriculumPackBuilderService.moveDraftUnitDown(draft, unitId);
-          rerender();
-        },
-        onAddConcept: (unitId, title) => {
-          curriculumPackBuilderService.addDraftConcept(draft, unitId, title);
-          rerender();
-        },
-        onRenameConcept: (unitId, conceptId, title) => {
-          curriculumPackBuilderService.renameDraftConcept(draft, unitId, conceptId, title);
-        },
-        onDeleteConcept: (unitId, conceptId) => {
-          curriculumPackBuilderService.deleteDraftConcept(draft, unitId, conceptId);
-          rerender();
-        },
-        onMoveConceptUp: (unitId, conceptId) => {
-          curriculumPackBuilderService.moveDraftConceptUp(draft, unitId, conceptId);
-          rerender();
-        },
-        onMoveConceptDown: (unitId, conceptId) => {
-          curriculumPackBuilderService.moveDraftConceptDown(draft, unitId, conceptId);
-          rerender();
-        },
-        onSubmitContribution: () => {
-          const packJson = curriculumPackBuilderService.exportPackJson(draft);
-          submittedContribution = curriculumSubmissionsService.submitContribution(packJson);
-          mode = 'contribute-submitted';
+        onSaveIndex: async () => {
+          await indexSession.saveIndex();
+          mode = 'index-saved';
           rerender();
         },
         onGoToReview: () => {
@@ -335,13 +275,11 @@ function renderView(container, mode, state, handlers) {
       'preview-choose-grade': 'curriculum-details',
       'preview-choose-subject': 'preview-choose-grade',
       'preview-structure': 'curriculum-details',
-      'contribute-create': 'hub',
-      'contribute-extracting': 'contribute-create',
-      'contribute-import-failed': 'contribute-create',
-      'contribute-review-units': 'contribute-create',
-      'contribute-draft-saved': 'hub',
-      'contribute-review': 'contribute-create',
-      'contribute-submitted': 'hub',
+      'index-create': 'hub',
+      'index-extracting': 'index-create',
+      'index-extraction-failed': 'index-create',
+      'index-review-units': 'index-create',
+      'index-saved': 'hub',
       'review-list': 'hub',
       'review-detail': 'review-list',
     }[mode];
@@ -366,20 +304,16 @@ function renderView(container, mode, state, handlers) {
     wrapper.appendChild(renderPreviewChooseSubjectStep(state.previewGrade, handlers));
   } else if (mode === 'preview-structure') {
     wrapper.appendChild(renderPreviewStructureStep(state, handlers));
-  } else if (mode === 'contribute-create') {
-    wrapper.appendChild(renderContributeCreateStep(handlers));
-  } else if (mode === 'contribute-extracting') {
+  } else if (mode === 'index-create') {
+    wrapper.appendChild(renderIndexCreateStep(handlers));
+  } else if (mode === 'index-extracting') {
     wrapper.appendChild(renderExtractingStep());
-  } else if (mode === 'contribute-import-failed') {
-    wrapper.appendChild(renderImportFailedStep(state, handlers));
-  } else if (mode === 'contribute-review-units') {
-    wrapper.appendChild(renderReviewUnitsStep(state.importSession.getDraft(), handlers));
-  } else if (mode === 'contribute-draft-saved') {
-    wrapper.appendChild(renderDraftSavedStep(state.importSession.getDraft(), handlers));
-  } else if (mode === 'contribute-review') {
-    wrapper.appendChild(renderContributeReviewStep(state, handlers));
-  } else if (mode === 'contribute-submitted') {
-    wrapper.appendChild(renderContributeSubmittedStep(state.submittedContribution));
+  } else if (mode === 'index-extraction-failed') {
+    wrapper.appendChild(renderIndexExtractionFailedStep(state, handlers));
+  } else if (mode === 'index-review-units') {
+    wrapper.appendChild(renderIndexReviewUnitsStep(state.indexSession.getIndex(), handlers));
+  } else if (mode === 'index-saved') {
+    wrapper.appendChild(renderIndexSavedStep(state.indexSession.getIndex(), handlers));
   } else if (mode === 'review-list') {
     wrapper.appendChild(renderReviewListStep(handlers));
   } else if (mode === 'review-detail') {
@@ -408,7 +342,7 @@ function renderHubStep(handlers) {
   const pendingCount = curriculumSubmissionsService.getPendingSubmissions().length;
 
   grid.appendChild(createHubCard('\ud83d\udcda', 'Browse Curriculum Library', 'Official and community curricula', handlers.onGoToBrowse));
-  grid.appendChild(createHubCard('\u2795', 'Contribute Curriculum', 'Submit a curriculum for review', handlers.onGoToContribute));
+  grid.appendChild(createHubCard('\u2795', 'Create Curriculum', 'Build a curriculum\u2019s structure from its Table of Contents', handlers.onGoToCreateIndex));
   grid.appendChild(
     createHubCard(
       '\ud83d\udd0d',
@@ -499,14 +433,14 @@ function renderBrowseEmptyState(handlers) {
 
   const message = document.createElement('p');
   message.className = 'curriculum-management__empty-state-message';
-  message.textContent = 'Nothing has been uploaded and published yet. Contribute a curriculum to get started — once it\u2019s reviewed and published, it\u2019ll show up here.';
+  message.textContent = 'Nothing has been uploaded and published yet. Create a curriculum to get started — once it\u2019s reviewed and published, it\u2019ll show up here.';
   wrap.appendChild(message);
 
   const uploadButton = document.createElement('button');
   uploadButton.type = 'button';
   uploadButton.className = 'btn btn--primary';
-  uploadButton.textContent = 'Upload Curriculum';
-  uploadButton.addEventListener('click', handlers.onGoToContribute);
+  uploadButton.textContent = 'Create Curriculum';
+  uploadButton.addEventListener('click', handlers.onGoToCreateIndex);
   wrap.appendChild(uploadButton);
 
   return wrap;
@@ -737,74 +671,55 @@ function renderPreviewStructureStep(state, handlers) {
   return section;
 }
 
-// ---- Contribute Curriculum -----------------------------------------
+// ---- Create Curriculum (Phase 1 — Curriculum Index only) --------------
 
-function renderContributeCreateStep(handlers) {
+/**
+ * Stage 1 of Phase 1: curriculum metadata (name, board, grade,
+ * subject — the fields that stay stable across textbook editions;
+ * publisher/language/academic year/version belong to a Textbook,
+ * Milestone 2, not here) plus a choice of how to provide the Table of
+ * Contents. Both paths converge on the exact same extraction —
+ * uploading a TOC PDF or pasting its text produce an identical
+ * result, see services/curriculumIndexSession.js.
+ */
+function renderIndexCreateStep(handlers) {
   const section = document.createElement('div');
   section.className = 'curriculum-management__section';
 
   const intro = document.createElement('p');
   intro.className = 'curriculum-management__intro';
-  intro.textContent = 'Contribute a curriculum for review. It won\u2019t appear in the Library until approved.';
+  intro.textContent = 'Build a curriculum\u2019s structure from its Table of Contents \u2014 no textbook upload needed yet.';
   section.appendChild(intro);
 
   const form = document.createElement('div');
   form.className = 'curriculum-management__create-form';
 
-  // Standardized metadata, captured up front — before any extraction
-  // happens — so a published curriculum never has placeholder or
-  // back-filled fields. See services/curriculumPackBuilderService.js's
-  // createDraftPack() for the exact shape this feeds.
-  const curriculumInput = createLabeledInput('Curriculum name', 'e.g. Samacheer Kalvi');
+  const nameInput = createLabeledInput('Curriculum name', 'e.g. Samacheer Kalvi');
   const boardInput = createLabeledInput('Board', 'e.g. Tamil Nadu State Board');
   const gradeInput = createLabeledInput('Grade', 'e.g. Grade 8');
   const subjectInput = createLabeledInput('Subject', 'e.g. Science');
-  const academicYearInput = createLabeledInput('Academic Year', 'e.g. 2026\u201327');
-  const versionInput = createLabeledInput('Version', 'e.g. 2026');
-  const languageInput = createLabeledInput('Language', 'e.g. English');
-  const publisherInput = createLabeledInput('Publisher', 'e.g. Tamil Nadu School Education Department');
-  form.append(
-    curriculumInput.wrapper,
-    boardInput.wrapper,
-    gradeInput.wrapper,
-    subjectInput.wrapper,
-    academicYearInput.wrapper,
-    versionInput.wrapper,
-    languageInput.wrapper,
-    publisherInput.wrapper
-  );
+  form.append(nameInput.wrapper, boardInput.wrapper, gradeInput.wrapper, subjectInput.wrapper);
 
-  function readMetadata() {
+  function readCurriculum() {
     return {
-      curriculumName: curriculumInput.input.value.trim(),
+      name: nameInput.input.value.trim(),
       board: boardInput.input.value.trim(),
-      gradeName: gradeInput.input.value.trim(),
-      subjectName: subjectInput.input.value.trim(),
-      academicYear: academicYearInput.input.value.trim(),
-      versionLabel: versionInput.input.value.trim(),
-      language: languageInput.input.value.trim(),
-      publisher: publisherInput.input.value.trim(),
+      grade: gradeInput.input.value.trim(),
+      subject: subjectInput.input.value.trim(),
     };
   }
 
-  function validateMetadata(metadata) {
-    const requiredLabels = {
-      curriculumName: 'Curriculum name',
-      board: 'Board',
-      gradeName: 'Grade',
-      subjectName: 'Subject',
-      academicYear: 'Academic Year',
-      versionLabel: 'Version',
-      language: 'Language',
-      publisher: 'Publisher',
-    };
-    const missing = Object.entries(requiredLabels).find(([key]) => !metadata[key]);
-    return missing ? missing[1] : null;
+  function validateCurriculum(curriculum) {
+    if (!curriculum.name) return 'Curriculum name';
+    if (!curriculum.board) return 'Board';
+    if (!curriculum.grade) return 'Grade';
+    if (!curriculum.subject) return 'Subject';
+    return null;
   }
 
   const fileLabel = document.createElement('label');
   fileLabel.className = 'curriculum-management__file-label';
-  fileLabel.textContent = 'Upload Curriculum PDF';
+  fileLabel.textContent = 'Upload TOC PDF';
   const fileInput = document.createElement('input');
   fileInput.type = 'file';
   fileInput.accept = 'application/pdf';
@@ -816,37 +731,200 @@ function renderContributeCreateStep(handlers) {
   uploadButton.className = 'btn btn--primary';
   uploadButton.textContent = 'Upload & Extract';
   uploadButton.addEventListener('click', () => {
-    const metadata = readMetadata();
-    const missingLabel = validateMetadata(metadata);
+    const curriculum = readCurriculum();
+    const missingLabel = validateCurriculum(curriculum);
     if (missingLabel) {
       showToast(`${missingLabel} is required`);
       return;
     }
     const file = fileInput.files[0];
     if (!file) {
-      showToast('Choose a PDF first, or use "Start From Scratch" below');
+      showToast('Choose a PDF first, or paste the Table of Contents text below');
       return;
     }
-    handlers.onUploadPdf(metadata, file);
+    handlers.onStartIndex({ curriculum, pdfFile: file });
   });
   form.appendChild(uploadButton);
 
-  const blankButton = document.createElement('button');
-  blankButton.type = 'button';
-  blankButton.className = 'btn btn--ghost';
-  blankButton.textContent = 'Start From Scratch (no PDF)';
-  blankButton.addEventListener('click', () => {
-    const metadata = readMetadata();
-    const missingLabel = validateMetadata(metadata);
+  const orLabel = document.createElement('p');
+  orLabel.className = 'curriculum-management__intro';
+  orLabel.textContent = 'or';
+  form.appendChild(orLabel);
+
+  const pastedTextLabel = document.createElement('label');
+  pastedTextLabel.className = 'curriculum-management__labeled-input';
+  const pastedTextLabelText = document.createElement('span');
+  pastedTextLabelText.textContent = 'Paste Table of Contents text';
+  const pastedTextArea = document.createElement('textarea');
+  pastedTextArea.className = 'curriculum-management__toc-textarea';
+  pastedTextArea.placeholder = 'Contents\n1. Measurement .......... 1\n2. Force and Pressure .... 18\n...';
+  pastedTextArea.rows = 6;
+  pastedTextLabel.append(pastedTextLabelText, pastedTextArea);
+  form.appendChild(pastedTextLabel);
+
+  const pasteButton = document.createElement('button');
+  pasteButton.type = 'button';
+  pasteButton.className = 'btn btn--ghost';
+  pasteButton.textContent = 'Extract from Pasted Text';
+  pasteButton.addEventListener('click', () => {
+    const curriculum = readCurriculum();
+    const missingLabel = validateCurriculum(curriculum);
     if (missingLabel) {
       showToast(`${missingLabel} is required`);
       return;
     }
-    handlers.onCreateDraft(metadata);
+    const pastedText = pastedTextArea.value.trim();
+    if (!pastedText) {
+      showToast('Paste the Table of Contents text first, or upload a PDF above');
+      return;
+    }
+    handlers.onStartIndex({ curriculum, pastedText });
   });
-  form.appendChild(blankButton);
+  form.appendChild(pasteButton);
 
   section.appendChild(form);
+  return section;
+}
+
+/**
+ * Shown only when every Table of Contents parsing strategy found
+ * nothing at all (see services/tableOfContentsService.js's own
+ * multi-strategy pipeline) — genuinely rare given four independent
+ * strategies are tried, but always recoverable: manual entry on the
+ * very next screen covers exactly the same ground "Start From
+ * Scratch" used to.
+ */
+function renderIndexExtractionFailedStep(state, handlers) {
+  const section = document.createElement('div');
+  section.className = 'curriculum-management__section';
+
+  const heading = document.createElement('p');
+  heading.className = 'curriculum-management__step-heading';
+  heading.textContent = 'Couldn\u2019t extract units automatically';
+  section.appendChild(heading);
+
+  const message = document.createElement('p');
+  message.className = 'curriculum-management__intro';
+  message.textContent = state.indexExtractionReason || 'Couldn\u2019t find a Table of Contents in what was provided.';
+  section.appendChild(message);
+
+  const manualButton = document.createElement('button');
+  manualButton.type = 'button';
+  manualButton.className = 'btn btn--primary';
+  manualButton.textContent = 'Continue to Manual Entry';
+  manualButton.addEventListener('click', handlers.onContinueToManualUnitEntry);
+  section.appendChild(manualButton);
+
+  return section;
+}
+
+/**
+ * Stage 2 of Phase 1 — Review Units. Deliberately the simplest
+ * version of this screen this app has built: just title, printed
+ * page (if one exists), rename/delete/reorder/add. No anchor status,
+ * no page-range badges, no concepts anywhere — none of that exists
+ * yet at this stage, on purpose. Locating a unit inside an actual
+ * textbook is Phase 2's job entirely (Milestone 2), operating on
+ * whatever gets saved here, not something this screen anticipates.
+ */
+function renderIndexReviewUnitsStep(index, handlers) {
+  const section = document.createElement('div');
+  section.className = 'curriculum-management__section';
+
+  const heading = document.createElement('p');
+  heading.className = 'curriculum-management__step-heading';
+  heading.textContent = `Review Units \u2014 ${index.curriculum.name}`;
+  section.appendChild(heading);
+
+  const intro = document.createElement('p');
+  intro.className = 'curriculum-management__intro';
+  intro.textContent =
+    index.units.length > 0
+      ? `${index.units.length} unit${index.units.length === 1 ? '' : 's'} found. Rename, reorder, delete, or add units below, then save.`
+      : 'No units yet \u2014 add them below.';
+  section.appendChild(intro);
+
+  const unitList = document.createElement('div');
+  unitList.className = 'curriculum-management__import-unit-list';
+  index.units.forEach((unit, unitIndex) => {
+    unitList.appendChild(renderIndexUnitRow(index, unit, unitIndex, handlers));
+  });
+  section.appendChild(unitList);
+
+  section.appendChild(createAddForm('New unit title', '+ Add Unit', (title) => handlers.onAddIndexUnit(title)));
+
+  const saveButton = document.createElement('button');
+  saveButton.type = 'button';
+  saveButton.className = 'btn btn--primary';
+  saveButton.textContent = 'Save Curriculum Index';
+  saveButton.addEventListener('click', handlers.onSaveIndex);
+  section.appendChild(saveButton);
+
+  return section;
+}
+
+function renderIndexUnitRow(index, unit, unitIndex, handlers) {
+  const row = document.createElement('div');
+  row.className = 'curriculum-management__import-unit-row';
+
+  const topLine = document.createElement('div');
+  topLine.className = 'curriculum-management__import-unit-top-line';
+
+  const reorder = createReorderButtons(
+    unitIndex === 0,
+    unitIndex === index.units.length - 1,
+    () => handlers.onMoveIndexUnitUp(unit.id),
+    () => handlers.onMoveIndexUnitDown(unit.id)
+  );
+  topLine.appendChild(reorder);
+
+  const titleInput = createRenameInput(unit.title, (newTitle) => handlers.onRenameIndexUnit(unit.id, newTitle));
+  titleInput.classList.add('curriculum-management__unit-title-input');
+  topLine.appendChild(titleInput);
+
+  if (unit.printedPage != null) {
+    const pageEl = document.createElement('span');
+    pageEl.className = 'curriculum-management__unit-page-range';
+    pageEl.textContent = `page ${unit.printedPage}`;
+    topLine.appendChild(pageEl);
+  }
+
+  const deleteButton = document.createElement('button');
+  deleteButton.type = 'button';
+  deleteButton.className = 'btn btn--text btn--danger-text';
+  deleteButton.textContent = 'Delete';
+  deleteButton.addEventListener('click', () => {
+    if (!window.confirm(`Delete "${unit.title}"?`)) return;
+    handlers.onDeleteIndexUnit(unit.id);
+  });
+  topLine.appendChild(deleteButton);
+
+  row.appendChild(topLine);
+  return row;
+}
+
+/** Stage 3 of Phase 1 — confirmation. Attaching a textbook and extracting concepts are later milestones, not reachable from here yet. */
+function renderIndexSavedStep(index, handlers) {
+  const section = document.createElement('div');
+  section.className = 'curriculum-management__section';
+
+  const heading = document.createElement('p');
+  heading.className = 'curriculum-management__step-heading';
+  heading.textContent = '\u2705 Curriculum Index Saved';
+  section.appendChild(heading);
+
+  const message = document.createElement('p');
+  message.className = 'curriculum-management__intro';
+  message.textContent = `${index.curriculum.name} \u2014 ${index.units.length} unit${index.units.length === 1 ? '' : 's'} saved. You can come back to this later; nothing is lost. Attaching a textbook and extracting concepts come in a later milestone.`;
+  section.appendChild(message);
+
+  const doneButton = document.createElement('button');
+  doneButton.type = 'button';
+  doneButton.className = 'btn btn--primary';
+  doneButton.textContent = 'Back to Curriculum Management';
+  doneButton.addEventListener('click', handlers.onGoToHub);
+  section.appendChild(doneButton);
+
   return section;
 }
 
@@ -870,335 +948,6 @@ function renderExtractingStep() {
   message.textContent = 'Processing\u2026';
   section.appendChild(message);
   return section;
-}
-
-/**
- * Shown when the PDF import pipeline couldn't proceed automatically —
- * either extraction itself threw (see `importFailureReason`), or
- * extraction succeeded but no Table of Contents could be found in the
- * first pages at all (see services/curriculumImportSession.js's
- * `tocDetectionFailed`/`tocDetectionReason`). Deliberately plain and
- * teacher-facing — no regex text, no character counts; a normal
- * teacher should never see either of those (see
- * services/debugModeService.js for where that detail belongs
- * instead, once this screen is gated behind it).
- */
-function renderImportFailedStep(state, handlers) {
-  const section = document.createElement('div');
-  section.className = 'curriculum-management__section';
-
-  const heading = document.createElement('p');
-  heading.className = 'curriculum-management__step-heading';
-  heading.textContent = 'Couldn\u2019t process that PDF automatically';
-  section.appendChild(heading);
-
-  const message = document.createElement('p');
-  message.className = 'curriculum-management__intro';
-  const draft = state.importSession?.getDraft();
-  message.textContent =
-    state.importFailureReason ||
-    (draft?.tocDetectionReason
-      ? `Couldn't find a Table of Contents in the first pages of this PDF. ${draft.tocDetectionReason}`
-      : "Couldn't find a Table of Contents in the first pages of this PDF.");
-  section.appendChild(message);
-
-  const manualButton = document.createElement('button');
-  manualButton.type = 'button';
-  manualButton.className = 'btn btn--primary';
-  manualButton.textContent = 'Continue to Manual Entry';
-  manualButton.addEventListener('click', handlers.onGoToManualEntryFromImportFailure);
-  section.appendChild(manualButton);
-
-  return section;
-}
-
-/**
- * Stage 4 — Review Units. Shows every unit the Table of Contents and
- * Anchor Detection together produced: title (renameable), the printed
- * page a teacher recognizes, and its status. A confirmed unit needs
- * no attention at all. A unit still needing review gets an inline
- * prompt — candidate pages as quick choices when Anchor Detection
- * found some, otherwise a plain page-number field — resolved
- * independently of every other unit, so one ambiguous unit never
- * blocks reviewing (or saving) the rest. No concepts anywhere on this
- * screen yet — that's a later stage, run only once a teacher actually
- * reaches a given unit (see services/conceptExtractionService.js).
- */
-function renderReviewUnitsStep(draft, handlers) {
-  const section = document.createElement('div');
-  section.className = 'curriculum-management__section';
-
-  const heading = document.createElement('p');
-  heading.className = 'curriculum-management__step-heading';
-  heading.textContent = `Review Units \u2014 ${draft.metadata.curriculumName}`;
-  section.appendChild(heading);
-
-  const needsReviewCount = draft.units.filter((u) => u.status === 'anchor_needs_review').length;
-  const intro = document.createElement('p');
-  intro.className = 'curriculum-management__intro';
-  intro.textContent =
-    needsReviewCount > 0
-      ? `${draft.units.length} units found. ${needsReviewCount} need a quick look below \u2014 everything else is ready.`
-      : `${draft.units.length} units found and confirmed automatically.`;
-  section.appendChild(intro);
-
-  const unitList = document.createElement('div');
-  unitList.className = 'curriculum-management__import-unit-list';
-  draft.units.forEach((unit, index) => {
-    unitList.appendChild(renderImportUnitRow(draft, unit, index, handlers));
-  });
-  section.appendChild(unitList);
-
-  section.appendChild(
-    createAddForm('New unit title', '+ Add Unit', (title) => handlers.onAddImportUnit(title))
-  );
-
-  const saveButton = document.createElement('button');
-  saveButton.type = 'button';
-  saveButton.className = 'btn btn--primary';
-  saveButton.textContent = 'Save Draft';
-  saveButton.addEventListener('click', handlers.onSaveDraftAndFinish);
-  section.appendChild(saveButton);
-
-  return section;
-}
-
-function renderImportUnitRow(draft, unit, index, handlers) {
-  const row = document.createElement('div');
-  row.className = 'curriculum-management__import-unit-row';
-
-  const topLine = document.createElement('div');
-  topLine.className = 'curriculum-management__import-unit-top-line';
-
-  const reorder = createReorderButtons(
-    index === 0,
-    index === draft.units.length - 1,
-    () => handlers.onMoveImportUnitUp(unit.id),
-    () => handlers.onMoveImportUnitDown(unit.id)
-  );
-  topLine.appendChild(reorder);
-
-  const titleInput = createRenameInput(unit.title, (newTitle) => handlers.onRenameImportUnit(unit.id, newTitle));
-  titleInput.classList.add('curriculum-management__unit-title-input');
-  topLine.appendChild(titleInput);
-
-  if (unit.tocPage != null) {
-    const pageEl = document.createElement('span');
-    pageEl.className = 'curriculum-management__unit-page-range';
-    pageEl.textContent = `starts page ${unit.tocPage}`;
-    topLine.appendChild(pageEl);
-  }
-
-  const statusEl = document.createElement('span');
-  statusEl.className =
-    'curriculum-management__import-unit-status' +
-    (unit.status === 'anchor_needs_review' ? ' curriculum-management__import-unit-status--needs-review' : '');
-  statusEl.textContent = unit.status === 'anchor_needs_review' ? 'Needs a quick check' : '\u2713 Confirmed';
-  topLine.appendChild(statusEl);
-
-  const deleteButton = document.createElement('button');
-  deleteButton.type = 'button';
-  deleteButton.className = 'btn btn--text btn--danger-text';
-  deleteButton.textContent = 'Delete Unit';
-  deleteButton.addEventListener('click', () => {
-    if (!window.confirm(`Delete "${unit.title}"?`)) return;
-    handlers.onDeleteImportUnit(unit.id);
-  });
-  topLine.appendChild(deleteButton);
-
-  row.appendChild(topLine);
-
-  if (unit.status === 'anchor_needs_review') {
-    row.appendChild(renderAnchorResolutionPrompt(unit, handlers));
-  }
-
-  return row;
-}
-
-function renderAnchorResolutionPrompt(unit, handlers) {
-  const prompt = document.createElement('div');
-  prompt.className = 'curriculum-management__anchor-prompt';
-
-  const label = document.createElement('span');
-  label.className = 'curriculum-management__anchor-prompt-label';
-  label.textContent = `Couldn't confirm exactly where "${unit.title}" starts \u2014 which page is it?`;
-  prompt.appendChild(label);
-
-  if (unit.anchorCandidates && unit.anchorCandidates.length > 0) {
-    const choices = document.createElement('div');
-    choices.className = 'curriculum-management__anchor-prompt-choices';
-    unit.anchorCandidates.forEach((page) => {
-      const choiceButton = document.createElement('button');
-      choiceButton.type = 'button';
-      choiceButton.className = 'curriculum-management__anchor-prompt-choice';
-      choiceButton.textContent = `Page ${page}`;
-      choiceButton.addEventListener('click', () => handlers.onResolveAnchor(unit.id, page));
-      choices.appendChild(choiceButton);
-    });
-    prompt.appendChild(choices);
-  }
-
-  const manualEntry = document.createElement('div');
-  manualEntry.className = 'curriculum-management__anchor-prompt-manual';
-  const input = document.createElement('input');
-  input.type = 'number';
-  input.min = '1';
-  input.placeholder = 'Page number';
-  const confirmButton = document.createElement('button');
-  confirmButton.type = 'button';
-  confirmButton.className = 'btn btn--ghost';
-  confirmButton.textContent = 'Confirm';
-  confirmButton.addEventListener('click', () => {
-    const page = Number(input.value);
-    if (!page || page < 1) {
-      showToast('Enter a valid page number first');
-      return;
-    }
-    handlers.onResolveAnchor(unit.id, page);
-  });
-  manualEntry.append(input, confirmButton);
-  prompt.appendChild(manualEntry);
-
-  return prompt;
-}
-
-/** Stage 5's confirmation — the draft is safely persisted and resumable; concept extraction and publishing are later milestones, not reachable from here yet. */
-function renderDraftSavedStep(draft, handlers) {
-  const section = document.createElement('div');
-  section.className = 'curriculum-management__section';
-
-  const heading = document.createElement('p');
-  heading.className = 'curriculum-management__step-heading';
-  heading.textContent = '\u2705 Draft Saved';
-  section.appendChild(heading);
-
-  const message = document.createElement('p');
-  message.className = 'curriculum-management__intro';
-  const confirmedCount = draft.units.filter((u) => u.status === 'anchor_confirmed').length;
-  message.textContent = `${draft.metadata.curriculumName} \u2014 ${draft.units.length} units saved (${confirmedCount} confirmed). You can come back to this draft later; nothing is lost. Concept extraction and publishing come in a later milestone.`;
-  section.appendChild(message);
-
-  const doneButton = document.createElement('button');
-  doneButton.type = 'button';
-  doneButton.className = 'btn btn--primary';
-  doneButton.textContent = 'Back to Curriculum Management';
-  doneButton.addEventListener('click', handlers.onGoToHub);
-  section.appendChild(doneButton);
-
-  return section;
-}
-
-function renderContributeReviewStep(state, handlers) {
-  const { draft, extractError } = state;
-  const section = document.createElement('div');
-  section.className = 'curriculum-management__section';
-
-  const heading = document.createElement('p');
-  heading.className = 'curriculum-management__step-heading';
-  heading.textContent = `Review \u2014 ${draft.curriculumName} \u00b7 ${draft.gradeName} \u00b7 ${draft.subjectName}`;
-  section.appendChild(heading);
-
-  if (extractError) {
-    const errorNote = document.createElement('p');
-    errorNote.className = 'curriculum-management__extract-note';
-    errorNote.textContent = extractError;
-    section.appendChild(errorNote);
-  }
-
-  const unitList = document.createElement('div');
-  unitList.className = 'curriculum-management__unit-list';
-
-  draft.units.forEach((unit, unitIndex) => {
-    unitList.appendChild(renderUnitBlock(draft, unit, unitIndex, handlers));
-  });
-  section.appendChild(unitList);
-
-  section.appendChild(
-    createAddForm('New unit title (e.g. Unit 9 \u2013 Pollution)', '+ Add Unit', (title) => handlers.onAddUnit(title))
-  );
-
-  const submitButton = document.createElement('button');
-  submitButton.type = 'button';
-  submitButton.className = 'btn btn--primary';
-  submitButton.textContent = 'Submit for Review';
-  submitButton.disabled = draft.units.length === 0;
-  submitButton.addEventListener('click', handlers.onSubmitContribution);
-  section.appendChild(submitButton);
-
-  return section;
-}
-
-function renderUnitBlock(draft, unit, unitIndex, handlers) {
-  const block = document.createElement('div');
-  block.className = 'curriculum-management__unit-block';
-
-  const row = document.createElement('div');
-  row.className = 'curriculum-management__unit-row';
-
-  const reorder = createReorderButtons(
-    unitIndex === 0,
-    unitIndex === draft.units.length - 1,
-    () => handlers.onMoveUnitUp(unit.id),
-    () => handlers.onMoveUnitDown(unit.id)
-  );
-  row.appendChild(reorder);
-
-  const titleInput = createRenameInput(unit.title, (newTitle) => handlers.onRenameUnit(unit.id, newTitle));
-  titleInput.classList.add('curriculum-management__unit-title-input');
-  row.appendChild(titleInput);
-
-  if (unit.startPage != null) {
-    const pageRangeEl = document.createElement('span');
-    pageRangeEl.className = 'curriculum-management__unit-page-range';
-    pageRangeEl.textContent = unit.endPage != null ? `pages ${unit.startPage}\u2013${unit.endPage}` : `page ${unit.startPage}`;
-    row.appendChild(pageRangeEl);
-  }
-
-  const deleteButton = document.createElement('button');
-  deleteButton.type = 'button';
-  deleteButton.className = 'btn btn--text btn--danger-text';
-  deleteButton.textContent = 'Delete Unit';
-  deleteButton.addEventListener('click', () => {
-    if (!window.confirm(`Delete "${unit.title}" and its concepts?`)) return;
-    handlers.onDeleteUnit(unit.id);
-  });
-  row.appendChild(deleteButton);
-
-  block.appendChild(row);
-
-  const conceptList = document.createElement('div');
-  conceptList.className = 'curriculum-management__concept-list';
-  unit.concepts.forEach((concept, conceptIndex) => {
-    const conceptRow = document.createElement('div');
-    conceptRow.className = 'curriculum-management__concept-row';
-
-    const conceptReorder = createReorderButtons(
-      conceptIndex === 0,
-      conceptIndex === unit.concepts.length - 1,
-      () => handlers.onMoveConceptUp(unit.id, concept.id),
-      () => handlers.onMoveConceptDown(unit.id, concept.id)
-    );
-    conceptRow.appendChild(conceptReorder);
-
-    const conceptInput = createRenameInput(concept.title, (newTitle) => handlers.onRenameConcept(unit.id, concept.id, newTitle));
-    conceptRow.appendChild(conceptInput);
-
-    const conceptDeleteButton = document.createElement('button');
-    conceptDeleteButton.type = 'button';
-    conceptDeleteButton.className = 'btn btn--text btn--danger-text';
-    conceptDeleteButton.textContent = 'Delete';
-    conceptDeleteButton.addEventListener('click', () => handlers.onDeleteConcept(unit.id, concept.id));
-    conceptRow.appendChild(conceptDeleteButton);
-
-    conceptList.appendChild(conceptRow);
-  });
-  block.appendChild(conceptList);
-
-  block.appendChild(
-    createAddForm('New concept title', '+ Add Concept', (title) => handlers.onAddConcept(unit.id, title))
-  );
-
-  return block;
 }
 
 function createReorderButtons(isFirst, isLast, onUp, onDown) {
@@ -1259,39 +1008,6 @@ function createAddForm(placeholder, buttonLabel, onAdd) {
 
   form.append(input, button);
   return form;
-}
-
-function renderContributeSubmittedStep(contribution) {
-  const section = document.createElement('div');
-  section.className = 'curriculum-management__section';
-
-  const heading = document.createElement('p');
-  heading.className = 'curriculum-management__step-heading';
-  heading.textContent = contribution.packJson.curriculum;
-  section.appendChild(heading);
-
-  const statusCard = document.createElement('div');
-  statusCard.className = 'curriculum-management__status-card';
-
-  const statusLabel = document.createElement('span');
-  statusLabel.className = 'curriculum-management__status-label';
-  statusLabel.textContent = 'Status';
-  statusCard.appendChild(statusLabel);
-
-  const statusValue = document.createElement('span');
-  statusValue.className = 'curriculum-management__status-value';
-  statusValue.textContent = 'Pending Review';
-  statusCard.appendChild(statusValue);
-
-  section.appendChild(statusCard);
-
-  const explanation = document.createElement('p');
-  explanation.className = 'curriculum-management__intro';
-  explanation.textContent =
-    'This won\u2019t appear in the Curriculum Library until it\u2019s reviewed and approved. You can check back here — contributions aren\u2019t published automatically.';
-  section.appendChild(explanation);
-
-  return section;
 }
 
 // ---- Review Submissions ------------------------------------------------
