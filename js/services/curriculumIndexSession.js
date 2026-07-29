@@ -145,9 +145,11 @@ export function createCurriculumIndexSession() {
     return unit;
   }
 
-  /** Marks the Curriculum Index as reviewed and confirmed, ready to be attached to a Textbook later (Milestone 2). */
+  /** Marks the Curriculum Index as reviewed and confirmed, ready to be attached to a Textbook later. Saving again after Phase 2 has started must never regress the status backward. */
   async function saveIndex() {
-    index.status = 'saved';
+    if (index.status === 'draft') {
+      index.status = 'units_confirmed';
+    }
     await curriculumIndexRepository.saveIndex(index);
     return index;
   }

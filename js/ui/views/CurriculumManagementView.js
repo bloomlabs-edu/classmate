@@ -65,6 +65,7 @@
  */
 
 import * as curriculumLibraryService from '../../services/curriculumLibraryService.js';
+import * as curriculumIndexRepository from '../../services/curriculumIndexRepository.js';
 import * as curriculumSubmissionsService from '../../services/curriculumSubmissionsService.js';
 import { createCurriculumIndexSession } from '../../services/curriculumIndexSession.js';
 import { createIcon } from '../components/Icon.js';
@@ -95,6 +96,7 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
   // curriculumReviewService, or curriculumIndexRepository directly.
   let indexSession = null;
   let indexExtractionReason = null; // set only if every parsing strategy found nothing at all
+  let isResumingIndex = false; // true when reached via "Open" from My Curriculum Indexes, not fresh creation — changes where Back goes
 
   // Review Submissions state.
   let selectedSubmission = null;
@@ -113,6 +115,7 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
         selectedSubmission,
         indexSession,
         indexExtractionReason,
+        isResumingIndex,
       },
       {
         onBack,
@@ -173,11 +176,20 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
         onGoToCreateIndex: () => {
           indexSession = null;
           indexExtractionReason = null;
+          isResumingIndex = false;
           mode = 'index-create';
+          rerender();
+        },
+        onOpenIndex: async (indexId) => {
+          indexSession = createCurriculumIndexSession();
+          await indexSession.openExistingIndex(indexId);
+          isResumingIndex = true;
+          mode = 'index-review-units';
           rerender();
         },
         onStartIndex: async ({ curriculum, file, pastedText }) => {
           indexSession = createCurriculumIndexSession();
+          isResumingIndex = false;
           await indexSession.startIndex({ curriculum });
           mode = 'index-extracting';
           rerender();
@@ -280,7 +292,7 @@ function renderView(container, mode, state, handlers) {
       'index-create': 'hub',
       'index-extracting': 'index-create',
       'index-extraction-failed': 'index-create',
-      'index-review-units': 'index-create',
+      'index-review-units': state.isResumingIndex ? 'hub' : 'index-create',
       'index-saved': 'hub',
       'review-list': 'hub',
       'review-detail': 'review-list',
@@ -338,6 +350,8 @@ function renderHubStep(handlers) {
   intro.textContent = 'Browse, contribute, and review curricula. This is a separate, occasional workspace — not part of daily lesson prep.';
   section.appendChild(intro);
 
+  section.appendChild(renderMyCurriculumIndexesSection(handlers));
+
   const grid = document.createElement('div');
   grid.className = 'curriculum-management__hub-grid';
 
@@ -356,6 +370,96 @@ function renderHubStep(handlers) {
 
   section.appendChild(grid);
   return section;
+}
+
+// Status values a Curriculum Index can currently be in, mapped to
+// what a teacher actually needs to know: what they've done, and what
+// comes next. A Curriculum Index is the author's own working
+// artifact — this label never describes a moderation outcome; that
+// lives exclusively in services/curriculumSubmissionsService.js's own
+// record, looked up separately once Submit exists.
+const INDEX_STATUS_LABELS = {
+  draft: 'Units Not Yet Confirmed',
+  units_confirmed: 'Ready for Textbook',
+  textbook_attached: 'Textbook Attached',
+  concepts_in_progress: 'Concept Extraction In Progress',
+  concepts_complete: 'Ready for Review',
+};
+
+/**
+ * "My Curriculum Indexes" — a teacher's own in-progress work,
+ * distinct from the Published Curriculum Library below it (which only
+ * ever shows what's been through moderation). A newly saved Index
+ * appears here immediately; this is what actually answers "where did
+ * my work go?" instead of nothing showing it at all.
+ */
+function renderMyCurriculumIndexesSection(handlers) {
+  const wrap = document.createElement('div');
+  wrap.className = 'curriculum-management__my-indexes';
+
+  const heading = document.createElement('p');
+  heading.className = 'curriculum-management__step-heading';
+  heading.textContent = 'My Curriculum Indexes';
+  wrap.appendChild(heading);
+
+  const loadingNote = document.createElement('p');
+  loadingNote.className = 'curriculum-management__intro';
+  loadingNote.textContent = 'Loading\u2026';
+  wrap.appendChild(loadingNote);
+
+  curriculumIndexRepository
+    .listIndexes()
+    .then((indexes) => {
+      loadingNote.remove();
+      if (indexes.length === 0) {
+        const emptyNote = document.createElement('p');
+        emptyNote.className = 'curriculum-management__intro';
+        emptyNote.textContent = 'Nothing yet — "Create Curriculum" below starts your first one.';
+        wrap.appendChild(emptyNote);
+        return;
+      }
+      const list = document.createElement('div');
+      list.className = 'curriculum-management__my-indexes-list';
+      indexes.forEach((summary) => list.appendChild(renderMyCurriculumIndexRow(summary, handlers)));
+      wrap.appendChild(list);
+    })
+    .catch((error) => {
+      console.error('[CurriculumManagementView] Failed to load Curriculum Indexes:', error);
+      loadingNote.textContent = "Couldn't load your Curriculum Indexes. Check your connection and try again.";
+    });
+
+  return wrap;
+}
+
+function renderMyCurriculumIndexRow(summary, handlers) {
+  const row = document.createElement('div');
+  row.className = 'curriculum-management__my-index-row';
+
+  const info = document.createElement('div');
+  info.className = 'curriculum-management__my-index-info';
+
+  const name = document.createElement('p');
+  name.className = 'curriculum-management__my-index-name';
+  name.textContent = `${summary.curriculum.name} \u2014 ${summary.curriculum.grade} ${summary.curriculum.subject}`;
+  info.appendChild(name);
+
+  const meta = document.createElement('p');
+  meta.className = 'curriculum-management__my-index-meta';
+  const unitCount = summary.units.length;
+  const statusLabel = INDEX_STATUS_LABELS[summary.status] || summary.status;
+  meta.textContent = `${unitCount} Unit${unitCount === 1 ? '' : 's'} \u00b7 Status: ${statusLabel}`;
+  info.appendChild(meta);
+
+  row.appendChild(info);
+
+  const openButton = document.createElement('button');
+  openButton.type = 'button';
+  openButton.className = 'btn btn--ghost';
+  openButton.textContent = 'Open';
+  openButton.addEventListener('click', () => handlers.onOpenIndex(summary.id));
+  row.appendChild(openButton);
+
+  return row;
 }
 
 function createHubCard(icon, title, description, onClick) {
@@ -840,6 +944,11 @@ function renderIndexReviewUnitsStep(index, handlers) {
   heading.className = 'curriculum-management__step-heading';
   heading.textContent = `Review Units \u2014 ${index.curriculum.name}`;
   section.appendChild(heading);
+
+  const statusNote = document.createElement('p');
+  statusNote.className = 'curriculum-management__my-index-meta';
+  statusNote.textContent = `Status: ${INDEX_STATUS_LABELS[index.status] || index.status}`;
+  section.appendChild(statusNote);
 
   const intro = document.createElement('p');
   intro.className = 'curriculum-management__intro';

@@ -8,6 +8,19 @@
  * Index reusable across multiple textbook editions: it has nothing in
  * it that's specific to any one printing.
  *
+ * The Curriculum Index is the author's own working artifact — it
+ * tracks a teacher's own progress (Units confirmed, Textbook
+ * attached, Concepts extracted) and nothing about moderation. Once a
+ * teacher submits it, services/curriculumSubmissionsService.js's own
+ * record becomes the moderation artifact and owns that entirely
+ * (pending_review / published / rejected, whatever comes later) — a
+ * Curriculum Index never learns or stores its own moderation outcome;
+ * see services/curriculumPublishService.js's getDraftDisplayStatus()
+ * for how the two are looked up together without either one needing
+ * to know about the other's internals. Keeping this split intact is
+ * why `status` below only ever describes the author's own progress,
+ * never a review outcome.
+ *
  * services/curriculumIndexSession.js is the only orchestrator that
  * calls this file. Every other Phase 1 concern — extracting units
  * from a PDF or pasted text, letting a teacher rename/reorder/delete/
@@ -19,7 +32,10 @@
  *
  * A CurriculumIndex record:
  *   {
- *     id, status: 'draft' | 'saved', createdAt, updatedAt,
+ *     id,
+ *     status: 'draft' | 'units_confirmed' | 'textbook_attached'
+ *           | 'concepts_in_progress' | 'concepts_complete',
+ *     createdAt, updatedAt,
  *     curriculum: { name, board, grade, subject },
  *     units: [{ id, number, title, printedPage }],
  *   }

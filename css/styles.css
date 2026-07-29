@@ -5972,3 +5972,38 @@ button.wizard-checklist__row:hover {
   gap: 0.75rem;
   flex-wrap: wrap;
 }
+
+/* My Curriculum Indexes — see
+   ui/views/CurriculumManagementView.js's renderMyCurriculumIndexesSection() */
+.curriculum-management__my-indexes {
+  margin-bottom: 1.5rem;
+}
+.curriculum-management__my-indexes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.curriculum-management__my-index-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background-color: #ffffff;
+  border-radius: 14px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+  padding: 0.9rem 1.1rem;
+}
+.curriculum-management__my-index-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.curriculum-management__my-index-name {
+  font-weight: var(--font-weight-bold);
+  margin: 0;
+}
+.curriculum-management__my-index-meta {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  margin: 0;
+}
