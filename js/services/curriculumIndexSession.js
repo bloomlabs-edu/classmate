@@ -3,10 +3,13 @@
  *
  * Two-Phase Curriculum Import redesign — Phase 1's orchestrator.
  * Owns exactly the Phase 1 workflow: accept a Table of Contents
- * (PDF or pasted text) -> extract Units -> let a teacher review and
- * edit them -> save. Nothing here ever touches a full textbook PDF
- * beyond its first few pages (to find the Contents page), never runs
- * Anchor Detection, and never extracts a single Concept — those are
+ * (any uploaded file, or pasted text) -> extract Units -> let a
+ * teacher review and edit them -> save. The upload path isn't
+ * restricted to PDFs — see extractUnitsFromFile() below for how a
+ * non-PDF file gets read as plain text instead, same destination
+ * either way. Nothing here ever touches a full textbook PDF beyond
+ * its first few pages (to find the Contents page), never runs Anchor
+ * Detection, and never extracts a single Concept — those are
  * exclusively Phase 2/3 concerns (see services/textbookImportService.js
  * once that exists), deliberately out of reach from this file so
  * Phase 1 stays small, deterministic, and easy for a teacher to
@@ -74,6 +77,35 @@ export function createCurriculumIndexSession() {
     return runTableOfContentsExtraction(text);
   }
 
+  /**
+   * The upload input accepts any file, not just PDFs — a teacher's
+   * Table of Contents might just as easily exist as a plain text
+   * file, or a document exported to text, as it does a PDF. This is
+   * the one entry point the "Upload" button actually calls: it looks
+   * at the file itself (extension and/or MIME type — a file's `.type`
+   * isn't always set reliably, so both are checked) to decide whether
+   * to route through pdf.js or read it as plain text directly, and
+   * either way ends up feeding the exact same
+   * services/tableOfContentsService.js parser. A binary format this
+   * can't meaningfully read as text (a Word .doc, an image) will
+   * still be attempted as plain text rather than rejected outright —
+   * worst case the parser finds nothing and the teacher sees the same
+   * "couldn't extract automatically, continue to manual entry" screen
+   * every other unrecognized input already falls back to, not a
+   * crash.
+   */
+  async function extractUnitsFromFile(file) {
+    if (isPdfFile(file)) {
+      return extractUnitsFromPdf(file);
+    }
+    const text = await file.text();
+    return runTableOfContentsExtraction(text);
+  }
+
+  function isPdfFile(file) {
+    return file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+  }
+
   function runTableOfContentsExtraction(rawText) {
     const result = tableOfContentsService.parseTableOfContents(rawText);
     if (result.units.length > 0) {
@@ -127,6 +159,7 @@ export function createCurriculumIndexSession() {
     openExistingIndex,
     extractUnitsFromPdf,
     extractUnitsFromPastedText,
+    extractUnitsFromFile,
     renameUnit,
     deleteUnit,
     moveUnitUp,

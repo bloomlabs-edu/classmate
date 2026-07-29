@@ -174,14 +174,14 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
           mode = 'index-create';
           rerender();
         },
-        onStartIndex: async ({ curriculum, pdfFile, pastedText }) => {
+        onStartIndex: async ({ curriculum, file, pastedText }) => {
           indexSession = createCurriculumIndexSession();
           await indexSession.startIndex({ curriculum });
           mode = 'index-extracting';
           rerender();
           try {
-            const result = pdfFile
-              ? await indexSession.extractUnitsFromPdf(pdfFile)
+            const result = file
+              ? await indexSession.extractUnitsFromFile(file)
               : await indexSession.extractUnitsFromPastedText(pastedText);
             if (result.units.length > 0) {
               mode = 'index-review-units';
@@ -719,10 +719,13 @@ function renderIndexCreateStep(handlers) {
 
   const fileLabel = document.createElement('label');
   fileLabel.className = 'curriculum-management__file-label';
-  fileLabel.textContent = 'Upload TOC PDF';
+  fileLabel.textContent = 'Upload Table of Contents (PDF or any text file)';
   const fileInput = document.createElement('input');
   fileInput.type = 'file';
-  fileInput.accept = 'application/pdf';
+  // Deliberately not restricted to PDF — a Table of Contents might
+  // just as easily be a plain text file, or exported to text from
+  // another tool. See curriculumIndexSession.js's extractUnitsFromFile()
+  // for how a non-PDF file gets read as plain text instead.
   fileLabel.appendChild(fileInput);
   form.appendChild(fileLabel);
 
@@ -739,10 +742,10 @@ function renderIndexCreateStep(handlers) {
     }
     const file = fileInput.files[0];
     if (!file) {
-      showToast('Choose a PDF first, or paste the Table of Contents text below');
+      showToast('Choose a file first, or paste the Table of Contents text below');
       return;
     }
-    handlers.onStartIndex({ curriculum, pdfFile: file });
+    handlers.onStartIndex({ curriculum, file });
   });
   form.appendChild(uploadButton);
 
