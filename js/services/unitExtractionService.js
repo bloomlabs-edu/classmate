@@ -95,47 +95,133 @@ function isTextyLine(line) {
 
 // ---- Pass 1: same-line rows -------------------------------------------
 
-// A real separator present (space, dot leader, dash, colon, tab —
-// \s already matches tabs) tolerates any case for the title that
-// follows. With zero separator at all, the title must start
-// uppercase — this is what distinguishes a genuine glued-together row
-// ("2Force and Pressure 20") from an unrelated compound word or
-// ordinal a bare number happens to be glued to in running text/footer
-// artifacts ("8th_Science_Index.indd 1" — verified as a real false
-// positive this exact rule exists to reject, found by testing against
-// the real book's actual extracted text, not a hypothetical).
-// A single pattern capturing whatever sits between the number and the
-// title as its own group, whatever mix of punctuation and whitespace
-// it is (including nothing at all) — disambiguation happens in code,
-// in matchNumberedRow() below, rather than trying to encode "gap
-// present vs. absent" as two separate regexes (which couldn't
-// correctly cover every real combination: "1 Measurement" (space
-// only), "1. Measurement" (dot then space), "3.Light" (dot, no
-// space), and "2Force and Pressure" (nothing at all) all need the
-// same underlying match, just judged differently once matched).
-const NUMBERED_ROW_PATTERN = /^(?:unit|chapter)?\s*\(?\s*(\d{1,3})\)?([-.):\s]*)([A-Za-z].*?)[\s._\-]+(\d{1,4})\s*$/i;
-// No leading number at all — just "Title .... Page" — for a divider
-// page whose title sits on its own line, separate from a preceding
-// standalone "Unit N"/"Chapter N" line (see below).
-const TITLE_PAGE_PATTERN = /^([A-Za-z][A-Za-z0-9 ,'&()\/\-]{2,70}?)[\s._\-]{1,}(\d{1,4})\s*$/;
-// A bare "Unit N" / "Chapter N" line with nothing else on it — supplies
-// the number for whichever title-only row follows it next.
-const STANDALONE_NUMBER_HEADING_PATTERN = /^(?:unit|chapter)\s+(\d{1,3})$/i;
+/**
+ * The core of this file's actual redesign. Earlier versions of this
+ * pass tried to match a whole row against a fixed shape (a specific
+ * regex requiring the page number to be the very last token) — which
+ * broke the moment a real textbook added one more trailing column
+ * (Month, Semester, Learning Outcome, ...) after the page number, and
+ * would keep breaking for the next publisher's own choice of extra
+ * columns, since each new layout needed its own new regex.
+ *
+ * This asks a different question entirely: not "does this row match
+ * a known layout," but "can I confidently pull a Unit Number, a
+ * Title, and a Printed Page out of this row's tokens, in that order?"
+ * A row is split into tokens; the first integer token found is the
+ * Unit Number; the *next* integer token after it — not necessarily
+ * the row's last one — is the Printed Page (this matters: a row like
+ * "5 Electricity 46 3" has a real page number, 46, followed by some
+ * other trailing numeric column, e.g. a lesson count; treating "3" as
+ * the page because it's last would be wrong; the page is always the
+ * number immediately following the title, wherever the row happens to
+ * end after that); everything strictly between those two integers,
+ * once leader/punctuation-only tokens are dropped, is the Title.
+ * Anything after the Printed Page is simply never looked at — a
+ * trailing Month, Semester, Learning Outcome, Notes, Duration, or any
+ * other column a textbook happens to add is irrelevant here, not
+ * something this file needs to know about or enumerate in advance.
+ */
 
-function matchNumberedRow(line) {
-  const match = line.match(NUMBERED_ROW_PATTERN);
-  if (!match) return null;
-  const gap = match[2];
-  const titleStart = match[3];
-  // No real separator at all between the number and the title — only
-  // trust this if the title starts uppercase, the way a real title
-  // would. Without this check, a bare number glued to an ordinary
-  // lowercase word (an ordinal like "8th", or "8th_Science_Index.indd"
-  // in a real PDF's own page-generation footer — verified as an
-  // actual false positive this exact check exists to reject) would be
-  // misread as a real "number + title" row.
-  if (gap.length === 0 && !/^[A-Z]/.test(titleStart)) return null;
-  return { number: Number(match[1]), rawTitle: titleStart, printedPage: Number(match[4]) };
+// A token made up entirely of leader/punctuation characters — a
+// dotted leader ("..........") or a stray standalone dash/colon — is
+// a separator, not content, and is dropped before anything else runs.
+const PURE_PUNCTUATION_TOKEN_PATTERN = /^[.\-_:,()]+$/;
+// A token that IS a number, once a single leading "(" or trailing
+// ").:,"-style numbering punctuation is stripped off ("1." / "1)" /
+// "1:" all mean the numeral 1).
+function tokenAsInteger(token) {
+  const stripped = token.replace(/^\(+/, '').replace(/[).:,]+$/, '');
+  return /^\d{1,4}$/.test(stripped) ? Number(stripped) : null;
+}
+
+const LEADING_LABEL_PATTERN = /^(?:unit|chapter)\b[\s:.\-]*/i;
+
+function tokenizeRow(line) {
+  const withoutLeadingLabel = line.replace(LEADING_LABEL_PATTERN, '');
+  return withoutLeadingLabel
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((token) => !PURE_PUNCTUATION_TOKEN_PATTERN.test(token));
+}
+
+// A real title is reasonably short, starts with a letter the way an
+// actual title would, and doesn't contain characters a genuine title
+// wouldn't (an underscore or a stray period is characteristic of a
+// filename or footer artifact rather than real title text — verified
+// against a real textbook's own page-generation filename,
+// "8th_Science_Index.indd", which this exact check exists to reject
+// rather than misread as a unit title).
+function isPlausibleTitle(title) {
+  return (
+    title.length >= 2 &&
+    title.length <= 100 &&
+    /^[A-Za-z0-9 ,'&()/-]+$/.test(title) &&
+    /^[A-Za-z]/.test(title) &&
+    !isLabelLine(title)
+  );
+}
+
+/**
+ * Tries to extract one Unit record from a single row's tokens.
+ * Returns `{ number, title, printedPage }`, `{ standaloneNumber }` (a
+ * bare "Unit N" / "Chapter N" line with nothing else on it — supplies
+ * the number for whichever title-only row follows), or `null` (not
+ * confidently a Unit record at all).
+ */
+function extractRowFields(line, pendingStandaloneNumber) {
+  const tokens = tokenizeRow(line);
+  if (tokens.length === 0) return null;
+
+  const intPositions = [];
+  tokens.forEach((token, i) => {
+    if (tokenAsInteger(token) !== null) intPositions.push(i);
+  });
+
+  if (intPositions.length === 0) return null;
+
+  if (intPositions.length === 1) {
+    const idx = intPositions[0];
+    if (tokens.length === 1) {
+      // A bare number alone on its own line is only trusted as a
+      // "Unit N"/"Chapter N" divider marker if the line actually had
+      // that label word attached — an unlabeled bare number (every
+      // single number in a real column-major table's own unit-number
+      // and page-number blocks is exactly this) must be left
+      // untouched here, or the column-major pass downstream would
+      // have nothing left to reconstruct from. Verified as a real,
+      // serious regression this exact check exists to prevent: every
+      // bare number in the real book's actual Table of Contents table
+      // was being wrongly consumed as a potential divider marker
+      // before this check existed.
+      if (LEADING_LABEL_PATTERN.test(line)) {
+        return { standaloneNumber: tokenAsInteger(tokens[0]) };
+      }
+      return null;
+    }
+    if (idx > 0 && pendingStandaloneNumber !== null) {
+      // "Title .... Page", no unit number in this row itself — a
+      // divider page's title line, using the standalone number that
+      // preceded it. Only trusted when such a marker actually came
+      // first: without it, an ordinary sentence that happens to end
+      // in a number (a year, a count) is structurally identical to a
+      // real divider title line, and shouldn't be guessed at.
+      const title = tokens.slice(0, idx).join(' ');
+      if (isPlausibleTitle(title)) {
+        return { number: pendingStandaloneNumber, title, printedPage: tokenAsInteger(tokens[idx]) };
+      }
+    }
+    return null;
+  }
+
+  // Two or more integers: the first is the Unit Number, the very next
+  // one after it is the Printed Page — never assumed to be the row's
+  // last integer, since trailing numeric columns (a lesson count, a
+  // competency code, marks, ...) can follow the real page number.
+  const numberIdx = intPositions[0];
+  const pageIdx = intPositions[1];
+  const title = tokens.slice(numberIdx + 1, pageIdx).join(' ');
+  if (!isPlausibleTitle(title)) return null;
+  return { number: tokenAsInteger(tokens[numberIdx]), title, printedPage: tokenAsInteger(tokens[pageIdx]) };
 }
 
 function extractSameLineRows(lines) {
@@ -144,30 +230,29 @@ function extractSameLineRows(lines) {
   let pendingStandaloneNumber = null;
 
   lines.forEach((line, i) => {
-    const standalone = line.match(STANDALONE_NUMBER_HEADING_PATTERN);
-    if (standalone) {
-      pendingStandaloneNumber = Number(standalone[1]);
+    const row = extractRowFields(line, pendingStandaloneNumber);
+    if (!row) {
+      // A pending standalone number is only ever meant for the very
+      // next line — if this line didn't use it, whatever context set
+      // it is over. Left uncleared, a bare number from anywhere
+      // earlier in the document (front matter, a stray count in body
+      // text) would otherwise sit around indefinitely and eventually
+      // attach itself to some unrelated later sentence that happens
+      // to end in a number — verified as a real, serious false
+      // positive this exact reset exists to prevent.
+      pendingStandaloneNumber = null;
+      return;
+    }
+
+    if ('standaloneNumber' in row) {
+      pendingStandaloneNumber = row.standaloneNumber;
       consumed[i] = true;
       return;
     }
 
-    const numbered = matchNumberedRow(line);
-    if (numbered) {
-      const title = numbered.rawTitle.trim().replace(/^[-.:)\s]+/, '').trim();
-      if (title && !isLabelLine(title)) {
-        results.push({ number: numbered.number, title, printedPage: numbered.printedPage });
-        consumed[i] = true;
-        pendingStandaloneNumber = null;
-        return;
-      }
-    }
-
-    const titleOnly = line.match(TITLE_PAGE_PATTERN);
-    if (titleOnly && !isLabelLine(titleOnly[1])) {
-      results.push({ number: pendingStandaloneNumber, title: titleOnly[1].trim(), printedPage: Number(titleOnly[2]) });
-      consumed[i] = true;
-      pendingStandaloneNumber = null;
-    }
+    results.push({ number: row.number, title: row.title, printedPage: row.printedPage });
+    consumed[i] = true;
+    pendingStandaloneNumber = null;
   });
 
   return { results, consumed };
