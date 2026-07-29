@@ -6,7 +6,7 @@
  * else does. ui/views/CurriculumManagementView.js creates one of
  * these per import, calls its methods in response to teacher actions,
  * and re-renders from `getDraft()` afterward — it never calls
- * pdfExtractionService, tableOfContentsService, anchorDetectionService,
+ * pdfExtractionService, unitExtractionService, anchorDetectionService,
  * curriculumReviewService, or draftCurriculumService directly. Every
  * one of those stays pure and unaware of the others; this file is the
  * only thing that knows the whole sequence.
@@ -31,7 +31,7 @@
 
 import * as draftCurriculumService from './draftCurriculumService.js';
 import * as pdfExtractionService from './pdfExtractionService.js';
-import * as tableOfContentsService from './tableOfContentsService.js';
+import * as unitExtractionService from './unitExtractionService.js';
 import * as anchorDetectionService from './anchorDetectionService.js';
 import * as curriculumReviewService from './curriculumReviewService.js';
 import { generateId } from '../utils/idGenerator.js';
@@ -75,16 +75,27 @@ export function createCurriculumImportSession() {
    */
   async function detectStructure() {
     const { fullText: tocScanText } = await pdfExtractionService.extractPageRange(pdfHandle, 1, TOC_SCAN_PAGE_COUNT);
-    const tocResult = tableOfContentsService.parseTableOfContents(tocScanText);
+    const extractedUnits = unitExtractionService.extractUnits(tocScanText);
 
-    if (!tocResult.found || tocResult.units.length === 0) {
+    if (extractedUnits.length === 0) {
       draft.tocDetectionFailed = true;
-      draft.tocDetectionReason = tocResult.reason || null;
+      draft.tocDetectionReason = null;
       await draftCurriculumService.saveDraft(draft);
       return draft;
     }
 
-    const { anchors } = await anchorDetectionService.detectAnchors(pdfHandle, tocResult.units);
+    // anchorDetectionService.js is reused as-is (unchanged) and still
+    // expects each unit's printed page under the name `tocPage` — a
+    // small local adapter here, not a change to that file, since this
+    // whole orchestrator is due to be reworked into
+    // textbookImportService.js properly at the start of Milestone 2.
+    const unitsForAnchorDetection = extractedUnits.map((unit) => ({
+      number: unit.number,
+      title: unit.title,
+      tocPage: unit.printedPage,
+    }));
+
+    const { anchors } = await anchorDetectionService.detectAnchors(pdfHandle, unitsForAnchorDetection);
     draft.units = buildUnitsFromAnchors(anchors, draft.totalPageCount);
     draft.tocDetectionFailed = false;
     await draftCurriculumService.saveDraft(draft);

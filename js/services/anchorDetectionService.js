@@ -189,7 +189,7 @@ async function verifyAnchorPage(pdfHandle, page, tocUnit, totalPages) {
 }
 
 // Signal 1 (strongest): the multi-line divider shape already verified
-// against a real textbook (see services/tableOfContentsService.js's
+// against a real textbook (see services/unitExtractionService.js's
 // own header comment for why a heading extracts as three separate
 // lines, not one) — "UNIT" / matching number / matching title, each
 // its own line. The title match is deliberately tolerant

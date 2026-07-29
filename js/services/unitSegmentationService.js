@@ -5,7 +5,7 @@
  * already-open PDF handle (see services/pdfExtractionService.js) and
  * one reviewed Unit's page range, extract exactly that Unit's own
  * text. Nothing here decides *which* pages belong to a Unit (that's
- * services/tableOfContentsService.js's job, already done by the time
+ * services/unitExtractionService.js's job, already done by the time
  * this file runs) and nothing here looks for concepts (that's
  * services/conceptExtractionService.js's, next).
  *

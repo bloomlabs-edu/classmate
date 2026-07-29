@@ -4,7 +4,7 @@
  * The only file in this app that touches IndexedDB, and the only file
  * anywhere that touches storage for the whole Curriculum Import
  * Pipeline. Every other service in this pipeline
- * (pdfExtractionService, tableOfContentsService, anchorDetectionService,
+ * (pdfExtractionService, unitExtractionService, anchorDetectionService,
  * unitSegmentationService, conceptExtractionService,
  * curriculumReviewService) operates purely on the in-memory
  * DraftCurriculum object this file hands back — none of them know

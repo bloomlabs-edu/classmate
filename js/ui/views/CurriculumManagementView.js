@@ -30,11 +30,13 @@
  *     anchor detection, no concept extraction anywhere in this flow.
  *     A teacher provides curriculum metadata (name, board, grade,
  *     subject — the fields stable across textbook editions) and
- *     either uploads a TOC PDF or pastes TOC text; both converge on
- *     the same services/tableOfContentsService.js extraction. Runs
- *     entirely through services/curriculumIndexSession.js, which is
- *     the only thing that calls pdfExtractionService,
- *     tableOfContentsService, or curriculumReviewService directly —
+ *     either uploads any file or pastes text; both converge on the
+ *     same services/unitExtractionService.js engine, which is
+ *     tolerant of headers, extra columns, spacing, and messy
+ *     OCR/copy-paste output rather than requiring a specific format.
+ *     Runs entirely through services/curriculumIndexSession.js, which
+ *     is the only thing that calls pdfExtractionService,
+ *     unitExtractionService, or curriculumReviewService directly —
  *     this view never does. "Save Curriculum Index" is as far as this
  *     path goes for now; attaching a textbook, locating unit
  *     boundaries, and extracting concepts are later milestones
@@ -89,7 +91,7 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
   // (Milestone 2+), deliberately not reachable yet. Runs entirely
   // through this one orchestrator — see
   // services/curriculumIndexSession.js's own header comment for why
-  // this view never calls tableOfContentsService, pdfExtractionService,
+  // this view never calls unitExtractionService, pdfExtractionService,
   // curriculumReviewService, or curriculumIndexRepository directly.
   let indexSession = null;
   let indexExtractionReason = null; // set only if every parsing strategy found nothing at all
@@ -186,7 +188,7 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
             if (result.units.length > 0) {
               mode = 'index-review-units';
             } else {
-              indexExtractionReason = result.reason || 'Couldn\u2019t find a Table of Contents in what was provided.';
+              indexExtractionReason = 'Couldn\u2019t find anything that looked like a list of units in what was provided.';
               mode = 'index-extraction-failed';
             }
           } catch (error) {
@@ -790,12 +792,12 @@ function renderIndexCreateStep(handlers) {
 }
 
 /**
- * Shown only when every Table of Contents parsing strategy found
- * nothing at all (see services/tableOfContentsService.js's own
- * multi-strategy pipeline) — genuinely rare given four independent
- * strategies are tried, but always recoverable: manual entry on the
- * very next screen covers exactly the same ground "Start From
- * Scratch" used to.
+ * Shown only when services/unitExtractionService.js found nothing at
+ * all in what was provided — genuinely rare given how tolerant that
+ * engine is (headers, extra columns, spacing, dotted leaders, and
+ * messy OCR/copy-paste output are all handled), but always
+ * recoverable: manual entry on the very next screen covers exactly
+ * the same ground "Start From Scratch" used to.
  */
 function renderIndexExtractionFailedStep(state, handlers) {
   const section = document.createElement('div');

@@ -7,12 +7,11 @@
  * here knows what a Table of Contents, a Unit, or a Concept is; it
  * doesn't parse anything, it just reads pages.
  *
- * The previous version of this capability
- * (services/curriculumPdfParsingService.js's old extractTextFromPdf())
- * always read a fixed first 10 pages, because at the time nothing in
- * the pipeline needed anything else. This version generalizes to any
- * page range, because the redesigned pipeline genuinely needs two
- * different things from the same PDF at two different times:
+ * The previous version of this capability always read a fixed first
+ * 10 pages, because at the time nothing in the pipeline needed
+ * anything else. This version generalizes to any page range, because
+ * the redesigned pipeline genuinely needs two different things from
+ * the same PDF at two different times:
  *   - Stage 3 (Table of Contents detection) needs the first ~10-15
  *     pages, once, up front.
  *   - Stage 6 (Concept Extraction) needs one Unit's own page range —

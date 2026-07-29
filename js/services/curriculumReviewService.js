@@ -31,7 +31,7 @@
  * calling them.
  *
  * A unit built from a PDF's Table of Contents (see
- * services/tableOfContentsService.js's parseTableOfContents()) arrives
+ * services/unitExtractionService.js) arrives
  * with a page range (`startPage`/`endPage`) but no concepts yet —
  * concept extraction is a separate, later, on-demand step (see
  * services/conceptExtractionService.js) run only once a teacher
@@ -67,7 +67,7 @@ export function createDraftPack({ curriculumName, board, gradeName, subjectName,
 
 /**
  * Builds a draft's units directly from a parsed Table of Contents
- * (see services/tableOfContentsService.js's parseTableOfContents())
+ * (see services/unitExtractionService.js)
  * — each unit arrives with a real title and page range but,
  * deliberately, no concepts yet.
  */

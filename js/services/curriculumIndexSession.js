@@ -2,37 +2,38 @@
  * services/curriculumIndexSession.js
  *
  * Two-Phase Curriculum Import redesign — Phase 1's orchestrator.
- * Owns exactly the Phase 1 workflow: accept a Table of Contents
- * (any uploaded file, or pasted text) -> extract Units -> let a
- * teacher review and edit them -> save. The upload path isn't
- * restricted to PDFs — see extractUnitsFromFile() below for how a
- * non-PDF file gets read as plain text instead, same destination
- * either way. Nothing here ever touches a full textbook PDF beyond
- * its first few pages (to find the Contents page), never runs Anchor
- * Detection, and never extracts a single Concept — those are
- * exclusively Phase 2/3 concerns (see services/textbookImportService.js
- * once that exists), deliberately out of reach from this file so
- * Phase 1 stays small, deterministic, and easy for a teacher to
- * finish and trust on its own.
+ * Owns exactly the Phase 1 workflow: accept text that may contain a
+ * list of units (from any uploaded file, or pasted directly) ->
+ * extract Units -> let a teacher review and edit them -> save. The
+ * upload path isn't restricted to PDFs — see extractUnitsFromFile()
+ * below for how a non-PDF file gets read as plain text instead, same
+ * destination either way. Nothing here ever touches a full textbook
+ * PDF beyond its first few pages, never runs Anchor Detection, and
+ * never extracts a single Concept — those are exclusively Phase 2/3
+ * concerns (see services/textbookImportService.js once that exists),
+ * deliberately out of reach from this file so Phase 1 stays small,
+ * deterministic, and easy for a teacher to finish and trust on its
+ * own.
  *
  * ui/views/CurriculumManagementView.js calls only this orchestrator's
- * methods — never services/tableOfContentsService.js,
+ * methods — never services/unitExtractionService.js,
  * services/pdfExtractionService.js, services/curriculumReviewService.js,
  * or services/curriculumIndexRepository.js directly. Every one of
  * those stays pure/storage-only and unaware of the others; this file
  * is the only thing that knows the whole Phase 1 sequence.
  *
- * Field naming, per explicit product decision:
- * tableOfContentsService.parseTableOfContents() keeps returning
- * `tocPage` (an internal detail of how that parser talks about
- * itself) — this file converts it to `printedPage` on the way into
- * the persisted Curriculum Index, since that's the name a teacher
- * actually sees.
+ * services/unitExtractionService.js's extractUnits() already returns
+ * units with a `printedPage` field directly — no field renaming
+ * happens at this boundary anymore (the earlier
+ * tableOfContentsService.js this replaced returned `tocPage`
+ * internally and relied on this file to rename it; the new engine's
+ * whole premise is "just extract what a teacher would actually call
+ * it," so there's nothing left to translate).
  */
 
 import * as curriculumIndexRepository from './curriculumIndexRepository.js';
 import * as pdfExtractionService from './pdfExtractionService.js';
-import * as tableOfContentsService from './tableOfContentsService.js';
+import * as unitExtractionService from './unitExtractionService.js';
 import * as curriculumReviewService from './curriculumReviewService.js';
 import { generateId } from '../utils/idGenerator.js';
 
@@ -58,38 +59,36 @@ export function createCurriculumIndexSession() {
   }
 
   /**
-   * Input path 1: a TOC PDF. Reads only the first pages (the Contents
-   * page lives well within them — see
-   * services/tableOfContentsService.js's own header comment), never
-   * the rest of the file. A teacher uploading a TOC PDF is uploading
-   * a page or two, not a whole textbook — this still only ever reads
-   * what it needs to.
+   * Input path 1: a PDF containing a Table of Contents. Reads only
+   * the first pages — a real Table of Contents lives well within
+   * them — never the rest of the file. A teacher uploading a TOC PDF
+   * is uploading a page or two, not a whole textbook.
    */
   async function extractUnitsFromPdf(file) {
     const pdfHandle = await pdfExtractionService.loadPdfDocument(file);
     const pagesToRead = Math.min(TOC_SCAN_PAGE_COUNT, pdfExtractionService.getTotalPageCount(pdfHandle));
     const { fullText } = await pdfExtractionService.extractPageRange(pdfHandle, 1, pagesToRead);
-    return runTableOfContentsExtraction(fullText);
+    return runUnitExtraction(fullText);
   }
 
-  /** Input path 2: pasted TOC text — skips PDF handling entirely, straight into the same parser. */
+  /** Input path 2: pasted text — skips PDF handling entirely, straight into the same extractor. */
   async function extractUnitsFromPastedText(text) {
-    return runTableOfContentsExtraction(text);
+    return runUnitExtraction(text);
   }
 
   /**
    * The upload input accepts any file, not just PDFs — a teacher's
-   * Table of Contents might just as easily exist as a plain text
-   * file, or a document exported to text, as it does a PDF. This is
-   * the one entry point the "Upload" button actually calls: it looks
-   * at the file itself (extension and/or MIME type — a file's `.type`
-   * isn't always set reliably, so both are checked) to decide whether
-   * to route through pdf.js or read it as plain text directly, and
+   * list of units might just as easily exist as a plain text file, or
+   * a document exported to text, as it does a PDF. This is the one
+   * entry point the "Upload" button actually calls: it looks at the
+   * file itself (extension and/or MIME type — a file's `.type` isn't
+   * always set reliably, so both are checked) to decide whether to
+   * route through pdf.js or read it as plain text directly, and
    * either way ends up feeding the exact same
-   * services/tableOfContentsService.js parser. A binary format this
+   * services/unitExtractionService.js engine. A binary format this
    * can't meaningfully read as text (a Word .doc, an image) will
    * still be attempted as plain text rather than rejected outright —
-   * worst case the parser finds nothing and the teacher sees the same
+   * worst case nothing is extracted and the teacher sees the same
    * "couldn't extract automatically, continue to manual entry" screen
    * every other unrecognized input already falls back to, not a
    * crash.
@@ -99,24 +98,24 @@ export function createCurriculumIndexSession() {
       return extractUnitsFromPdf(file);
     }
     const text = await file.text();
-    return runTableOfContentsExtraction(text);
+    return runUnitExtraction(text);
   }
 
   function isPdfFile(file) {
     return file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
   }
 
-  function runTableOfContentsExtraction(rawText) {
-    const result = tableOfContentsService.parseTableOfContents(rawText);
-    if (result.units.length > 0) {
-      index.units = result.units.map((tocUnit) => ({
+  function runUnitExtraction(rawText) {
+    const extractedUnits = unitExtractionService.extractUnits(rawText);
+    if (extractedUnits.length > 0) {
+      index.units = extractedUnits.map((unit) => ({
         id: generateId(),
-        number: tocUnit.number,
-        title: tocUnit.title,
-        printedPage: tocUnit.tocPage,
+        number: unit.number,
+        title: unit.title,
+        printedPage: unit.printedPage,
       }));
     }
-    return result;
+    return { units: extractedUnits };
   }
 
   // Reused as-is from curriculumReviewService.js — its unit mutation
@@ -139,7 +138,7 @@ export function createCurriculumIndexSession() {
     curriculumReviewService.moveDraftUnitDown(index, unitId);
   }
 
-  /** A manually-added unit has no printed page at all — there's no Contents entry it came from. */
+  /** A manually-added unit has no printed page at all — there's no source row it came from. */
   function addUnit(title) {
     const unit = { id: generateId(), number: null, title, printedPage: null };
     index.units.push(unit);
