@@ -187,6 +187,10 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
           mode = 'index-review-units';
           rerender();
         },
+        onDeleteIndex: async (indexId) => {
+          await curriculumIndexRepository.deleteIndex(indexId);
+          rerender();
+        },
         onStartIndex: async ({ curriculum, file, pastedText }) => {
           indexSession = createCurriculumIndexSession();
           isResumingIndex = false;
@@ -379,11 +383,11 @@ function renderHubStep(handlers) {
 // lives exclusively in services/curriculumSubmissionsService.js's own
 // record, looked up separately once Submit exists.
 const INDEX_STATUS_LABELS = {
-  draft: 'Units Not Yet Confirmed',
+  draft: 'Draft',
   units_confirmed: 'Ready for Textbook',
-  textbook_attached: 'Textbook Attached',
-  concepts_in_progress: 'Concept Extraction In Progress',
-  concepts_complete: 'Ready for Review',
+  textbook_attached: 'Ready for Concept Extraction',
+  concepts_in_progress: 'Concepts In Progress',
+  concepts_complete: 'Concepts Complete',
 };
 
 /**
@@ -452,12 +456,27 @@ function renderMyCurriculumIndexRow(summary, handlers) {
 
   row.appendChild(info);
 
+  const actions = document.createElement('div');
+  actions.className = 'curriculum-management__my-index-actions';
+
   const openButton = document.createElement('button');
   openButton.type = 'button';
   openButton.className = 'btn btn--ghost';
   openButton.textContent = 'Open';
   openButton.addEventListener('click', () => handlers.onOpenIndex(summary.id));
-  row.appendChild(openButton);
+  actions.appendChild(openButton);
+
+  const deleteButton = document.createElement('button');
+  deleteButton.type = 'button';
+  deleteButton.className = 'btn btn--text btn--danger-text';
+  deleteButton.textContent = 'Delete';
+  deleteButton.addEventListener('click', () => {
+    if (!window.confirm(`Delete "${summary.curriculum.name} \u2014 ${summary.curriculum.grade} ${summary.curriculum.subject}"? This can\u2019t be undone.`)) return;
+    handlers.onDeleteIndex(summary.id);
+  });
+  actions.appendChild(deleteButton);
+
+  row.appendChild(actions);
 
   return row;
 }

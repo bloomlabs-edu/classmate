@@ -6007,3 +6007,10 @@ button.wizard-checklist__row:hover {
   color: var(--color-muted);
   margin: 0;
 }
+
+.curriculum-management__my-index-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
