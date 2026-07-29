@@ -37,8 +37,27 @@
  *           | 'concepts_in_progress' | 'concepts_complete',
  *     createdAt, updatedAt,
  *     curriculum: { name, board, grade, subject },
- *     units: [{ id, number, title, printedPage }],
+ *     parts: [{ id, name }],
+ *     units: [{ id, number, title, printedPage, partId }],
  *   }
+ *
+ * Parts and Units, Hybrid Model: a Part (History, Geography, ... —
+ * or just "General" for a subject with no real subdivisions, like
+ * Science) is a first-class entity with its own identity, stored
+ * once, not repeated per-unit — this is where a Part's own future
+ * metadata (an icon, a colour, an order, estimated teaching periods)
+ * would live. Units stay a flat array, referencing their Part by
+ * `partId` rather than being nested inside it — this is what lets
+ * services/curriculumReviewService.js's existing unit mutation
+ * functions (reused as-is; see its own header comment) continue
+ * operating on one flat array exactly as they already did, with only
+ * one small addition (a same-`partId` guard on reordering, so moving
+ * a unit up/down can never cross into a different Part's sequence).
+ * A unit's own `number` is only ever meaningful *within* its Part —
+ * "History Unit 3" and "Geography Unit 3" are two different units
+ * that both happen to be numbered 3, not a collision; `id` remains
+ * each unit's true, globally unique identity, exactly as it already
+ * was before Parts existed at all.
  *
  * Metadata ownership, per the agreed domain model: name, board,
  * grade, and subject are stable across editions and live here.
@@ -101,6 +120,7 @@ export async function createIndex({ curriculum }) {
     createdAt: now,
     updatedAt: now,
     curriculum,
+    parts: [],
     units: [],
   };
   await runRequest('readwrite', (store) => store.put(index));

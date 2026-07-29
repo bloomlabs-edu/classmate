@@ -6014,3 +6014,33 @@ button.wizard-checklist__row:hover {
   gap: 0.4rem;
   flex-shrink: 0;
 }
+
+/* Curriculum Index Parts (Hybrid Model) — see
+   ui/views/CurriculumManagementView.js's renderIndexPartSection() */
+.curriculum-management__part-section {
+  background-color: #F8F9FB;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  padding: 1rem 1.1rem;
+  margin-bottom: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.curriculum-management__part-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.curriculum-management__part-name-input {
+  font-weight: var(--font-weight-bold);
+  font-size: 1.05rem;
+  flex: 1;
+}
+
+.curriculum-management__part-section--bare {
+  background-color: transparent;
+  border: none;
+  padding: 0;
+}

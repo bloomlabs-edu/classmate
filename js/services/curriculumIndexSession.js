@@ -108,20 +108,40 @@ export function createCurriculumIndexSession() {
   function runUnitExtraction(rawText) {
     const extractedUnits = unitExtractionService.extractUnits(rawText);
     if (extractedUnits.length > 0) {
+      // Group by the extractor's own `partName` (null when no Part
+      // heading was ever detected) into real Part entities, each
+      // created once — this is the hybrid model's whole point: a
+      // Part's identity lives here, exactly once, not repeated on
+      // every one of its units.
+      const partIdByName = new Map();
+      const parts = [];
+      function partIdFor(partName) {
+        const key = partName || 'General';
+        if (!partIdByName.has(key)) {
+          const part = { id: generateId(), name: key };
+          parts.push(part);
+          partIdByName.set(key, part.id);
+        }
+        return partIdByName.get(key);
+      }
+
+      index.parts = parts;
       index.units = extractedUnits.map((unit) => ({
         id: generateId(),
         number: unit.number,
         title: unit.title,
         printedPage: unit.printedPage,
+        partId: partIdFor(unit.partName),
       }));
     }
     return { units: extractedUnits };
   }
 
   // Reused as-is from curriculumReviewService.js — its unit mutation
-  // functions only ever touch `id`/`title`/array position, so they
-  // work identically for a Curriculum Index's units even though the
-  // extra fields differ from a Textbook's.
+  // functions only ever touch `id`/`title`/array position (plus, now,
+  // a same-`partId` check for reordering specifically), so they work
+  // identically for a Curriculum Index's units even though the extra
+  // fields differ from a Textbook's.
   function renameUnit(unitId, newTitle) {
     curriculumReviewService.renameDraftUnit(index, unitId, newTitle);
   }
@@ -138,11 +158,42 @@ export function createCurriculumIndexSession() {
     curriculumReviewService.moveDraftUnitDown(index, unitId);
   }
 
-  /** A manually-added unit has no printed page at all — there's no source row it came from. */
-  function addUnit(title) {
-    const unit = { id: generateId(), number: null, title, printedPage: null };
+  /**
+   * A manually-added unit has no printed page at all — there's no
+   * source row it came from. Requires a Part to belong to; if none is
+   * given and the Index has no Parts yet at all, a "General" Part is
+   * created on the spot — the same default a real extraction would
+   * have produced, so a fully manual Curriculum Index (no PDF, no
+   * pasted text) never has to think about Parts either, unless it
+   * wants to.
+   */
+  function addUnit(title, partId) {
+    let targetPartId = partId;
+    if (!targetPartId) {
+      targetPartId = index.parts.length > 0 ? index.parts[0].id : addPart('General').id;
+    }
+    const unit = { id: generateId(), number: null, title, printedPage: null, partId: targetPartId };
     index.units.push(unit);
     return unit;
+  }
+
+  /** Creating a new Part is a first-class operation — most curricula won't need a second one, but the data model never treats "General" as anything other than an ordinary Part. */
+  function addPart(name) {
+    const part = { id: generateId(), name };
+    index.parts.push(part);
+    return part;
+  }
+
+  function renamePart(partId, newName) {
+    const part = index.parts.find((p) => p.id === partId);
+    if (part) part.name = newName;
+    return part;
+  }
+
+  /** Deleting a Part removes its units with it — there's no meaningful "orphaned unit with no Part" state in this model. */
+  function deletePart(partId) {
+    index.units = index.units.filter((unit) => unit.partId !== partId);
+    index.parts = index.parts.filter((part) => part.id !== partId);
   }
 
   /** Marks the Curriculum Index as reviewed and confirmed, ready to be attached to a Textbook later. Saving again after Phase 2 has started must never regress the status backward. */
@@ -166,6 +217,9 @@ export function createCurriculumIndexSession() {
     moveUnitUp,
     moveUnitDown,
     addUnit,
+    addPart,
+    renamePart,
+    deletePart,
     saveIndex,
   };
 }

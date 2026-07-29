@@ -100,12 +100,14 @@ export function deleteDraftUnit(draft, unitId) {
 export function moveDraftUnitUp(draft, unitId) {
   const index = draft.units.findIndex((u) => u.id === unitId);
   if (index <= 0) return;
+  if (draft.units[index - 1].partId !== draft.units[index].partId) return; // never cross into a different Part's own sequence
   [draft.units[index - 1], draft.units[index]] = [draft.units[index], draft.units[index - 1]];
 }
 
 export function moveDraftUnitDown(draft, unitId) {
   const index = draft.units.findIndex((u) => u.id === unitId);
   if (index === -1 || index >= draft.units.length - 1) return;
+  if (draft.units[index + 1].partId !== draft.units[index].partId) return; // never cross into a different Part's own sequence
   [draft.units[index], draft.units[index + 1]] = [draft.units[index + 1], draft.units[index]];
 }
 

@@ -64,6 +64,16 @@
  * actually means here: a label line breaks a block the same way a
  * blank line does, so two real data blocks never accidentally merge
  * into one just because a label sat between them.
+ *
+ * Part detection: some curricula aren't one flat sequence — Social
+ * Science restarts numbering per section (History Unit 1, Geography
+ * Unit 1, ...), English organizes into Literature/Grammar/Writing,
+ * and so on. See isConfirmedPartHeading() below for the actual
+ * multi-signal detection (never uppercase alone, per explicit
+ * instruction — real textbooks format headings inconsistently). Every
+ * extracted unit carries a `partName` (`null` when no Part heading
+ * was ever detected, which the caller treats as a single default
+ * "General" part — Science's own workflow never sees a special case).
  */
 
 // Recognized as boilerplate, never real unit data — skipped
@@ -161,6 +171,70 @@ function isPlausibleTitle(title) {
   );
 }
 
+// ---- Part detection -----------------------------------------------------
+
+/**
+ * Some curricula (Social Science: History, Geography, Civics,
+ * Economics; English: Literature, Grammar, Writing; ...) aren't one
+ * flat sequence of units — they're several independent sequences,
+ * each restarting its own numbering at 1. A Part heading ("HISTORY")
+ * introduces one of these sequences. Detecting one is *not* about
+ * matching a fixed layout (the whole point of this file); several
+ * independent signals combine, per explicit instruction not to rely
+ * on uppercase alone, since real textbooks format headings
+ * inconsistently:
+ *
+ *   - No digits at all in the line, and reasonably short — a real
+ *     heading has no unit number and no page number sitting on it.
+ *   - Formatting that reads like a heading — mostly uppercase, or
+ *     every word capitalized (Title Case) — one signal among several,
+ *     not the deciding one.
+ *   - Preceded by a blank line in the original text — the closest
+ *     proxy available to "visually separated," since this file only
+ *     ever sees extracted text, never real layout/typography.
+ *   - Genuinely load-bearing, and required rather than optional: is
+ *     this line shortly followed by a row whose own Unit Number is 1
+ *     — i.e., a brand new sequence actually starting right after it?
+ *     This is what a real Part heading always does and an ordinary
+ *     short line essentially never coincidentally does. Verified as
+ *     necessary, not just theoretically nice, against a real
+ *     textbook: without requiring this specifically, a real book's
+ *     own short, Title-Case unit title ("Measurement") was being
+ *     mistaken for a Part heading purely from formatting and blank-line
+ *     signals alone — those two are kept as confidence-boosters here,
+ *     never sufecient by themselves.
+ */
+const HEADING_LOOKAHEAD_WINDOW = 3;
+
+function looksLikeHeadingText(line) {
+  return !/\d/.test(line) && line.length >= 2 && line.length <= 50;
+}
+function isMostlyUppercase(line) {
+  const letters = line.replace(/[^A-Za-z]/g, '');
+  if (!letters) return false;
+  return letters.replace(/[^A-Z]/g, '').length / letters.length >= 0.8;
+}
+function isTitleCase(line) {
+  const words = line.split(/\s+/).filter(Boolean);
+  return words.length > 0 && words.every((word) => /^[A-Z]/.test(word));
+}
+
+function isConfirmedPartHeading(line, lines, index, precededByBlank) {
+  if (!looksLikeHeadingText(line) || isLabelLine(line) || isMonthLine(line)) return false;
+
+  let foundUnitOne = false;
+  for (let lookahead = index + 1; lookahead < Math.min(lines.length, index + 1 + HEADING_LOOKAHEAD_WINDOW); lookahead++) {
+    const candidate = extractRowFields(lines[lookahead], null);
+    if (candidate && !('standaloneNumber' in candidate) && candidate.number === 1) {
+      foundUnitOne = true;
+      break;
+    }
+  }
+  if (!foundUnitOne) return false;
+
+  return isMostlyUppercase(line) || isTitleCase(line) || precededByBlank[index];
+}
+
 /**
  * Tries to extract one Unit record from a single row's tokens.
  * Returns `{ number, title, printedPage }`, `{ standaloneNumber }` (a
@@ -224,10 +298,11 @@ function extractRowFields(line, pendingStandaloneNumber) {
   return { number: tokenAsInteger(tokens[numberIdx]), title, printedPage: tokenAsInteger(tokens[pageIdx]) };
 }
 
-function extractSameLineRows(lines) {
+function extractSameLineRows(lines, precededByBlank) {
   const results = [];
   const consumed = new Array(lines.length).fill(false);
   let pendingStandaloneNumber = null;
+  let currentPartName = null;
 
   lines.forEach((line, i) => {
     const row = extractRowFields(line, pendingStandaloneNumber);
@@ -241,6 +316,10 @@ function extractSameLineRows(lines) {
       // to end in a number — verified as a real, serious false
       // positive this exact reset exists to prevent.
       pendingStandaloneNumber = null;
+      if (isConfirmedPartHeading(line, lines, i, precededByBlank)) {
+        currentPartName = line;
+        consumed[i] = true;
+      }
       return;
     }
 
@@ -250,7 +329,7 @@ function extractSameLineRows(lines) {
       return;
     }
 
-    results.push({ number: row.number, title: row.title, printedPage: row.printedPage });
+    results.push({ number: row.number, title: row.title, printedPage: row.printedPage, partName: currentPartName });
     consumed[i] = true;
     pendingStandaloneNumber = null;
   });
@@ -324,7 +403,7 @@ function extractColumnMajorRows(remainingLines) {
   const count = Math.min(unitNumberRun.values.length, pageRun.values.length, titleRun.values.length);
   const results = [];
   for (let i = 0; i < count; i++) {
-    results.push({ number: Number(unitNumberRun.values[i]), title: titleRun.values[i], printedPage: Number(pageRun.values[i]) });
+    results.push({ number: Number(unitNumberRun.values[i]), title: titleRun.values[i], printedPage: Number(pageRun.values[i]), partName: null });
   }
   return results;
 }
@@ -341,8 +420,27 @@ function extractColumnMajorRows(remainingLines) {
  * other failed extraction, falling back to manual entry.
  */
 export function extractUnits(rawText) {
-  const lines = (rawText || '').split('\n').map((line) => line.trim()).filter(Boolean);
-  const { results: sameLineResults, consumed } = extractSameLineRows(lines);
+  const rawLines = (rawText || '').split('\n').map((line) => line.trim());
+
+  // Blank lines are dropped from the working line list (same as
+  // before), but whether a line was *preceded* by one is preserved
+  // as a parallel array — one of Part detection's signals (the
+  // closest available proxy for "visually separated," since this
+  // file only ever sees extracted text, never real layout).
+  const lines = [];
+  const precededByBlank = [];
+  let lastLineWasBlank = true; // the very start of the document counts as "nothing before it"
+  for (const line of rawLines) {
+    if (!line) {
+      lastLineWasBlank = true;
+      continue;
+    }
+    lines.push(line);
+    precededByBlank.push(lastLineWasBlank);
+    lastLineWasBlank = false;
+  }
+
+  const { results: sameLineResults, consumed } = extractSameLineRows(lines, precededByBlank);
   const remainingLines = lines.filter((_, i) => !consumed[i]);
   const columnResults = extractColumnMajorRows(remainingLines);
   return [...sameLineResults, ...columnResults];

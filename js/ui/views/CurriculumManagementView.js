@@ -234,8 +234,20 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
           indexSession.moveUnitDown(unitId);
           rerender();
         },
-        onAddIndexUnit: (title) => {
-          indexSession.addUnit(title);
+        onAddIndexUnit: (title, partId) => {
+          indexSession.addUnit(title, partId);
+          rerender();
+        },
+        onAddPart: (name) => {
+          indexSession.addPart(name);
+          rerender();
+        },
+        onRenamePart: (partId, newName) => {
+          indexSession.renamePart(partId, newName);
+          rerender();
+        },
+        onDeletePart: (partId) => {
+          indexSession.deletePart(partId);
           rerender();
         },
         onSaveIndex: async () => {
@@ -969,22 +981,21 @@ function renderIndexReviewUnitsStep(index, handlers) {
   statusNote.textContent = `Status: ${INDEX_STATUS_LABELS[index.status] || index.status}`;
   section.appendChild(statusNote);
 
+  const totalUnits = index.units.length;
   const intro = document.createElement('p');
   intro.className = 'curriculum-management__intro';
   intro.textContent =
-    index.units.length > 0
-      ? `${index.units.length} unit${index.units.length === 1 ? '' : 's'} found. Rename, reorder, delete, or add units below, then save.`
-      : 'No units yet \u2014 add them below.';
+    totalUnits > 0
+      ? `${totalUnits} unit${totalUnits === 1 ? '' : 's'} found across ${index.parts.length} part${index.parts.length === 1 ? '' : 's'}. Rename, reorder, delete, or add units within each part, then save.`
+      : 'No units yet \u2014 add a part and its units below.';
   section.appendChild(intro);
 
-  const unitList = document.createElement('div');
-  unitList.className = 'curriculum-management__import-unit-list';
-  index.units.forEach((unit, unitIndex) => {
-    unitList.appendChild(renderIndexUnitRow(index, unit, unitIndex, handlers));
+  const showPartHeaders = index.parts.length > 1;
+  index.parts.forEach((part) => {
+    section.appendChild(renderIndexPartSection(index, part, handlers, showPartHeaders));
   });
-  section.appendChild(unitList);
 
-  section.appendChild(createAddForm('New unit title', '+ Add Unit', (title) => handlers.onAddIndexUnit(title)));
+  section.appendChild(renderAddPartForm(handlers));
 
   const saveButton = document.createElement('button');
   saveButton.type = 'button';
@@ -996,7 +1007,62 @@ function renderIndexReviewUnitsStep(index, handlers) {
   return section;
 }
 
-function renderIndexUnitRow(index, unit, unitIndex, handlers) {
+/**
+ * One Part's own cluster: its name (renameable), its own units in
+ * their own local sequence, its own "+ Add Unit" form, and a way to
+ * delete the whole part. A Part with no real name detected at all
+ * ("General," Science's own default) renders identically to any
+ * other Part *once more than one Part actually exists* — but when
+ * there's only ever been the one, `showHeader` is false and this
+ * renders as the same plain flat list Science already had, with no
+ * Part-management controls a teacher never asked for at all. The
+ * moment a second Part is added, both sections start showing their
+ * own headers naturally.
+ */
+function renderIndexPartSection(index, part, handlers, showHeader) {
+  const wrap = document.createElement('div');
+  wrap.className = 'curriculum-management__part-section';
+  if (!showHeader) wrap.classList.add('curriculum-management__part-section--bare');
+
+  if (showHeader) {
+    const headerRow = document.createElement('div');
+    headerRow.className = 'curriculum-management__part-header';
+
+    const nameInput = createRenameInput(part.name, (newName) => handlers.onRenamePart(part.id, newName));
+    nameInput.classList.add('curriculum-management__part-name-input');
+    headerRow.appendChild(nameInput);
+
+    const deletePartButton = document.createElement('button');
+    deletePartButton.type = 'button';
+    deletePartButton.className = 'btn btn--text btn--danger-text';
+    deletePartButton.textContent = 'Delete Part';
+    deletePartButton.addEventListener('click', () => {
+      if (!window.confirm(`Delete "${part.name}" and all ${index.units.filter((u) => u.partId === part.id).length} of its units? This can\u2019t be undone.`)) return;
+      handlers.onDeletePart(part.id);
+    });
+    headerRow.appendChild(deletePartButton);
+
+    wrap.appendChild(headerRow);
+  }
+
+  const partUnits = index.units.filter((unit) => unit.partId === part.id);
+  const unitList = document.createElement('div');
+  unitList.className = 'curriculum-management__import-unit-list';
+  partUnits.forEach((unit, unitIndexWithinPart) => {
+    unitList.appendChild(renderIndexUnitRow(unit, unitIndexWithinPart, partUnits.length, handlers));
+  });
+  wrap.appendChild(unitList);
+
+  wrap.appendChild(createAddForm('New unit title', '+ Add Unit', (title) => handlers.onAddIndexUnit(title, part.id)));
+
+  return wrap;
+}
+
+function renderAddPartForm(handlers) {
+  return createAddForm('New part name (e.g. History, Geography)', '+ Add Part', (name) => handlers.onAddPart(name));
+}
+
+function renderIndexUnitRow(unit, unitIndexWithinPart, partUnitCount, handlers) {
   const row = document.createElement('div');
   row.className = 'curriculum-management__import-unit-row';
 
@@ -1004,8 +1070,8 @@ function renderIndexUnitRow(index, unit, unitIndex, handlers) {
   topLine.className = 'curriculum-management__import-unit-top-line';
 
   const reorder = createReorderButtons(
-    unitIndex === 0,
-    unitIndex === index.units.length - 1,
+    unitIndexWithinPart === 0,
+    unitIndexWithinPart === partUnitCount - 1,
     () => handlers.onMoveIndexUnitUp(unit.id),
     () => handlers.onMoveIndexUnitDown(unit.id)
   );
