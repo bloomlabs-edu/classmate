@@ -6233,3 +6233,23 @@ button.wizard-checklist__row:hover {
 .choose-subject-modal__radio-row:hover {
   border-color: var(--color-primary);
 }
+
+/* Developer Utilities — temporary, non-production tooling; see
+   services/devLearningManagementResetService.js's own header
+   comment. Deliberately styled to look distinct from the rest of the
+   page, not like a normal feature. */
+.learning-management__dev-utilities {
+  margin-top: 2rem;
+  padding: 1rem;
+  border: 1px dashed var(--color-danger, #b3261e);
+  border-radius: var(--radius-card);
+  background-color: #FFF5F5;
+}
+.learning-management__dev-utilities-heading {
+  margin: 0 0 0.6rem;
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-black);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-danger, #b3261e);
+}

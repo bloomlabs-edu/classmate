@@ -38,6 +38,15 @@
  * Reused, unmodified: services/learningRecordService.js (reading
  * Subjects). Still untouched and waiting for a later milestone:
  * Concepts, the Resource Workspace.
+ *
+ * DEVELOPER UTILITIES: the home screen includes a temporary, clearly
+ * marked "Developer Utilities" block with a "Reset Learning
+ * Management (Current Classroom)" action — see
+ * services/devLearningManagementResetService.js for exactly what it
+ * does and does not touch. Remove that import, the block in
+ * renderHomeStep(), and the service file itself before production;
+ * everything is contained to make that removal a clean, three-part
+ * deletion.
  */
 
 import { createIcon } from '../components/Icon.js';
@@ -45,8 +54,11 @@ import { openAddSubjectModal } from '../components/AddSubjectModal.js';
 import { renderExistingSubjectsList } from '../components/ExistingSubjectsList.js';
 import { getDisplayName } from '../../services/classroomService.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
+import * as workspaceService from '../../services/workspaceService.js';
+import { resetLearningManagementData } from '../../services/devLearningManagementResetService.js';
 
 export function renderLearningManagementView(container, { classrooms, onBack }) {
+
   const singleClassroomMode = classrooms.length === 1;
 
   let mode = singleClassroomMode ? 'home' : 'choose-class';
@@ -93,6 +105,15 @@ export function renderLearningManagementView(container, { classrooms, onBack }) 
     },
     onBackTo: (targetMode) => {
       mode = targetMode;
+      rerender();
+    },
+    onResetLearningManagement: () => {
+      const confirmed = window.confirm(
+        'Reset Learning Management for this classroom?\n\nThis removes every Subject, Unit, Concept, and curriculum link for this classroom only. Students, attendance, and classroom settings are not affected. This cannot be undone.'
+      );
+      if (!confirmed) return;
+      resetLearningManagementData(selectedClassroom);
+      workspaceService.save(selectedClassroom);
       rerender();
     },
   };
@@ -193,7 +214,34 @@ function renderHomeStep(classroom, handlers) {
   addSubjectButton.addEventListener('click', handlers.onGoToAddSubject);
   section.appendChild(addSubjectButton);
 
+  section.appendChild(renderDeveloperUtilities(handlers));
+
   return section;
+}
+
+/**
+ * DEVELOPER-ONLY — see services/devLearningManagementResetService.js's
+ * own header comment for exactly what "Reset Learning Management"
+ * does and does not touch. Remove this whole function, its one call
+ * site above, and that service file before production.
+ */
+function renderDeveloperUtilities(handlers) {
+  const devSection = document.createElement('div');
+  devSection.className = 'learning-management__dev-utilities';
+
+  const devHeading = document.createElement('p');
+  devHeading.className = 'learning-management__dev-utilities-heading';
+  devHeading.textContent = 'Developer Utilities';
+  devSection.appendChild(devHeading);
+
+  const resetButton = document.createElement('button');
+  resetButton.type = 'button';
+  resetButton.className = 'btn btn--danger';
+  resetButton.textContent = 'Reset Learning Management (Current Classroom)';
+  resetButton.addEventListener('click', handlers.onResetLearningManagement);
+  devSection.appendChild(resetButton);
+
+  return devSection;
 }
 
 /**
