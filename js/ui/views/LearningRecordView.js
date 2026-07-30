@@ -37,33 +37,11 @@ import { createSubjectPickerElement } from '../components/SubjectPicker.js';
 import { renderConceptWorkspaceView, createTaughtToggle } from './ConceptWorkspaceView.js';
 import { renderAddConceptsView } from './AddConceptsView.js';
 
-const DEFAULT_SUBJECT_NAMES = ['Science', 'Maths', 'English', 'Social Science'];
-
-/**
- * A brand-new classroom's Learning Record starts completely empty.
- * Rather than showing a bare "no subjects yet" screen the very first
- * time a teacher opens this, seed the four subjects every Teach For
- * India classroom already has, so the initial screen matches exactly
- * what's expected — Science / Maths / English / Social Science, each
- * ready for its own Units. This only ever runs once: after the first
- * subject exists (whether one of these four or a teacher's own),
- * nothing here runs again.
- */
-function ensureDefaultSubjects(classroom) {
-  if (learningRecordService.getSubjects(classroom).length > 0) return false;
-  DEFAULT_SUBJECT_NAMES.forEach((title) => learningRecordTeacherService.createSubject(classroom, { title }));
-  return true;
-}
-
 export function renderLearningRecordView(container, { classroom, onClose }) {
   // Local, in-memory drill-down state — not the URL, not a route
   // param. See this file's header comment for why.
   let openSubjectId = null;
   let openUnitId = null;
-
-  if (ensureDefaultSubjects(classroom)) {
-    workspaceService.save(classroom);
-  }
 
   function rerender() {
     renderScreen(container, classroom, openSubjectId, openUnitId, {
