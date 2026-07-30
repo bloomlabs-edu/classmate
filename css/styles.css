@@ -6210,3 +6210,26 @@ button.wizard-checklist__row:hover {
 .choose-subject-modal__custom-field {
   margin-top: 0.4rem;
 }
+
+.choose-subject-modal__subject-name {
+  font-weight: var(--font-weight-black);
+  margin-left: 0.35rem;
+}
+.choose-subject-modal__radio-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+.choose-subject-modal__radio-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+.choose-subject-modal__radio-row:hover {
+  border-color: var(--color-primary);
+}

@@ -3,30 +3,46 @@
  *
  * Learning Management, rebuilt from a genuinely clean slate — see
  * this file's own history in CHANGELOG.md for the full incremental
- * rebuild. This milestone: a chosen Subject is now genuinely
- * persisted (via ui/components/ChooseSubjectModal.js's Choose
- * Curriculum step), rendered on this home screen, and clicking it
- * navigates into its own structure — adapting to whether its linked
- * curriculum actually has Parts, rather than forcing a level that
- * doesn't exist.
+ * rebuild. The home screen's one responsibility: render exactly the
+ * classroom's own persisted Subjects (via
+ * ui/components/ExistingSubjectsList.js) and nothing else — no
+ * suggestions, no placeholders, no empty-state copy of any kind. A
+ * chosen Subject is genuinely persisted (via
+ * ui/components/AddSubjectModal.js's Choose Curriculum step) and
+ * clicking it navigates into its own structure — adapting to whether
+ * its linked curriculum actually has Parts, rather than forcing a
+ * level that doesn't exist.
+ *
+ * Component hierarchy, and why the Subject Picker can never end up on
+ * this home screen by accident:
+ *
+ *   LearningManagementView
+ *   ├── ExistingSubjectsList     (persisted Subjects only — no
+ *   │                             suggestion data, no fallback list)
+ *   ├── "+ Add Subject" button   (trivial — stays inline here)
+ *   └── AddSubjectModal
+ *         └── SubjectSelectionList  (the only file that imports
+ *                                    config/commonSubjectsConfig.js)
+ *
+ * This file has no import reaching suggested-subject data anywhere in
+ * its own tree — not directly, not transitively. That's what makes
+ * "the home screen renders suggestions" structurally hard to
+ * reintroduce by accident, not just currently untrue.
  *
  * Choose Class is back, minimally — skipped entirely when there's
  * only one classroom, the same "only ask when there's a real choice"
- * principle already used throughout this app. It wasn't part of any
- * earlier milestone here because nothing needed a specific classroom
- * until persistence did; this is resolving a real, currently-blocking
- * gap, not a speculative addition.
+ * principle used throughout this app. Resolving a real,
+ * currently-blocking gap (persistence needs a specific classroom),
+ * not a speculative addition.
  *
  * Reused, unmodified: services/learningRecordService.js (reading
- * Subjects), ui/components/ChooseSubjectModal.js (the whole Add
- * Subject workflow — this file only supplies it a classroom and a
- * callback), config/commonSubjectsConfig.js indirectly through that
- * modal. Still untouched and waiting for a later milestone: Concepts,
- * the Resource Workspace.
+ * Subjects). Still untouched and waiting for a later milestone:
+ * Concepts, the Resource Workspace.
  */
 
 import { createIcon } from '../components/Icon.js';
-import { openChooseSubjectModal } from '../components/ChooseSubjectModal.js';
+import { openAddSubjectModal } from '../components/AddSubjectModal.js';
+import { renderExistingSubjectsList } from '../components/ExistingSubjectsList.js';
 import { getDisplayName } from '../../services/classroomService.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
 
@@ -50,8 +66,10 @@ export function renderLearningManagementView(container, { classrooms, onBack }) 
       rerender();
     },
     onGoToAddSubject: () => {
-      openChooseSubjectModal({
+      const existingSubjectTitles = learningRecordService.getSubjects(selectedClassroom).map((subject) => subject.title);
+      openAddSubjectModal({
         classroom: selectedClassroom,
+        existingSubjectTitles,
         onSubjectAdded: () => {
           // The modal already persisted and saved the Subject itself
           // (services/curriculumLinkingService.js +
@@ -154,10 +172,10 @@ function renderChooseClassStep(classrooms, handlers) {
 }
 
 /**
- * Data-driven — renders exactly
- * services/learningRecordService.js's own getSubjects(classroom).
- * A Subject is now genuinely clickable, navigating into its own
- * structure.
+ * The home screen's one responsibility: render exactly the
+ * classroom's own persisted Subjects, nothing else. Renders nothing
+ * at all beyond "+ Add Subject" when there are none — no heading, no
+ * empty-state copy, no suggestions.
  */
 function renderHomeStep(classroom, handlers) {
   const section = document.createElement('div');
@@ -165,17 +183,7 @@ function renderHomeStep(classroom, handlers) {
 
   const subjects = learningRecordService.getSubjects(classroom);
   if (subjects.length > 0) {
-    const grid = document.createElement('div');
-    grid.className = 'learning-management__choice-grid';
-    subjects.forEach((subject) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'learning-management__choice-option';
-      button.textContent = subject.title;
-      button.addEventListener('click', () => handlers.onChooseSubject(subject));
-      grid.appendChild(button);
-    });
-    section.appendChild(grid);
+    section.appendChild(renderExistingSubjectsList(subjects, handlers.onChooseSubject));
   }
 
   const addSubjectButton = document.createElement('button');
