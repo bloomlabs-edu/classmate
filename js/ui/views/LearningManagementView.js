@@ -11,73 +11,41 @@
  * Milestone 1 (done): title, Back button, "+ Add Subject" with no
  * behavior at all.
  *
- * Milestone 2 (this file, right now): "+ Add Subject" opens Choose
- * Subject — reusing ui/components/SubjectPicker.js and
- * config/commonSubjectsConfig.js exactly as they already are, kept
- * specifically through the rebuild for this reason. The dialog
- * displays suggested subjects, allows a custom one, and can be
- * cancelled. This milestone validates that interaction only —
- * picking a subject (suggested or custom) does not create anything,
- * does not persist anything, does not link a curriculum, and does not
- * navigate anywhere beyond returning to this same home screen; a
- * console log is the only observable trace of a pick, there
- * specifically to confirm the picker's callback wiring is correct
- * without introducing any real effect. Choosing a subject and
- * cancelling are deliberately wired as two distinct handlers even
- * though both currently do the same thing (return home) — this is
- * what the next milestone will actually be able to build on, one
- * real behavior at a time.
+ * Milestone 2 (superseded by this one): "+ Add Subject" originally
+ * navigated to a full-screen Choose Subject step. That's been
+ * replaced — a teacher now stays on this exact page the whole time;
+ * "+ Add Subject" opens ui/components/ChooseSubjectModal.js as a
+ * centered overlay instead. This page itself no longer has any modes
+ * or steps of its own at all — it's just the one screen, plus
+ * whatever the modal shows on top of it.
+ *
+ * Milestone 3 (this one, right now): the modal — a selectable list of
+ * suggested subjects, "Custom Subject" as the list's own final row,
+ * an inert search placeholder, and Cancel/Next actions. See that
+ * file's own header comment for the full interaction. Still no
+ * persistence, no curriculum linking: `onNext` only logs the chosen
+ * subject name and does nothing else — Choose Curriculum is a later,
+ * separately-approved milestone.
  *
  * Not yet built, on purpose: persisting a chosen subject, rendering
  * it on the home screen, Choose Curriculum, and everything after it.
  *
- * Reused, unmodified: ui/components/SubjectPicker.js,
- * config/commonSubjectsConfig.js. Still untouched and waiting for a
- * later milestone: services/curriculumIndexRepository.js,
+ * Reused, unmodified: ui/components/ChooseSubjectModal.js,
+ * config/commonSubjectsConfig.js. ui/components/SubjectPicker.js is
+ * untouched and still available for other uses, just not this one —
+ * this modal's list-of-selectable-rows interaction is a different
+ * shape than that component's chips, so it's a new component rather
+ * than a reskin. Still untouched and waiting for a later milestone:
+ * services/curriculumIndexRepository.js,
  * services/curriculumLinkingService.js, models/LearningSubject.js,
  * models/LearningUnit.js, models/LearningConcept.js,
  * services/learningRecordService.js / learningRecordTeacherService.js.
  */
 
 import { createIcon } from '../components/Icon.js';
-import { createSubjectPickerElement } from '../components/SubjectPicker.js';
+import { openChooseSubjectModal } from '../components/ChooseSubjectModal.js';
 
 export function renderLearningManagementView(container, { classrooms, onBack }) {
-  let mode = 'home';
-
-  function rerender() {
-    renderView(container, mode, handlers);
-  }
-
-  const handlers = {
-    onBack,
-    onGoToChooseSubjectName: () => {
-      mode = 'choose-subject-name';
-      rerender();
-    },
-    onCancelChooseSubject: () => {
-      mode = 'home';
-      rerender();
-    },
-    /**
-     * Deliberately does nothing but log and return home — no
-     * services/learningRecordTeacherService.js call, no
-     * services/workspaceService.js save, no
-     * services/curriculumLinkingService.js call. This milestone is
-     * only proving the picker calls back with the right subject
-     * name, not building what happens next.
-     */
-    onChooseSubjectName: (subjectName) => {
-      console.log('[LearningManagementView] Choose Subject picked (no persistence yet):', subjectName);
-      mode = 'home';
-      rerender();
-    },
-  };
-
-  rerender();
-}
-
-function renderView(container, mode, handlers) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
@@ -90,13 +58,8 @@ function renderView(container, mode, handlers) {
   backButton.type = 'button';
   backButton.className = 'btn btn--text';
   backButton.appendChild(createIcon('arrow-left'));
-  if (mode === 'home') {
-    backButton.append('Back to Dashboard');
-    backButton.addEventListener('click', handlers.onBack);
-  } else {
-    backButton.append('Back');
-    backButton.addEventListener('click', handlers.onCancelChooseSubject);
-  }
+  backButton.append('Back to Dashboard');
+  backButton.addEventListener('click', onBack);
   header.appendChild(backButton);
 
   const title = document.createElement('h1');
@@ -106,16 +69,6 @@ function renderView(container, mode, handlers) {
 
   wrapper.appendChild(header);
 
-  if (mode === 'choose-subject-name') {
-    wrapper.appendChild(renderChooseSubjectStep(handlers));
-  } else {
-    wrapper.appendChild(renderHomeStep(handlers));
-  }
-
-  container.appendChild(wrapper);
-}
-
-function renderHomeStep(handlers) {
   const section = document.createElement('div');
   section.className = 'learning-management__section';
 
@@ -123,28 +76,29 @@ function renderHomeStep(handlers) {
   addSubjectButton.type = 'button';
   addSubjectButton.className = 'btn btn--primary';
   addSubjectButton.textContent = '+ Add Subject';
-  addSubjectButton.addEventListener('click', handlers.onGoToChooseSubjectName);
+  addSubjectButton.addEventListener('click', () => {
+    openChooseSubjectModal({
+      /**
+       * Deliberately does nothing but log — no
+       * services/learningRecordTeacherService.js call, no
+       * services/workspaceService.js save, no
+       * services/curriculumLinkingService.js call, and no navigation
+       * to a Choose Curriculum step. This milestone is only proving
+       * the modal's own interaction works, not building what happens
+       * after it.
+       */
+      onNext: (subjectName) => {
+        console.log('[LearningManagementView] Choose Subject: Next clicked (no persistence yet):', subjectName);
+      },
+      onCancel: () => {
+        // The modal has already closed itself; the page underneath
+        // never changed, so there's genuinely nothing else to do.
+      },
+    });
+  });
   section.appendChild(addSubjectButton);
 
-  return section;
-}
+  wrapper.appendChild(section);
 
-function renderChooseSubjectStep(handlers) {
-  const section = document.createElement('div');
-  section.className = 'learning-management__section';
-
-  const heading = document.createElement('p');
-  heading.className = 'learning-management__step-heading';
-  heading.textContent = 'Choose Subject';
-  section.appendChild(heading);
-
-  section.appendChild(
-    createSubjectPickerElement({
-      existingSubjectTitles: [], // nothing persisted yet this milestone, so nothing to exclude
-      otherButtonLabel: 'Custom Subject',
-      onAddSubject: (subjectName) => handlers.onChooseSubjectName(subjectName),
-    })
-  );
-
-  return section;
+  container.appendChild(wrapper);
 }

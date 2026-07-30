@@ -6173,3 +6173,43 @@ button.wizard-checklist__row:hover {
   white-space: pre-wrap;
   overflow-x: auto;
 }
+
+/* Choose Subject modal — a selectable list, not chips — see
+   ui/components/ChooseSubjectModal.js */
+.choose-subject-modal__search {
+  margin-bottom: 1rem;
+}
+.choose-subject-modal__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 1.25rem;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.choose-subject-modal__row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.65rem 0.9rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background-color: #ffffff;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+.choose-subject-modal__row:hover {
+  border-color: var(--color-primary);
+}
+.choose-subject-modal__row--selected {
+  border-color: var(--color-primary);
+  background-color: var(--color-primary-soft, #EEF6FF);
+  font-weight: var(--font-weight-bold);
+}
+.choose-subject-modal__row--custom {
+  font-style: italic;
+}
+.choose-subject-modal__custom-field {
+  margin-top: 0.4rem;
+}
