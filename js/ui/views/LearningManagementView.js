@@ -3,44 +3,81 @@
  *
  * Learning Management, rebuilt from a genuinely clean slate — the
  * previous implementation (and everything reachable only from it —
- * see the now-deleted LearningRecordView.js and AddConceptsView.js)
- * is retired entirely, not patched further. This file starts at
- * Phase 1 of an explicit, incremental rebuild and does only what
- * Phase 1 asks for — nothing anticipated, nothing stubbed in early.
+ * see the retired LearningRecordView.js and AddConceptsView.js) is
+ * retired entirely, not patched further. This file builds up in
+ * explicit, separately-approved milestones — nothing anticipated,
+ * nothing stubbed in early.
  *
- * Phase 1 (this file, right now): title, Back button, "+ Add
- * Subject." That's the whole screen. No subject list (there's nothing
- * to build one from yet), no click behavior on "+ Add Subject" (no
- * mode, no stub, no placeholder), no persistence, no other logic of
- * any kind.
+ * Milestone 1 (done): title, Back button, "+ Add Subject" with no
+ * behavior at all.
  *
- * Phase 2 (next, not yet built): "+ Add Subject" opens Choose
- * Subject, reusing ui/components/SubjectPicker.js and
- * config/commonSubjectsConfig.js exactly as they already are —
- * chosen specifically to be kept through this rebuild since they're
- * generic and carry no assumption tied to the retired flow. Selecting
- * a subject there does nothing further yet — proving add, persist,
- * and render-only-what's-persisted, before curriculum selection
- * exists at all.
+ * Milestone 2 (this file, right now): "+ Add Subject" opens Choose
+ * Subject — reusing ui/components/SubjectPicker.js and
+ * config/commonSubjectsConfig.js exactly as they already are, kept
+ * specifically through the rebuild for this reason. The dialog
+ * displays suggested subjects, allows a custom one, and can be
+ * cancelled. This milestone validates that interaction only —
+ * picking a subject (suggested or custom) does not create anything,
+ * does not persist anything, does not link a curriculum, and does not
+ * navigate anywhere beyond returning to this same home screen; a
+ * console log is the only observable trace of a pick, there
+ * specifically to confirm the picker's callback wiring is correct
+ * without introducing any real effect. Choosing a subject and
+ * cancelling are deliberately wired as two distinct handlers even
+ * though both currently do the same thing (return home) — this is
+ * what the next milestone will actually be able to build on, one
+ * real behavior at a time.
  *
- * Phase 3 (later): Choose Subject -> Choose Curriculum.
- * Phase 4 (later): curriculum selection initializes the Subject's
- * real data — Units, then Concepts — and eventually reconnects the
- * existing Resource Workspace (ui/views/ConceptWorkspaceView.js,
- * services/resourceService.js, models/Resource.js), all of which are
- * untouched and waiting, not rebuilt.
+ * Not yet built, on purpose: persisting a chosen subject, rendering
+ * it on the home screen, Choose Curriculum, and everything after it.
  *
- * Reused, unmodified, verified still reachable and appropriate before
- * being kept: services/curriculumIndexRepository.js and
- * services/curriculumLinkingService.js (Phase 3/4), models/LearningSubject.js,
- * models/LearningUnit.js, models/LearningConcept.js, and
- * services/learningRecordService.js / learningRecordTeacherService.js
- * (Phase 2 onward).
+ * Reused, unmodified: ui/components/SubjectPicker.js,
+ * config/commonSubjectsConfig.js. Still untouched and waiting for a
+ * later milestone: services/curriculumIndexRepository.js,
+ * services/curriculumLinkingService.js, models/LearningSubject.js,
+ * models/LearningUnit.js, models/LearningConcept.js,
+ * services/learningRecordService.js / learningRecordTeacherService.js.
  */
 
 import { createIcon } from '../components/Icon.js';
+import { createSubjectPickerElement } from '../components/SubjectPicker.js';
 
 export function renderLearningManagementView(container, { classrooms, onBack }) {
+  let mode = 'home';
+
+  function rerender() {
+    renderView(container, mode, handlers);
+  }
+
+  const handlers = {
+    onBack,
+    onGoToChooseSubjectName: () => {
+      mode = 'choose-subject-name';
+      rerender();
+    },
+    onCancelChooseSubject: () => {
+      mode = 'home';
+      rerender();
+    },
+    /**
+     * Deliberately does nothing but log and return home — no
+     * services/learningRecordTeacherService.js call, no
+     * services/workspaceService.js save, no
+     * services/curriculumLinkingService.js call. This milestone is
+     * only proving the picker calls back with the right subject
+     * name, not building what happens next.
+     */
+    onChooseSubjectName: (subjectName) => {
+      console.log('[LearningManagementView] Choose Subject picked (no persistence yet):', subjectName);
+      mode = 'home';
+      rerender();
+    },
+  };
+
+  rerender();
+}
+
+function renderView(container, mode, handlers) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
@@ -53,8 +90,13 @@ export function renderLearningManagementView(container, { classrooms, onBack }) 
   backButton.type = 'button';
   backButton.className = 'btn btn--text';
   backButton.appendChild(createIcon('arrow-left'));
-  backButton.append('Back to Dashboard');
-  backButton.addEventListener('click', onBack);
+  if (mode === 'home') {
+    backButton.append('Back to Dashboard');
+    backButton.addEventListener('click', handlers.onBack);
+  } else {
+    backButton.append('Back');
+    backButton.addEventListener('click', handlers.onCancelChooseSubject);
+  }
   header.appendChild(backButton);
 
   const title = document.createElement('h1');
@@ -64,6 +106,16 @@ export function renderLearningManagementView(container, { classrooms, onBack }) 
 
   wrapper.appendChild(header);
 
+  if (mode === 'choose-subject-name') {
+    wrapper.appendChild(renderChooseSubjectStep(handlers));
+  } else {
+    wrapper.appendChild(renderHomeStep(handlers));
+  }
+
+  container.appendChild(wrapper);
+}
+
+function renderHomeStep(handlers) {
   const section = document.createElement('div');
   section.className = 'learning-management__section';
 
@@ -71,12 +123,28 @@ export function renderLearningManagementView(container, { classrooms, onBack }) 
   addSubjectButton.type = 'button';
   addSubjectButton.className = 'btn btn--primary';
   addSubjectButton.textContent = '+ Add Subject';
-  // Deliberately no click handler yet — Phase 2 gives this button its
-  // first real behavior. Not a stub, not a placeholder; simply absent
-  // until there is something real for it to do.
+  addSubjectButton.addEventListener('click', handlers.onGoToChooseSubjectName);
   section.appendChild(addSubjectButton);
 
-  wrapper.appendChild(section);
+  return section;
+}
 
-  container.appendChild(wrapper);
+function renderChooseSubjectStep(handlers) {
+  const section = document.createElement('div');
+  section.className = 'learning-management__section';
+
+  const heading = document.createElement('p');
+  heading.className = 'learning-management__step-heading';
+  heading.textContent = 'Choose Subject';
+  section.appendChild(heading);
+
+  section.appendChild(
+    createSubjectPickerElement({
+      existingSubjectTitles: [], // nothing persisted yet this milestone, so nothing to exclude
+      otherButtonLabel: 'Custom Subject',
+      onAddSubject: (subjectName) => handlers.onChooseSubjectName(subjectName),
+    })
+  );
+
+  return section;
 }
