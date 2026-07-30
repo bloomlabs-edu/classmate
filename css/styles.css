@@ -5351,6 +5351,14 @@ button.wizard-checklist__row:hover {
   font-weight: var(--font-weight-black);
   margin: 0.25rem 0 0.5rem;
 }
+.learning-management__part-heading {
+  font-size: 0.95rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+  margin: 1.1rem 0 0.4rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
 .learning-management__error {
   color: #b3261e;
 }

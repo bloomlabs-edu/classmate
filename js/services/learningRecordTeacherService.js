@@ -48,9 +48,9 @@ function ensureLearningRecord(classroom) {
 
 // ---- Syllabus structure -----------------------------------------
 
-export function createSubject(classroom, { title }) {
+export function createSubject(classroom, { title, linkedCurriculumIndexId } = {}) {
   const learningRecord = ensureLearningRecord(classroom);
-  const subject = createLearningSubject({ title });
+  const subject = createLearningSubject({ title, linkedCurriculumIndexId });
   learningRecord.subjects.push(subject);
   return subject;
 }
@@ -68,10 +68,10 @@ export function deleteSubject(classroom, subjectId) {
   return learningRecord.subjects.length < before;
 }
 
-export function createUnit(classroom, subjectId, { title }) {
+export function createUnit(classroom, subjectId, { title, partName, linkedCurriculumUnitId } = {}) {
   const subject = getSubjectById(classroom, subjectId);
   if (!subject) return null;
-  const unit = createLearningUnit({ title });
+  const unit = createLearningUnit({ title, partName, linkedCurriculumUnitId });
   subject.units.push(unit);
   return unit;
 }

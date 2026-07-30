@@ -10,19 +10,20 @@
  * workspace — see ui/views/CurriculumManagementView.js).
  *
  * This is the renamed, restructured successor to
- * ui/views/CurriculumView.js from the Dashboard Navigation Simplification milestone, which this milestone retires. The
- * biggest change: Learning Management never asks a teacher which
- * curriculum to browse. A classroom already owns one (see
- * models/Classroom.js's `curriculumAssignment` field, set once in
- * Curriculum Management) — this view reads that assignment
- * automatically via
- * services/curriculumLibraryService.js's getAssignedPackForSubject()
- * and loads the matching pack with zero extra clicks. If a classroom
- * has no assignment yet, this falls back to manual Unit/Concept
- * creation automatically — no picker is ever shown for that fallback
- * either; "Curriculum Library vs. Custom Curriculum" is no longer a
- * question a teacher answers, it's a fact about the classroom this
- * view reads.
+ * ui/views/CurriculumView.js from the Dashboard Navigation Simplification milestone, which this milestone retires. A
+ * classroom's assigned Library pack (see models/Classroom.js's
+ * `curriculumAssignment` field, set once in Curriculum Management),
+ * when one exists for a given Subject's title, is still read
+ * automatically via services/curriculumLibraryService.js's
+ * getAssignedPackForSubject() — that lookup is unchanged. What did
+ * change (the "Replace the hardcoded Subject buttons" milestone): a
+ * *new* Subject no longer comes from a fixed, hardcoded name list
+ * (config/commonSubjectsConfig.js's old picker) — a teacher clicks
+ * "Link Curriculum" and chooses one of their own Curriculum Indexes
+ * (services/curriculumIndexRepository.js) instead, via
+ * services/curriculumLinkingService.js. See that service's own header
+ * comment for exactly how this coexists with the older Library
+ * assignment mechanism rather than replacing it.
  *
  * Journey: Learning Management -> Choose Class -> Choose Subject ->
  * directly into the Curriculum Explorer (an accordion of Units, each
@@ -54,11 +55,12 @@ import * as learningRecordService from '../../services/learningRecordService.js'
 import * as learningRecordTeacherService from '../../services/learningRecordTeacherService.js';
 import * as resourceService from '../../services/resourceService.js';
 import * as curriculumLibraryService from '../../services/curriculumLibraryService.js';
+import * as curriculumIndexRepository from '../../services/curriculumIndexRepository.js';
+import * as curriculumLinkingService from '../../services/curriculumLinkingService.js';
 import { getResourceTypeIcon } from '../../config/resourceTypeConfig.js';
 import { getDisplayName } from '../../services/classroomService.js';
 import { createIcon } from '../components/Icon.js';
 import { createCurriculumExplorerPanel } from '../components/CurriculumExplorerPanel.js';
-import { createSubjectPickerElement } from '../components/SubjectPicker.js';
 import { renderReadingEditorView } from './ReadingEditorView.js';
 import { renderConceptWorkspaceView } from './ConceptWorkspaceView.js';
 import { renderLearningRecordView } from './LearningRecordView.js';
@@ -81,6 +83,35 @@ export function renderLearningManagementView(container, { classrooms, onBack }) 
   let loadError = null;
   let expandedUnitId = null;
 
+  /**
+   * Shared by onChooseSubject and onLinkCurriculumIndex — a
+   * freshly-linked Subject is selected the exact same way an existing
+   * one is, including this same Library-pack lookup by title. Worth
+   * naming plainly: if a classroom separately has a Library pack
+   * assigned for this same subject title (services/curriculumLibraryService.js's
+   * older, still-active `curriculumAssignment` mechanism — a
+   * different thing from Curriculum Index linking, see
+   * services/curriculumLinkingService.js's own header comment), that
+   * assigned pack's content is what actually gets shown here, not the
+   * just-linked Curriculum Index's Units — the same behavior that
+   * already applied to any manually-chosen Subject before this
+   * milestone.
+   */
+  async function selectSubject(subject) {
+    selectedSubject = subject;
+    loadError = null;
+    try {
+      selectedPack = await curriculumLibraryService.getAssignedPackForSubject(selectedClassroom, subject.title);
+      source = selectedPack ? 'library' : 'custom';
+    } catch (error) {
+      console.error('[LearningManagementView] Failed to load the assigned curriculum pack:', error);
+      source = 'custom';
+      loadError = "Couldn't load this class's assigned curriculum, so you're seeing manual Unit/Concept tools instead. Check your connection and try again.";
+    }
+    expandedUnitId = null;
+    mode = 'explorer';
+  }
+
   function rerender() {
     renderView(
       container,
@@ -94,18 +125,17 @@ export function renderLearningManagementView(container, { classrooms, onBack }) 
           rerender();
         },
         onChooseSubject: async (subject) => {
-          selectedSubject = subject;
-          loadError = null;
-          try {
-            selectedPack = await curriculumLibraryService.getAssignedPackForSubject(selectedClassroom, subject.title);
-            source = selectedPack ? 'library' : 'custom';
-          } catch (error) {
-            console.error('[LearningManagementView] Failed to load the assigned curriculum pack:', error);
-            source = 'custom';
-            loadError = "Couldn't load this class's assigned curriculum, so you're seeing manual Unit/Concept tools instead. Check your connection and try again.";
-          }
-          expandedUnitId = null;
-          mode = 'explorer';
+          await selectSubject(subject);
+          rerender();
+        },
+        onGoToLinkCurriculum: () => {
+          mode = 'link-curriculum';
+          rerender();
+        },
+        onLinkCurriculumIndex: async (curriculumIndex) => {
+          const subject = curriculumLinkingService.linkCurriculumIndex(selectedClassroom, curriculumIndex);
+          workspaceService.save(selectedClassroom);
+          await selectSubject(subject);
           rerender();
         },
         onToggleUnit: (unitId) => {
@@ -195,7 +225,7 @@ function renderView(container, mode, state, handlers) {
   backButton.append(isEntryStep ? 'Back to Dashboard' : 'Back');
   backButton.addEventListener('click', () => {
     if (isEntryStep) return handlers.onBack();
-    const previous = { 'choose-subject': 'choose-class', explorer: 'choose-subject' }[mode];
+    const previous = { 'choose-subject': 'choose-class', 'link-curriculum': 'choose-subject', explorer: 'choose-subject' }[mode];
     handlers.onBackTo(previous);
   });
   header.appendChild(backButton);
@@ -209,6 +239,8 @@ function renderView(container, mode, state, handlers) {
 
   if (mode === 'choose-subject') {
     wrapper.appendChild(renderChooseSubjectStep(state.selectedClassroom, handlers));
+  } else if (mode === 'link-curriculum') {
+    wrapper.appendChild(renderLinkCurriculumStep(state.selectedClassroom, handlers));
   } else if (mode === 'explorer') {
     wrapper.appendChild(renderExplorerStep(state, handlers));
   } else {
@@ -268,18 +300,87 @@ function renderChooseSubjectStep(classroom, handlers) {
       grid.appendChild(button);
     });
     section.appendChild(grid);
+  } else {
+    const emptyNote = document.createElement('p');
+    emptyNote.className = 'learning-management__intro';
+    emptyNote.textContent = 'Nothing linked yet \u2014 link a curriculum below to get started.';
+    section.appendChild(emptyNote);
   }
 
-  section.appendChild(
-    createSubjectPickerElement({
-      existingSubjectTitles: subjects.map((subject) => subject.title),
-      onAddSubject: (title) => {
-        const subject = learningRecordTeacherService.createSubject(classroom, { title });
-        workspaceService.save(classroom);
-        handlers.onChooseSubject(subject);
-      },
+  const linkButton = document.createElement('button');
+  linkButton.type = 'button';
+  linkButton.className = 'btn btn--primary';
+  linkButton.textContent = 'Link Curriculum';
+  linkButton.addEventListener('click', handlers.onGoToLinkCurriculum);
+  section.appendChild(linkButton);
+
+  return section;
+}
+
+/**
+ * Choosing which of the teacher's own Curriculum Indexes to link —
+ * replaces config/commonSubjectsConfig.js's fixed name list entirely.
+ * Already-linked Curriculum Indexes are filtered out of what's offered
+ * (services/curriculumLinkingService.js's isCurriculumIndexLinked()),
+ * so linking the same curriculum twice is prevented by never being
+ * offered, not by an error message after the fact.
+ */
+function renderLinkCurriculumStep(classroom, handlers) {
+  const section = document.createElement('div');
+  section.className = 'learning-management__section';
+
+  const heading = document.createElement('p');
+  heading.className = 'learning-management__step-heading';
+  heading.textContent = 'Link Curriculum';
+  section.appendChild(heading);
+
+  const intro = document.createElement('p');
+  intro.className = 'learning-management__intro';
+  intro.textContent = 'Choose one of your Curriculum Indexes to link into this class.';
+  section.appendChild(intro);
+
+  const loadingNote = document.createElement('p');
+  loadingNote.className = 'learning-management__intro';
+  loadingNote.textContent = 'Loading\u2026';
+  section.appendChild(loadingNote);
+
+  curriculumIndexRepository
+    .listIndexes()
+    .then((allIndexes) => {
+      loadingNote.remove();
+      const linkableIndexes = allIndexes.filter((index) => !curriculumLinkingService.isCurriculumIndexLinked(classroom, index.id));
+
+      if (allIndexes.length === 0) {
+        const emptyNote = document.createElement('p');
+        emptyNote.className = 'learning-management__intro';
+        emptyNote.textContent = "You haven't created any Curriculum Indexes yet \u2014 build one in Curriculum Management first.";
+        section.appendChild(emptyNote);
+        return;
+      }
+      if (linkableIndexes.length === 0) {
+        const emptyNote = document.createElement('p');
+        emptyNote.className = 'learning-management__intro';
+        emptyNote.textContent = 'Every Curriculum Index you\u2019ve created is already linked to this class.';
+        section.appendChild(emptyNote);
+        return;
+      }
+
+      const grid = document.createElement('div');
+      grid.className = 'learning-management__choice-grid';
+      linkableIndexes.forEach((index) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'learning-management__choice-option';
+        button.textContent = `${index.curriculum.name} \u2014 ${index.curriculum.grade} ${index.curriculum.subject}`;
+        button.addEventListener('click', () => handlers.onLinkCurriculumIndex(index));
+        grid.appendChild(button);
+      });
+      section.appendChild(grid);
     })
-  );
+    .catch((error) => {
+      console.error('[LearningManagementView] Failed to load Curriculum Indexes:', error);
+      loadingNote.textContent = "Couldn't load your Curriculum Indexes. Check your connection and try again.";
+    });
 
   return section;
 }
@@ -313,34 +414,51 @@ function renderExplorerStep(state, handlers) {
   // (plain concept-title strings) or the classroom's own real
   // LearningConcept objects — "reuse the existing Curriculum Explorer,
   // do not create another viewer."
-  const normalizedUnits =
-    source === 'library'
-      ? selectedPack.units.map((sourceUnit) => ({
-          id: sourceUnit.id,
-          title: sourceUnit.title,
-          concepts: sourceUnit.concepts.map((conceptTitle) => ({
-            id: conceptTitle,
-            title: conceptTitle,
-            onClick: () => handlers.onOpenLibraryConcept(sourceUnit, conceptTitle),
-          })),
-        }))
-      : selectedSubject.units.map((unit) => ({
-          id: unit.id,
-          title: unit.title,
-          concepts: unit.concepts.map((concept) => ({
-            id: concept.id,
-            title: concept.title,
-            onClick: () => handlers.onOpenCustomConcept(unit, concept),
-          })),
-        }));
+  if (source === 'library') {
+    const normalizedUnits = selectedPack.units.map((sourceUnit) => ({
+      id: sourceUnit.id,
+      title: sourceUnit.title,
+      concepts: sourceUnit.concepts.map((conceptTitle) => ({
+        id: conceptTitle,
+        title: conceptTitle,
+        onClick: () => handlers.onOpenLibraryConcept(sourceUnit, conceptTitle),
+      })),
+    }));
+    section.appendChild(createCurriculumExplorerPanel({ units: normalizedUnits, expandedUnitId, onToggleUnit: handlers.onToggleUnit }));
+  } else {
+    const normalizeUnit = (unit) => ({
+      id: unit.id,
+      title: unit.title,
+      concepts: unit.concepts.map((concept) => ({
+        id: concept.id,
+        title: concept.title,
+        onClick: () => handlers.onOpenCustomConcept(unit, concept),
+      })),
+    });
 
-  section.appendChild(
-    createCurriculumExplorerPanel({
-      units: normalizedUnits,
-      expandedUnitId,
-      onToggleUnit: handlers.onToggleUnit,
-    })
-  );
+    // A Subject linked from a single-Part Curriculum Index (or one a
+    // teacher built by hand, which never sets partName at all) has no
+    // real grouping to show — one Explorer panel, exactly as before
+    // this milestone. Only a linked multi-Part curriculum (Social
+    // Science's History/Geography/...) produces more than one
+    // distinct partName, and only then does Part-grouping appear.
+    const distinctPartNames = [...new Set(selectedSubject.units.map((unit) => unit.partName).filter(Boolean))];
+
+    if (distinctPartNames.length > 1) {
+      distinctPartNames.forEach((partName) => {
+        const partHeading = document.createElement('p');
+        partHeading.className = 'learning-management__part-heading';
+        partHeading.textContent = partName;
+        section.appendChild(partHeading);
+
+        const unitsInPart = selectedSubject.units.filter((unit) => unit.partName === partName).map(normalizeUnit);
+        section.appendChild(createCurriculumExplorerPanel({ units: unitsInPart, expandedUnitId, onToggleUnit: handlers.onToggleUnit }));
+      });
+    } else {
+      const normalizedUnits = selectedSubject.units.map(normalizeUnit);
+      section.appendChild(createCurriculumExplorerPanel({ units: normalizedUnits, expandedUnitId, onToggleUnit: handlers.onToggleUnit }));
+    }
+  }
 
   if (source === 'custom') {
     const expandedUnit = selectedSubject.units.find((u) => u.id === expandedUnitId);
