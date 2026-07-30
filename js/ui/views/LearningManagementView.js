@@ -19,9 +19,14 @@
  * change (the "Replace the hardcoded Subject buttons" milestone): a
  * *new* Subject no longer comes from a fixed, hardcoded name list
  * (config/commonSubjectsConfig.js's old picker) — a teacher clicks
- * "Link Curriculum" and chooses one of their own Curriculum Indexes
- * (services/curriculumIndexRepository.js) instead, via
- * services/curriculumLinkingService.js. See that service's own header
+ * "+ Add Subject" and picks a subject name from what's actually
+ * available, exactly the same shape of interaction the old picker
+ * offered. Under the hood, this is really services/curriculumLinkingService.js
+ * linking one of the teacher's own Curriculum Indexes
+ * (services/curriculumIndexRepository.js) — deliberately never named
+ * as such anywhere in this file's own UI text: "teachers think in
+ * terms of subjects, not curricula," so nothing here ever says
+ * "Curriculum Index" or "link." See that service's own header
  * comment for exactly how this coexists with the older Library
  * assignment mechanism rather than replacing it.
  *
@@ -303,27 +308,35 @@ function renderChooseSubjectStep(classroom, handlers) {
   } else {
     const emptyNote = document.createElement('p');
     emptyNote.className = 'learning-management__intro';
-    emptyNote.textContent = 'Nothing linked yet \u2014 link a curriculum below to get started.';
+    emptyNote.textContent = 'No subjects added yet.';
     section.appendChild(emptyNote);
   }
 
-  const linkButton = document.createElement('button');
-  linkButton.type = 'button';
-  linkButton.className = 'btn btn--primary';
-  linkButton.textContent = 'Link Curriculum';
-  linkButton.addEventListener('click', handlers.onGoToLinkCurriculum);
-  section.appendChild(linkButton);
+  const addSubjectButton = document.createElement('button');
+  addSubjectButton.type = 'button';
+  addSubjectButton.className = 'btn btn--primary';
+  addSubjectButton.textContent = '+ Add Subject';
+  addSubjectButton.addEventListener('click', handlers.onGoToLinkCurriculum);
+  section.appendChild(addSubjectButton);
 
   return section;
 }
 
 /**
- * Choosing which of the teacher's own Curriculum Indexes to link —
- * replaces config/commonSubjectsConfig.js's fixed name list entirely.
- * Already-linked Curriculum Indexes are filtered out of what's offered
- * (services/curriculumLinkingService.js's isCurriculumIndexLinked()),
- * so linking the same curriculum twice is prevented by never being
- * offered, not by an error message after the fact.
+ * Choosing which subject to add — teacher-facing language only. What
+ * this actually does under the hood (find the teacher's own Curriculum
+ * Indexes, filter out ones already linked to this classroom, link
+ * whichever one is chosen — services/curriculumLinkingService.js) is
+ * deliberately never named here: "teachers think in terms of subjects,
+ * not curricula," so this screen shows subject names, nothing about
+ * where they come from. Each option's label is the bare subject name
+ * ("Science," not "Samacheer Kalvi \u2014 Grade 8 Science") — the grade
+ * is never repeated, since the classroom already establishes it. Two
+ * available subjects sharing the same name (a real, if uncommon, case
+ * — e.g. two different Science curricula) are disambiguated by their
+ * curriculum's own name in parentheses, but only then; the common case
+ * of one curriculum per subject stays as clean as the old hardcoded
+ * picker's buttons always were.
  */
 function renderLinkCurriculumStep(classroom, handlers) {
   const section = document.createElement('div');
@@ -331,12 +344,12 @@ function renderLinkCurriculumStep(classroom, handlers) {
 
   const heading = document.createElement('p');
   heading.className = 'learning-management__step-heading';
-  heading.textContent = 'Link Curriculum';
+  heading.textContent = 'Add Subject';
   section.appendChild(heading);
 
   const intro = document.createElement('p');
   intro.className = 'learning-management__intro';
-  intro.textContent = 'Choose one of your Curriculum Indexes to link into this class.';
+  intro.textContent = 'Choose a subject to add to this class.';
   section.appendChild(intro);
 
   const loadingNote = document.createElement('p');
@@ -353,17 +366,26 @@ function renderLinkCurriculumStep(classroom, handlers) {
       if (allIndexes.length === 0) {
         const emptyNote = document.createElement('p');
         emptyNote.className = 'learning-management__intro';
-        emptyNote.textContent = "You haven't created any Curriculum Indexes yet \u2014 build one in Curriculum Management first.";
+        emptyNote.textContent = 'No subjects are available to add yet \u2014 build one in Curriculum Management first.';
         section.appendChild(emptyNote);
         return;
       }
       if (linkableIndexes.length === 0) {
         const emptyNote = document.createElement('p');
         emptyNote.className = 'learning-management__intro';
-        emptyNote.textContent = 'Every Curriculum Index you\u2019ve created is already linked to this class.';
+        emptyNote.textContent = 'Every available subject has already been added to this class.';
         section.appendChild(emptyNote);
         return;
       }
+
+      // Disambiguate only on a genuine name collision among what's
+      // actually being offered right now — the common case (one
+      // curriculum per subject name) never shows anything extra.
+      const subjectNameCounts = new Map();
+      linkableIndexes.forEach((index) => {
+        const name = index.curriculum.subject;
+        subjectNameCounts.set(name, (subjectNameCounts.get(name) || 0) + 1);
+      });
 
       const grid = document.createElement('div');
       grid.className = 'learning-management__choice-grid';
@@ -371,7 +393,10 @@ function renderLinkCurriculumStep(classroom, handlers) {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'learning-management__choice-option';
-        button.textContent = `${index.curriculum.name} \u2014 ${index.curriculum.grade} ${index.curriculum.subject}`;
+        const needsDisambiguation = subjectNameCounts.get(index.curriculum.subject) > 1;
+        button.textContent = needsDisambiguation
+          ? `${index.curriculum.subject} (${index.curriculum.name})`
+          : index.curriculum.subject;
         button.addEventListener('click', () => handlers.onLinkCurriculumIndex(index));
         grid.appendChild(button);
       });
@@ -379,7 +404,7 @@ function renderLinkCurriculumStep(classroom, handlers) {
     })
     .catch((error) => {
       console.error('[LearningManagementView] Failed to load Curriculum Indexes:', error);
-      loadingNote.textContent = "Couldn't load your Curriculum Indexes. Check your connection and try again.";
+      loadingNote.textContent = "Couldn't load available subjects. Check your connection and try again.";
     });
 
   return section;
