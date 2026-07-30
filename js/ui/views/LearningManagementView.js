@@ -66,6 +66,7 @@ import { getResourceTypeIcon } from '../../config/resourceTypeConfig.js';
 import { getDisplayName } from '../../services/classroomService.js';
 import { createIcon } from '../components/Icon.js';
 import { createCurriculumExplorerPanel } from '../components/CurriculumExplorerPanel.js';
+import { createSubjectPickerElement } from '../components/SubjectPicker.js';
 import { renderReadingEditorView } from './ReadingEditorView.js';
 import { renderConceptWorkspaceView } from './ConceptWorkspaceView.js';
 import { renderLearningRecordView } from './LearningRecordView.js';
@@ -85,11 +86,12 @@ export function renderLearningManagementView(container, { classrooms, onBack }) 
   let selectedSubject = null;
   let source = null; // 'custom' | 'library' — decided automatically, never picked
   let selectedPack = null;
+  let chosenSubjectName = null; // set in "Choose Subject" (step 1), read by "Choose Curriculum" (step 2)
   let loadError = null;
   let expandedUnitId = null;
 
   /**
-   * Shared by onChooseSubject and onLinkCurriculumIndex — a
+   * Shared by onChooseSubject and onChooseCurriculumForSubject — a
    * freshly-linked Subject is selected the exact same way an existing
    * one is, including this same Library-pack lookup by title. Worth
    * naming plainly: if a classroom separately has a Library pack
@@ -121,7 +123,7 @@ export function renderLearningManagementView(container, { classrooms, onBack }) 
     renderView(
       container,
       mode,
-      { classrooms, selectedClassroom, selectedSubject, source, selectedPack, loadError, expandedUnitId, singleClassroomMode },
+      { classrooms, selectedClassroom, selectedSubject, source, selectedPack, chosenSubjectName, loadError, expandedUnitId, singleClassroomMode },
       {
         onBack,
         onChooseClass: (classroom) => {
@@ -133,12 +135,35 @@ export function renderLearningManagementView(container, { classrooms, onBack }) 
           await selectSubject(subject);
           rerender();
         },
-        onGoToLinkCurriculum: () => {
-          mode = 'link-curriculum';
+        onGoToChooseSubjectName: () => {
+          mode = 'choose-subject-name';
           rerender();
         },
-        onLinkCurriculumIndex: async (curriculumIndex) => {
-          const subject = curriculumLinkingService.linkCurriculumIndex(selectedClassroom, curriculumIndex);
+        onChooseSubjectName: async (subjectName) => {
+          chosenSubjectName = subjectName;
+          // A teacher is never asked to confirm a choice that isn't
+          // actually a choice — if exactly one Curriculum Index
+          // matches, link it immediately and skip "Choose Curriculum"
+          // entirely, the same principle "Choose Class" already
+          // applies for a single classroom.
+          try {
+            const allIndexes = await curriculumIndexRepository.listIndexes();
+            const matches = curriculumLinkingService.findAvailableCurriculumIndexesForSubject(selectedClassroom, allIndexes, subjectName);
+            if (matches.length === 1) {
+              const subject = curriculumLinkingService.linkCurriculumIndex(selectedClassroom, matches[0], subjectName);
+              workspaceService.save(selectedClassroom);
+              await selectSubject(subject);
+            } else {
+              mode = 'choose-curriculum';
+            }
+          } catch (error) {
+            console.error('[LearningManagementView] Failed to load Curriculum Indexes:', error);
+            mode = 'choose-curriculum';
+          }
+          rerender();
+        },
+        onChooseCurriculumForSubject: async (curriculumIndex, subjectName) => {
+          const subject = curriculumLinkingService.linkCurriculumIndex(selectedClassroom, curriculumIndex, subjectName);
           workspaceService.save(selectedClassroom);
           await selectSubject(subject);
           rerender();
@@ -230,7 +255,12 @@ function renderView(container, mode, state, handlers) {
   backButton.append(isEntryStep ? 'Back to Dashboard' : 'Back');
   backButton.addEventListener('click', () => {
     if (isEntryStep) return handlers.onBack();
-    const previous = { 'choose-subject': 'choose-class', 'link-curriculum': 'choose-subject', explorer: 'choose-subject' }[mode];
+    const previous = {
+      'choose-subject': 'choose-class',
+      'choose-subject-name': 'choose-subject',
+      'choose-curriculum': 'choose-subject-name',
+      explorer: 'choose-subject',
+    }[mode];
     handlers.onBackTo(previous);
   });
   header.appendChild(backButton);
@@ -244,8 +274,10 @@ function renderView(container, mode, state, handlers) {
 
   if (mode === 'choose-subject') {
     wrapper.appendChild(renderChooseSubjectStep(state.selectedClassroom, handlers));
-  } else if (mode === 'link-curriculum') {
-    wrapper.appendChild(renderLinkCurriculumStep(state.selectedClassroom, handlers));
+  } else if (mode === 'choose-subject-name') {
+    wrapper.appendChild(renderChooseSubjectNameStep(state.selectedClassroom, handlers));
+  } else if (mode === 'choose-curriculum') {
+    wrapper.appendChild(renderChooseCurriculumStep(state.selectedClassroom, state.chosenSubjectName, handlers));
   } else if (mode === 'explorer') {
     wrapper.appendChild(renderExplorerStep(state, handlers));
   } else {
@@ -283,14 +315,17 @@ function renderChooseClassStep(classrooms, handlers) {
 
 // ---- Choose Subject (within the chosen class) --------------------------
 
+/**
+ * The Learning Management home screen for a chosen classroom.
+ * Deliberately bare when empty — no heading, no explanatory copy,
+ * just whatever Subjects already exist (if any) and "+ Add Subject."
+ * "Learning Management" itself is already the page's own title (see
+ * the header rendered in renderView() above); this step adds nothing
+ * on top of it by design.
+ */
 function renderChooseSubjectStep(classroom, handlers) {
   const section = document.createElement('div');
   section.className = 'learning-management__section';
-
-  const heading = document.createElement('p');
-  heading.className = 'learning-management__step-heading';
-  heading.textContent = `Choose Subject \u2014 ${getDisplayName(classroom)}`;
-  section.appendChild(heading);
 
   const subjects = learningRecordService.getSubjects(classroom);
   if (subjects.length > 0) {
@@ -305,52 +340,72 @@ function renderChooseSubjectStep(classroom, handlers) {
       grid.appendChild(button);
     });
     section.appendChild(grid);
-  } else {
-    const emptyNote = document.createElement('p');
-    emptyNote.className = 'learning-management__intro';
-    emptyNote.textContent = 'No subjects added yet.';
-    section.appendChild(emptyNote);
   }
 
   const addSubjectButton = document.createElement('button');
   addSubjectButton.type = 'button';
   addSubjectButton.className = 'btn btn--primary';
   addSubjectButton.textContent = '+ Add Subject';
-  addSubjectButton.addEventListener('click', handlers.onGoToLinkCurriculum);
+  addSubjectButton.addEventListener('click', handlers.onGoToChooseSubjectName);
   section.appendChild(addSubjectButton);
 
   return section;
 }
 
 /**
- * Choosing which subject to add — teacher-facing language only. What
- * this actually does under the hood (find the teacher's own Curriculum
- * Indexes, filter out ones already linked to this classroom, link
- * whichever one is chosen — services/curriculumLinkingService.js) is
- * deliberately never named here: "teachers think in terms of subjects,
- * not curricula," so this screen shows subject names, nothing about
- * where they come from. Each option's label is the bare subject name
- * ("Science," not "Samacheer Kalvi \u2014 Grade 8 Science") — the grade
- * is never repeated, since the classroom already establishes it. Two
- * available subjects sharing the same name (a real, if uncommon, case
- * — e.g. two different Science curricula) are disambiguated by their
- * curriculum's own name in parentheses, but only then; the common case
- * of one curriculum per subject stays as clean as the old hardcoded
- * picker's buttons always were.
+ * Step 1 of "+ Add Subject": a plain subject name, nothing about
+ * curricula yet. Reuses ui/components/SubjectPicker.js completely
+ * unchanged in behavior (the same common-name buttons plus a
+ * free-text fallback Manage Lessons already uses) — the only
+ * difference here is what picking a name *does*: instead of creating
+ * a Subject immediately, it advances to "Choose Curriculum" (step 2),
+ * where the actual content gets attached.
  */
-function renderLinkCurriculumStep(classroom, handlers) {
+function renderChooseSubjectNameStep(classroom, handlers) {
   const section = document.createElement('div');
   section.className = 'learning-management__section';
 
   const heading = document.createElement('p');
   heading.className = 'learning-management__step-heading';
-  heading.textContent = 'Add Subject';
+  heading.textContent = 'Choose Subject';
   section.appendChild(heading);
 
-  const intro = document.createElement('p');
-  intro.className = 'learning-management__intro';
-  intro.textContent = 'Choose a subject to add to this class.';
-  section.appendChild(intro);
+  const existingSubjectTitles = learningRecordService.getSubjects(classroom).map((subject) => subject.title);
+  section.appendChild(
+    createSubjectPickerElement({
+      existingSubjectTitles,
+      otherButtonLabel: 'Custom Subject',
+      onAddSubject: (subjectName) => handlers.onChooseSubjectName(subjectName),
+    })
+  );
+
+  return section;
+}
+
+/**
+ * Step 2 of "+ Add Subject": which of the teacher's own Curriculum
+ * Indexes actually backs the subject name just chosen — the one
+ * moment "Curriculum Index"/"linking" would ever need to be named,
+ * and it still isn't: options show only each curriculum's own name
+ * ("Samacheer Kalvi," "NCERT"), never the word "curriculum" itself.
+ * Repeating the subject name here would be redundant (it was just
+ * chosen in step 1), so it's never shown again on this screen either
+ * — the same "don't repeat what's already established" rule already
+ * applied to grade.
+ *
+ * Skipped entirely when exactly one Curriculum Index matches — a
+ * teacher is never asked to confirm a choice that isn't actually a
+ * choice, the same principle "Choose Class" already applies when a
+ * teacher runs only one classroom.
+ */
+function renderChooseCurriculumStep(classroom, subjectName, handlers) {
+  const section = document.createElement('div');
+  section.className = 'learning-management__section';
+
+  const heading = document.createElement('p');
+  heading.className = 'learning-management__step-heading';
+  heading.textContent = 'Choose Curriculum';
+  section.appendChild(heading);
 
   const loadingNote = document.createElement('p');
   loadingNote.className = 'learning-management__intro';
@@ -361,50 +416,31 @@ function renderLinkCurriculumStep(classroom, handlers) {
     .listIndexes()
     .then((allIndexes) => {
       loadingNote.remove();
-      const linkableIndexes = allIndexes.filter((index) => !curriculumLinkingService.isCurriculumIndexLinked(classroom, index.id));
+      const matches = curriculumLinkingService.findAvailableCurriculumIndexesForSubject(classroom, allIndexes, subjectName);
 
-      if (allIndexes.length === 0) {
+      if (matches.length === 0) {
         const emptyNote = document.createElement('p');
         emptyNote.className = 'learning-management__intro';
-        emptyNote.textContent = 'No subjects are available to add yet \u2014 build one in Curriculum Management first.';
+        emptyNote.textContent = `No curricula available for ${subjectName} yet \u2014 build one in Curriculum Management first.`;
         section.appendChild(emptyNote);
         return;
       }
-      if (linkableIndexes.length === 0) {
-        const emptyNote = document.createElement('p');
-        emptyNote.className = 'learning-management__intro';
-        emptyNote.textContent = 'Every available subject has already been added to this class.';
-        section.appendChild(emptyNote);
-        return;
-      }
-
-      // Disambiguate only on a genuine name collision among what's
-      // actually being offered right now — the common case (one
-      // curriculum per subject name) never shows anything extra.
-      const subjectNameCounts = new Map();
-      linkableIndexes.forEach((index) => {
-        const name = index.curriculum.subject;
-        subjectNameCounts.set(name, (subjectNameCounts.get(name) || 0) + 1);
-      });
 
       const grid = document.createElement('div');
       grid.className = 'learning-management__choice-grid';
-      linkableIndexes.forEach((index) => {
+      matches.forEach((index) => {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'learning-management__choice-option';
-        const needsDisambiguation = subjectNameCounts.get(index.curriculum.subject) > 1;
-        button.textContent = needsDisambiguation
-          ? `${index.curriculum.subject} (${index.curriculum.name})`
-          : index.curriculum.subject;
-        button.addEventListener('click', () => handlers.onLinkCurriculumIndex(index));
+        button.textContent = index.curriculum.name;
+        button.addEventListener('click', () => handlers.onChooseCurriculumForSubject(index, subjectName));
         grid.appendChild(button);
       });
       section.appendChild(grid);
     })
     .catch((error) => {
       console.error('[LearningManagementView] Failed to load Curriculum Indexes:', error);
-      loadingNote.textContent = "Couldn't load available subjects. Check your connection and try again.";
+      loadingNote.textContent = "Couldn't load available curricula. Check your connection and try again.";
     });
 
   return section;

@@ -1,13 +1,20 @@
 /**
  * services/curriculumLinkingService.js
  *
- * "Link Curriculum" — replaces the old hardcoded Subject Picker
- * (config/commonSubjectsConfig.js's fixed list) as the way a new
- * Subject enters a classroom's Learning Record. A teacher no longer
- * picks a generic subject name and builds its Units/Concepts by hand;
- * they choose one of their own Curriculum Indexes
- * (services/curriculumIndexRepository.js) and this creates a real,
- * populated LearningSubject from it.
+ * Backs "+ Add Subject" — replaces the old hardcoded Subject Picker
+ * (config/commonSubjectsConfig.js's fixed list, still shown as the
+ * *first* step of this flow, "Choose Subject") as the way a new
+ * Subject's actual content enters a classroom's Learning Record.
+ * Two teacher-facing steps, entirely hidden from each other's
+ * plumbing: "Choose Subject" picks a plain subject name (reusing the
+ * existing ui/components/SubjectPicker.js unchanged); "Choose
+ * Curriculum" (this file) finds which of the teacher's own Curriculum
+ * Indexes (services/curriculumIndexRepository.js) match that name and
+ * links whichever one is chosen, creating a real, populated
+ * LearningSubject from it. A teacher never sees or names either step
+ * "linking" or "Curriculum Index" — see
+ * ui/views/LearningManagementView.js's own header comment for how
+ * that separation is kept out of the UI entirely.
  *
  * Per the finalized architecture: Curriculum Management owns
  * Curriculum/Parts/Units; Concept Builder (not yet built) is the only
@@ -38,10 +45,30 @@ export function isCurriculumIndexLinked(classroom, curriculumIndexId) {
 }
 
 /**
- * Creates a LearningSubject from a Curriculum Index, titled from the
- * curriculum's own `subject` field (e.g. "Science") rather than its
- * full name ("Samacheer Kalvi") — a Learning Management Subject reads
- * the same way the old hardcoded picker's buttons did.
+ * "Choose Curriculum"'s own data: given the subject name a teacher
+ * just picked in "Choose Subject" (a plain string — "Science," or
+ * whatever they typed into "Custom Subject"), which of their own
+ * Curriculum Indexes could back it? Matched by exact subject name
+ * (trimmed, case-insensitive) — deterministic, not a fuzzy guess —
+ * and excludes anything already linked to this classroom, so an
+ * already-added curriculum is never offered again.
+ */
+export function findAvailableCurriculumIndexesForSubject(classroom, allCurriculumIndexes, subjectName) {
+  const normalizedTarget = subjectName.trim().toLowerCase();
+  return allCurriculumIndexes.filter(
+    (index) =>
+      index.curriculum.subject.trim().toLowerCase() === normalizedTarget && !isCurriculumIndexLinked(classroom, index.id)
+  );
+}
+
+/**
+ * Creates a LearningSubject from a Curriculum Index. `subjectTitle`
+ * defaults to the curriculum's own `subject` field ("Science") but
+ * can be overridden — the two-step "Choose Subject" (a plain subject
+ * name) then "Choose Curriculum" (which curriculum backs it) flow
+ * establishes the subject's name in its own, earlier step, and that
+ * teacher-chosen name is what should title the Subject, not
+ * necessarily whatever the curriculum's own metadata happens to say.
  *
  * Every Unit is created in the Curriculum Index's own order,
  * carrying `partName` only when the Curriculum Index has more than
@@ -55,9 +82,9 @@ export function isCurriculumIndexLinked(classroom, curriculumIndexId) {
  * filtered an already-linked Curriculum Index out of what's offered,
  * so linking is never attempted twice in the first place.
  */
-export function linkCurriculumIndex(classroom, curriculumIndex) {
+export function linkCurriculumIndex(classroom, curriculumIndex, subjectTitle = curriculumIndex.curriculum.subject) {
   const subject = learningRecordTeacherService.createSubject(classroom, {
-    title: curriculumIndex.curriculum.subject,
+    title: subjectTitle,
     linkedCurriculumIndexId: curriculumIndex.id,
   });
 

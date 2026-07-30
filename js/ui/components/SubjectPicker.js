@@ -29,7 +29,7 @@
 
 import { COMMON_SUBJECTS } from '../../config/commonSubjectsConfig.js';
 
-export function createSubjectPickerElement({ existingSubjectTitles = [], onAddSubject }) {
+export function createSubjectPickerElement({ existingSubjectTitles = [], onAddSubject, otherButtonLabel = 'Other' }) {
   const wrapper = document.createElement('div');
   wrapper.className = 'subject-picker';
 
@@ -51,7 +51,7 @@ export function createSubjectPickerElement({ existingSubjectTitles = [], onAddSu
   const otherButton = document.createElement('button');
   otherButton.type = 'button';
   otherButton.className = 'subject-picker__option subject-picker__option--other';
-  otherButton.textContent = 'Other';
+  otherButton.textContent = otherButtonLabel;
   grid.appendChild(otherButton);
 
   wrapper.appendChild(grid);
