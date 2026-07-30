@@ -324,6 +324,17 @@ function renderChooseClassStep(classrooms, handlers) {
  * on top of it by design.
  */
 function renderChooseSubjectStep(classroom, handlers) {
+  // TEMPORARY DIAGNOSTIC LOGGING — added to directly observe runtime
+  // state rather than continue reasoning about it. Remove once the
+  // root cause is confirmed.
+  const subjectsForLogging = learningRecordService.getSubjects(classroom);
+  console.log('[DIAGNOSTIC] renderChooseSubjectStep is the function rendering the subject buttons.');
+  console.log('[DIAGNOSTIC] classroom.id:', classroom.id);
+  console.log('[DIAGNOSTIC] classroom.createdAt:', classroom.createdAt, '| classroom.updatedAt:', classroom.updatedAt);
+  console.log('[DIAGNOSTIC] classroom.learningRecord.subjects.length:', subjectsForLogging.length);
+  console.log('[DIAGNOSTIC] classroom.learningRecord.subjects (full contents):', JSON.stringify(subjectsForLogging, null, 2));
+  console.log('[DIAGNOSTIC] Raw classroom.learningRecord object:', JSON.stringify(classroom.learningRecord, null, 2));
+
   const section = document.createElement('div');
   section.className = 'learning-management__section';
 
