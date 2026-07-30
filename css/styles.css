@@ -6072,3 +6072,79 @@ button.wizard-checklist__row:hover {
   font-size: 0.85rem;
   max-width: 160px;
 }
+
+/* Two import modes — AI-Ready Import (recommended) vs Import from
+   Textbook (experimental) — see
+   ui/views/CurriculumManagementView.js's renderAiReadyImportSection()
+   and renderTextbookImportSection() */
+.curriculum-management__import-mode {
+  border-radius: 16px;
+  padding: 1.2rem 1.3rem;
+  margin-top: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+.curriculum-management__import-mode--recommended {
+  background-color: #EEF6FF;
+  border: 2px solid var(--color-primary);
+}
+.curriculum-management__import-mode--experimental {
+  background-color: #F8F9FB;
+  border: 1px solid var(--color-border);
+  opacity: 0.9;
+}
+.curriculum-management__canonical-example {
+  background-color: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 0.8rem 1rem;
+  font-family: monospace;
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+/* Malformed-line report from AI-Ready Import — see
+   ui/views/CurriculumManagementView.js's renderCanonicalImportErrorsBanner() */
+.curriculum-management__import-errors-banner {
+  background-color: #FFF7ED;
+  border: 1px solid #F0B963;
+  border-radius: 14px;
+  padding: 1rem 1.1rem;
+  margin-bottom: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.curriculum-management__import-errors-summary {
+  font-weight: var(--font-weight-bold);
+  margin: 0;
+}
+.curriculum-management__import-error-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #F0B963;
+}
+.curriculum-management__import-error-line {
+  font-weight: var(--font-weight-bold);
+  margin: 0;
+}
+.curriculum-management__import-error-label {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+  margin: 0;
+}
+.curriculum-management__import-error-code {
+  background-color: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.4rem 0.6rem;
+  font-family: monospace;
+  font-size: 0.85rem;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}

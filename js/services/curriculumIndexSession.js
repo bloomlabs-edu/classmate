@@ -3,20 +3,27 @@
  *
  * Two-Phase Curriculum Import redesign — Phase 1's orchestrator.
  * Owns exactly the Phase 1 workflow: accept text that may contain a
- * list of units (from any uploaded file, or pasted directly) ->
- * extract Units -> let a teacher review and edit them -> save. The
- * upload path isn't restricted to PDFs — see extractUnitsFromFile()
- * below for how a non-PDF file gets read as plain text instead, same
- * destination either way. Nothing here ever touches a full textbook
- * PDF beyond its first few pages, never runs Anchor Detection, and
- * never extracts a single Concept — those are exclusively Phase 2/3
- * concerns (see services/textbookImportService.js once that exists),
- * deliberately out of reach from this file so Phase 1 stays small,
- * deterministic, and easy for a teacher to finish and trust on its
- * own.
+ * list of units -> extract Units -> let a teacher review and edit
+ * them -> save. Two separate, user-facing import modes feed into this
+ * one shared pipeline: "AI-Ready Import" (recommended — strict,
+ * deterministic, for ClassMate's own canonical format; see
+ * extractUnitsFromCanonicalText() and
+ * services/canonicalUnitExtractionService.js) and "Import from
+ * Textbook" (experimental — tolerant, best-effort, for a raw copied
+ * Table of Contents; see runSmartExtraction() and
+ * services/unitExtractionService.js). Neither replaces the other —
+ * they're two different answers to "where is a teacher's content
+ * coming from," not two implementations competing to win. Nothing
+ * here ever touches a full textbook PDF beyond its first few pages,
+ * never runs Anchor Detection, and never extracts a single Concept —
+ * those are exclusively Phase 2/3 concerns (see
+ * services/textbookImportService.js once that exists), deliberately
+ * out of reach from this file so Phase 1 stays small, deterministic,
+ * and easy for a teacher to finish and trust on its own.
  *
  * ui/views/CurriculumManagementView.js calls only this orchestrator's
  * methods — never services/unitExtractionService.js,
+ * services/canonicalUnitExtractionService.js,
  * services/pdfExtractionService.js, services/curriculumReviewService.js,
  * or services/curriculumIndexRepository.js directly. Every one of
  * those stays pure/storage-only and unaware of the others; this file
@@ -34,6 +41,7 @@
 import * as curriculumIndexRepository from './curriculumIndexRepository.js';
 import * as pdfExtractionService from './pdfExtractionService.js';
 import * as unitExtractionService from './unitExtractionService.js';
+import * as canonicalUnitExtractionService from './canonicalUnitExtractionService.js';
 import * as curriculumReviewService from './curriculumReviewService.js';
 import { generateId } from '../utils/idGenerator.js';
 
@@ -68,12 +76,12 @@ export function createCurriculumIndexSession() {
     const pdfHandle = await pdfExtractionService.loadPdfDocument(file);
     const pagesToRead = Math.min(TOC_SCAN_PAGE_COUNT, pdfExtractionService.getTotalPageCount(pdfHandle));
     const { fullText } = await pdfExtractionService.extractPageRange(pdfHandle, 1, pagesToRead);
-    return runUnitExtraction(fullText);
+    return runSmartExtraction(fullText);
   }
 
   /** Input path 2: pasted text — skips PDF handling entirely, straight into the same extractor. */
   async function extractUnitsFromPastedText(text) {
-    return runUnitExtraction(text);
+    return runSmartExtraction(text);
   }
 
   /**
@@ -98,44 +106,72 @@ export function createCurriculumIndexSession() {
       return extractUnitsFromPdf(file);
     }
     const text = await file.text();
-    return runUnitExtraction(text);
+    return runSmartExtraction(text);
   }
 
   function isPdfFile(file) {
     return file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
   }
 
-  function runUnitExtraction(rawText) {
-    const extractedUnits = unitExtractionService.extractUnits(rawText);
-    if (extractedUnits.length > 0) {
-      // Group by the extractor's own `partName` (null when no Part
-      // heading was ever detected) into real Part entities, each
-      // created once — this is the hybrid model's whole point: a
-      // Part's identity lives here, exactly once, not repeated on
-      // every one of its units.
-      const partIdByName = new Map();
-      const parts = [];
-      function partIdFor(partName) {
-        const key = partName || 'General';
-        if (!partIdByName.has(key)) {
-          const part = { id: generateId(), name: key };
-          parts.push(part);
-          partIdByName.set(key, part.id);
-        }
-        return partIdByName.get(key);
+  /**
+   * Shared by both import modes — AI-Ready Import (canonical, exact)
+   * and Import from Textbook (tolerant, best-effort) — since both
+   * ultimately produce the exact same shape: a flat list of
+   * `{ number, title, printedPage, partName }`. Everything from here
+   * on (grouping into real Part entities, building the persisted
+   * unit shape) is a single shared path, so the two modes can never
+   * drift into behaving differently once extraction itself is done.
+   */
+  function applyExtractedUnits(extractedUnits) {
+    if (extractedUnits.length === 0) return;
+    // Group by `partName` (defaults to "General") into real Part
+    // entities, each created once — the hybrid model's whole point:
+    // a Part's identity lives here, exactly once, not repeated on
+    // every one of its units.
+    const partIdByName = new Map();
+    const parts = [];
+    function partIdFor(partName) {
+      const key = partName || 'General';
+      if (!partIdByName.has(key)) {
+        const part = { id: generateId(), name: key };
+        parts.push(part);
+        partIdByName.set(key, part.id);
       }
-
-      index.parts = parts;
-      index.units = extractedUnits.map((unit) => ({
-        id: generateId(),
-        number: unit.number,
-        title: unit.title,
-        printedPage: unit.printedPage,
-        partId: partIdFor(unit.partName),
-      }));
+      return partIdByName.get(key);
     }
+
+    index.parts = parts;
+    index.units = extractedUnits.map((unit) => ({
+      id: generateId(),
+      number: unit.number,
+      title: unit.title,
+      printedPage: unit.printedPage,
+      partId: partIdFor(unit.partName),
+    }));
+  }
+
+  /** Import from Textbook (experimental, best-effort) — services/unitExtractionService.js's tolerant engine. */
+  function runSmartExtraction(rawText) {
+    const extractedUnits = unitExtractionService.extractUnits(rawText);
+    applyExtractedUnits(extractedUnits);
     return { units: extractedUnits };
   }
+
+  /**
+   * AI-Ready Import (recommended) — services/canonicalUnitExtractionService.js's
+   * strict, deterministic parser for ClassMate's own canonical
+   * format. Unlike the tolerant path, this can also report malformed
+   * lines: every successfully parsed unit is still applied, and every
+   * line that didn't parse is returned alongside it with its own line
+   * number and original text — the import never silently drops a line
+   * and never fails outright just because one line didn't parse.
+   */
+  function extractUnitsFromCanonicalText(rawText) {
+    const { units: extractedUnits, errors } = canonicalUnitExtractionService.parseCanonicalFormat(rawText);
+    applyExtractedUnits(extractedUnits);
+    return { units: extractedUnits, errors };
+  }
+
 
   // Reused as-is from curriculumReviewService.js — its unit mutation
   // functions only ever touch `id`/`title`/array position (plus, now,
@@ -216,6 +252,7 @@ export function createCurriculumIndexSession() {
     openExistingIndex,
     extractUnitsFromPdf,
     extractUnitsFromPastedText,
+    extractUnitsFromCanonicalText,
     extractUnitsFromFile,
     renameUnit,
     deleteUnit,

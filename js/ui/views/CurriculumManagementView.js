@@ -97,6 +97,7 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
   let indexSession = null;
   let indexExtractionReason = null; // set only if every parsing strategy found nothing at all
   let isResumingIndex = false; // true when reached via "Open" from My Curriculum Indexes, not fresh creation — changes where Back goes
+  let canonicalImportErrors = []; // malformed lines from the most recent AI-Ready Import, shown as a banner on Review Units — cleared on any other entry point
 
   // Review Submissions state.
   let selectedSubmission = null;
@@ -116,6 +117,7 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
         indexSession,
         indexExtractionReason,
         isResumingIndex,
+        canonicalImportErrors,
       },
       {
         onBack,
@@ -177,6 +179,7 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
           indexSession = null;
           indexExtractionReason = null;
           isResumingIndex = false;
+          canonicalImportErrors = [];
           mode = 'index-create';
           rerender();
         },
@@ -184,6 +187,7 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
           indexSession = createCurriculumIndexSession();
           await indexSession.openExistingIndex(indexId);
           isResumingIndex = true;
+          canonicalImportErrors = [];
           mode = 'index-review-units';
           rerender();
         },
@@ -194,6 +198,7 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
         onStartIndex: async ({ curriculum, file, pastedText }) => {
           indexSession = createCurriculumIndexSession();
           isResumingIndex = false;
+          canonicalImportErrors = [];
           await indexSession.startIndex({ curriculum });
           mode = 'index-extracting';
           rerender();
@@ -214,7 +219,26 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
           }
           rerender();
         },
+        /**
+         * AI-Ready Import — synchronous, no PDF/file handling, and
+         * never routes to the generic "couldn't find anything" failure
+         * screen the way onStartIndex does: even zero valid units is
+         * still shown as Review Units (its own empty-state message
+         * covers that), with whatever malformed lines were found
+         * surfaced as a banner right there — this is what "report
+         * errors, never fail the import outright" actually means.
+         */
+        onStartCanonicalIndex: async ({ curriculum, canonicalText }) => {
+          indexSession = createCurriculumIndexSession();
+          isResumingIndex = false;
+          await indexSession.startIndex({ curriculum });
+          const result = indexSession.extractUnitsFromCanonicalText(canonicalText);
+          canonicalImportErrors = result.errors;
+          mode = 'index-review-units';
+          rerender();
+        },
         onContinueToManualUnitEntry: () => {
+          canonicalImportErrors = [];
           mode = 'index-review-units';
           rerender();
         },
@@ -345,7 +369,7 @@ function renderView(container, mode, state, handlers) {
   } else if (mode === 'index-extraction-failed') {
     wrapper.appendChild(renderIndexExtractionFailedStep(state, handlers));
   } else if (mode === 'index-review-units') {
-    wrapper.appendChild(renderIndexReviewUnitsStep(state.indexSession.getIndex(), handlers));
+    wrapper.appendChild(renderIndexReviewUnitsStep(state.indexSession.getIndex(), state.canonicalImportErrors, handlers));
   } else if (mode === 'index-saved') {
     wrapper.appendChild(renderIndexSavedStep(state.indexSession.getIndex(), handlers));
   } else if (mode === 'review-list') {
@@ -858,6 +882,97 @@ function renderIndexCreateStep(handlers) {
     return null;
   }
 
+  section.appendChild(form);
+  section.appendChild(renderAiReadyImportSection(handlers, readCurriculum, validateCurriculum));
+  section.appendChild(renderTextbookImportSection(handlers, readCurriculum, validateCurriculum));
+
+  return section;
+}
+
+/**
+ * AI-Ready Import — the recommended, primary path. A teacher converts
+ * any textbook's Table of Contents into ClassMate's own canonical
+ * format using Claude, ChatGPT, Gemini, or any other tool (or types
+ * it by hand), and pastes the result here. Parsed by
+ * services/canonicalUnitExtractionService.js's strict, deterministic
+ * engine — reliable by construction, not by how well it happens to
+ * guess at an arbitrary layout.
+ */
+function renderAiReadyImportSection(handlers, readCurriculum, validateCurriculum) {
+  const wrap = document.createElement('div');
+  wrap.className = 'curriculum-management__import-mode curriculum-management__import-mode--recommended';
+
+  const heading = document.createElement('p');
+  heading.className = 'curriculum-management__step-heading';
+  heading.textContent = 'AI-Ready Import (Recommended)';
+  wrap.appendChild(heading);
+
+  const description = document.createElement('p');
+  description.className = 'curriculum-management__intro';
+  description.textContent = 'Ask any AI assistant to convert your textbook\u2019s Table of Contents into the format below, then paste the result here. This is the most reliable way to import.';
+  wrap.appendChild(description);
+
+  const example = document.createElement('pre');
+  example.className = 'curriculum-management__canonical-example';
+  example.textContent = 'PART: History\n1|Advent of the Europeans|1\n2|From Trade to Territory|11\n\nPART: Geography\n1|Rocks and Soils|85';
+  wrap.appendChild(example);
+
+  const textareaLabel = document.createElement('label');
+  textareaLabel.className = 'curriculum-management__labeled-input';
+  const textareaLabelText = document.createElement('span');
+  textareaLabelText.textContent = 'Paste canonical-format text';
+  const textarea = document.createElement('textarea');
+  textarea.className = 'curriculum-management__toc-textarea';
+  textarea.placeholder = 'PART: General\n1|Measurement|1\n2|Force and Pressure|12\n...';
+  textarea.rows = 6;
+  textareaLabel.append(textareaLabelText, textarea);
+  wrap.appendChild(textareaLabel);
+
+  const importButton = document.createElement('button');
+  importButton.type = 'button';
+  importButton.className = 'btn btn--primary';
+  importButton.textContent = 'Import';
+  importButton.addEventListener('click', () => {
+    const curriculum = readCurriculum();
+    const missingLabel = validateCurriculum(curriculum);
+    if (missingLabel) {
+      showToast(`${missingLabel} is required`);
+      return;
+    }
+    const canonicalText = textarea.value.trim();
+    if (!canonicalText) {
+      showToast('Paste the canonical-format text first');
+      return;
+    }
+    handlers.onStartCanonicalIndex({ curriculum, canonicalText });
+  });
+  wrap.appendChild(importButton);
+
+  return wrap;
+}
+
+/**
+ * Import from Textbook — experimental, best-effort. A teacher pastes
+ * a raw, unconverted Table of Contents (or uploads a PDF/text file)
+ * straight from the textbook, and services/unitExtractionService.js's
+ * tolerant engine tries its best to make sense of it. No guarantees —
+ * this is the fallback for whenever AI-Ready Import isn't practical,
+ * not the recommended path.
+ */
+function renderTextbookImportSection(handlers, readCurriculum, validateCurriculum) {
+  const wrap = document.createElement('div');
+  wrap.className = 'curriculum-management__import-mode curriculum-management__import-mode--experimental';
+
+  const heading = document.createElement('p');
+  heading.className = 'curriculum-management__step-heading';
+  heading.textContent = 'Import from Textbook (Experimental)';
+  wrap.appendChild(heading);
+
+  const description = document.createElement('p');
+  description.className = 'curriculum-management__intro';
+  description.textContent = 'Upload or paste a Table of Contents directly from the textbook, as-is. ClassMate will do its best, but results can vary by textbook layout.';
+  wrap.appendChild(description);
+
   const fileLabel = document.createElement('label');
   fileLabel.className = 'curriculum-management__file-label';
   fileLabel.textContent = 'Upload Table of Contents (PDF or any text file)';
@@ -868,11 +983,11 @@ function renderIndexCreateStep(handlers) {
   // another tool. See curriculumIndexSession.js's extractUnitsFromFile()
   // for how a non-PDF file gets read as plain text instead.
   fileLabel.appendChild(fileInput);
-  form.appendChild(fileLabel);
+  wrap.appendChild(fileLabel);
 
   const uploadButton = document.createElement('button');
   uploadButton.type = 'button';
-  uploadButton.className = 'btn btn--primary';
+  uploadButton.className = 'btn btn--ghost';
   uploadButton.textContent = 'Upload & Extract';
   uploadButton.addEventListener('click', () => {
     const curriculum = readCurriculum();
@@ -888,12 +1003,12 @@ function renderIndexCreateStep(handlers) {
     }
     handlers.onStartIndex({ curriculum, file });
   });
-  form.appendChild(uploadButton);
+  wrap.appendChild(uploadButton);
 
   const orLabel = document.createElement('p');
   orLabel.className = 'curriculum-management__intro';
   orLabel.textContent = 'or';
-  form.appendChild(orLabel);
+  wrap.appendChild(orLabel);
 
   const pastedTextLabel = document.createElement('label');
   pastedTextLabel.className = 'curriculum-management__labeled-input';
@@ -904,7 +1019,7 @@ function renderIndexCreateStep(handlers) {
   pastedTextArea.placeholder = 'Contents\n1. Measurement .......... 1\n2. Force and Pressure .... 18\n...';
   pastedTextArea.rows = 6;
   pastedTextLabel.append(pastedTextLabelText, pastedTextArea);
-  form.appendChild(pastedTextLabel);
+  wrap.appendChild(pastedTextLabel);
 
   const pasteButton = document.createElement('button');
   pasteButton.type = 'button';
@@ -924,10 +1039,9 @@ function renderIndexCreateStep(handlers) {
     }
     handlers.onStartIndex({ curriculum, pastedText });
   });
-  form.appendChild(pasteButton);
+  wrap.appendChild(pasteButton);
 
-  section.appendChild(form);
-  return section;
+  return wrap;
 }
 
 /**
@@ -971,7 +1085,61 @@ function renderIndexExtractionFailedStep(state, handlers) {
  * textbook is Phase 2's job entirely (Milestone 2), operating on
  * whatever gets saved here, not something this screen anticipates.
  */
-function renderIndexReviewUnitsStep(index, handlers) {
+
+/**
+ * The malformed-line report AI-Ready Import produces — never a
+ * reason the import failed, just a precise, per-line account of what
+ * didn't parse, so a teacher can decide whether to continue as-is or
+ * go back and fix their AI-generated (or hand-typed) text and
+ * re-paste. Matches the requested format exactly: a summary count,
+ * then each error's own line number, the expected shape, and the
+ * exact line as received.
+ */
+function renderCanonicalImportErrorsBanner(errors) {
+  const banner = document.createElement('div');
+  banner.className = 'curriculum-management__import-errors-banner';
+
+  const summary = document.createElement('p');
+  summary.className = 'curriculum-management__import-errors-summary';
+  summary.textContent = `${errors.length} line${errors.length === 1 ? '' : 's'} could not be imported.`;
+  banner.appendChild(summary);
+
+  errors.forEach((error) => {
+    const errorBlock = document.createElement('div');
+    errorBlock.className = 'curriculum-management__import-error-item';
+
+    const lineLabel = document.createElement('p');
+    lineLabel.className = 'curriculum-management__import-error-line';
+    lineLabel.textContent = `Line ${error.lineNumber}`;
+    errorBlock.appendChild(lineLabel);
+
+    const expectedLabel = document.createElement('p');
+    expectedLabel.className = 'curriculum-management__import-error-label';
+    expectedLabel.textContent = 'Expected:';
+    errorBlock.appendChild(expectedLabel);
+
+    const expectedValue = document.createElement('pre');
+    expectedValue.className = 'curriculum-management__import-error-code';
+    expectedValue.textContent = '<number>|<title>|<page>';
+    errorBlock.appendChild(expectedValue);
+
+    const receivedLabel = document.createElement('p');
+    receivedLabel.className = 'curriculum-management__import-error-label';
+    receivedLabel.textContent = 'Received:';
+    errorBlock.appendChild(receivedLabel);
+
+    const receivedValue = document.createElement('pre');
+    receivedValue.className = 'curriculum-management__import-error-code';
+    receivedValue.textContent = error.rawLine;
+    errorBlock.appendChild(receivedValue);
+
+    banner.appendChild(errorBlock);
+  });
+
+  return banner;
+}
+
+function renderIndexReviewUnitsStep(index, canonicalImportErrors, handlers) {
   const section = document.createElement('div');
   section.className = 'curriculum-management__section';
 
@@ -990,9 +1158,13 @@ function renderIndexReviewUnitsStep(index, handlers) {
   intro.className = 'curriculum-management__intro';
   intro.textContent =
     totalUnits > 0
-      ? `${totalUnits} unit${totalUnits === 1 ? '' : 's'} found across ${index.parts.length} part${index.parts.length === 1 ? '' : 's'}. Rename, reorder, delete, or add units within each part, then save.`
+      ? `Imported ${totalUnits} unit${totalUnits === 1 ? '' : 's'} across ${index.parts.length} part${index.parts.length === 1 ? '' : 's'}. Rename, reorder, delete, or add units within each part, then save.`
       : 'No units yet \u2014 add a part and its units below.';
   section.appendChild(intro);
+
+  if (canonicalImportErrors && canonicalImportErrors.length > 0) {
+    section.appendChild(renderCanonicalImportErrorsBanner(canonicalImportErrors));
+  }
 
   const showPartHeaders = index.parts.length > 1;
   index.parts.forEach((part) => {
