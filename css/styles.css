@@ -6176,9 +6176,6 @@ button.wizard-checklist__row:hover {
 
 /* Choose Subject modal — a selectable list, not chips — see
    ui/components/ChooseSubjectModal.js */
-.choose-subject-modal__search {
-  margin-bottom: 1rem;
-}
 .choose-subject-modal__list {
   display: flex;
   flex-direction: column;
