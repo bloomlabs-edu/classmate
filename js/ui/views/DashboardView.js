@@ -102,6 +102,7 @@ export function renderDashboardView(container, props) {
     renderLearningManagementView(container, {
       classrooms: workspaceService.getState().classrooms,
       onBack: () => renderDashboardView(container, props),
+      onOpenCurriculumManagement: openCurriculumManagement,
     });
   }
 

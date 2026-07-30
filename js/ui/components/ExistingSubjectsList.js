@@ -16,20 +16,41 @@
  * this file is the only thing ui/views/LearningManagementView.js's
  * home screen renders subjects through, and it has no import that
  * could reach suggestion data even if someone tried.
+ *
+ * Each Subject renders with two actions: opening it (the whole row)
+ * and removing it (a small, separate control) — a teacher can clean
+ * up an accidental addition without having to open it first. Change
+ * Curriculum is a named future action, not built here yet.
  */
 
-export function renderExistingSubjectsList(subjects, onChooseSubject) {
-  const grid = document.createElement('div');
-  grid.className = 'learning-management__choice-grid';
+export function renderExistingSubjectsList(subjects, onChooseSubject, onRemoveSubject) {
+  const list = document.createElement('div');
+  list.className = 'learning-management__subject-card-list';
 
   subjects.forEach((subject) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'learning-management__choice-option';
-    button.textContent = subject.title;
-    button.addEventListener('click', () => onChooseSubject(subject));
-    grid.appendChild(button);
+    const card = document.createElement('div');
+    card.className = 'learning-management__subject-card';
+
+    const openButton = document.createElement('button');
+    openButton.type = 'button';
+    openButton.className = 'learning-management__choice-option';
+    openButton.textContent = subject.title;
+    openButton.addEventListener('click', () => onChooseSubject(subject));
+    card.appendChild(openButton);
+
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'btn btn--danger-text learning-management__subject-remove';
+    removeButton.textContent = 'Remove';
+    removeButton.setAttribute('aria-label', `Remove ${subject.title}`);
+    removeButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      onRemoveSubject(subject);
+    });
+    card.appendChild(removeButton);
+
+    list.appendChild(card);
   });
 
-  return grid;
+  return list;
 }

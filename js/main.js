@@ -283,6 +283,7 @@ function renderRoute(route) {
         renderLearningManagementView(appContainer, {
           classrooms: workspaceService.getState().classrooms,
           onBack: () => router.navigate('/curriculum-management'),
+          onOpenCurriculumManagement: () => router.navigate('/curriculum-management'),
         });
       },
     });

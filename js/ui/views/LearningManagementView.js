@@ -54,11 +54,11 @@ import { openAddSubjectModal } from '../components/AddSubjectModal.js';
 import { renderExistingSubjectsList } from '../components/ExistingSubjectsList.js';
 import { getDisplayName } from '../../services/classroomService.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
+import * as learningRecordTeacherService from '../../services/learningRecordTeacherService.js';
 import * as workspaceService from '../../services/workspaceService.js';
 import { resetLearningManagementData } from '../../services/devLearningManagementResetService.js';
 
-export function renderLearningManagementView(container, { classrooms, onBack }) {
-
+export function renderLearningManagementView(container, { classrooms, onBack, onOpenCurriculumManagement }) {
   const singleClassroomMode = classrooms.length === 1;
 
   let mode = singleClassroomMode ? 'home' : 'choose-class';
@@ -91,6 +91,7 @@ export function renderLearningManagementView(container, { classrooms, onBack }) 
           // truth for what's actually persisted.
           rerender();
         },
+        onOpenCurriculumManagement,
       });
     },
     onChooseSubject: (subject) => {
@@ -105,6 +106,13 @@ export function renderLearningManagementView(container, { classrooms, onBack }) 
     },
     onBackTo: (targetMode) => {
       mode = targetMode;
+      rerender();
+    },
+    onRemoveSubject: (subject) => {
+      const confirmed = window.confirm(`Remove "${subject.title}" from this classroom?\n\nThis removes its Units and Concepts. This cannot be undone.`);
+      if (!confirmed) return;
+      learningRecordTeacherService.deleteSubject(selectedClassroom, subject.id);
+      workspaceService.save(selectedClassroom);
       rerender();
     },
     onResetLearningManagement: () => {
@@ -204,7 +212,7 @@ function renderHomeStep(classroom, handlers) {
 
   const subjects = learningRecordService.getSubjects(classroom);
   if (subjects.length > 0) {
-    section.appendChild(renderExistingSubjectsList(subjects, handlers.onChooseSubject));
+    section.appendChild(renderExistingSubjectsList(subjects, handlers.onChooseSubject, handlers.onRemoveSubject));
   }
 
   const addSubjectButton = document.createElement('button');

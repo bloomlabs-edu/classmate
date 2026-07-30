@@ -6253,3 +6253,20 @@ button.wizard-checklist__row:hover {
   letter-spacing: 0.04em;
   color: var(--color-danger, #b3261e);
 }
+
+.learning-management__subject-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.learning-management__subject-card {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.learning-management__subject-card .learning-management__choice-option {
+  flex: 1;
+}
+.learning-management__subject-remove {
+  flex-shrink: 0;
+}

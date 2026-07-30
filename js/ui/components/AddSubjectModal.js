@@ -31,8 +31,9 @@
  * so a teacher is never confirming a curriculum without being
  * reminded what it's for. A teacher is never asked to confirm a
  * choice that isn't actually a choice: exactly one match links
- * immediately, skipping this step entirely; zero matches still shows
- * this step, honestly, with a way back.
+ * immediately, skipping this step entirely; zero matches shows an
+ * actionable state — "Open Curriculum Management" — rather than a
+ * dead end.
  *
  * Only the final confirm action here
  * (services/curriculumLinkingService.js's linkCurriculumIndex(),
@@ -47,7 +48,7 @@ import * as curriculumLinkingService from '../../services/curriculumLinkingServi
 import * as workspaceService from '../../services/workspaceService.js';
 import { renderSubjectSelectionList } from './SubjectSelectionList.js';
 
-export function openAddSubjectModal({ classroom, existingSubjectTitles, onSubjectAdded }) {
+export function openAddSubjectModal({ classroom, existingSubjectTitles, onSubjectAdded, onOpenCurriculumManagement }) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
 
@@ -151,8 +152,18 @@ export function openAddSubjectModal({ classroom, existingSubjectTitles, onSubjec
         if (matches.length === 0) {
           const emptyNote = document.createElement('p');
           emptyNote.className = 'modal__description';
-          emptyNote.textContent = `No curricula available for ${subjectName} yet \u2014 build one in Curriculum Management first.`;
+          emptyNote.textContent = `No curriculum is available for ${subjectName}. You need to create a ${subjectName} curriculum before this subject can be added.`;
           modal.insertBefore(emptyNote, actions);
+
+          const openCurriculumManagementButton = document.createElement('button');
+          openCurriculumManagementButton.type = 'button';
+          openCurriculumManagementButton.className = 'btn btn--primary';
+          openCurriculumManagementButton.textContent = 'Open Curriculum Management';
+          openCurriculumManagementButton.addEventListener('click', () => {
+            close();
+            onOpenCurriculumManagement();
+          });
+          actions.prepend(openCurriculumManagementButton);
           return;
         }
 
@@ -175,7 +186,7 @@ export function openAddSubjectModal({ classroom, existingSubjectTitles, onSubjec
           });
 
           const labelText = document.createElement('span');
-          labelText.textContent = index.curriculum.name;
+          labelText.textContent = `${index.curriculum.name} ${index.curriculum.grade}`;
 
           optionRow.append(radio, labelText);
           optionsList.appendChild(optionRow);

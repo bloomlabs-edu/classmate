@@ -37,7 +37,8 @@
  */
 
 import * as learningRecordService from './learningRecordService.js';
-import * as learningRecordTeacherService from './learningRecordTeacherService.js';
+import { createLearningSubject } from '../models/LearningSubject.js';
+import { createLearningUnit } from '../models/LearningUnit.js';
 
 /** Whether this classroom already has a Subject linked to this specific Curriculum Index — what keeps the same curriculum from being linked twice. */
 export function isCurriculumIndexLinked(classroom, curriculumIndexId) {
@@ -77,27 +78,43 @@ export function findAvailableCurriculumIndexesForSubject(classroom, allCurriculu
  * grouping a teacher never asked for, the same rule already used on
  * Curriculum Index's own Review Units screen.
  *
+ * Atomic by construction: the whole Subject, with every Unit already
+ * attached, is built in memory first (using the model factories
+ * directly, not services/learningRecordTeacherService.js's own
+ * createSubject()/createUnit(), which each push into the classroom's
+ * real collection immediately on call). Only once every Unit has been
+ * built successfully does this push the finished Subject into
+ * `classroom.learningRecord.subjects`, in one step. If anything throws
+ * while building Units, nothing has been added to the real collection
+ * yet — a partially-built Subject can never end up visible on the
+ * Learning Management home screen.
+ *
  * Does not check isCurriculumIndexLinked() itself — callers (see
  * ui/views/LearningManagementView.js) are expected to have already
  * filtered an already-linked Curriculum Index out of what's offered,
  * so linking is never attempted twice in the first place.
  */
 export function linkCurriculumIndex(classroom, curriculumIndex, subjectTitle = curriculumIndex.curriculum.subject) {
-  const subject = learningRecordTeacherService.createSubject(classroom, {
-    title: subjectTitle,
-    linkedCurriculumIndexId: curriculumIndex.id,
-  });
-
   const partNameById = new Map(curriculumIndex.parts.map((part) => [part.id, part.name]));
   const hasMultipleParts = curriculumIndex.parts.length > 1;
 
-  curriculumIndex.units.forEach((unit) => {
-    learningRecordTeacherService.createUnit(classroom, subject.id, {
+  const units = curriculumIndex.units.map((unit) =>
+    createLearningUnit({
       title: unit.title,
       partName: hasMultipleParts ? partNameById.get(unit.partId) : undefined,
       linkedCurriculumUnitId: unit.id,
-    });
+    })
+  );
+
+  const subject = createLearningSubject({
+    title: subjectTitle,
+    linkedCurriculumIndexId: curriculumIndex.id,
+    units,
   });
+
+  const learningRecord = classroom.learningRecord || (classroom.learningRecord = { subjects: [] });
+  if (!learningRecord.subjects) learningRecord.subjects = [];
+  learningRecord.subjects.push(subject);
 
   return subject;
 }
