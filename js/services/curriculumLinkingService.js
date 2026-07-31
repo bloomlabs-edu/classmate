@@ -1,6 +1,25 @@
 /**
  * services/curriculumLinkingService.js
  *
+ * KNOWN FUTURE CHANGE — not yet implemented, deliberately deferred:
+ * this file currently *copies* every Unit onto the Subject at
+ * assignment time (buildUnitsFromCurriculumIndex(), below). The
+ * agreed direction is to replace this with a live reference instead —
+ * "Curriculum structure is shared. Teacher work is owned by the
+ * classroom." — where a Subject stores only its
+ * `linkedCurriculumIndexId`, Units are resolved from the Curriculum
+ * Index at read time rather than duplicated, and Concepts resolve
+ * from those Units the same way. Curriculum evolution should
+ * eventually be handled by curriculum *versioning* (an existing
+ * classroom stays on the version it was assigned to until a teacher
+ * explicitly upgrades it), not by each Subject holding its own frozen
+ * copy of Units. Versioning itself is out of scope for now; the
+ * requirement is only that today's copy-based approach not make that
+ * later move harder than it has to be. This change is intentionally
+ * deferred until Concepts and Resources are being built, since that's
+ * the point where the copy-vs-reference decision actually has teeth —
+ * revisit the internal representation there, not before.
+ *
  * The data flow this backs, verified and unchanged from the intended
  * design: Subject -> Assigned Curriculum -> Units -> Concepts. A
  * Subject does not own its own Units independent of a curriculum — it

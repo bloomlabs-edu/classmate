@@ -59,7 +59,6 @@
 import * as workspaceService from '../../services/workspaceService.js';
 import * as pendingTaskService from '../../services/pendingTaskService.js';
 import { renderTeachingAssistant } from '../components/TeachingAssistant.js';
-import { renderCommunitySpotlight } from '../components/CommunitySpotlight.js';
 import { getDisplayName, getDisplaySubtitle } from '../../services/classroomService.js';
 import { createClassroomHeaderElement } from '../components/ClassroomHeader.js';
 import { createRecognitionWidgetElement } from '../components/RecognitionWidget.js';
@@ -219,14 +218,6 @@ export function renderDashboardView(container, props) {
     onOpenSettingsNotebooks,
     onDismiss: () => renderDashboardView(container, props),
   });
-
-  // Community Spotlight — a permanent fixture, unlike everything
-  // above it in this function. Sample data only; see
-  // ui/components/CommunitySpotlight.js's own header comment for why
-  // and what a real data source would look like later.
-  const communitySpotlightSlot = document.createElement('div');
-  wrapper.appendChild(communitySpotlightSlot);
-  renderCommunitySpotlight(communitySpotlightSlot, {});
 
   const content = document.createElement('div');
   content.className = 'dashboard-view__content';
