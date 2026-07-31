@@ -8,18 +8,25 @@
  * ui/components/ExistingSubjectsList.js) and nothing else — no
  * suggestions, no placeholders, no empty-state copy of any kind.
  *
- * Creating a Subject (ui/components/AddSubjectModal.js) and assigning
- * it a curriculum (ui/components/AssignCurriculumModal.js) are two
- * separate, explicit teacher actions — a Subject appears on this home
- * screen the moment it's created, with no curriculum at all, and
- * shows "No curriculum assigned" on its own page until a teacher
- * deliberately assigns one. The data flow this maintains: Subject ->
- * Assigned Curriculum -> Units -> Concepts. A Subject never owns
- * Units independent of a curriculum; it has none until one is
- * assigned, and every Unit it then has is derived from that
+ * Creating a Subject and assigning it a curriculum are, once again, one
+ * combined step — reverted per explicit product decision: "+ Add
+ * Subject" (ui/components/AddSubjectModal.js) runs Choose Subject ->
+ * Choose Curriculum, and the Subject is only ever created (via
+ * services/curriculumLinkingService.js's createSubjectWithCurriculum())
+ * once both are chosen. Cancelling curriculum selection creates
+ * nothing. The data flow this maintains: Subject -> Assigned
+ * Curriculum -> Units -> Concepts. A Subject never owns Units
+ * independent of a curriculum; every Unit it has is derived from that
  * curriculum's own data (see
- * services/curriculumLinkingService.js's assignCurriculumToSubject()),
- * not hardcoded here.
+ * services/curriculumLinkingService.js's createSubjectWithCurriculum()
+ * and assignCurriculumToSubject()), not hardcoded here.
+ *
+ * ui/components/AssignCurriculumModal.js and the "no curriculum
+ * assigned" state (ui/components/CurriculumMetadataLine.js) still
+ * exist, but only for the defensive case now — a Subject whose
+ * Curriculum Index was deleted after assignment, or a genuinely
+ * legacy Subject predating this reversion — not as part of the normal
+ * creation flow.
  *
  * Component hierarchy, and why the Subject Picker can never end up on
  * this home screen by accident:
@@ -28,11 +35,13 @@
  *   ├── ExistingSubjectsList     (persisted Subjects only — no
  *   │                             suggestion data, no fallback list)
  *   ├── "+ Add Subject" button   (trivial — stays inline here)
- *   ├── AddSubjectModal
- *   │     └── SubjectSelectionList  (the only file that imports
- *   │                                config/commonSubjectsConfig.js)
- *   └── AssignCurriculumModal    (opened from a Subject's own page,
- *                                  via ui/components/CurriculumMetadataLine.js)
+ *   ├── AddSubjectModal          (Choose Subject -> Choose Curriculum,
+ *   │     └── SubjectSelectionList   combined — a Subject is only
+ *   │         (the only file that     created once both are chosen)
+ *   │          imports config/commonSubjectsConfig.js)
+ *   └── AssignCurriculumModal    (defensive path only now — a legacy
+ *                                  or orphaned-curriculum Subject; see
+ *                                  ui/components/CurriculumMetadataLine.js)
  *
  * This file has no import reaching suggested-subject data anywhere in
  * its own tree — not directly, not transitively. That's what makes
@@ -134,13 +143,14 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
         existingSubjectTitles,
         onSubjectAdded: () => {
           // The modal already persisted and saved the Subject itself
-          // (services/learningRecordTeacherService.js +
-          // services/workspaceService.js) — this only needs to
-          // re-render so the home screen reads it back from
-          // services/learningRecordService.js, the single source of
-          // truth for what's actually persisted.
+          // (services/curriculumLinkingService.js's
+          // createSubjectWithCurriculum() + services/workspaceService.js)
+          // — this only needs to re-render so the home screen reads
+          // it back from services/learningRecordService.js, the
+          // single source of truth for what's actually persisted.
           rerender();
         },
+        onOpenCurriculumManagement,
       });
     },
     onChooseSubject: (subject) => {

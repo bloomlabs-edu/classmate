@@ -84,6 +84,18 @@
  *                    falls back to manual Unit/Concept creation
  *                    automatically, with no picker shown for that
  *                    fallback either.
+ *   assessments -    Assessment[] (see models/Assessment.js) — school
+ *                    administration's own record-keeping module
+ *                    (Mid Term Examination, Unit Test 1, ...),
+ *                    deliberately independent of learningRecord above:
+ *                    neither reads from nor writes to Concepts, Units,
+ *                    curriculum links, or Resources. Its only
+ *                    connection to Learning Management at all is each
+ *                    AssessmentSubject's own `subjectId` reference (see
+ *                    models/AssessmentSubject.js) — a Subject's current
+ *                    title is resolved live from that id, never copied,
+ *                    so renaming a Subject later is reflected in every
+ *                    past Assessment automatically.
  *   notebookConfig - { subjects: [{id, name}], notebookTypes: [{id,
  *                    subjectId, name}] } — the classroom's configurable
  *                    notebook taxonomy (see
@@ -178,6 +190,7 @@ export function createClassroom({
   learningActivities = [],
   learningRecord = { subjects: [] },
   curriculumAssignment = null,
+  assessments = [],
   notebookConfig = { subjects: [], notebookTypes: [] },
   notebooks = {},
   notebookCheckTemplates = {},
@@ -202,6 +215,7 @@ export function createClassroom({
     learningActivities,
     learningRecord,
     curriculumAssignment,
+    assessments,
     notebookConfig,
     notebooks,
     notebookCheckTemplates,

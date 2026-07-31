@@ -6310,3 +6310,79 @@ button.wizard-checklist__row:hover {
   border-top: 1px solid var(--color-border);
   margin: 0 0 1.25rem;
 }
+
+/* Create Assessment modal — see ui/components/CreateAssessmentModal.js */
+.create-assessment-modal__labeled-input {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-weight: var(--font-weight-medium);
+  font-size: 0.85rem;
+  margin-bottom: 0.9rem;
+}
+.create-assessment-modal__labeled-input input,
+.create-assessment-modal__labeled-input select {
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font-size: 1rem;
+  font-weight: normal;
+  font-family: inherit;
+}
+.create-assessment-modal__subjects-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+.create-assessment-modal__subject-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+/* Assessment marks entry — see ui/views/AssessmentManagementView.js */
+.assessment-marks-entry__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.assessment-marks-entry__row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background-color: #ffffff;
+  flex-wrap: wrap;
+}
+.assessment-marks-entry__name {
+  flex: 1;
+  min-width: 120px;
+  font-weight: var(--font-weight-bold);
+}
+.assessment-marks-entry__marks {
+  width: 80px;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+.assessment-marks-entry__absent-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+.assessment-marks-entry__remarks {
+  flex: 1;
+  min-width: 140px;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}

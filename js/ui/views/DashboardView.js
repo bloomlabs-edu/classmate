@@ -70,6 +70,7 @@ import { createTeachingSectionElement } from '../components/TeachingSection.js';
 import { createClassroomSectionElement } from '../components/ClassroomSection.js';
 import { renderLearningManagementView } from './LearningManagementView.js';
 import { renderCurriculumManagementView } from './CurriculumManagementView.js';
+import { renderAssessmentManagementView } from './AssessmentManagementView.js';
 import { renderAssignCurriculumPromptView } from './AssignCurriculumPromptView.js';
 import * as curriculumLibraryService from '../../services/curriculumLibraryService.js';
 
@@ -110,6 +111,13 @@ export function renderDashboardView(container, props) {
     renderCurriculumManagementView(container, {
       onBack: () => renderDashboardView(container, props),
       onOpenLearningManagement: openLearningManagement,
+    });
+  }
+
+  function openAssessmentManagement() {
+    renderAssessmentManagementView(container, {
+      classroom,
+      onBack: () => renderDashboardView(container, props),
     });
   }
 
@@ -199,6 +207,7 @@ export function renderDashboardView(container, props) {
       onStartClassMode,
       onOpenLearningManagement: openLearningManagement,
       onOpenCurriculumManagement: canAccessCurriculumManagement ? openCurriculumManagement : null,
+      onOpenAssessmentManagement: openAssessmentManagement,
     })
   );
 
@@ -308,7 +317,7 @@ function createAssignCurriculumBanner(onOpen) {
   return banner;
 }
 
-function renderPrimaryModulesSection({ onStartClassMode, onOpenLearningManagement, onOpenCurriculumManagement }) {
+function renderPrimaryModulesSection({ onStartClassMode, onOpenLearningManagement, onOpenCurriculumManagement, onOpenAssessmentManagement }) {
   const section = document.createElement('div');
   section.className = 'primary-modules';
 
@@ -341,6 +350,16 @@ function renderPrimaryModulesSection({ onStartClassMode, onOpenLearningManagemen
       })
     );
   }
+
+  section.appendChild(
+    createPrimaryModuleCard({
+      icon: '\ud83d\udcdd',
+      label: 'Assessment Management',
+      description: 'Record exam and test marks',
+      onClick: onOpenAssessmentManagement,
+      muted: true, // school-administration centric, not a daily-use screen — same "occasional" weighting as Curriculum Management above
+    })
+  );
 
   return section;
 }
