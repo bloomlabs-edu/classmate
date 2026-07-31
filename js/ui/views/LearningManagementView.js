@@ -177,6 +177,11 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
       if (!confirmed) return;
       learningRecordTeacherService.deleteSubject(selectedClassroom, subject.id);
       workspaceService.save(selectedClassroom);
+      // Whether this was triggered from the home list or from the
+      // Subject's own page, there's no longer a Subject to show —
+      // always land back on the home screen, not wherever we
+      // happened to be.
+      mode = 'home';
       rerender();
     },
     onResetLearningManagement: () => {
@@ -341,6 +346,12 @@ function renderDeveloperUtilities(handlers) {
  * actually exists ('ready'); for every other status ('loading',
  * 'none', 'error') this section is simply absent, per the frozen
  * design's "Units remain unavailable until [a curriculum is chosen]."
+ *
+ * "Remove Subject" is available here too, not just on the home
+ * screen's own list (ui/components/ExistingSubjectsList.js) —
+ * regardless of curriculum state, since it's a general
+ * subject-management action, not tied to whether a curriculum happens
+ * to be assigned yet.
  */
 function renderSubjectStep(subject, curriculumState, selectedPartName, handlers) {
   const section = document.createElement('div');
@@ -362,6 +373,13 @@ function renderSubjectStep(subject, curriculumState, selectedPartName, handlers)
   if (curriculumState.status === 'ready') {
     section.appendChild(renderUnitsOrParts(subject, selectedPartName, handlers));
   }
+
+  const removeButton = document.createElement('button');
+  removeButton.type = 'button';
+  removeButton.className = 'btn btn--danger-text learning-management__subject-remove';
+  removeButton.textContent = 'Remove Subject';
+  removeButton.addEventListener('click', () => handlers.onRemoveSubject(subject));
+  section.appendChild(removeButton);
 
   return section;
 }
