@@ -37,18 +37,6 @@ const RULES = [
     }),
   },
   {
-    id: 'invite-students',
-    category: 'onboarding',
-    priority: 80,
-    dismissible: true,
-    applies: (setupState) => setupState.hasStudents && !setupState.hasAnyStudentJoined,
-    build: ({ onOpenStudentAccess }) => ({
-      title: 'Nice, your roster is coming together',
-      description: "Now let's get your students in — share your classroom code once and they'll pick their own name to join.",
-      actions: [{ label: 'Invite Students', onNavigate: onOpenStudentAccess }],
-    }),
-  },
-  {
     id: 'create-groups',
     category: 'onboarding',
     priority: 30,

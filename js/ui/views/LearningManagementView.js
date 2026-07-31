@@ -6,12 +6,20 @@
  * rebuild. The home screen's one responsibility: render exactly the
  * classroom's own persisted Subjects (via
  * ui/components/ExistingSubjectsList.js) and nothing else — no
- * suggestions, no placeholders, no empty-state copy of any kind. A
- * chosen Subject is genuinely persisted (via
- * ui/components/AddSubjectModal.js's Choose Curriculum step) and
- * clicking it navigates into its own structure — adapting to whether
- * its linked curriculum actually has Parts, rather than forcing a
- * level that doesn't exist.
+ * suggestions, no placeholders, no empty-state copy of any kind.
+ *
+ * Creating a Subject (ui/components/AddSubjectModal.js) and assigning
+ * it a curriculum (ui/components/AssignCurriculumModal.js) are two
+ * separate, explicit teacher actions — a Subject appears on this home
+ * screen the moment it's created, with no curriculum at all, and
+ * shows "No curriculum assigned" on its own page until a teacher
+ * deliberately assigns one. The data flow this maintains: Subject ->
+ * Assigned Curriculum -> Units -> Concepts. A Subject never owns
+ * Units independent of a curriculum; it has none until one is
+ * assigned, and every Unit it then has is derived from that
+ * curriculum's own data (see
+ * services/curriculumLinkingService.js's assignCurriculumToSubject()),
+ * not hardcoded here.
  *
  * Component hierarchy, and why the Subject Picker can never end up on
  * this home screen by accident:
@@ -20,9 +28,11 @@
  *   ├── ExistingSubjectsList     (persisted Subjects only — no
  *   │                             suggestion data, no fallback list)
  *   ├── "+ Add Subject" button   (trivial — stays inline here)
- *   └── AddSubjectModal
- *         └── SubjectSelectionList  (the only file that imports
- *                                    config/commonSubjectsConfig.js)
+ *   ├── AddSubjectModal
+ *   │     └── SubjectSelectionList  (the only file that imports
+ *   │                                config/commonSubjectsConfig.js)
+ *   └── AssignCurriculumModal    (opened from a Subject's own page,
+ *                                  via ui/components/CurriculumMetadataLine.js)
  *
  * This file has no import reaching suggested-subject data anywhere in
  * its own tree — not directly, not transitively. That's what makes
@@ -51,11 +61,14 @@
 
 import { createIcon } from '../components/Icon.js';
 import { openAddSubjectModal } from '../components/AddSubjectModal.js';
+import { openAssignCurriculumModal } from '../components/AssignCurriculumModal.js';
 import { renderExistingSubjectsList } from '../components/ExistingSubjectsList.js';
+import { renderCurriculumMetadataLine } from '../components/CurriculumMetadataLine.js';
 import { getDisplayName } from '../../services/classroomService.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
 import * as learningRecordTeacherService from '../../services/learningRecordTeacherService.js';
 import * as workspaceService from '../../services/workspaceService.js';
+import * as curriculumIndexRepository from '../../services/curriculumIndexRepository.js';
 import { resetLearningManagementData } from '../../services/devLearningManagementResetService.js';
 
 export function renderLearningManagementView(container, { classrooms, onBack, onOpenCurriculumManagement }) {
@@ -65,9 +78,46 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
   let selectedClassroom = singleClassroomMode ? classrooms[0] : null;
   let selectedSubject = null;
   let selectedPartName = null; // set once a Part is chosen, for a Subject whose curriculum actually has them
+  // Fetched once per Subject selection, not on every re-render — see
+  // ui/components/CurriculumMetadataLine.js's own header comment for
+  // why this lives here instead of inside that component. One of:
+  // {status:'loading'} | {status:'ready', curriculumIndex} |
+  // {status:'none'} | {status:'error'}.
+  let selectedSubjectCurriculumState = null;
 
   function rerender() {
-    renderView(container, mode, { classrooms, selectedClassroom, selectedSubject, selectedPartName, singleClassroomMode }, handlers);
+    renderView(
+      container,
+      mode,
+      { classrooms, selectedClassroom, selectedSubject, selectedPartName, selectedSubjectCurriculumState, singleClassroomMode },
+      handlers
+    );
+  }
+
+  function loadCurriculumStateFor(subject) {
+    if (!subject.linkedCurriculumIndexId) {
+      selectedSubjectCurriculumState = { status: 'none' };
+      rerender();
+      return;
+    }
+
+    selectedSubjectCurriculumState = { status: 'loading' };
+    rerender();
+    curriculumIndexRepository
+      .getIndex(subject.linkedCurriculumIndexId)
+      .then((curriculumIndex) => {
+        // A different Subject may have been opened while this was in
+        // flight — don't let a stale response overwrite it.
+        if (selectedSubject !== subject) return;
+        selectedSubjectCurriculumState = curriculumIndex ? { status: 'ready', curriculumIndex } : { status: 'none' };
+        rerender();
+      })
+      .catch((error) => {
+        console.error('[LearningManagementView] Failed to load the Subject\u2019s linked Curriculum Index:', error);
+        if (selectedSubject !== subject) return;
+        selectedSubjectCurriculumState = { status: 'error' };
+        rerender();
+      });
   }
 
   const handlers = {
@@ -84,21 +134,35 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
         existingSubjectTitles,
         onSubjectAdded: () => {
           // The modal already persisted and saved the Subject itself
-          // (services/curriculumLinkingService.js +
+          // (services/learningRecordTeacherService.js +
           // services/workspaceService.js) — this only needs to
           // re-render so the home screen reads it back from
           // services/learningRecordService.js, the single source of
           // truth for what's actually persisted.
           rerender();
         },
-        onOpenCurriculumManagement,
       });
     },
     onChooseSubject: (subject) => {
       selectedSubject = subject;
       selectedPartName = null;
       mode = 'subject';
-      rerender();
+      loadCurriculumStateFor(subject);
+    },
+    onGoToAssignCurriculum: () => {
+      openAssignCurriculumModal({
+        classroom: selectedClassroom,
+        subject: selectedSubject,
+        onCurriculumAssigned: () => {
+          // The modal already assigned and saved the curriculum
+          // (services/curriculumLinkingService.js +
+          // services/workspaceService.js) — reload this Subject's
+          // curriculum state so Units now render from what was just
+          // assigned.
+          loadCurriculumStateFor(selectedSubject);
+        },
+        onOpenCurriculumManagement,
+      });
     },
     onChoosePart: (partName) => {
       selectedPartName = partName;
@@ -128,6 +192,7 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
 
   rerender();
 }
+
 
 function renderView(container, mode, state, handlers) {
   container.innerHTML = '';
@@ -168,7 +233,7 @@ function renderView(container, mode, state, handlers) {
   if (mode === 'choose-class') {
     wrapper.appendChild(renderChooseClassStep(state.classrooms, handlers));
   } else if (mode === 'subject') {
-    wrapper.appendChild(renderSubjectStep(state.selectedSubject, state.selectedPartName, handlers));
+    wrapper.appendChild(renderSubjectStep(state.selectedSubject, state.selectedSubjectCurriculumState, state.selectedPartName, handlers));
   } else {
     wrapper.appendChild(renderHomeStep(state.selectedClassroom, handlers));
   }
@@ -259,8 +324,25 @@ function renderDeveloperUtilities(handlers) {
  * Parts at all, or a Part already chosen) shows Units directly.
  * Units themselves are a plain list for now — Concepts are a later
  * milestone, not stubbed in here ahead of time.
+ *
+ * The curriculum metadata line (see
+ * ui/components/CurriculumMetadataLine.js) always renders directly
+ * beneath the title, per the frozen design — quiet, always present,
+ * never its own card. `curriculumState` is fetched once, in
+ * renderLearningManagementView()'s onChooseSubject handler, and
+ * cached there — this function is a pure, synchronous render of
+ * whatever that state currently is, deliberately not an async fetch
+ * of its own. Navigating between Parts re-renders this function
+ * repeatedly (every onChoosePart call), and a fetch living here would
+ * mean re-fetching, and re-flashing "Loading…", on every single one
+ * of those clicks for data that never changed.
+ *
+ * Units/Parts render only once curriculumState confirms a curriculum
+ * actually exists ('ready'); for every other status ('loading',
+ * 'none', 'error') this section is simply absent, per the frozen
+ * design's "Units remain unavailable until [a curriculum is chosen]."
  */
-function renderSubjectStep(subject, selectedPartName, handlers) {
+function renderSubjectStep(subject, curriculumState, selectedPartName, handlers) {
   const section = document.createElement('div');
   section.className = 'learning-management__section';
 
@@ -269,13 +351,31 @@ function renderSubjectStep(subject, selectedPartName, handlers) {
   heading.textContent = subject.title;
   section.appendChild(heading);
 
+  const metadataSlot = document.createElement('div');
+  renderCurriculumMetadataLine(metadataSlot, { curriculumState, onAssignCurriculum: handlers.onGoToAssignCurriculum });
+  section.appendChild(metadataSlot);
+
+  const divider = document.createElement('hr');
+  divider.className = 'learning-management__subject-divider';
+  section.appendChild(divider);
+
+  if (curriculumState.status === 'ready') {
+    section.appendChild(renderUnitsOrParts(subject, selectedPartName, handlers));
+  }
+
+  return section;
+}
+
+function renderUnitsOrParts(subject, selectedPartName, handlers) {
+  const wrapper = document.createElement('div');
+
   const distinctPartNames = [...new Set(subject.units.map((unit) => unit.partName).filter(Boolean))];
 
   if (distinctPartNames.length > 0 && selectedPartName === null) {
     const partHeading = document.createElement('p');
     partHeading.className = 'learning-management__intro';
     partHeading.textContent = 'Parts';
-    section.appendChild(partHeading);
+    wrapper.appendChild(partHeading);
 
     const grid = document.createElement('div');
     grid.className = 'learning-management__choice-grid';
@@ -287,8 +387,8 @@ function renderSubjectStep(subject, selectedPartName, handlers) {
       button.addEventListener('click', () => handlers.onChoosePart(partName));
       grid.appendChild(button);
     });
-    section.appendChild(grid);
-    return section;
+    wrapper.appendChild(grid);
+    return wrapper;
   }
 
   const unitsToShow = selectedPartName ? subject.units.filter((unit) => unit.partName === selectedPartName) : subject.units;
@@ -296,7 +396,7 @@ function renderSubjectStep(subject, selectedPartName, handlers) {
   const unitsHeading = document.createElement('p');
   unitsHeading.className = 'learning-management__intro';
   unitsHeading.textContent = 'Units';
-  section.appendChild(unitsHeading);
+  wrapper.appendChild(unitsHeading);
 
   const list = document.createElement('div');
   list.className = 'learning-management__subject-list';
@@ -306,7 +406,7 @@ function renderSubjectStep(subject, selectedPartName, handlers) {
     item.textContent = unit.title;
     list.appendChild(item);
   });
-  section.appendChild(list);
+  wrapper.appendChild(list);
 
-  return section;
+  return wrapper;
 }
