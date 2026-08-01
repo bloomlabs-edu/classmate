@@ -26,7 +26,7 @@
  */
 
 import { createReadingContentElement } from '../components/ReadingContentRenderer.js';
-import { createIcon } from '../components/Icon.js';
+import { createBackButton } from '../components/BackButton.js';
 
 export function renderReadingViewerView(container, { resource, onBack }) {
   container.innerHTML = '';
@@ -37,12 +37,7 @@ export function renderReadingViewerView(container, { resource, onBack }) {
   const header = document.createElement('header');
   header.className = 'reading-viewer__header';
 
-  const backButton = document.createElement('button');
-  backButton.type = 'button';
-  backButton.className = 'btn btn--text';
-  backButton.appendChild(createIcon('arrow-left'));
-  backButton.append('Back');
-  backButton.addEventListener('click', onBack);
+  const backButton = createBackButton(onBack);
   header.appendChild(backButton);
 
   const title = document.createElement('h1');

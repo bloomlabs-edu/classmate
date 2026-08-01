@@ -35,6 +35,7 @@ import * as readingContentService from '../../services/readingContentService.js'
 import { READING_BLOCK_TYPE_KEYS, getReadingBlockTypeLabel, getReadingBlockTypeIcon } from '../../config/readingBlockConfig.js';
 import { createReadingContentElement } from '../components/ReadingContentRenderer.js';
 import { createIcon } from '../components/Icon.js';
+import { createBackButton } from '../components/BackButton.js';
 
 export function renderReadingEditorView(container, { classroom, resource, onBack }) {
   function rerender() {
@@ -52,12 +53,7 @@ function renderEditor(container, classroom, resource, handlers) {
   const header = document.createElement('header');
   header.className = 'reading-editor__header';
 
-  const backButton = document.createElement('button');
-  backButton.type = 'button';
-  backButton.className = 'btn btn--text';
-  backButton.appendChild(createIcon('arrow-left'));
-  backButton.append('Back to Resource');
-  backButton.addEventListener('click', handlers.onBack);
+  const backButton = createBackButton(handlers.onBack);
   header.appendChild(backButton);
 
   const title = document.createElement('h1');

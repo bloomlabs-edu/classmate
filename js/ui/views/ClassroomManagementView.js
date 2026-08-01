@@ -43,6 +43,7 @@
  */
 
 import { createIcon } from '../components/Icon.js';
+import { createBackButton } from '../components/BackButton.js';
 import { createOverflowMenu } from '../components/OverflowMenu.js';
 import * as teamService from '../../services/teamService.js';
 import * as studentService from '../../services/studentService.js';
@@ -66,12 +67,7 @@ export function renderClassroomManagementView(container, { classroom, onBack, on
 
   const header = document.createElement('div');
   header.className = 'learning-management__header';
-  const backButton = document.createElement('button');
-  backButton.type = 'button';
-  backButton.className = 'btn btn--text';
-  backButton.appendChild(createIcon('arrow-left'));
-  backButton.append('Back');
-  backButton.addEventListener('click', onBack);
+  const backButton = createBackButton(onBack);
   const title = document.createElement('h1');
   title.className = 'learning-management__title';
   title.textContent = 'Classroom Management';

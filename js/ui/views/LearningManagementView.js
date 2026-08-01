@@ -68,7 +68,7 @@
  * deletion.
  */
 
-import { createIcon } from '../components/Icon.js';
+import { createBackButton } from '../components/BackButton.js';
 import { openAddSubjectModal } from '../components/AddSubjectModal.js';
 import { openAssignCurriculumModal } from '../components/AssignCurriculumModal.js';
 import { renderExistingSubjectsList } from '../components/ExistingSubjectsList.js';
@@ -235,12 +235,7 @@ function renderView(container, mode, state, handlers) {
 
   const isEntryStep = mode === 'choose-class' || (mode === 'home' && state.singleClassroomMode);
 
-  const backButton = document.createElement('button');
-  backButton.type = 'button';
-  backButton.className = 'btn btn--text';
-  backButton.appendChild(createIcon('arrow-left'));
-  backButton.append(isEntryStep ? 'Back to Dashboard' : 'Back');
-  backButton.addEventListener('click', () => {
+  const backButton = createBackButton(() => {
     if (isEntryStep) return handlers.onBack();
     if (mode === 'subject' && state.selectedPartName) {
       // Back out of a Part's own units to that Subject's Part list,

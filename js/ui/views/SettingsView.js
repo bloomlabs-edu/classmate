@@ -30,6 +30,7 @@ import * as setupProgressService from '../../services/setupProgressService.js';
 import * as notebookConfigService from '../../services/notebookConfigService.js';
 import { getDisplayName, ClassroomValidationError, ensureJoinCode } from '../../services/classroomService.js';
 import { createIcon } from '../components/Icon.js';
+import { createBackButton } from '../components/BackButton.js';
 import { MEMBER_ROLES, PERMISSIONS, ROLE_PERMISSIONS } from '../../config/memberRoles.js';
 import { showToast } from '../components/Toast.js';
 
@@ -62,12 +63,7 @@ export function renderSettingsView(container, { classroom, currentUser, section,
   const header = document.createElement('header');
   header.className = 'settings-header';
 
-  const backButton = document.createElement('button');
-  backButton.type = 'button';
-  backButton.className = 'btn btn--text';
-  backButton.appendChild(createIcon('arrow-left'));
-  backButton.append('Back');
-  backButton.addEventListener('click', onBack);
+  const backButton = createBackButton(onBack);
 
   const title = document.createElement('h1');
   title.className = 'settings-header__title';

@@ -27,7 +27,7 @@
 import * as workspaceService from '../../services/workspaceService.js';
 import * as curriculumLibraryService from '../../services/curriculumLibraryService.js';
 import { getDisplayName } from '../../services/classroomService.js';
-import { createIcon } from '../components/Icon.js';
+import { createBackButton } from '../components/BackButton.js';
 import { showToast } from '../components/Toast.js';
 
 export function renderAssignCurriculumPromptView(container, { classroom, onBack }) {
@@ -77,12 +77,7 @@ function renderView(container, mode, state, handlers) {
   const header = document.createElement('header');
   header.className = 'assign-curriculum-prompt__header';
 
-  const backButton = document.createElement('button');
-  backButton.type = 'button';
-  backButton.className = 'btn btn--text';
-  backButton.appendChild(createIcon('arrow-left'));
-  backButton.append('Back to Dashboard');
-  backButton.addEventListener('click', handlers.onBack);
+  const backButton = createBackButton(handlers.onBack);
   header.appendChild(backButton);
 
   const title = document.createElement('h1');
@@ -173,7 +168,7 @@ function renderConfirmStep(state, handlers) {
   const doneButton = document.createElement('button');
   doneButton.type = 'button';
   doneButton.className = 'btn btn--primary';
-  doneButton.textContent = 'Back to Dashboard';
+  doneButton.textContent = 'Done';
   doneButton.addEventListener('click', handlers.onBack);
   section.appendChild(doneButton);
 

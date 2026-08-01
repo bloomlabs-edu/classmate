@@ -27,6 +27,7 @@ import { createNotebookTimelineElement } from '../components/NotebookTimeline.js
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { NOTEBOOK_TIMELINE_SYMBOLS, NOTEBOOK_TIMELINE_STATUS_LABELS, deriveDaySymbolKey } from '../../config/notebookStatuses.js';
 import { createIcon } from '../components/Icon.js';
+import { createBackButton } from '../components/BackButton.js';
 import {
   getTodayDateKey,
   shiftDateKey,
@@ -66,12 +67,7 @@ export function renderNotebookTimelineView(container, props) {
   const header = document.createElement('header');
   header.className = 'tracker-header';
 
-  const backButton = document.createElement('button');
-  backButton.type = 'button';
-  backButton.className = 'btn btn--text';
-  backButton.appendChild(createIcon('arrow-left'));
-  backButton.append('Back to Register');
-  backButton.addEventListener('click', onBack);
+  const backButton = createBackButton(onBack);
 
   const titleEl = document.createElement('h1');
   titleEl.className = 'tracker-header__title';

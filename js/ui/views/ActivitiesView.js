@@ -16,7 +16,7 @@ import * as learningActivityService from '../../services/learningActivityService
 import { ACTIVITY_TYPES } from '../../config/activityTypes.js';
 import { SUBMISSION_STATUSES } from '../../config/submissionStatuses.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
-import { createIcon } from '../components/Icon.js';
+import { createBackButton } from '../components/BackButton.js';
 
 export function renderActivitiesListView(container, { classroom, onBack, onSelectActivity }) {
   container.innerHTML = '';
@@ -26,12 +26,7 @@ export function renderActivitiesListView(container, { classroom, onBack, onSelec
 
   const header = document.createElement('header');
   header.className = 'tracker-header';
-  const backButton = document.createElement('button');
-  backButton.type = 'button';
-  backButton.className = 'btn btn--text';
-  backButton.appendChild(createIcon('arrow-left'));
-  backButton.append('Back to Dashboard');
-  backButton.addEventListener('click', onBack);
+  const backButton = createBackButton(onBack);
   const title = document.createElement('h1');
   title.className = 'tracker-header__title';
   title.textContent = 'Learning Activities';
@@ -161,12 +156,7 @@ export function renderActivityRosterView(container, { classroom, activityId, onB
 
   const header = document.createElement('header');
   header.className = 'tracker-header';
-  const backButton = document.createElement('button');
-  backButton.type = 'button';
-  backButton.className = 'btn btn--text';
-  backButton.appendChild(createIcon('arrow-left'));
-  backButton.append('Back to Activities');
-  backButton.addEventListener('click', onBack);
+  const backButton = createBackButton(onBack);
   const title = document.createElement('h1');
   title.className = 'tracker-header__title';
   title.textContent = `${activity.title} (${activity.type})`;

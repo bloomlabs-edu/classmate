@@ -40,7 +40,7 @@ import { createEmptyStateElement } from '../components/EmptyState.js';
 import { openAwardBadgeModal } from '../components/AwardBadgeModal.js';
 import { openAddNoteModal } from '../components/AddNoteModal.js';
 import { openLogParticipationModal } from '../components/LogParticipationModal.js';
-import { createIcon } from '../components/Icon.js';
+import { createBackButton } from '../components/BackButton.js';
 
 const TABS = ['overview', 'achievements', 'learning', 'notebooks', 'activity', 'access', 'notes'];
 const TAB_LABELS = {
@@ -100,12 +100,7 @@ function renderProfileHeader(classroom, student, team, rerender, onBack) {
   const topRow = document.createElement('div');
   topRow.className = 'profile-header__top-row';
 
-  const backButton = document.createElement('button');
-  backButton.type = 'button';
-  backButton.className = 'btn btn--text';
-  backButton.appendChild(createIcon('arrow-left'));
-  backButton.append('Back to Dashboard');
-  backButton.addEventListener('click', onBack);
+  const backButton = createBackButton(onBack);
   topRow.appendChild(backButton);
 
   // Rename, Move to Group, and Remove Student — moved here from the

@@ -25,7 +25,7 @@ import {
 import { createAvatarSvgElement } from '../../../utils/avatarRenderer.js';
 import { getAvatarConfigOrDefault, saveAvatarConfig } from '../../../services/avatarConfigService.js';
 import { showToast } from '../../components/Toast.js';
-import { createIcon } from '../../components/Icon.js';
+import { createBackButton } from '../../components/BackButton.js';
 
 function randomOption(options) {
   return options[Math.floor(Math.random() * options.length)].id;
@@ -41,12 +41,7 @@ export function renderStudentAvatarBuilderView(container, { studentId, onBack })
 
   const header = document.createElement('div');
   header.className = 'avatar-builder__header';
-  const backButton = document.createElement('button');
-  backButton.type = 'button';
-  backButton.className = 'btn btn--text';
-  backButton.appendChild(createIcon('arrow-left'));
-  backButton.append('Back to Profile');
-  backButton.addEventListener('click', onBack);
+  const backButton = createBackButton(onBack);
   header.appendChild(backButton);
   wrapper.appendChild(header);
 

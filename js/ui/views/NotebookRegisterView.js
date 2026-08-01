@@ -23,6 +23,7 @@ import { createEmptyStateElement } from '../components/EmptyState.js';
 import { getTodayDateKey, shiftDateKey, formatDateKey } from '../../utils/dateHelpers.js';
 import { createDebouncedFunction } from '../../utils/debounce.js';
 import { createIcon } from '../components/Icon.js';
+import { createBackButton } from '../components/BackButton.js';
 
 const debouncedSave = createDebouncedFunction((classroom) => workspaceService.save(classroom), 400);
 
@@ -67,12 +68,7 @@ export function renderNotebookRegisterView(container, props) {
   const header = document.createElement('header');
   header.className = 'tracker-header';
 
-  const backButton = document.createElement('button');
-  backButton.type = 'button';
-  backButton.className = 'btn btn--text';
-  backButton.appendChild(createIcon('arrow-left'));
-  backButton.append('Back to Notebook Tracker');
-  backButton.addEventListener('click', onBack);
+  const backButton = createBackButton(onBack);
 
   const titleBlock = document.createElement('div');
   titleBlock.className = 'tracker-header__title-block';

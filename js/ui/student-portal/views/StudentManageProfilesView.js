@@ -22,7 +22,7 @@ import * as workspaceService from '../../../services/workspaceService.js';
 import { renderStudentDevicePinPromptView } from '../onboarding/StudentDevicePinPromptView.js';
 import { renderStudentRosterPickerView } from '../onboarding/StudentRosterPickerView.js';
 import { createAvatarElement } from '../../components/AvatarDisplay.js';
-import { createIcon } from '../../components/Icon.js';
+import { createBackButton } from '../../components/BackButton.js';
 
 export function renderStudentManageProfilesView(container, { onBack, onProfilesChanged }) {
   container.innerHTML = '';
@@ -34,12 +34,7 @@ export function renderStudentManageProfilesView(container, { onBack, onProfilesC
   const wrapper = document.createElement('div');
   wrapper.className = 'student-manage-profiles';
 
-  const backButton = document.createElement('button');
-  backButton.type = 'button';
-  backButton.className = 'btn btn--text';
-  backButton.appendChild(createIcon('arrow-left'));
-  backButton.append('Back to Profile');
-  backButton.addEventListener('click', onBack);
+  const backButton = createBackButton(onBack);
   wrapper.appendChild(backButton);
 
   const title = document.createElement('h1');

@@ -68,7 +68,7 @@ import * as curriculumLibraryService from '../../services/curriculumLibraryServi
 import * as curriculumIndexRepository from '../../services/curriculumIndexRepository.js';
 import * as curriculumSubmissionsService from '../../services/curriculumSubmissionsService.js';
 import { createCurriculumIndexSession } from '../../services/curriculumIndexSession.js';
-import { createIcon } from '../components/Icon.js';
+import { createBackButton } from '../components/BackButton.js';
 import { getCanonicalSubjects, getCanonicalSubjectById, generateCustomSubjectId } from '../../services/subjectIdentityService.js';
 import { createCurriculumExplorerPanel } from '../components/CurriculumExplorerPanel.js';
 import { createSearchableSelect } from '../components/SearchableSelect.js';
@@ -341,12 +341,7 @@ function renderView(container, mode, state, handlers) {
   const header = document.createElement('header');
   header.className = 'curriculum-management__header';
 
-  const backButton = document.createElement('button');
-  backButton.type = 'button';
-  backButton.className = 'btn btn--text';
-  backButton.appendChild(createIcon('arrow-left'));
-  backButton.append(mode === 'hub' ? 'Back to My Classrooms' : 'Back');
-  backButton.addEventListener('click', () => {
+  const backButton = createBackButton(() => {
     if (mode === 'hub') return handlers.onBack();
     const previous = {
       browse: 'hub',

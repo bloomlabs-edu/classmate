@@ -46,6 +46,7 @@ import {
 } from '../../config/resourceTypeConfig.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { createIcon } from '../components/Icon.js';
+import { createBackButton } from '../components/BackButton.js';
 import { renderReadingEditorView } from './ReadingEditorView.js';
 import { renderReadingViewerView } from './ReadingViewerView.js';
 
@@ -130,12 +131,7 @@ function renderWorkspace(container, classroom, subject, unit, concept, activeTab
   const header = document.createElement('header');
   header.className = 'concept-workspace__header';
 
-  const backButton = document.createElement('button');
-  backButton.type = 'button';
-  backButton.className = 'btn btn--text';
-  backButton.appendChild(createIcon('arrow-left'));
-  backButton.append(`Back to ${unit.title}`);
-  backButton.addEventListener('click', handlers.onBack);
+  const backButton = createBackButton(handlers.onBack);
   header.appendChild(backButton);
 
   const breadcrumb = document.createElement('p');
@@ -438,12 +434,7 @@ function renderChooseResourceTypeView(handlers) {
   const section = document.createElement('div');
   section.className = 'concept-workspace__section';
 
-  const backButton = document.createElement('button');
-  backButton.type = 'button';
-  backButton.className = 'btn btn--text';
-  backButton.appendChild(createIcon('arrow-left'));
-  backButton.append('Back to Resources');
-  backButton.addEventListener('click', handlers.onBackToResourceList);
+  const backButton = createBackButton(handlers.onBackToResourceList);
   section.appendChild(backButton);
 
   const heading = document.createElement('p');
@@ -479,12 +470,7 @@ function renderNameNewResourceView(pendingType, handlers) {
   const section = document.createElement('div');
   section.className = 'concept-workspace__section';
 
-  const backButton = document.createElement('button');
-  backButton.type = 'button';
-  backButton.className = 'btn btn--text';
-  backButton.appendChild(createIcon('arrow-left'));
-  backButton.append('Back to Resources');
-  backButton.addEventListener('click', handlers.onBackToResourceList);
+  const backButton = createBackButton(handlers.onBackToResourceList);
   section.appendChild(backButton);
 
   const heading = document.createElement('p');
@@ -534,12 +520,7 @@ function renderResourceDetailsView(container, classroom, concept, resource, hand
   const section = document.createElement('div');
   section.className = 'concept-workspace__section';
 
-  const backButton = document.createElement('button');
-  backButton.type = 'button';
-  backButton.className = 'btn btn--text';
-  backButton.appendChild(createIcon('arrow-left'));
-  backButton.append('Back to Resources');
-  backButton.addEventListener('click', handlers.onBackToResourceList);
+  const backButton = createBackButton(handlers.onBackToResourceList);
   section.appendChild(backButton);
 
   const detailsCard = document.createElement('div');

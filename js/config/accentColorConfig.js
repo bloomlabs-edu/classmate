@@ -9,21 +9,22 @@
  * (--color-primary-deep / --color-on-primary-deep) rather than a
  * hardcoded color.
  *
- * `textColor` is normally a WCAG-driven fact about each background, not
- * a style preference — computed and verified before being added here.
- * The one exception is Ocean (the default): white text on it measures
- * 2.64:1, below the standard 4.5:1 threshold — set anyway, per explicit
- * override instruction (see that option's own comment below). Every
- * other preset's pairing is still a real, verified contrast fact:
- * Sunset is light enough that white fails too (3.19:1), so it uses
- * dark ink (5.45:1); Classic/Emerald/Plum are dark enough that white
- * passes (5.75:1 / 5.47:1 / 6.35:1) and dark ink would fail. See
- * CHANGELOG.md for the full numbers and history.
+ * `textColor` is a WCAG-driven fact about each background, not a style
+ * preference — every pairing here is computed and verified directly
+ * (not estimated) before being added. Ocean and Sunset are both light
+ * enough that white fails (2.64:1 / 3.19:1), so both use dark ink
+ * instead (6.58:1 / 5.45:1); Classic/Emerald/Plum are dark enough that
+ * white passes (5.75:1 / 6.01:1 / 6.35:1) and dark ink would fail. See
+ * CHANGELOG.md for the full numbers and history — including the
+ * earlier version of this file, where Ocean was a stated exception
+ * kept on white text despite failing contrast; that exception is now
+ * reversed in favor of the same "light background -> dark ink" rule
+ * every other preset already follows.
  *
  * `shadow` pairs with `textColor`: a dark drop-shadow behind white text
  * adds a little legibility against a busy background; behind dark ink
- * it would do nothing useful, so Sunset (the one preset using dark ink)
- * has none.
+ * it would do nothing useful, so both presets using dark ink (Ocean,
+ * Sunset) have none.
  */
 
 export const ACCENT_COLOR_OPTIONS = Object.freeze([
@@ -31,14 +32,17 @@ export const ACCENT_COLOR_OPTIONS = Object.freeze([
     id: 'ocean',
     label: 'Ocean',
     hex: '#5ea6da',
-    /* Overridden per explicit direction: white text on this background
-       measures 2.64:1, below the standard 4.5:1 (and below even the
-       large-text 3:1 exception for most text on this screen). Flagged
-       once, clearly, at the point this was requested — implemented as
-       instructed, since this is the product's own color/accessibility
-       trade-off to make, not something to silently block. */
-    textColor: '#ffffff',
-    shadow: '0 1px 3px rgba(0, 0, 0, 0.35)',
+    /* Per explicit product decision: white text on this background
+       measured 2.64:1, below the standard 4.5:1 threshold — an
+       earlier, deliberate override kept white anyway as a stated
+       product trade-off. That trade-off is now reversed: dark ink
+       measures 6.58:1 on this exact background (verified directly,
+       not estimated), comfortably passing, and matches the same
+       approach Sunset below already uses for its own light
+       background — one consistent rule (light background -> dark
+       ink) rather than a one-off exception for this specific color. */
+    textColor: '#1a1a1a',
+    shadow: 'none',
   },
   {
     id: 'classic',

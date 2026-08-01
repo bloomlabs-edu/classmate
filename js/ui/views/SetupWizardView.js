@@ -16,6 +16,7 @@
  */
 
 import * as workspaceService from '../../services/workspaceService.js';
+import { createBackButton } from '../components/BackButton.js';
 import * as classroomImportService from '../../services/classroomImportService.js';
 import { ClassroomImportError } from '../../services/classroomImportService.js';
 import * as teamService from '../../services/teamService.js';
@@ -171,11 +172,7 @@ function renderStepScreen(container, classroom, step, { onNavigateStep, onFinish
   const header = document.createElement('header');
   header.className = 'wizard-step-header';
 
-  const backButton = document.createElement('button');
-  backButton.type = 'button';
-  backButton.className = 'btn btn--text';
-  backButton.textContent = '\u2190 Back to Setup';
-  backButton.addEventListener('click', () => onNavigateStep(null));
+  const backButton = createBackButton(() => onNavigateStep(null));
 
   const title = document.createElement('h1');
   title.className = 'wizard-step-header__title';

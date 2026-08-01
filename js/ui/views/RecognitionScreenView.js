@@ -36,7 +36,7 @@ import * as studentProgressService from '../../services/studentProgressService.j
 import { createRecognitionCardElement } from '../components/RecognitionCard.js';
 import { createLeaderboardListElement } from '../components/LeaderboardList.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
-import { createIcon } from '../components/Icon.js';
+import { createBackButton } from '../components/BackButton.js';
 
 const PERIOD_TABS = [
   { id: 'week', label: 'This Week' },
@@ -87,12 +87,7 @@ export function renderRecognitionScreenView(container, props) {
 
   const header = document.createElement('header');
   header.className = 'tracker-header';
-  const backButton = document.createElement('button');
-  backButton.type = 'button';
-  backButton.className = 'btn btn--text';
-  backButton.appendChild(createIcon('arrow-left'));
-  backButton.append('Back to Dashboard');
-  backButton.addEventListener('click', onBack);
+  const backButton = createBackButton(onBack);
   const title = document.createElement('h1');
   title.className = 'tracker-header__title';
   title.textContent = '\ud83c\udfc6 Recognition';

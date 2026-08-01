@@ -23,7 +23,7 @@
  * full reasoning.
  */
 
-import { createIcon } from '../components/Icon.js';
+import { createBackButton } from '../components/BackButton.js';
 import { ASSESSMENT_TYPES } from '../../config/assessmentTypesConfig.js';
 import { openCreateAssessmentModal } from '../components/CreateAssessmentModal.js';
 import { openAddSubjectToAssessmentModal } from '../components/AddSubjectToAssessmentModal.js';
@@ -293,12 +293,7 @@ function renderView(container, mode, state, handlers) {
 
   const isEntryStep = mode === 'home';
 
-  const backButton = document.createElement('button');
-  backButton.type = 'button';
-  backButton.className = 'btn btn--text';
-  backButton.appendChild(createIcon('arrow-left'));
-  backButton.append(isEntryStep ? 'Back to Dashboard' : 'Back');
-  backButton.addEventListener('click', () => {
+  const backButton = createBackButton(() => {
     if (isEntryStep) return handlers.onBack();
     const previous = { assessment: 'home', subject: 'assessment' }[mode];
     handlers.onBackTo(previous);

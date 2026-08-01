@@ -786,6 +786,10 @@ select:focus-visible,
   font-size: var(--text-sm);
   color: var(--color-on-primary-deep);
   text-shadow: var(--shadow-on-primary-deep);
+  /* Same verified 0.88 opacity as .profile-header__group — see that
+     rule's own comment for the full reasoning and the exact contrast
+     numbers behind this value. */
+  opacity: 0.88;
 }
 
 /* Back/secondary buttons inside any gradient header need light text —
@@ -2225,6 +2229,17 @@ button.wizard-checklist__row:hover {
   font-size: 0.9rem;
   color: var(--color-on-primary-deep);
   text-shadow: var(--shadow-on-primary-deep);
+  /* Secondary information gets lower visual emphasis than the
+     student's own name above it — per explicit product decision, the
+     primary entity should read as the strongest element on the page.
+     0.88 opacity is a verified, deliberate choice, not an arbitrary
+     one: computed directly against every accent color's own
+     background (see config/accentColorConfig.js), the tightest case
+     (Sunset) still measures 4.66:1, comfortably above WCAG AA's 4.5:1
+     — a lower opacity would read as more clearly secondary but was
+     confirmed to drop Sunset below that threshold, so this is the
+     lowest value that stays fully compliant for every accent color. */
+  opacity: 0.88;
 }
 
 .profile-header__stats {

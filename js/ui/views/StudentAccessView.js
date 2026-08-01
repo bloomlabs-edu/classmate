@@ -32,12 +32,7 @@ export function renderStudentAccessView(container, { classroom, onBack, onSelect
   const header = document.createElement('header');
   header.className = 'tracker-header';
 
-  const backButton = document.createElement('button');
-  backButton.type = 'button';
-  backButton.className = 'btn btn--text';
-  backButton.appendChild(createIcon('arrow-left'));
-  backButton.append('Back');
-  backButton.addEventListener('click', onBack);
+  const backButton = createBackButton(onBack);
 
   const titleBlock = document.createElement('div');
   titleBlock.className = 'tracker-header__title-block';
