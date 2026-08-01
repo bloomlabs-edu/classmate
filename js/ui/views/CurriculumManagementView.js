@@ -1128,13 +1128,6 @@ function renderCanonicalImportErrorsBanner(errors) {
 }
 
 function renderIndexReviewUnitsStep(index, canonicalImportErrors, handlers) {
-  // TEMPORARY DIAGNOSTIC LOGGING — investigating Live Server vs
-  // deployed-app behavior difference. Remove once root cause is
-  // confirmed. Prints the complete, untruncated object this renderer
-  // receives, plus which origin/environment produced it.
-  console.log('[DIAGNOSTIC] renderIndexReviewUnitsStep received:');
-  console.log('[DIAGNOSTIC] window.location.origin:', typeof window !== 'undefined' ? window.location.origin : '(no window)');
-  console.log('[DIAGNOSTIC] full index object:', JSON.stringify(index, null, 2));
   const section = document.createElement('div');
   section.className = 'curriculum-management__section';
 

@@ -75,6 +75,7 @@
 import { generateId } from '../utils/idGenerator.js';
 import { getCurrentIsoDate } from '../utils/dateHelpers.js';
 import { migrateCurriculumIndex } from './curriculumIndexMigrationService.js';
+import { validateAndRepairCurriculumIndex } from './curriculumIndexSchemaValidation.js';
 
 const DB_NAME = 'classmate-curriculum-index';
 const DB_VERSION = 1;
@@ -112,6 +113,36 @@ function runRequest(mode, useStore) {
   );
 }
 
+/**
+ * The full load-time contract, in the exact order agreed: migrate,
+ * then validate — two genuinely separate steps, never blended into
+ * one. Migration (services/curriculumIndexMigrationService.js)
+ * answers "what schemaVersion is this at, and what step advances it,"
+ * with schemaVersion fully authoritative for that question, unchanged
+ * by anything here. Validation
+ * (services/curriculumIndexSchemaValidation.js) answers a separate
+ * question afterward: "regardless of what schemaVersion now says,
+ * does this document actually have the shape the current schema
+ * requires?" — the safety net for a document whose schemaVersion
+ * claims current without actually conforming (see this file's own
+ * change history for the real bug that motivated this: a document at
+ * schemaVersion 2 that was still missing `parts`, which migration
+ * alone could never have caught, by design, since it stops advancing
+ * once schemaVersion reads current).
+ *
+ * Saves at most once, only if either step actually changed anything —
+ * "persist the repaired object once," not two separate writes for two
+ * separate concerns.
+ */
+async function ensureCurrentAndValid(index) {
+  const wasMigrated = migrateCurriculumIndex(index);
+  const wasRepaired = validateAndRepairCurriculumIndex(index);
+  if (wasMigrated || wasRepaired) {
+    await saveIndex(index);
+  }
+  return index;
+}
+
 /** Starts a brand-new Curriculum Index — Phase 1, right after a teacher provides curriculum metadata. */
 export async function createIndex({ curriculum }) {
   const now = getCurrentIsoDate();
@@ -124,17 +155,13 @@ export async function createIndex({ curriculum }) {
     parts: [],
     units: [],
   };
-  // Deliberately runs the real migration pipeline here rather than
-  // simply stamping `schemaVersion: LATEST_SCHEMA_VERSION` — a caller
-  // could construct `curriculum` without every field the latest
-  // schema actually requires (subjectId, say), and blindly claiming
-  // "latest" without verifying that would create a document that
-  // silently doesn't conform despite saying it does. Running it
-  // through migrateCurriculumIndex() guarantees the document really
-  // is current, the same way getIndex()/listIndexes() guarantee it
-  // for existing documents, rather than trusting the caller.
-  migrateCurriculumIndex(index);
-  await runRequest('readwrite', (store) => store.put(index));
+  // Runs the full migrate-then-validate contract even at creation
+  // time, rather than assuming a freshly-built object is automatically
+  // current — a caller could construct `curriculum` without every
+  // field the schema actually requires (subjectId, say), and this
+  // guarantees the document really is valid before it's ever stored,
+  // the same way getIndex()/listIndexes() guarantee it afterward.
+  await ensureCurrentAndValid(index);
   return index;
 }
 
@@ -148,9 +175,7 @@ export async function saveIndex(index) {
 export async function getIndex(indexId) {
   const result = await runRequest('readonly', (store) => store.get(indexId));
   if (!result) return null;
-  if (migrateCurriculumIndex(result)) {
-    await saveIndex(result);
-  }
+  await ensureCurrentAndValid(result);
   return result;
 }
 
@@ -159,15 +184,13 @@ export async function listIndexes() {
   const all = await runRequest('readonly', (store) => store.getAll());
   const sorted = all.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
 
-  // Runs every document through the full versioned migration pipeline
-  // — see services/curriculumIndexMigrationService.js's own header
-  // comment. Idempotent: a document already at LATEST_SCHEMA_VERSION
-  // runs zero migration steps, so this costs nothing once every
-  // document has been migrated once.
+  // Runs every document through migrate-then-validate — see
+  // ensureCurrentAndValid()'s own header comment above. Idempotent:
+  // a document that's already both current and valid triggers no
+  // save at all, so this costs nothing once every document has been
+  // repaired once.
   for (const index of sorted) {
-    if (migrateCurriculumIndex(index)) {
-      await saveIndex(index);
-    }
+    await ensureCurrentAndValid(index);
   }
 
   return sorted;
