@@ -124,10 +124,6 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
       },
       {
         onBack,
-        onGoToHub: () => {
-          mode = 'hub';
-          rerender();
-        },
         onGoToLearningManagement: () => {
           if (onOpenLearningManagement) {
             onOpenLearningManagement();
@@ -288,7 +284,24 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
         },
         onSaveIndex: async () => {
           await indexSession.saveIndex();
-          mode = 'index-saved';
+          // Per explicit product decision: saving completes the task
+          // but keeps the teacher in their current workspace. This
+          // used to switch to a separate "Curriculum Index Saved"
+          // interstitial (mode = 'index-saved'), whose only action was
+          // "Back to Curriculum Management" — meaning every save, first
+          // or subsequent, forced an extra click just to get back to
+          // the exact screen the teacher was already on. A toast
+          // confirms the save without moving them anywhere.
+          //
+          // isResumingIndex flips to true here too, not just when
+          // reached via "Open" from the Hub — once a curriculum is
+          // actually saved, there's no more creation wizard left to
+          // step back through, so this screen's own "Back" button
+          // should lead to the Hub, the same as it would for a
+          // genuinely resumed one, rather than back into the Create
+          // form as if still mid-wizard.
+          isResumingIndex = true;
+          showToast(`${indexSession.getIndex().curriculum.name} saved.`);
           rerender();
         },
         onGoToReview: () => {
@@ -345,7 +358,6 @@ function renderView(container, mode, state, handlers) {
       'index-extracting': 'index-create',
       'index-extraction-failed': 'index-create',
       'index-review-units': state.isResumingIndex ? 'hub' : 'index-create',
-      'index-saved': 'hub',
       'review-list': 'hub',
       'review-detail': 'review-list',
     }[mode];
@@ -378,8 +390,6 @@ function renderView(container, mode, state, handlers) {
     wrapper.appendChild(renderIndexExtractionFailedStep(state, handlers));
   } else if (mode === 'index-review-units') {
     wrapper.appendChild(renderIndexReviewUnitsStep(state.indexSession.getIndex(), state.canonicalImportErrors, handlers));
-  } else if (mode === 'index-saved') {
-    wrapper.appendChild(renderIndexSavedStep(state.indexSession.getIndex(), handlers));
   } else if (mode === 'review-list') {
     wrapper.appendChild(renderReviewListStep(handlers));
   } else if (mode === 'review-detail') {
@@ -1473,30 +1483,6 @@ function attachUnitDragHandlers(handle, unit, handlers) {
 }
 
 /** Stage 3 of Phase 1 — confirmation. Attaching a textbook and extracting concepts are later milestones, not reachable from here yet. */
-function renderIndexSavedStep(index, handlers) {
-  const section = document.createElement('div');
-  section.className = 'curriculum-management__section';
-
-  const heading = document.createElement('p');
-  heading.className = 'curriculum-management__step-heading';
-  heading.textContent = '\u2705 Curriculum Index Saved';
-  section.appendChild(heading);
-
-  const message = document.createElement('p');
-  message.className = 'curriculum-management__intro';
-  message.textContent = `${index.curriculum.name} \u2014 ${index.units.length} unit${index.units.length === 1 ? '' : 's'} saved. You can come back to this later; nothing is lost. Attaching a textbook and extracting concepts come in a later milestone.`;
-  section.appendChild(message);
-
-  const doneButton = document.createElement('button');
-  doneButton.type = 'button';
-  doneButton.className = 'btn btn--primary';
-  doneButton.textContent = 'Back to Curriculum Management';
-  doneButton.addEventListener('click', handlers.onGoToHub);
-  section.appendChild(doneButton);
-
-  return section;
-}
-
 function createLabeledInput(labelText, placeholder) {
   const wrapper = document.createElement('label');
   wrapper.className = 'curriculum-management__labeled-input';
