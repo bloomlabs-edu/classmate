@@ -70,7 +70,7 @@ export function openCreateAssessmentModal({ classroom, onAssessmentCreated }) {
   if (subjects.length === 0) {
     const emptyNote = document.createElement('p');
     emptyNote.className = 'modal__description';
-    emptyNote.textContent = 'This classroom has no Subjects yet \u2014 add one in Learning Management first.';
+    emptyNote.textContent = 'This classroom has no Subjects yet \u2014 add one in Learning first.';
     modal.appendChild(emptyNote);
   } else {
     const subjectsList = document.createElement('div');

@@ -57,6 +57,7 @@
  */
 
 import * as workspaceService from '../../services/workspaceService.js';
+import { createIcon } from '../components/Icon.js';
 import * as pendingTaskService from '../../services/pendingTaskService.js';
 import { renderTeachingAssistant } from '../components/TeachingAssistant.js';
 import { getDisplayName, getDisplaySubtitle } from '../../services/classroomService.js';
@@ -327,71 +328,136 @@ function createAssignCurriculumBanner(onOpen) {
   return banner;
 }
 
+/**
+ * Dashboard module metadata — one declarative entry per module,
+ * describing what it is (id, title, icon, description) and how
+ * central it is to a teacher's actual daily workflow (tier), not how
+ * it should look. All visual treatment (fill, border, icon color,
+ * elevation, hover behavior) is derived from `tier` alone, in CSS
+ * (see .primary-module-card--primary/--daily/--setup) — nothing here
+ * or in createPrimaryModuleCard() hardcodes styling by module name.
+ * Adding a future module means adding one entry to this array, not
+ * writing new per-module styling logic.
+ *
+ * Tiers, matching how often a teacher actually reaches for each:
+ *   - primary: used multiple times every single teaching day (Class
+ *     Mode) — the one filled, strongest-elevation card.
+ *   - daily: used frequently while preparing or managing classes
+ *     (Classroom, Learning) — white surface, accent border and icon.
+ *   - setup: occasional administrative workspace (Curriculum,
+ *     Assessments) — white surface, neutral border, muted icon.
+ */
+const DASHBOARD_MODULES = [
+  {
+    id: 'classMode',
+    title: 'Class Mode',
+    icon: 'play',
+    description: 'Run today\u2019s class',
+    tier: 'primary',
+  },
+  {
+    id: 'classroom',
+    title: 'Classroom',
+    icon: 'users',
+    description: 'Students, groups, and daily operations',
+    tier: 'daily',
+  },
+  {
+    id: 'learning',
+    title: 'Learning',
+    icon: 'book-open',
+    description: 'Prepare lessons, support students',
+    tier: 'daily',
+  },
+  {
+    id: 'curriculum',
+    title: 'Curriculum',
+    icon: 'graduation-cap',
+    description: 'Install, upload, assign curriculum',
+    tier: 'setup',
+  },
+  {
+    id: 'assessments',
+    title: 'Assessments',
+    icon: 'clipboard-list',
+    description: 'Record exam and test marks',
+    tier: 'setup',
+  },
+];
+
 function renderPrimaryModulesSection({ onStartClassMode, onOpenClassroomManagement, onOpenLearningManagement, onOpenCurriculumManagement, onOpenAssessmentManagement }) {
   const section = document.createElement('div');
   section.className = 'primary-modules';
 
-  section.appendChild(
-    createPrimaryModuleCard({
-      icon: '\u25b6',
-      label: 'Class Mode',
-      description: 'Run today\u2019s class',
-      onClick: onStartClassMode,
-    })
-  );
+  // The one place runtime behavior meets static metadata — a plain
+  // id -> handler lookup, not a chain of per-module conditionals.
+  // Curriculum's handler can be null (see this file's own permission-
+  // hook comment near canAccessCurriculumManagement) — that module is
+  // simply skipped, the same way any future module without a wired
+  // handler would be, rather than a special case written just for
+  // Curriculum.
+  const handlersById = {
+    classMode: onStartClassMode,
+    classroom: onOpenClassroomManagement,
+    learning: onOpenLearningManagement,
+    curriculum: onOpenCurriculumManagement,
+    assessments: onOpenAssessmentManagement,
+  };
 
-  section.appendChild(
-    createPrimaryModuleCard({
-      icon: '\ud83d\udc65',
-      label: 'Classroom Management',
-      description: 'Students, groups, and daily operations',
-      onClick: onOpenClassroomManagement,
-    })
-  );
-
-  section.appendChild(
-    createPrimaryModuleCard({
-      icon: '\ud83d\udcda',
-      label: 'Learning Management',
-      description: 'Prepare lessons, support students',
-      onClick: onOpenLearningManagement,
-    })
-  );
-
-  if (onOpenCurriculumManagement) {
+  DASHBOARD_MODULES.forEach((module) => {
+    const onClick = handlersById[module.id];
+    if (!onClick) return;
     section.appendChild(
       createPrimaryModuleCard({
-        icon: '\u2699\ufe0f',
-        label: 'Curriculum Management',
-        description: 'Install, upload, assign curriculum',
-        onClick: onOpenCurriculumManagement,
-        muted: true, // "used occasionally" — see this file's header comment on why the entry-point *card* still matches the other two in size, just not in color/emphasis
+        icon: module.icon,
+        label: module.title,
+        description: module.description,
+        onClick,
+        tier: module.tier,
       })
     );
-  }
-
-  section.appendChild(
-    createPrimaryModuleCard({
-      icon: '\ud83d\udcdd',
-      label: 'Assessment Management',
-      description: 'Record exam and test marks',
-      onClick: onOpenAssessmentManagement,
-      muted: true, // school-administration centric, not a daily-use screen — same "occasional" weighting as Curriculum Management above
-    })
-  );
+  });
 
   return section;
 }
 
-function createPrimaryModuleCard({ icon, label, description, onClick, muted = false }) {
+/**
+ * Three tiers, by actual frequency of teacher use — per explicit
+ * product decision. Class Mode is used multiple times every teaching
+ * day; Classroom and Learning are opened frequently while preparing
+ * or managing classes; Curriculum and Assessments are occasional
+ * administrative workspaces. Which tier a module belongs to is
+ * declared once, in DASHBOARD_MODULES above — every visual
+ * consequence of that tier (fill, border, icon color, elevation,
+ * hover behavior) lives entirely in CSS
+ * (.primary-module-card--primary/--daily/--setup), never hardcoded by
+ * module name here.
+ *
+ *   - primary (Class Mode): filled, solid accent color, strongest
+ *     elevation — the one daily, time-critical action.
+ *   - daily (Classroom, Learning): white surface, accent-colored
+ *     border and icon — frequently used, clearly present, but not
+ *     competing with Class Mode's own filled treatment.
+ *   - setup (Curriculum, Assessments): white surface, neutral border,
+ *     muted gray icon — occasional administrative tasks that should
+ *     read as quieter without looking disabled. Per explicit
+ *     correction, typography (size and weight) is identical across
+ *     every tier — hierarchy comes only from fill/border/icon
+ *     color/elevation, never from a lighter font weight.
+ *
+ * Icons are real SVGs from ui/components/Icon.js, not emoji or text
+ * characters — these are functional, wayfinding icons (which screen
+ * does this lead to), exactly the case ClassMate's own icon design
+ * guide (docs/icon-design-guide.md) already says belongs to the
+ * Lucide icon system, not emoji (emoji stay reserved for celebration/
+ * recognition/emotion, as documented there).
+ */
+function createPrimaryModuleCard({ icon, label, description, onClick, tier }) {
   const card = document.createElement('button');
   card.type = 'button';
-  card.className = 'primary-module-card' + (muted ? ' primary-module-card--muted' : '');
+  card.className = `primary-module-card primary-module-card--${tier}`;
 
-  const iconEl = document.createElement('span');
-  iconEl.className = 'primary-module-card__icon';
-  iconEl.setAttribute('aria-hidden', 'true');
-  iconEl.textContent = icon;
+  const iconEl = createIcon(icon, { size: 28, strokeWidth: 1.75, className: 'primary-module-card__icon' });
   card.appendChild(iconEl);
 
   const labelEl = document.createElement('span');
@@ -456,7 +522,8 @@ function renderPreRosterWelcome(container, classroom, assistantCallbacks, onOpen
       const learningManagementButton = document.createElement('button');
       learningManagementButton.type = 'button';
       learningManagementButton.className = 'btn btn--primary pre-roster-welcome__curriculum-button';
-      learningManagementButton.textContent = '\ud83d\udcda Learning Management';
+      learningManagementButton.appendChild(createIcon('book-open', { size: 16 }));
+      learningManagementButton.append('Learning');
       learningManagementButton.addEventListener('click', onOpenLearningManagement);
       actionsRow.appendChild(learningManagementButton);
     }
@@ -465,7 +532,8 @@ function renderPreRosterWelcome(container, classroom, assistantCallbacks, onOpen
       const curriculumManagementButton = document.createElement('button');
       curriculumManagementButton.type = 'button';
       curriculumManagementButton.className = 'btn btn--ghost pre-roster-welcome__curriculum-management-button';
-      curriculumManagementButton.textContent = '\u2699\ufe0f Curriculum Management';
+      curriculumManagementButton.appendChild(createIcon('graduation-cap', { size: 16 }));
+      curriculumManagementButton.append('Curriculum');
       curriculumManagementButton.addEventListener('click', onOpenCurriculumManagement);
       actionsRow.appendChild(curriculumManagementButton);
     }

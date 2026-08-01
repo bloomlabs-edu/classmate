@@ -112,7 +112,7 @@ function renderChooseStep(state, handlers) {
 
   const intro = document.createElement('p');
   intro.className = 'assign-curriculum-prompt__intro';
-  intro.textContent = `Choose the curriculum ${getDisplayName(state.classroom)} will use. Learning Management will use it automatically from here on — this is the only time you'll need to pick it.`;
+  intro.textContent = `Choose the curriculum ${getDisplayName(state.classroom)} will use. Learning will use it automatically from here on — this is the only time you'll need to pick it.`;
   section.appendChild(intro);
 
   if (state.options.length === 0) {

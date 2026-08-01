@@ -362,7 +362,7 @@ function renderView(container, mode, state, handlers) {
 
   const title = document.createElement('h1');
   title.className = 'curriculum-management__title';
-  title.textContent = '\u2699\ufe0f Curriculum Management';
+  title.textContent = 'Curriculum';
   header.appendChild(title);
 
   wrapper.appendChild(header);
@@ -808,7 +808,7 @@ function renderPreviewStructureStep(state, handlers) {
 
   const readOnlyNote = document.createElement('p');
   readOnlyNote.className = 'curriculum-management__intro';
-  readOnlyNote.textContent = 'Inspecting this curriculum\u2019s structure. Assign it to a class to actually use it in Learning Management.';
+  readOnlyNote.textContent = 'Inspecting this curriculum\u2019s structure. Assign it to a class to actually use it in Learning.';
   section.appendChild(readOnlyNote);
 
   const normalizedUnits = state.previewPack.units.map((unit) => ({

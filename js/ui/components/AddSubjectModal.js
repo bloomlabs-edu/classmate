@@ -162,7 +162,7 @@ export function openAddSubjectModal({ classroom, existingSubjectTitles, onSubjec
           const openCurriculumManagementButton = document.createElement('button');
           openCurriculumManagementButton.type = 'button';
           openCurriculumManagementButton.className = 'btn btn--primary';
-          openCurriculumManagementButton.textContent = 'Open Curriculum Management';
+          openCurriculumManagementButton.textContent = 'Open Curriculum';
           openCurriculumManagementButton.addEventListener('click', () => {
             close();
             onOpenCurriculumManagement();

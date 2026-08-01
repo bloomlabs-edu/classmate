@@ -197,7 +197,7 @@ export function renderAssessmentManagementView(container, { classroom, onBack })
     },
     onRemoveSubjectFromAssessment: (assessmentSubject) => {
       const subjectTitle = assessmentService.getSubjectTitle(classroom, assessmentSubject.subjectId) || 'this subject';
-      const confirmed = window.confirm(`Remove "${subjectTitle}" from this assessment?\n\nThis removes every mark recorded for it in this assessment only \u2014 the Subject itself is unaffected in Learning Management. This cannot be undone.`);
+      const confirmed = window.confirm(`Remove "${subjectTitle}" from this assessment?\n\nThis removes every mark recorded for it in this assessment only \u2014 the Subject itself is unaffected in Learning. This cannot be undone.`);
       if (!confirmed) return;
       assessmentService.removeSubjectFromAssessment(selectedAssessment, assessmentSubject.subjectId);
       workspaceService.save(classroom);
@@ -302,7 +302,7 @@ function renderView(container, mode, state, handlers) {
 
   const title = document.createElement('h1');
   title.className = 'learning-management__title';
-  title.textContent = '\ud83d\udcdd Assessment Management';
+  title.textContent = 'Assessments';
   header.appendChild(title);
 
   wrapper.appendChild(header);

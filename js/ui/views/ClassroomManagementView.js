@@ -70,7 +70,7 @@ export function renderClassroomManagementView(container, { classroom, onBack, on
   const backButton = createBackButton(onBack);
   const title = document.createElement('h1');
   title.className = 'learning-management__title';
-  title.textContent = 'Classroom Management';
+  title.textContent = 'Classroom';
   header.append(backButton, title);
   wrapper.appendChild(header);
 

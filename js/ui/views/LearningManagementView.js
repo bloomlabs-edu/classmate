@@ -211,7 +211,7 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
     },
     onResetLearningManagement: () => {
       const confirmed = window.confirm(
-        'Reset Learning Management for this classroom?\n\nThis removes every Subject, Unit, Concept, and curriculum link for this classroom only. Students, attendance, and classroom settings are not affected. This cannot be undone.'
+        'Reset Learning for this classroom?\n\nThis removes every Subject, Unit, Concept, and curriculum link for this classroom only. Students, attendance, and classroom settings are not affected. This cannot be undone.'
       );
       if (!confirmed) return;
       resetLearningManagementData(selectedClassroom);
@@ -250,7 +250,7 @@ function renderView(container, mode, state, handlers) {
 
   const title = document.createElement('h1');
   title.className = 'learning-management__title';
-  title.textContent = '\ud83d\udcda Learning Management';
+  title.textContent = 'Learning';
   header.appendChild(title);
 
   wrapper.appendChild(header);
@@ -340,7 +340,7 @@ function renderDeveloperUtilities(handlers) {
   const resetButton = document.createElement('button');
   resetButton.type = 'button';
   resetButton.className = 'btn btn--danger';
-  resetButton.textContent = 'Reset Learning Management (Current Classroom)';
+  resetButton.textContent = 'Reset Learning (Current Classroom)';
   resetButton.addEventListener('click', handlers.onResetLearningManagement);
   devSection.appendChild(resetButton);
 
