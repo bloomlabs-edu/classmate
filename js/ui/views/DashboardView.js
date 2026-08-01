@@ -69,6 +69,7 @@ import { createGroupsWidgetElement } from '../components/GroupsWidget.js';
 import { createTeachingSectionElement } from '../components/TeachingSection.js';
 import { createClassroomSectionElement } from '../components/ClassroomSection.js';
 import { renderLearningManagementView } from './LearningManagementView.js';
+import { renderClassroomManagementView } from './ClassroomManagementView.js';
 import { renderCurriculumManagementView } from './CurriculumManagementView.js';
 import { renderAssessmentManagementView } from './AssessmentManagementView.js';
 import { renderAssignCurriculumPromptView } from './AssignCurriculumPromptView.js';
@@ -121,6 +122,14 @@ export function renderDashboardView(container, props) {
     });
   }
 
+  function openClassroomManagement() {
+    renderClassroomManagementView(container, {
+      classroom,
+      onBack: () => renderDashboardView(container, props),
+      onSelectStudent,
+    });
+  }
+
   // The one-time prompt for a classroom that predates Curriculum being
   // a required field at creation (see
   // ui/components/NewClassroomModal.js, ui/views/AssignCurriculumPromptView.js's
@@ -153,9 +162,9 @@ export function renderDashboardView(container, props) {
 
   if (!hasStudents) {
     renderPreRosterWelcome(container, classroom, {
-      onOpenSettingsStudents,
+      onOpenSettingsStudents: openClassroomManagement,
       onOpenStudentAccess,
-      onOpenSettingsGroups,
+      onOpenSettingsGroups: openClassroomManagement,
       onOpenSettingsNotebooks,
     }, openLearningManagement, canAccessCurriculumManagement ? openCurriculumManagement : null, needsCurriculumAssignment ? openAssignCurriculumPrompt : null);
     return;
@@ -205,6 +214,7 @@ export function renderDashboardView(container, props) {
   wrapper.appendChild(
     renderPrimaryModulesSection({
       onStartClassMode,
+      onOpenClassroomManagement: openClassroomManagement,
       onOpenLearningManagement: openLearningManagement,
       onOpenCurriculumManagement: canAccessCurriculumManagement ? openCurriculumManagement : null,
       onOpenAssessmentManagement: openAssessmentManagement,
@@ -221,9 +231,9 @@ export function renderDashboardView(container, props) {
   wrapper.appendChild(assistantSlot);
   renderTeachingAssistant(assistantSlot, {
     classroom,
-    onOpenSettingsStudents,
+    onOpenSettingsStudents: openClassroomManagement,
     onOpenStudentAccess,
-    onOpenSettingsGroups,
+    onOpenSettingsGroups: openClassroomManagement,
     onOpenSettingsNotebooks,
     onDismiss: () => renderDashboardView(container, props),
   });
@@ -276,7 +286,7 @@ export function renderDashboardView(container, props) {
   // since an empty "no groups yet" card is exactly the placeholder
   // pattern being removed.
   const classroomSectionChildren = [];
-  if (hasRealGroups) classroomSectionChildren.push(createGroupsWidgetElement({ classroom, onOpenGroups }));
+  if (hasRealGroups) classroomSectionChildren.push(createGroupsWidgetElement({ classroom, onOpenGroups: openClassroomManagement }));
   classroomSectionChildren.push(createStudentAccessButton(onOpenStudentAccess), createSettingsButton(onOpenSettings));
   content.appendChild(createClassroomSectionElement({ children: classroomSectionChildren }));
 
@@ -317,16 +327,25 @@ function createAssignCurriculumBanner(onOpen) {
   return banner;
 }
 
-function renderPrimaryModulesSection({ onStartClassMode, onOpenLearningManagement, onOpenCurriculumManagement, onOpenAssessmentManagement }) {
+function renderPrimaryModulesSection({ onStartClassMode, onOpenClassroomManagement, onOpenLearningManagement, onOpenCurriculumManagement, onOpenAssessmentManagement }) {
   const section = document.createElement('div');
   section.className = 'primary-modules';
 
   section.appendChild(
     createPrimaryModuleCard({
       icon: '\u25b6',
-      label: 'Classroom Management',
+      label: 'Class Mode',
       description: 'Run today\u2019s class',
       onClick: onStartClassMode,
+    })
+  );
+
+  section.appendChild(
+    createPrimaryModuleCard({
+      icon: '\ud83d\udc65',
+      label: 'Classroom Management',
+      description: 'Students, groups, and daily operations',
+      onClick: onOpenClassroomManagement,
     })
   );
 

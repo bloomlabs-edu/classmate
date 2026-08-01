@@ -21,7 +21,6 @@
  * the owner delete the classroom.
  */
 
-import * as teamService from '../../services/teamService.js';
 import * as studentService from '../../services/studentService.js';
 import * as notebookService from '../../services/notebookService.js';
 import * as classModeService from '../../services/classModeService.js';
@@ -29,34 +28,15 @@ import * as memberService from '../../services/memberService.js';
 import * as workspaceService from '../../services/workspaceService.js';
 import * as setupProgressService from '../../services/setupProgressService.js';
 import * as notebookConfigService from '../../services/notebookConfigService.js';
-import { getDisplayName, ClassroomValidationError, ensureJoinCode, getOrCreateUngroupedTeam } from '../../services/classroomService.js';
-import * as classroomImportService from '../../services/classroomImportService.js';
-import { ClassroomImportError } from '../../services/classroomImportService.js';
+import { getDisplayName, ClassroomValidationError, ensureJoinCode } from '../../services/classroomService.js';
 import { createIcon } from '../components/Icon.js';
-import { openImportPreviewModal } from '../components/ImportPreviewModal.js';
 import { MEMBER_ROLES, PERMISSIONS, ROLE_PERMISSIONS } from '../../config/memberRoles.js';
 import { showToast } from '../components/Toast.js';
 
 const SECTIONS = ['class', 'learning', 'classroom'];
 
-/**
- * Saving after an import triggers this app's real-time classroom
- * subscription (see workspaceService.js), which synchronously
- * replaces the whole classroom object (upsertClassroom() builds a
- * fresh one, it doesn't mutate the existing reference) and re-renders
- * this entire view via the normal route path — both *before* the
- * import handler's own subsequent renderImportSuccess() call would
- * otherwise run. Setting a flag directly on the classroom object
- * wouldn't survive that replacement; this module-level flag does,
- * since it lives outside the classroom object entirely. Checked once
- * at the top of renderStudentsSection() and cleared immediately after
- * being read, so it only ever affects the single render right after
- * an import completes.
- */
-let pendingImportSuccess = null;
-
 const SECTION_LABELS = {
-  class: { icon: 'users', text: 'Class' },
+  class: { icon: 'users', text: 'Teachers' },
   learning: { icon: 'book-open', text: 'Learning' },
   classroom: { icon: 'settings', text: 'Classroom' },
 };
@@ -132,34 +112,15 @@ export function renderSettingsView(container, { classroom, currentUser, section,
 }
 
 /**
- * "The classroom community" — Students, Groups, and Teachers on one
- * page, since a teacher managing their roster very often wants to
- * touch more than one of these in the same sitting (add a student,
- * put them in a group, invite a co-teacher) and switching tabs
- * between three closely related tasks was exactly the fragmentation
- * this redesign is meant to remove. Each sub-section keeps its own
- * heading so the page still reads as three distinct topics, not one
- * undifferentiated list.
+/**
+ * Teachers only, now that Students and Groups have moved to
+ * ui/views/ClassroomManagementView.js — daily operational data, not
+ * occasional configuration, per explicit product decision. Teachers
+ * (who has access to this shared classroom) stays here: it's exactly
+ * the kind of infrequently-changed configuration Settings is meant to
+ * hold, unlike a roster a teacher touches constantly.
  */
 function renderClassSection(content, classroom, rerender, onOpenStudentAccess, currentUser, onSelectStudent) {
-  const studentsWrapper = document.createElement('div');
-  const studentsHeading = document.createElement('h2');
-  studentsHeading.className = 'settings-page-heading';
-  studentsHeading.textContent = 'Students';
-  studentsWrapper.appendChild(studentsHeading);
-  content.appendChild(studentsWrapper);
-  renderStudentsSection(content, classroom, rerender, onOpenStudentAccess, onSelectStudent);
-
-  const groupsHeading = document.createElement('h2');
-  groupsHeading.className = 'settings-page-heading';
-  groupsHeading.textContent = 'Groups';
-  content.appendChild(groupsHeading);
-  renderGroupsSection(content, classroom, rerender);
-
-  const teachersHeading = document.createElement('h2');
-  teachersHeading.className = 'settings-page-heading';
-  teachersHeading.textContent = 'Teachers';
-  content.appendChild(teachersHeading);
   renderTeachersSection(content, classroom, rerender, currentUser);
 }
 
@@ -332,485 +293,15 @@ function createStatusRow(label, done) {
   return item;
 }
 
-function renderStudentsSection(content, classroom, rerender, onOpenStudentAccess, onSelectStudent) {
-  if (pendingImportSuccess) {
-    const { count } = pendingImportSuccess;
-    pendingImportSuccess = null; // consumed — only ever shown once, right after the import that set it
-    renderImportSuccess(content, count, onOpenStudentAccess, () => rerender());
-    return;
-  }
+// renderStudentsSection, renderImportSuccess, and renderGroupsSection
+// moved to ui/views/ClassroomManagementView.js — Students and Groups
+// are now Classroom Management's own daily-operational content, not
+// Settings configuration. See that file for the current
+// implementation (redesigned: group-first Add Student, collapsible
+// group cards, overflow menus instead of permanently-visible
+// actions) and services/teamService.js's removeTeamAndRelocateStudents()
+// for the corresponding "never delete students" Delete Group behavior.
 
-  const section = document.createElement('div');
-  section.className = 'settings-section';
-
-  const hasAnyStudents = classroom.teams.some((team) => team.students.length > 0);
-
-  // Action-first: Add Student and Upload Student List are the very
-  // first things on this page, before any list or empty-state copy —
-  // "the page should encourage getting students into the classroom
-  // before showing empty lists." Both actions are always available
-  // here, whether or not students already exist, since a teacher
-  // might import a second batch later just as easily as a first one.
-  const actionBar = document.createElement('div');
-  actionBar.className = 'settings-action-bar';
-
-  const addStudentButton = document.createElement('button');
-  addStudentButton.type = 'button';
-  addStudentButton.className = 'btn btn--primary';
-  addStudentButton.textContent = '+ Add Student';
-
-  const uploadButton = document.createElement('button');
-  uploadButton.type = 'button';
-  uploadButton.className = 'btn btn--ghost';
-  uploadButton.appendChild(createIcon('file-up', { size: 16 }));
-  uploadButton.append('Upload Student List');
-
-  const divider = document.createElement('span');
-  divider.className = 'settings-action-bar__divider';
-  divider.textContent = 'or';
-
-  actionBar.append(addStudentButton, divider, uploadButton);
-  section.appendChild(actionBar);
-
-  // The inline quick-add form, hidden until "+ Add Student" is
-  // clicked — keeps the action bar itself uncluttered by a bare text
-  // input sitting there by default.
-  const quickAddSlot = document.createElement('div');
-  quickAddSlot.hidden = true;
-  quickAddSlot.appendChild(
-    createAddForm('New student name', 'Save', (name) => {
-      const ungroupedTeam = getOrCreateUngroupedTeam(classroom);
-      studentService.addStudent(ungroupedTeam, name);
-      workspaceService.save(classroom);
-      rerender();
-    })
-  );
-  section.appendChild(quickAddSlot);
-  addStudentButton.addEventListener('click', () => {
-    quickAddSlot.hidden = !quickAddSlot.hidden;
-  });
-
-  // Reuses the exact same CSV import pipeline as the initial Setup
-  // Wizard (services/classroomImportService.js, ImportPreviewModal) —
-  // restoring this as a second entry point, not a second
-  // implementation. See this project's CHANGELOG for why this needed
-  // restoring here at all.
-  const fileInput = document.createElement('input');
-  fileInput.type = 'file';
-  fileInput.accept = '.csv';
-  fileInput.style.display = 'none';
-  uploadButton.addEventListener('click', () => fileInput.click());
-
-  fileInput.addEventListener('change', async (event) => {
-    const file = event.target.files[0];
-    fileInput.value = '';
-    if (!file) return;
-
-    let analysis;
-    try {
-      const csvText = await file.text();
-      analysis = classroomImportService.analyzeCsv(csvText);
-    } catch (error) {
-      window.alert('Something went wrong reading that file. Please check the CSV and try again.');
-      return;
-    }
-
-    openImportPreviewModal({
-      formats: analysis.formats,
-      initialFormatId: analysis.detected.id,
-      getPreview: (formatId) => {
-        try {
-          const { teams } = classroomImportService.parseWithFormat(formatId, analysis.rows);
-          return { teams };
-        } catch (error) {
-          const message =
-            error instanceof ClassroomImportError
-              ? error.message
-              : 'Could not parse this file with the selected format.';
-          return { teams: [], error: message };
-        }
-      },
-      onConfirm: (formatId) => {
-        const { teams } = classroomImportService.parseWithFormat(formatId, analysis.rows);
-        const importedCount = teams.reduce((sum, team) => sum + team.students.length, 0);
-        // Set BEFORE calling importRosterIntoClassroom, not after: that
-        // function's internal save synchronously triggers this app's
-        // real-time classroom subscription, which re-renders this
-        // whole view immediately — before any code written after the
-        // call below would even run. The flag needs to already be set
-        // by the time that happens.
-        pendingImportSuccess = { count: importedCount };
-        // importRosterIntoClassroom() looks up its own fresh classroom
-        // reference internally and persists it directly — it does NOT
-        // operate on this function's own `classroom` closure variable.
-        // Calling workspaceService.save(classroom) again afterward,
-        // using this stale reference, would overwrite the correct
-        // import with data that never had the imported teams applied
-        // to it. Do not add a save call here. The real-time classroom
-        // subscription this triggers internally already re-renders
-        // this whole view with a fresh reference — an explicit
-        // rerender() call here would use this closure's stale one
-        // instead, so deliberately not adding one.
-        workspaceService.importRosterIntoClassroom(classroom.id, teams);
-      },
-    });
-  });
-  section.appendChild(fileInput);
-
-  if (!hasAnyStudents) {
-    const emptyState = document.createElement('div');
-    emptyState.className = 'settings-empty-state';
-
-    const icon = document.createElement('span');
-    icon.className = 'settings-empty-state__icon';
-    icon.setAttribute('aria-hidden', 'true');
-    icon.textContent = '\ud83d\udc65';
-
-    const title = document.createElement('h3');
-    title.className = 'settings-empty-state__title';
-    title.textContent = 'Students';
-
-    const message = document.createElement('p');
-    message.className = 'settings-empty-state__message';
-    message.textContent = "Your classroom doesn't have any students yet. Students can be added now and organized into groups later.";
-
-    emptyState.append(icon, title, message);
-    section.appendChild(emptyState);
-
-    content.appendChild(section);
-    return;
-  }
-
-  // Same reasoning as GroupsWidget.js and Class Mode's team-card grid:
-  // a team with zero students would render as a heading with nothing
-  // underneath it — an empty box, not useful information here. Such a
-  // team is still fully manageable (renamed, colored, removed) from
-  // Settings' own Groups tab; it simply won't have a block on this
-  // student-focused list until it actually has a student in it.
-  classroom.teams
-    .filter((team) => team.students.length > 0)
-    .forEach((team) => {
-    const teamBlock = document.createElement('div');
-    teamBlock.className = 'settings-team-block';
-
-    const heading = document.createElement('h3');
-    heading.className = 'settings-team-block__heading';
-    heading.textContent = team.name;
-    teamBlock.appendChild(heading);
-
-    const list = document.createElement('ul');
-    list.className = 'settings-editable-list';
-
-    team.students.forEach((student) => {
-      const item = document.createElement('li');
-      item.className = 'settings-editable-list__item';
-
-      const input = document.createElement('input');
-      input.type = 'text';
-      input.value = student.name;
-      input.addEventListener('change', () => {
-        const newName = input.value.trim();
-        if (!newName) {
-          input.value = student.name;
-          return;
-        }
-        studentService.renameStudent(team, student.id, newName);
-        workspaceService.save(classroom);
-      });
-
-      const removeButton = document.createElement('button');
-      removeButton.type = 'button';
-      removeButton.className = 'btn btn--text btn--danger-text';
-      removeButton.textContent = 'Remove';
-      removeButton.addEventListener('click', () => {
-        const confirmed = window.confirm(`Remove ${student.name} from ${team.name}?`);
-        if (!confirmed) return;
-        studentService.removeStudent(team, student.id);
-        workspaceService.save(classroom);
-        rerender();
-      });
-
-      // The name itself is a rename input here, not plain text, so it
-      // can't double as a profile link without breaking editing (a
-      // click would just place the cursor). A separate "View Profile"
-      // action gets the same clickable-name-leads-to-profile behavior
-      // this list has everywhere else in the app, without touching how
-      // renaming works.
-      if (onSelectStudent) {
-        const viewProfileButton = document.createElement('button');
-        viewProfileButton.type = 'button';
-        viewProfileButton.className = 'btn btn--text';
-        viewProfileButton.textContent = 'View Profile';
-        viewProfileButton.addEventListener('click', () => onSelectStudent(student.id));
-        item.append(input, viewProfileButton, removeButton);
-      } else {
-        item.append(input, removeButton);
-      }
-      list.appendChild(item);
-    });
-
-    teamBlock.appendChild(list);
-    section.appendChild(teamBlock);
-  });
-
-  content.appendChild(section);
-}
-
-/**
- * Shown once, immediately after a CSV import completes — a distinct
- * "you just did something big, here's what's next" moment, separate
- * from (and not a replacement for) the ongoing Teaching Assistant
- * recommendations on the Dashboard. Replaces the Settings content
- * area entirely rather than just toasting a message, since importing
- * a whole roster is exactly the kind of moment worth a real pause.
- */
-function renderImportSuccess(content, importedCount, onOpenStudentAccess, onContinue) {
-  content.innerHTML = '';
-
-  const wrapper = document.createElement('div');
-  wrapper.className = 'settings-section settings-import-success';
-
-  const checkmark = document.createElement('p');
-  checkmark.className = 'settings-import-success__checkmark';
-  checkmark.textContent = `\u2713 ${importedCount} student${importedCount === 1 ? '' : 's'} imported.`;
-
-  const nextStep = document.createElement('p');
-  nextStep.className = 'settings-import-success__next-step';
-  nextStep.textContent = 'Next, invite your students to connect.';
-
-  const openStudentAccessButton = document.createElement('button');
-  openStudentAccessButton.type = 'button';
-  openStudentAccessButton.className = 'btn btn--primary btn--large';
-  openStudentAccessButton.textContent = 'Open Student Access';
-  openStudentAccessButton.addEventListener('click', onOpenStudentAccess);
-
-  const continueLink = document.createElement('button');
-  continueLink.type = 'button';
-  continueLink.className = 'btn btn--text';
-  continueLink.textContent = 'Continue to Students';
-  continueLink.addEventListener('click', onContinue);
-
-  wrapper.append(checkmark, nextStep, openStudentAccessButton, continueLink);
-  content.appendChild(wrapper);
-}
-
-
-function renderNotebooksSection(content, classroom, rerender) {
-  const section = document.createElement('div');
-  section.className = 'settings-section';
-
-  const heading = document.createElement('h3');
-  heading.className = 'settings-team-block__heading';
-  heading.textContent = 'Subjects & Notebook Types';
-  section.appendChild(heading);
-
-  const note = document.createElement('p');
-  note.className = 'settings-section__meta';
-  note.textContent = 'Configure the subjects and notebook types this classroom uses for Notebook Tracker.';
-  section.appendChild(note);
-
-  const subjects = notebookConfigService.listSubjects(classroom);
-
-  if (subjects.length === 0) {
-    const empty = document.createElement('p');
-    empty.className = 'settings-section__meta';
-    empty.textContent = 'No subjects yet \u2014 add one below to get started.';
-    section.appendChild(empty);
-  }
-
-  subjects.forEach((subject) => {
-    const subjectBlock = document.createElement('div');
-    subjectBlock.className = 'settings-team-block';
-
-    const subjectRow = document.createElement('div');
-    subjectRow.className = 'settings-editable-list__item';
-
-    const subjectInput = document.createElement('input');
-    subjectInput.type = 'text';
-    subjectInput.value = subject.name;
-    subjectInput.addEventListener('change', () => {
-      const newName = subjectInput.value.trim();
-      if (!newName) {
-        subjectInput.value = subject.name;
-        return;
-      }
-      notebookConfigService.renameSubject(classroom, subject.id, newName);
-      workspaceService.save(classroom);
-    });
-
-    const removeSubjectButton = document.createElement('button');
-    removeSubjectButton.type = 'button';
-    removeSubjectButton.className = 'btn btn--text btn--danger-text';
-    removeSubjectButton.textContent = 'Remove Subject';
-    removeSubjectButton.addEventListener('click', () => {
-      const confirmed = window.confirm(
-        `Remove ${subject.name}? Its notebook types will be removed too.`
-      );
-      if (!confirmed) return;
-      notebookConfigService.removeSubject(classroom, subject.id);
-      workspaceService.save(classroom);
-      rerender();
-    });
-
-    subjectRow.append(subjectInput, removeSubjectButton);
-    subjectBlock.appendChild(subjectRow);
-
-    const typesList = document.createElement('ul');
-    typesList.className = 'settings-editable-list';
-    notebookConfigService.listNotebookTypes(classroom, subject.id).forEach((type) => {
-      const typeItem = document.createElement('li');
-      typeItem.className = 'settings-editable-list__item';
-
-      const typeInput = document.createElement('input');
-      typeInput.type = 'text';
-      typeInput.value = type.name;
-      typeInput.addEventListener('change', () => {
-        const newName = typeInput.value.trim();
-        if (!newName) {
-          typeInput.value = type.name;
-          return;
-        }
-        notebookConfigService.renameNotebookType(classroom, type.id, newName);
-        workspaceService.save(classroom);
-      });
-
-      const removeTypeButton = document.createElement('button');
-      removeTypeButton.type = 'button';
-      removeTypeButton.className = 'btn btn--text btn--danger-text';
-      removeTypeButton.textContent = 'Remove';
-      removeTypeButton.addEventListener('click', () => {
-        notebookConfigService.removeNotebookType(classroom, type.id);
-        workspaceService.save(classroom);
-        rerender();
-      });
-
-      typeItem.append(typeInput, removeTypeButton);
-      typesList.appendChild(typeItem);
-    });
-    subjectBlock.appendChild(typesList);
-
-    subjectBlock.appendChild(
-      createChipPicker(['Handwriting', 'Classwork', 'Homework', 'Reading Log'], (name) => {
-        notebookConfigService.addNotebookType(classroom, subject.id, name);
-        workspaceService.save(classroom);
-        rerender();
-      })
-    );
-
-    section.appendChild(subjectBlock);
-  });
-
-  section.appendChild(
-    createChipPicker(['English', 'Mathematics', 'Science', 'Social Science'], (name) => {
-      notebookConfigService.addSubject(classroom, name);
-      workspaceService.save(classroom);
-      rerender();
-    })
-  );
-
-  content.appendChild(section);
-}
-
-/**
- * The core "click instead of type" building block — a row of chips
- * for the common choices, plus one "Other..." chip that reveals a
- * text field only when the teacher actually needs a custom value.
- * Shared between subjects and notebook types rather than two
- * near-identical implementations.
- */
-function createChipPicker(commonOptions, onSelect) {
-  const wrapper = document.createElement('div');
-  wrapper.className = 'settings-chip-picker';
-
-  const chipRow = document.createElement('div');
-  chipRow.className = 'settings-chip-picker__row';
-
-  const customSlot = document.createElement('div');
-  customSlot.hidden = true;
-  customSlot.appendChild(
-    createAddForm('Type your own', 'Add', (name) => onSelect(name))
-  );
-
-  commonOptions.forEach((optionLabel) => {
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = 'settings-chip';
-    chip.textContent = optionLabel;
-    chip.addEventListener('click', () => onSelect(optionLabel));
-    chipRow.appendChild(chip);
-  });
-
-  const otherChip = document.createElement('button');
-  otherChip.type = 'button';
-  otherChip.className = 'settings-chip settings-chip--other';
-  otherChip.textContent = 'Other\u2026';
-  otherChip.addEventListener('click', () => {
-    customSlot.hidden = !customSlot.hidden;
-  });
-  chipRow.appendChild(otherChip);
-
-  wrapper.append(chipRow, customSlot);
-  return wrapper;
-}
-
-function renderGroupsSection(content, classroom, rerender) {
-  const section = document.createElement('div');
-  section.className = 'settings-section';
-
-  const list = document.createElement('ul');
-  list.className = 'settings-editable-list';
-
-  // The Ungrouped team (see classroomService.js's getOrCreateUngroupedTeam)
-  // isn't a group the teacher created — it's the automatic home for
-  // students not yet assigned anywhere — so it's deliberately excluded
-  // here. It still appears normally in Class Mode and the Students tab,
-  // where every student needs to show up regardless of grouping.
-  classroom.teams.filter((team) => !team.isUngrouped).forEach((team) => {
-    const item = document.createElement('li');
-    item.className = 'settings-editable-list__item';
-
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.value = team.name;
-    input.addEventListener('change', () => {
-      const newName = input.value.trim();
-      if (!newName) {
-        input.value = team.name;
-        return;
-      }
-      teamService.renameTeam(classroom, team.id, newName);
-      workspaceService.save(classroom);
-    });
-
-    const removeButton = document.createElement('button');
-    removeButton.type = 'button';
-    removeButton.className = 'btn btn--text btn--danger-text';
-    removeButton.textContent = 'Remove';
-    removeButton.addEventListener('click', () => {
-      const confirmed = window.confirm(
-        `Remove ${team.name}? Its ${team.students.length} student(s) will be removed too.`
-      );
-      if (!confirmed) return;
-      teamService.removeTeam(classroom, team.id);
-      workspaceService.save(classroom);
-      rerender();
-    });
-
-    item.append(input, removeButton);
-    list.appendChild(item);
-  });
-
-  section.appendChild(list);
-  section.appendChild(
-    createAddForm('New group name', 'Add group', (name) => {
-      teamService.addTeam(classroom, name);
-      workspaceService.save(classroom);
-      rerender();
-    })
-  );
-
-  content.appendChild(section);
-}
 
 function renderTeachersSection(content, classroom, rerender, currentUser) {
   const section = document.createElement('div');
@@ -1057,28 +548,6 @@ function renderDangerSection(content, classroom, currentUser, onDeleted) {
 
   section.append(warning, deleteButton, resetDivider, resetWarning, resetButton);
   content.appendChild(section);
-}
-
-function createAddForm(placeholder, buttonLabel, onAdd) {
-  const form = document.createElement('div');
-  form.className = 'settings-add-form';
-
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.placeholder = placeholder;
-
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'btn btn--ghost';
-  button.textContent = buttonLabel;
-  button.addEventListener('click', () => {
-    const value = input.value.trim();
-    if (!value) return;
-    onAdd(value);
-  });
-
-  form.append(input, button);
-  return form;
 }
 
 function formatPermissionLabel(permission) {

@@ -9,6 +9,7 @@
 
 import { createTeam } from '../models/Team.js';
 import { getDefaultGroupColor } from '../config/groupColorConfig.js';
+import * as studentService from './studentService.js';
 
 export function getTeamById(classroom, teamId) {
   return classroom.teams.find((team) => team.id === teamId) || null;
@@ -37,6 +38,29 @@ export function removeTeam(classroom, teamId) {
   const before = classroom.teams.length;
   classroom.teams = classroom.teams.filter((team) => team.id !== teamId);
   return classroom.teams.length < before;
+}
+
+/**
+ * Deletes a Group without ever deleting the students in it — every
+ * student is moved to `destinationTeamId` first (Ungrouped, or
+ * another real group the teacher picked), and only then is the now-
+ * empty group actually removed. Returns false without changing
+ * anything if the group or destination doesn't exist, or if a teacher
+ * somehow targets a group as its own destination.
+ */
+export function removeTeamAndRelocateStudents(classroom, teamId, destinationTeamId) {
+  if (teamId === destinationTeamId) return false;
+  const team = getTeamById(classroom, teamId);
+  const destination = getTeamById(classroom, destinationTeamId);
+  if (!team || !destination) return false;
+
+  // Move from the end backward so splicing doesn't skip students —
+  // moveStudentToTeam mutates team.students in place.
+  [...team.students].forEach((student) => {
+    studentService.moveStudentToTeam(classroom, teamId, student.id, destinationTeamId);
+  });
+
+  return removeTeam(classroom, teamId);
 }
 
 /**

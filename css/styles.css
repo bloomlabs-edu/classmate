@@ -6637,3 +6637,88 @@ button.wizard-checklist__row:hover {
   color: var(--color-muted);
   font-size: 0.9rem;
 }
+
+/* ClassroomManagementView — Students & Groups redesign. See
+   ui/views/ClassroomManagementView.js */
+.classroom-management {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 1rem 2rem;
+}
+.classroom-management__action-bar {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+.classroom-management__group-card {
+  background-color: var(--color-surface, #ffffff);
+  border-radius: var(--radius-card);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.06);
+  padding: 0.9rem 1rem 1rem;
+  margin-bottom: 0.9rem;
+}
+.classroom-management__group-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.classroom-management__group-collapse-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  padding: 0.25rem;
+  line-height: 1;
+}
+.classroom-management__group-name {
+  font-weight: var(--font-weight-bold);
+  font-size: 1.05rem;
+  flex: 1;
+}
+.classroom-management__group-empty {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  margin: 0.6rem 0 0.4rem;
+}
+.classroom-management__student-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 0.5rem;
+}
+.classroom-management__student-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0.2rem;
+  border-top: 1px solid var(--color-border-subtle, #EEF0F2);
+}
+.classroom-management__student-row:first-child {
+  border-top: none;
+}
+.classroom-management__student-name {
+  font-size: 0.98rem;
+}
+.classroom-management__group-add-student {
+  margin-top: 0.5rem;
+}
+.classroom-management__coming-soon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+}
+.classroom-management__coming-soon-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1.25rem 0.75rem;
+  border-radius: var(--radius-card);
+  background-color: var(--color-surface-muted, #F5F6F8);
+  color: var(--color-muted);
+  font-size: 0.85rem;
+  text-align: center;
+  opacity: 0.75;
+}
