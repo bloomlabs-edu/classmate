@@ -1,94 +1,199 @@
 /**
  * services/resourceService.js
  *
- * Resource CRUD for a Concept (see models/Resource.js,
- * models/LearningConcept.js's `resources` field). Its own file rather
- * than folded into services/learningRecordTeacherService.js — Learning
- * Record and Resources are two systems that both attach to a Concept,
- * not one system that owns the other (see
+ * Resource operations for a Concept (see models/Resource.js,
+ * models/ConceptResourceLink.js, models/LearningConcept.js's
+ * `resourceLinks` field). Its own file rather than folded into
+ * services/learningRecordTeacherService.js — Learning Record and
+ * Resources are two systems that both attach to a Concept, not one
+ * system that owns the other (see
  * docs/UNIFIED_PLATFORM_ARCHITECTURE.md, and the existing
  * learningRecordTeacherService.js / learningRecordStudentService.js
- * split this mirrors). As more concept-attached systems arrive, each
- * gets its own file the same way; nothing should grow into a single
- * do-everything "concept service."
+ * split this mirrors).
  *
- * Metadata only — create (with a real name from the start, not a
- * placeholder), rename, delete, reorder, and status
- * (Draft/Published/Archived). Nothing here edits a resource's actual
- * content — Reading's content lives in
- * services/readingContentService.js, following the same "one editor
- * at a time, keyed by resource.type" pattern every future type will
- * repeat.
+ * Per the agreed Curriculum / Learning Hub domain split, a Resource no
+ * longer lives on its Concept — it's an independent Firestore document
+ * (see services/resourceRepository.js), reusable across any number of
+ * Concepts. A Concept holds only an ordered list of lightweight
+ * ConceptResourceLink references. This is a genuine architectural
+ * change, not a cosmetic one: reading, creating, renaming, changing
+ * status, and deleting a Resource are now real Firestore operations
+ * and this file's functions are `async` accordingly — per explicit
+ * product direction, that's the correct reflection of the new
+ * persistence model, not something to hide behind a cache or a
+ * synchronous facade. Reordering (moveResourceUp/moveResourceDown)
+ * stays synchronous, deliberately: it only touches a Concept's own
+ * `resourceLinks` array position, part of the classroom document
+ * itself, with no Resource document access at all — the same
+ * "mutate now, caller saves" convention every other service in this
+ * app already uses for classroom-document mutations.
  *
- * getMostRecentlyEditedResource() is what powers the Dashboard's
- * "Continue Working" shortcut — the single most important thing this
- * file does for actually being found and used, not just built.
+ * Migration is lazy and explicit, not a hidden hook fired on every
+ * classroom load: migrateConceptResourceLinksIfNeeded() is a Learning
+ * Hub concern that Learning Hub's own code calls (see
+ * ui/views/ConceptWorkspaceView.js) at the one point it actually
+ * matters — right before a Concept's resources are first read in a
+ * session — and only writes anything if that Concept still has the
+ * old embedded `resources[]` field. Nothing in
+ * services/workspaceService.js or services/classroomService.js needs
+ * to know Resources exist at all.
  *
- * Same mutate-then-caller-saves convention as every other service in
- * this app: nothing here calls workspaceService.save() itself.
+ * getMostRecentlyEditedResource() is what will power the Dashboard's
+ * "Continue Working" shortcut once wired up — the single most
+ * important thing this file does for actually being found and used,
+ * not just built.
  */
 
 import { createResource } from '../models/Resource.js';
+import { createConceptResourceLink } from '../models/ConceptResourceLink.js';
 import { getCurrentIsoDate } from '../utils/dateHelpers.js';
+import * as resourceRepository from './resourceRepository.js';
 import { getAllConcepts } from './learningRecordService.js';
 
-/** Every resource on a concept, in display order. Never assumes the array exists — an older concept saved before this field existed simply has none yet. */
-export function getResources(concept) {
-  return concept.resources || [];
+/**
+ * One-time, lazy migration for a single Concept still holding the old
+ * embedded `resources[]` shape (full Resource objects, each belonging
+ * to exactly one Concept) — converts each into a real Resource
+ * document (see services/resourceRepository.js) plus a
+ * ConceptResourceLink, then removes the old field. Idempotent and
+ * safe to call on every access: a Concept with no `resources` field
+ * (already migrated, or created fresh after this change) is a no-op.
+ *
+ * Mutates `concept` in place (this app's usual "mutate, then caller
+ * saves" convention) and returns whether anything changed, so the
+ * caller knows whether a classroom save is actually needed —
+ * deliberately explicit rather than this function silently deciding
+ * to persist the classroom itself, which isn't this file's job.
+ */
+export async function migrateConceptResourceLinksIfNeeded(classroomId, concept) {
+  const legacyResources = concept.resources;
+  if (!legacyResources || legacyResources.length === 0) {
+    if (concept.resources) delete concept.resources; // an empty legacy array left behind — remove it, nothing to migrate
+    return false;
+  }
+
+  if (!concept.resourceLinks) concept.resourceLinks = [];
+
+  for (const resource of legacyResources) {
+    await resourceRepository.saveResource(classroomId, resource);
+    concept.resourceLinks.push(
+      createConceptResourceLink({ resourceId: resource.id, resourceType: resource.type, addedAt: resource.createdAt })
+    );
+  }
+
+  delete concept.resources;
+  return true;
 }
 
-export function getResourceById(concept, resourceId) {
-  return getResources(concept).find((r) => r.id === resourceId) || null;
+/** Every ConceptResourceLink on a concept — never assumes the array exists, the same defensive convention getResources() below uses for the resolved Resource list. */
+export function getResourceLinks(concept) {
+  return concept.resourceLinks || [];
 }
 
-/** Creates a resource with its real name from the start (see ui/views/ConceptWorkspaceView.js's immediate-naming step) — never a placeholder title silently sitting there until someone thinks to rename it. */
-export function createResourceOnConcept(concept, { title, type }) {
-  if (!concept.resources) concept.resources = [];
+/**
+ * Every Resource linked from a concept, resolved from Firestore, in
+ * link order. A link whose resourceId no longer resolves to a real
+ * Resource (the underlying resource was deleted independently — see
+ * models/Resource.js's own independent-lifecycle reasoning) is
+ * silently skipped here rather than throwing; Phase 2's UI work is
+ * where a broken link actually surfaces to a teacher as "Resource
+ * unavailable," not this read function.
+ */
+export async function getResources(classroomId, concept) {
+  const links = getResourceLinks(concept);
+  if (links.length === 0) return [];
+
+  const allResources = await resourceRepository.getResourcesForClassroom(classroomId);
+  const resourceById = new Map(allResources.map((resource) => [resource.id, resource]));
+
+  return links.map((link) => resourceById.get(link.resourceId)).filter(Boolean);
+}
+
+export async function getResourceById(classroomId, concept, resourceId) {
+  const resources = await getResources(classroomId, concept);
+  return resources.find((resource) => resource.id === resourceId) || null;
+}
+
+/** Creates a resource with its real name from the start (see ui/views/ConceptWorkspaceView.js's immediate-naming step) — never a placeholder title silently sitting there until someone thinks to rename it. Writes the new Resource document, then links it to this concept. */
+export async function createResourceOnConcept(classroomId, concept, { title, type, addedBy = null }) {
   const resource = createResource({ title, type });
-  concept.resources.push(resource);
+  await resourceRepository.saveResource(classroomId, resource);
+
+  if (!concept.resourceLinks) concept.resourceLinks = [];
+  concept.resourceLinks.push(createConceptResourceLink({ resourceId: resource.id, resourceType: resource.type, addedBy }));
+
   return resource;
 }
 
-export function renameResource(concept, resourceId, newTitle) {
-  const resource = getResources(concept).find((r) => r.id === resourceId);
-  if (resource) {
-    resource.title = newTitle;
-    resource.updatedAt = getCurrentIsoDate();
-  }
+export async function renameResource(classroomId, concept, resourceId, newTitle) {
+  const resource = await getResourceById(classroomId, concept, resourceId);
+  if (!resource) return null;
+  resource.title = newTitle;
+  resource.updatedAt = getCurrentIsoDate();
+  await resourceRepository.saveResource(classroomId, resource);
   return resource;
 }
 
 /** Draft / Published / Archived — see config/resourceTypeConfig.js's RESOURCE_STATUS_KEYS. */
-export function setResourceStatus(concept, resourceId, status) {
-  const resource = getResources(concept).find((r) => r.id === resourceId);
-  if (resource) {
-    resource.status = status;
-    resource.updatedAt = getCurrentIsoDate();
-  }
+export async function setResourceStatus(classroomId, concept, resourceId, status) {
+  const resource = await getResourceById(classroomId, concept, resourceId);
+  if (!resource) return null;
+  resource.status = status;
+  resource.updatedAt = getCurrentIsoDate();
+  await resourceRepository.saveResource(classroomId, resource);
   return resource;
 }
 
-export function deleteResource(concept, resourceId) {
-  if (!concept.resources) return false;
-  const before = concept.resources.length;
-  concept.resources = concept.resources.filter((r) => r.id !== resourceId);
-  return concept.resources.length < before;
+/**
+ * Phase 1 deliberately preserves today's exact behavior: this app has
+ * no "Unlink" vs "Delete" distinction in its UI yet (that split is
+ * Phase 2's own scope — see ui/views/ConceptWorkspaceView.js's
+ * existing single "Delete" action), so removing a resource here still
+ * means removing both the link *and* the underlying Resource
+ * document, exactly as deleting an embedded resource did before this
+ * migration. Once Phase 2 adds a real "Unlink" action, that new
+ * action should only ever call unlinkResource() below, never this
+ * one.
+ */
+export async function deleteResource(classroomId, concept, resourceId) {
+  const removed = unlinkResource(concept, resourceId);
+  if (removed) await resourceRepository.deleteResourceDoc(classroomId, resourceId);
+  return removed;
 }
 
-/** Swaps a resource with the one before it in display order. No-op at the top of the list. Reordering isn't a content edit, so it deliberately does not bump updatedAt — the Dashboard shortcut should surface what a teacher actually wrote or reorganized in meaning, not shuffled in position. */
+/**
+ * Removes only the link between this concept and a resource — the
+ * Resource document itself is untouched and remains fully usable by
+ * any other concept linking to it, or independently in the Learning
+ * Hub. Synchronous: no Resource document access at all, purely a
+ * `concept.resourceLinks` array mutation, the same "mutate now, caller
+ * saves" convention as moveResourceUp/moveResourceDown below. Not
+ * called from anywhere yet in Phase 1 (see deleteResource() above's
+ * own comment) — exposed now so Phase 2's real "Unlink" action has
+ * exactly the right function ready to call, rather than being written
+ * from scratch then.
+ */
+export function unlinkResource(concept, resourceId) {
+  if (!concept.resourceLinks) return false;
+  const before = concept.resourceLinks.length;
+  concept.resourceLinks = concept.resourceLinks.filter((link) => link.resourceId !== resourceId);
+  return concept.resourceLinks.length < before;
+}
+
+/** Swaps a link with the one before it in display order. No-op at the top of the list. Purely a resourceLinks array mutation — no Resource document access, so this stays synchronous. */
 export function moveResourceUp(concept, resourceId) {
-  const resources = getResources(concept);
-  const index = resources.findIndex((r) => r.id === resourceId);
+  const links = getResourceLinks(concept);
+  const index = links.findIndex((link) => link.resourceId === resourceId);
   if (index <= 0) return;
-  [resources[index - 1], resources[index]] = [resources[index], resources[index - 1]];
+  [links[index - 1], links[index]] = [links[index], links[index - 1]];
 }
 
-/** Swaps a resource with the one after it in display order. No-op at the bottom of the list. Same "not a content edit" reasoning as moveResourceUp(). */
+/** Swaps a link with the one after it in display order. No-op at the bottom of the list. */
 export function moveResourceDown(concept, resourceId) {
-  const resources = getResources(concept);
-  const index = resources.findIndex((r) => r.id === resourceId);
-  if (index === -1 || index >= resources.length - 1) return;
-  [resources[index], resources[index + 1]] = [resources[index + 1], resources[index]];
+  const links = getResourceLinks(concept);
+  const index = links.findIndex((link) => link.resourceId === resourceId);
+  if (index === -1 || index >= links.length - 1) return;
+  [links[index], links[index + 1]] = [links[index + 1], links[index]];
 }
 
 /**
@@ -100,17 +205,28 @@ export function moveResourceDown(concept, resourceId) {
  * honest starting state for a fresh classroom, not something to fake
  * a placeholder for.
  *
- * Optional `type` filter — Lesson Studio's "Continue Writing" (see
- * ui/views/LearningManagementView.js) wants the most recent *Reading*
- * specifically, since that space is about lessons, not every resource
- * type; the Dashboard's own generic shortcut calls this with no
- * filter, since it means "whatever a teacher touched last," full stop.
+ * Fetches the classroom's whole resource library once, then resolves
+ * every concept's links against that single fetched list — not one
+ * fetch per concept, since Resources aren't scoped to a concept
+ * (see services/resourceRepository.js's getResourcesForClassroom()).
+ *
+ * Optional `type` filter — a "Continue Writing" shortcut for lessons
+ * specifically (Reading being the only type with real editable
+ * content today) would want the most recent *Reading* specifically;
+ * the Dashboard's own generic shortcut would call this with no
+ * filter, since it means "whatever a teacher touched last," full
+ * stop.
  */
-export function getMostRecentlyEditedResource(classroom, { type } = {}) {
+export async function getMostRecentlyEditedResource(classroomId, classroom, { type } = {}) {
+  const allResources = await resourceRepository.getResourcesForClassroom(classroomId);
+  const resourceById = new Map(allResources.map((resource) => [resource.id, resource]));
+
   let best = null;
 
   getAllConcepts(classroom).forEach(({ subject, unit, concept }) => {
-    getResources(concept).forEach((resource) => {
+    getResourceLinks(concept).forEach((link) => {
+      const resource = resourceById.get(link.resourceId);
+      if (!resource) return; // broken link — resource no longer exists, skip
       if (type && resource.type !== type) return;
       const updatedAt = resource.updatedAt || resource.createdAt;
       if (!best || new Date(updatedAt) > new Date(best.resource.updatedAt || best.resource.createdAt)) {
@@ -125,16 +241,19 @@ export function getMostRecentlyEditedResource(classroom, { type } = {}) {
 /**
  * Every resource of one type across the whole classroom, each with
  * its concept/unit/subject context, most-recently-edited first,
- * capped at `limit` — what Lesson Studio's "Recent Lessons" list
- * reads from (filtered to `type: 'reading'`, since that's the only
- * type with real lesson content today).
+ * capped at `limit`.
  */
-export function getRecentResourcesByType(classroom, type, limit = 5) {
+export async function getRecentResourcesByType(classroomId, classroom, type, limit = 5) {
+  const allResources = await resourceRepository.getResourcesForClassroom(classroomId);
+  const resourceById = new Map(allResources.map((resource) => [resource.id, resource]));
+
   const matches = [];
 
   getAllConcepts(classroom).forEach(({ subject, unit, concept }) => {
-    getResources(concept).forEach((resource) => {
-      if (resource.type === type) matches.push({ resource, concept, unit, subject });
+    getResourceLinks(concept).forEach((link) => {
+      const resource = resourceById.get(link.resourceId);
+      if (!resource || resource.type !== type) return;
+      matches.push({ resource, concept, unit, subject });
     });
   });
 

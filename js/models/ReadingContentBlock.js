@@ -15,7 +15,7 @@
  *
  * No `order` field — a block's position in ReadingContent.blocks *is*
  * its order, the same convention every other ordered list in this app
- * already uses (LearningUnit.concepts, LearningConcept.resources, ...).
+ * already uses (LearningUnit.concepts, LearningConcept.resourceLinks, ...).
  */
 
 import { generateId } from '../utils/idGenerator.js';

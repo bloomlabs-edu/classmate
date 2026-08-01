@@ -76,8 +76,22 @@ export function renderConceptWorkspaceView(container, { classroom, subject, unit
   let pendingType = null;
   let selectedResourceId = initialResourceId;
 
-  function rerender() {
-    renderWorkspace(container, classroom, subject, unit, concept, activeTab, { resourceMode, pendingType, selectedResourceId }, {
+  async function rerender() {
+    // Learning Hub's own concern, not workspaceService's or
+    // classroomService's — see resourceService.js's own comment for
+    // why this is a lazy, explicit call here rather than a hook fired
+    // on every classroom load.
+    const migrated = await resourceService.migrateConceptResourceLinksIfNeeded(classroom.id, concept);
+    if (migrated) workspaceService.save(classroom);
+
+    // Fetched once per render and passed down as a plain array —
+    // both the Overview tab's resource count and the Resources tab's
+    // own card list need it, and every sub-render function below
+    // stays synchronous this way, with exactly one async boundary
+    // here rather than scattered through the render tree.
+    const resources = await resourceService.getResources(classroom.id, concept);
+
+    renderWorkspace(container, classroom, subject, unit, concept, activeTab, resources, { resourceMode, pendingType, selectedResourceId }, {
       onBack,
       onSelectTab: (tabId) => {
         activeTab = tabId;
@@ -95,8 +109,8 @@ export function renderConceptWorkspaceView(container, { classroom, subject, unit
         resourceMode = 'name-new';
         rerender();
       },
-      onCreateResource: (title) => {
-        const resource = resourceService.createResourceOnConcept(concept, { title, type: pendingType });
+      onCreateResource: async (title) => {
+        const resource = await resourceService.createResourceOnConcept(classroom.id, concept, { title, type: pendingType });
         workspaceService.save(classroom);
         pendingType = null;
         selectedResourceId = resource.id;
@@ -121,7 +135,7 @@ export function renderConceptWorkspaceView(container, { classroom, subject, unit
   rerender();
 }
 
-function renderWorkspace(container, classroom, subject, unit, concept, activeTab, resourceState, handlers) {
+function renderWorkspace(container, classroom, subject, unit, concept, activeTab, resources, resourceState, handlers) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
@@ -166,11 +180,11 @@ function renderWorkspace(container, classroom, subject, unit, concept, activeTab
   if (activeTab === 'learning-record') {
     content.appendChild(renderLearningRecordTab(classroom, concept, handlers));
   } else if (activeTab === 'resources') {
-    content.appendChild(renderResourcesTab(container, classroom, concept, resourceState, handlers));
+    content.appendChild(renderResourcesTab(container, classroom, concept, resources, resourceState, handlers));
   } else if (activeTab === 'student-progress') {
     content.appendChild(renderStudentProgressTab(classroom, concept));
   } else {
-    content.appendChild(renderOverviewTab(classroom, concept));
+    content.appendChild(renderOverviewTab(classroom, concept, resources));
   }
 
   wrapper.appendChild(content);
@@ -179,7 +193,7 @@ function renderWorkspace(container, classroom, subject, unit, concept, activeTab
 
 // ---- Overview ---------------------------------------------------------
 
-function renderOverviewTab(classroom, concept) {
+function renderOverviewTab(classroom, concept, resources) {
   const section = document.createElement('div');
   section.className = 'concept-workspace__section';
 
@@ -203,7 +217,10 @@ function renderOverviewTab(classroom, concept) {
   // services/resourceService.js) — this was a hardcoded 0 before that
   // system existed; per this project's "never fabricate placeholder
   // data" principle, it had to become real the moment it could be.
-  const resourceCount = resourceService.getResources(concept).length;
+  // Resolved once in rerender() and passed down, since
+  // resourceService.getResources() is now async (Resources live in
+  // their own Firestore subcollection — see resourceRepository.js).
+  const resourceCount = resources.length;
 
   const isTaught = concept.status === 'taught';
 
@@ -304,7 +321,7 @@ export function createTaughtToggle(classroom, concept, onChanged) {
  * attach (see services/resourceService.js's doc comment) without
  * pretending that editor exists yet.
  */
-function renderResourcesTab(container, classroom, concept, resourceState, handlers) {
+function renderResourcesTab(container, classroom, concept, resources, resourceState, handlers) {
   const { resourceMode, pendingType, selectedResourceId } = resourceState;
 
   if (resourceMode === 'choose-type') {
@@ -314,23 +331,21 @@ function renderResourcesTab(container, classroom, concept, resourceState, handle
     return renderNameNewResourceView(pendingType, handlers);
   }
   if (resourceMode === 'details') {
-    const resource = resourceService.getResourceById(concept, selectedResourceId);
+    const resource = resources.find((r) => r.id === selectedResourceId) || null;
     // The resource this page was opened for no longer exists (deleted
     // from another tab/device) — fall back to the list rather than
     // rendering a details page with nothing to show, same "handle the
     // gone-missing case explicitly" reasoning used elsewhere in this
     // app rather than letting it render broken.
-    if (!resource) return renderResourceListView(classroom, concept, handlers);
+    if (!resource) return renderResourceListView(classroom, concept, resources, handlers);
     return renderResourceDetailsView(container, classroom, concept, resource, handlers);
   }
-  return renderResourceListView(classroom, concept, handlers);
+  return renderResourceListView(classroom, concept, resources, handlers);
 }
 
-function renderResourceListView(classroom, concept, handlers) {
+function renderResourceListView(classroom, concept, resources, handlers) {
   const section = document.createElement('div');
   section.className = 'concept-workspace__section';
-
-  const resources = resourceService.getResources(concept);
 
   if (resources.length === 0) {
     section.appendChild(createEmptyStateElement({ message: 'No resources yet.' }));
@@ -531,8 +546,8 @@ function renderResourceDetailsView(container, classroom, concept, resource, hand
   iconRow.appendChild(createIcon(getResourceTypeIcon(resource.type), { size: 32 }));
   detailsCard.appendChild(iconRow);
 
-  const titleInput = createResourceRenameInput(resource.title, (newTitle) => {
-    resourceService.renameResource(concept, resource.id, newTitle);
+  const titleInput = createResourceRenameInput(resource.title, async (newTitle) => {
+    await resourceService.renameResource(classroom.id, concept, resource.id, newTitle);
     workspaceService.save(classroom);
   });
   titleInput.classList.add('concept-workspace__resource-details-title-input');
@@ -561,8 +576,8 @@ function renderResourceDetailsView(container, classroom, concept, resource, hand
     statusButton.type = 'button';
     statusButton.className = 'toggle-group__button' + (status === currentStatus ? ' toggle-group__button--active' : '');
     statusButton.textContent = getResourceStatusLabel(status);
-    statusButton.addEventListener('click', () => {
-      resourceService.setResourceStatus(concept, resource.id, status);
+    statusButton.addEventListener('click', async () => {
+      await resourceService.setResourceStatus(classroom.id, concept, resource.id, status);
       workspaceService.save(classroom);
       handlers.rerender();
     });
@@ -617,9 +632,9 @@ function renderResourceDetailsView(container, classroom, concept, resource, hand
   deleteButton.type = 'button';
   deleteButton.className = 'btn btn--text btn--danger-text';
   deleteButton.textContent = 'Delete Resource';
-  deleteButton.addEventListener('click', () => {
+  deleteButton.addEventListener('click', async () => {
     if (!window.confirm(`Delete "${resource.title}"?`)) return;
-    resourceService.deleteResource(concept, resource.id);
+    await resourceService.deleteResource(classroom.id, concept, resource.id);
     workspaceService.save(classroom);
     handlers.onBackToResourceList();
   });
