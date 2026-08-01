@@ -74,6 +74,7 @@
 
 import { generateId } from '../utils/idGenerator.js';
 import { getCurrentIsoDate } from '../utils/dateHelpers.js';
+import { migrateCurriculumIndex } from './subjectIdMigrationService.js';
 
 const DB_NAME = 'classmate-curriculum-index';
 const DB_VERSION = 1;
@@ -136,13 +137,31 @@ export async function saveIndex(index) {
 
 export async function getIndex(indexId) {
   const result = await runRequest('readonly', (store) => store.get(indexId));
-  return result || null;
+  if (!result) return null;
+  if (migrateCurriculumIndex(result)) {
+    await saveIndex(result);
+  }
+  return result;
 }
 
 /** Every saved Curriculum Index, most recently updated first — for a future "choose which curriculum to attach a textbook to" screen (Milestone 2). */
 export async function listIndexes() {
   const all = await runRequest('readonly', (store) => store.getAll());
-  return all.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  const sorted = all.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+
+  // One-time backfill for documents predating subjectId — see
+  // services/subjectIdMigrationService.js's own header comment for why
+  // this is explicitly historical migration, not part of the ongoing
+  // matching architecture. Idempotent: migrateCurriculumIndex() is a
+  // no-op for anything that already has a subjectId, so this costs
+  // nothing once every document has been migrated.
+  for (const index of sorted) {
+    if (migrateCurriculumIndex(index)) {
+      await saveIndex(index);
+    }
+  }
+
+  return sorted;
 }
 
 export async function deleteIndex(indexId) {

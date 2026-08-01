@@ -6014,9 +6014,13 @@ button.wizard-checklist__row:hover {
   justify-content: space-between;
   gap: 1rem;
   background-color: #ffffff;
+  border: none;
   border-radius: 14px;
   box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
   padding: 0.9rem 1.1rem;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
 }
 .curriculum-management__my-index-info {
   display: flex;
@@ -6031,13 +6035,6 @@ button.wizard-checklist__row:hover {
   font-size: 0.85rem;
   color: var(--color-muted);
   margin: 0;
-}
-
-.curriculum-management__my-index-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  flex-shrink: 0;
 }
 
 /* Curriculum Index Parts (Hybrid Model) — see
@@ -6254,11 +6251,7 @@ button.wizard-checklist__row:hover {
   color: var(--color-danger, #b3261e);
 }
 
-.learning-management__subject-card-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
+
 .learning-management__subject-card {
   display: flex;
   align-items: center;
@@ -6385,4 +6378,197 @@ button.wizard-checklist__row:hover {
   padding: 0.4rem 0.6rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
+}
+
+/* Assessment Management refinements — editable max marks, sort
+   control, and computed rank. See ui/views/AssessmentManagementView.js */
+.assessment-max-marks {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+  font-size: 0.95rem;
+}
+.assessment-max-marks__input {
+  width: 70px;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+.assessment-students-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
+}
+.assessment-sort-control {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+.assessment-sort-control select {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font-family: inherit;
+}
+.assessment-marks-entry__rank {
+  width: 36px;
+  flex-shrink: 0;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+  text-align: center;
+}
+
+/* Overflow menu — the platform-wide standard for management actions.
+   See ui/components/OverflowMenu.js */
+.overflow-menu {
+  position: relative;
+  display: inline-block;
+}
+.overflow-menu__trigger {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--radius-control);
+  color: var(--color-muted);
+}
+.overflow-menu__trigger:hover {
+  background-color: var(--color-hover, #F2F5F7);
+}
+.overflow-menu__dropdown {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  z-index: 200;
+  background-color: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  padding: 0.3rem;
+}
+.overflow-menu__item {
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+.overflow-menu__item:hover {
+  background-color: var(--color-hover, #F2F5F7);
+}
+.overflow-menu__item--danger {
+  color: var(--color-danger, #b3261e);
+}
+
+/* Any card row that includes an overflow menu (see
+   ui/components/OverflowMenu.js's createCardRowWithOverflowMenu())
+   must render in a single-column vertical list, never a multi-column
+   grid — an open dropdown needs room to expand without a tightly
+   packed grid causing it to spill over a neighboring card. This is
+   the platform-wide layout rule every screen using that helper
+   follows, not a per-screen decision. */
+.card-row-with-overflow-menu {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.card-row-with-overflow-menu__title {
+  flex: 1;
+}
+
+/* Marks entry document-editor pattern — see
+   ui/views/AssessmentManagementView.js */
+.assessment-marks-entry__row--readonly {
+  background-color: #FAFBFC;
+}
+.assessment-marks-entry__marks-readonly {
+  width: 80px;
+  font-weight: var(--font-weight-bold);
+}
+.assessment-marks-entry__remarks-readonly {
+  flex: 1;
+  min-width: 140px;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+.assessment-marks-footer {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+.assessment-marks-footer__last-saved {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.88rem;
+}
+
+/* Assessment Details inline View/Edit section — see
+   ui/views/AssessmentManagementView.js */
+.assessment-details-section {
+  margin-bottom: 1.25rem;
+}
+.assessment-details-section__view {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.3rem 1rem;
+  margin: 0 0 1rem;
+}
+.assessment-details-section__view dt {
+  color: var(--color-muted);
+  font-size: 0.88rem;
+}
+.assessment-details-section__view dd {
+  margin: 0;
+  font-weight: var(--font-weight-bold);
+}
+
+/* Navigation rows — plain chevron-based rows for navigation lists.
+   See ui/components/NavigationRow.js */
+.navigation-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+  width: 100%;
+}
+.navigation-row::after {
+  content: '\203a';
+  color: var(--color-muted);
+  font-size: 1.2rem;
+  margin-left: 0.5rem;
+}
+
+.learning-management__curriculum-action {
+  margin: 0 0 1.25rem;
+}
+
+.learning-management__danger-zone {
+  margin-top: 2rem;
+  padding: 1.1rem 1.2rem;
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-card);
+  background-color: rgba(225, 83, 68, 0.04);
+}
+.learning-management__danger-zone-heading {
+  margin: 0 0 0.75rem;
+  font-weight: var(--font-weight-black);
+  font-size: 0.9rem;
+  color: var(--color-danger);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }

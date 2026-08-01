@@ -88,7 +88,7 @@ export function openAssignCurriculumModal({ classroom, subject, onCurriculumAssi
     .listIndexes()
     .then((allIndexes) => {
       loadingNote.remove();
-      const matches = curriculumLinkingService.findAvailableCurriculumIndexesForSubject(classroom, allIndexes, subject.title);
+      const matches = curriculumLinkingService.findAvailableCurriculumIndexesForSubject(classroom, allIndexes, subject.subjectId);
 
       if (matches.length === 0) {
         const emptyNote = document.createElement('p');

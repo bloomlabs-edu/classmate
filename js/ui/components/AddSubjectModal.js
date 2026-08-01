@@ -85,7 +85,7 @@ export function openAddSubjectModal({ classroom, existingSubjectTitles, onSubjec
     modal.appendChild(
       renderSubjectSelectionList({
         existingSubjectTitles,
-        onSelect: (subjectName) => renderChooseCurriculumStep(subjectName),
+        onSelect: (chosenSubject) => renderChooseCurriculumStep(chosenSubject),
       })
     );
 
@@ -100,7 +100,8 @@ export function openAddSubjectModal({ classroom, existingSubjectTitles, onSubjec
     modal.appendChild(actions);
   }
 
-  function renderChooseCurriculumStep(subjectName) {
+  function renderChooseCurriculumStep(chosenSubject) {
+    const { subjectId, title: subjectName } = chosenSubject;
     modal.innerHTML = '';
     modal.setAttribute('aria-label', 'Choose Curriculum');
 
@@ -143,8 +144,12 @@ export function openAddSubjectModal({ classroom, existingSubjectTitles, onSubjec
         // No Subject exists yet in this flow, so there's nothing
         // classroom-side to exclude beyond curricula already used by
         // OTHER Subjects — findAvailableCurriculumIndexesForSubject
-        // already handles that.
-        const matches = curriculumLinkingService.findAvailableCurriculumIndexesForSubject(classroom, allIndexes, subjectName);
+        // already handles that. Matched by subjectId, never by
+        // subjectName — see services/curriculumLinkingService.js's own
+        // header comment for why this is the actual fix for a real,
+        // confirmed bug where two independently-typed subject text
+        // fields silently failed to match.
+        const matches = curriculumLinkingService.findAvailableCurriculumIndexesForSubject(classroom, allIndexes, subjectId);
 
         loadingNote.remove();
 
@@ -205,7 +210,7 @@ export function openAddSubjectModal({ classroom, existingSubjectTitles, onSubjec
           // Nothing is created until this exact moment — createSubjectWithCurriculum()
           // builds the complete Subject (curriculum link + every Unit)
           // atomically and pushes it in one step.
-          const subject = curriculumLinkingService.createSubjectWithCurriculum(classroom, subjectName, selectedIndex);
+          const subject = curriculumLinkingService.createSubjectWithCurriculum(classroom, subjectName, subjectId, selectedIndex);
           workspaceService.save(classroom);
           close();
           onSubjectAdded(subject);

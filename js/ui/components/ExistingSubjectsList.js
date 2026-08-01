@@ -17,39 +17,22 @@
  * home screen renders subjects through, and it has no import that
  * could reach suggestion data even if someone tried.
  *
- * Each Subject renders with two actions: opening it (the whole row)
- * and removing it (a small, separate control) — a teacher can clean
- * up an accidental addition without having to open it first. Change
- * Curriculum is a named future action, not built here yet.
+ * A navigation list, per the platform design rules — plain rows with
+ * a trailing chevron (see ui/components/NavigationRow.js), no
+ * overflow menu here at all. "Change Curriculum" and "Remove Subject"
+ * live inside the Subject's own screen now (a Settings "⋮" there —
+ * see ui/views/LearningManagementView.js's renderSubjectStep()), not
+ * scattered across this list.
  */
 
-export function renderExistingSubjectsList(subjects, onChooseSubject, onRemoveSubject) {
+import { createNavigationRow } from './NavigationRow.js';
+
+export function renderExistingSubjectsList(subjects, onChooseSubject) {
   const list = document.createElement('div');
   list.className = 'learning-management__subject-card-list';
 
   subjects.forEach((subject) => {
-    const card = document.createElement('div');
-    card.className = 'learning-management__subject-card';
-
-    const openButton = document.createElement('button');
-    openButton.type = 'button';
-    openButton.className = 'learning-management__choice-option';
-    openButton.textContent = subject.title;
-    openButton.addEventListener('click', () => onChooseSubject(subject));
-    card.appendChild(openButton);
-
-    const removeButton = document.createElement('button');
-    removeButton.type = 'button';
-    removeButton.className = 'btn btn--danger-text learning-management__subject-remove';
-    removeButton.textContent = 'Remove';
-    removeButton.setAttribute('aria-label', `Remove ${subject.title}`);
-    removeButton.addEventListener('click', (event) => {
-      event.stopPropagation();
-      onRemoveSubject(subject);
-    });
-    card.appendChild(removeButton);
-
-    list.appendChild(card);
+    list.appendChild(createNavigationRow({ label: subject.title, onClick: () => onChooseSubject(subject) }));
   });
 
   return list;

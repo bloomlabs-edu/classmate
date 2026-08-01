@@ -72,18 +72,23 @@ export function isCurriculumIndexLinked(classroom, curriculumIndexId) {
 }
 
 /**
- * "Assign Curriculum"'s own data: given a Subject's own title (e.g.
- * "Science"), which of the teacher's own Curriculum Indexes could back
- * it? Matched by exact subject name (trimmed, case-insensitive) —
- * deterministic, not a fuzzy guess — and excludes anything already
- * assigned to another Subject in this classroom, so an already-used
- * curriculum is never offered again.
+ * "Assign Curriculum"'s own data: given a Subject's own canonical
+ * `subjectId` (e.g. "mathematics" — see
+ * services/subjectIdentityService.js for how that id was assigned),
+ * which of the teacher's own Curriculum Indexes could back it?
+ * Compares `subjectId === subjectId` only — never display text. This
+ * is the actual fix for a real, confirmed bug: two independently-typed
+ * "subject" text fields ("Maths" in Learning Management, "Mathematics"
+ * in Curriculum Management) were being compared as strings, so a
+ * curriculum that visibly existed and was fully ready never matched.
+ * The fix isn't a smarter string comparison — it's that this function
+ * no longer receives or looks at subject text at all. Excludes
+ * anything already assigned to another Subject in this classroom, so
+ * an already-used curriculum is never offered again.
  */
-export function findAvailableCurriculumIndexesForSubject(classroom, allCurriculumIndexes, subjectName) {
-  const normalizedTarget = subjectName.trim().toLowerCase();
+export function findAvailableCurriculumIndexesForSubject(classroom, allCurriculumIndexes, subjectId) {
   return allCurriculumIndexes.filter(
-    (index) =>
-      index.curriculum.subject.trim().toLowerCase() === normalizedTarget && !isCurriculumIndexLinked(classroom, index.id)
+    (index) => index.curriculum.subjectId === subjectId && !isCurriculumIndexLinked(classroom, index.id)
   );
 }
 
@@ -156,9 +161,18 @@ export function assignCurriculumToSubject(classroom, subject, curriculumIndex) {
  * cancels curriculum selection, nothing is created at all, because
  * nothing is created until this function is actually called.
  *
+ * `subjectId` is passed in explicitly (assigned by
+ * services/subjectIdentityService.js at the moment the teacher chose
+ * or typed the subject name) rather than copied from
+ * `curriculumIndex.curriculum.subjectId` — by the time this runs,
+ * findAvailableCurriculumIndexesForSubject() has already confirmed
+ * they match, but the Subject's own identity is decided by what the
+ * teacher chose for the Subject, not silently inferred from whichever
+ * curriculum happened to get selected.
+ *
  * Atomic the same way assignCurriculumToSubject() is: the complete
- * Subject — title, curriculum link, and every Unit — is built in
- * memory first, using the model factory directly rather than
+ * Subject — title, subjectId, curriculum link, and every Unit — is
+ * built in memory first, using the model factory directly rather than
  * services/learningRecordTeacherService.js's own createSubject()
  * (which would push an incomplete Subject immediately). Only once
  * that's fully built is it pushed into
@@ -166,10 +180,11 @@ export function assignCurriculumToSubject(classroom, subject, curriculumIndex) {
  * construction throws, nothing has been added to the classroom's real
  * data yet.
  */
-export function createSubjectWithCurriculum(classroom, subjectTitle, curriculumIndex) {
+export function createSubjectWithCurriculum(classroom, subjectTitle, subjectId, curriculumIndex) {
   const units = buildUnitsFromCurriculumIndex(curriculumIndex);
   const subject = createLearningSubject({
     title: subjectTitle,
+    subjectId,
     linkedCurriculumIndexId: curriculumIndex.id,
     units,
   });

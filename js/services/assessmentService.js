@@ -25,6 +25,7 @@ import { createAssessment } from '../models/Assessment.js';
 import { createAssessmentSubject } from '../models/AssessmentSubject.js';
 import { createStudentResult } from '../models/StudentResult.js';
 import * as learningRecordService from './learningRecordService.js';
+import { getCurrentIsoDate } from '../utils/dateHelpers.js';
 
 /** Every Assessment for this classroom, most recently created first. */
 export function getAssessments(classroom) {
@@ -84,6 +85,111 @@ export function getClassroomStudents(classroom) {
 /** An existing StudentResult for this student within this AssessmentSubject, or null if nothing has been entered for them yet. */
 export function getStudentResult(assessmentSubject, studentId) {
   return assessmentSubject.studentResults.find((result) => result.studentId === studentId) || null;
+}
+
+/**
+ * Which of the classroom's real Subjects are NOT yet part of this
+ * Assessment — what "+ Add Subject" (see
+ * ui/components/AddSubjectToAssessmentModal.js) offers. Never
+ * suggests or creates a new classroom Subject; only ever surfaces
+ * Subjects that already exist in Learning Management.
+ */
+export function getAvailableSubjectsToAdd(classroom, assessment) {
+  const includedSubjectIds = new Set(assessment.assessmentSubjects.map((as) => as.subjectId));
+  return learningRecordService.getSubjects(classroom).filter((subject) => !includedSubjectIds.has(subject.id));
+}
+
+/**
+ * Adds one more Subject to an already-existing Assessment — the
+ * same AssessmentSubject shape as at creation time (default 100
+ * maximum marks, no student results yet), just added later rather
+ * than all at once. Does not check for duplicates itself — callers
+ * are expected to have already filtered via
+ * getAvailableSubjectsToAdd(), so a Subject already in this
+ * Assessment is never offered again.
+ */
+export function addSubjectToAssessment(assessment, subjectId) {
+  const assessmentSubject = createAssessmentSubject({ subjectId });
+  assessment.assessmentSubjects.push(assessmentSubject);
+  return assessmentSubject;
+}
+
+/** Maximum marks are per-Assessment-Subject and editable — different Subjects in the same Assessment may have entirely different totals. */
+export function setMaximumMarks(assessmentSubject, maximumMarks) {
+  assessmentSubject.maximumMarks = maximumMarks;
+}
+
+/**
+ * Standard competition ranking ("1224"): tied marks share the same
+ * rank, and the next distinct value's rank reflects how many students
+ * are actually ahead of it (so a 3-way tie for 1st is followed by 4th,
+ * not 2nd). A student who is absent or has no marks entered yet is
+ * excluded from ranking entirely — not ranked last, not given a
+ * fabricated value — and gets `null` back, which the UI shows as "-".
+ *
+ * Returns a Map<studentId, rank | null> covering every student passed
+ * in, not just the ones with a rank.
+ */
+export function computeRankings(assessmentSubject, students) {
+  const rankByStudentId = new Map();
+
+  const ranked = students
+    .map((student) => ({ student, result: getStudentResult(assessmentSubject, student.id) }))
+    .filter(({ result }) => result && !result.absent && result.marks !== null)
+    .sort((a, b) => b.result.marks - a.result.marks);
+
+  let previousMarks = null;
+  let previousRank = 0;
+  ranked.forEach(({ student, result }, index) => {
+    const rank = result.marks === previousMarks ? previousRank : index + 1;
+    rankByStudentId.set(student.id, rank);
+    previousMarks = result.marks;
+    previousRank = rank;
+  });
+
+  students.forEach((student) => {
+    if (!rankByStudentId.has(student.id)) rankByStudentId.set(student.id, null);
+  });
+
+  return rankByStudentId;
+}
+
+/**
+ * Removes one Subject from an Assessment — "Remove from Assessment"
+ * on that Subject's own overflow menu. Removes only this Assessment's
+ * own record of it (including whatever marks were entered); never
+ * touches the classroom Subject itself in Learning Management.
+ */
+export function removeSubjectFromAssessment(assessment, subjectId) {
+  const before = assessment.assessmentSubjects.length;
+  assessment.assessmentSubjects = assessment.assessmentSubjects.filter((as) => as.subjectId !== subjectId);
+  return assessment.assessmentSubjects.length < before;
+}
+
+/** "Edit Assessment" — updates only the Assessment's own top-level fields (name, type, year, date); never touches its Subjects or their results. Stamps detailsLastSavedAt, driving that section's own "Last saved" display. */
+export function updateAssessmentDetails(assessment, { title, type, academicYear, date }) {
+  assessment.title = title;
+  assessment.type = type;
+  assessment.academicYear = academicYear;
+  assessment.date = date;
+  assessment.detailsLastSavedAt = getCurrentIsoDate();
+}
+
+/**
+ * Applies a whole draft of changes to an AssessmentSubject in one
+ * step — the document-editor "Save" action (see
+ * ui/views/AssessmentManagementView.js). `draft` is
+ * { maximumMarks, resultsByStudentId: Map<studentId, {marks, absent,
+ * remarks}> }. Sets `lastSavedAt` to now, which is what switches the
+ * marks screen from its editable "Initially" state to its read-only
+ * "Last saved: ..." state afterward.
+ */
+export function saveAssessmentSubjectDraft(assessmentSubject, draft) {
+  assessmentSubject.maximumMarks = draft.maximumMarks;
+  draft.resultsByStudentId.forEach((updates, studentId) => {
+    recordStudentMarks(assessmentSubject, studentId, updates);
+  });
+  assessmentSubject.lastSavedAt = getCurrentIsoDate();
 }
 
 /**

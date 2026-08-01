@@ -28,9 +28,22 @@
 
 import { generateId } from '../utils/idGenerator.js';
 
-export function createLearningSubject({ id, title, units = [], linkedCurriculumIndexId = null } = {}) {
+/**
+ * `subjectId` is the canonical subject-type id (e.g. "mathematics"),
+ * assigned once at creation by services/subjectIdentityService.js —
+ * see that file's own header comment for the full reasoning. This is
+ * a different thing from `id` below, which is this specific Subject
+ * *record's* own unique identifier (what AssessmentSubject.subjectId
+ * elsewhere in the app actually references — a reference to this
+ * record, not to the canonical subject type). `title` is purely
+ * presentation, whatever the teacher actually typed or chose to call
+ * it; every linking/filtering operation compares `subjectId`, never
+ * `title`.
+ */
+export function createLearningSubject({ id, subjectId = null, title, units = [], linkedCurriculumIndexId = null } = {}) {
   return {
     id: id || generateId(),
+    subjectId,
     title,
     units,
     linkedCurriculumIndexId,

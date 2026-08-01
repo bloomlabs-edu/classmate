@@ -18,15 +18,23 @@
  * Management — a Subject's id and current title. Nothing here reads
  * or references Units, Concepts, curriculum links, or Resources; this
  * module is independent by design, not just by omission.
+ *
+ * `lastSavedAt` — null until the marks-entry screen's own document
+ * editor pattern (see ui/views/AssessmentManagementView.js's
+ * renderSubjectStep()) is saved for the first time; set on every
+ * subsequent save. Drives whether that screen shows editable fields
+ * ("Initially" / never saved yet) or read-only ones with "Last saved:
+ * ..." and an Edit action.
  */
 
 import { generateId } from '../utils/idGenerator.js';
 
-export function createAssessmentSubject({ id, subjectId, maximumMarks = 100, studentResults = [] } = {}) {
+export function createAssessmentSubject({ id, subjectId, maximumMarks = 100, studentResults = [], lastSavedAt = null } = {}) {
   return {
     id: id || generateId(),
     subjectId,
     maximumMarks,
     studentResults,
+    lastSavedAt,
   };
 }

@@ -48,9 +48,9 @@ function ensureLearningRecord(classroom) {
 
 // ---- Syllabus structure -----------------------------------------
 
-export function createSubject(classroom, { title, linkedCurriculumIndexId } = {}) {
+export function createSubject(classroom, { title, subjectId, linkedCurriculumIndexId } = {}) {
   const learningRecord = ensureLearningRecord(classroom);
-  const subject = createLearningSubject({ title, linkedCurriculumIndexId });
+  const subject = createLearningSubject({ title, subjectId, linkedCurriculumIndexId });
   learningRecord.subjects.push(subject);
   return subject;
 }

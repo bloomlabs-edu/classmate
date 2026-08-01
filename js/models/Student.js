@@ -6,6 +6,14 @@
  * models/Team.js).
  *
  * Fields:
+ *   rollNumber  - a student's register/roll number, null until set.
+ *                 Currently only read, not written, anywhere in the
+ *                 UI — services/assessmentService.js's sorting reads
+ *                 it (Assessment Management's "Sort by: Roll Number"),
+ *                 but no screen yet lets a teacher actually set one; a
+ *                 natural follow-up in roster management, not built
+ *                 here since it's outside Assessment Management's own
+ *                 scope.
  *   score       - current session score, adjusted by timeline entries
  *                 (see services/timelineService.js)
  *   bucket      - one of config/bucketConfig.js's BUCKET_KEYS ('green' /
@@ -48,6 +56,7 @@ import { generateId } from '../utils/idGenerator.js';
 export function createStudent({
   id,
   name,
+  rollNumber = null,
   score = 0,
   bucket = null,
   badges = [],
@@ -59,6 +68,7 @@ export function createStudent({
   return {
     id: id || generateId(),
     name,
+    rollNumber,
     score,
     bucket,
     badges,

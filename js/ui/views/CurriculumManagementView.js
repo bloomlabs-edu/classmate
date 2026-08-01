@@ -69,6 +69,7 @@ import * as curriculumIndexRepository from '../../services/curriculumIndexReposi
 import * as curriculumSubmissionsService from '../../services/curriculumSubmissionsService.js';
 import { createCurriculumIndexSession } from '../../services/curriculumIndexSession.js';
 import { createIcon } from '../components/Icon.js';
+import { getCanonicalSubjects, getCanonicalSubjectById, generateCustomSubjectId } from '../../services/subjectIdentityService.js';
 import { createCurriculumExplorerPanel } from '../components/CurriculumExplorerPanel.js';
 import { showToast } from '../components/Toast.js';
 
@@ -193,6 +194,11 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
         },
         onDeleteIndex: async (indexId) => {
           await curriculumIndexRepository.deleteIndex(indexId);
+          // Called from the Curriculum's own Danger Zone now, not the
+          // list — there's nothing left to show for a deleted
+          // Curriculum, so land back on the Hub rather than
+          // re-rendering whatever screen we were just on.
+          mode = 'hub';
           rerender();
         },
         onStartIndex: async ({ curriculum, file, pastedText }) => {
@@ -476,8 +482,10 @@ function renderMyCurriculumIndexesSection(handlers) {
 }
 
 function renderMyCurriculumIndexRow(summary, handlers) {
-  const row = document.createElement('div');
-  row.className = 'curriculum-management__my-index-row';
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'curriculum-management__my-index-row navigation-row';
+  row.addEventListener('click', () => handlers.onOpenIndex(summary.id));
 
   const info = document.createElement('div');
   info.className = 'curriculum-management__my-index-info';
@@ -495,28 +503,6 @@ function renderMyCurriculumIndexRow(summary, handlers) {
   info.appendChild(meta);
 
   row.appendChild(info);
-
-  const actions = document.createElement('div');
-  actions.className = 'curriculum-management__my-index-actions';
-
-  const openButton = document.createElement('button');
-  openButton.type = 'button';
-  openButton.className = 'btn btn--ghost';
-  openButton.textContent = 'Open';
-  openButton.addEventListener('click', () => handlers.onOpenIndex(summary.id));
-  actions.appendChild(openButton);
-
-  const deleteButton = document.createElement('button');
-  deleteButton.type = 'button';
-  deleteButton.className = 'btn btn--text btn--danger-text';
-  deleteButton.textContent = 'Delete';
-  deleteButton.addEventListener('click', () => {
-    if (!window.confirm(`Delete "${summary.curriculum.name} \u2014 ${summary.curriculum.grade} ${summary.curriculum.subject}"? This can\u2019t be undone.`)) return;
-    handlers.onDeleteIndex(summary.id);
-  });
-  actions.appendChild(deleteButton);
-
-  row.appendChild(actions);
 
   return row;
 }
@@ -862,15 +848,17 @@ function renderIndexCreateStep(handlers) {
   const nameInput = createLabeledInput('Curriculum name', 'e.g. Samacheer Kalvi');
   const boardInput = createLabeledInput('Board', 'e.g. Tamil Nadu State Board');
   const gradeInput = createLabeledInput('Grade', 'e.g. Grade 8');
-  const subjectInput = createLabeledInput('Subject', 'e.g. Science');
-  form.append(nameInput.wrapper, boardInput.wrapper, gradeInput.wrapper, subjectInput.wrapper);
+  const subjectField = createSubjectPickerField('Subject');
+  form.append(nameInput.wrapper, boardInput.wrapper, gradeInput.wrapper, subjectField.wrapper);
 
   function readCurriculum() {
+    const chosenSubject = subjectField.getValue();
     return {
       name: nameInput.input.value.trim(),
       board: boardInput.input.value.trim(),
       grade: gradeInput.input.value.trim(),
-      subject: subjectInput.input.value.trim(),
+      subject: chosenSubject ? chosenSubject.title : '',
+      subjectId: chosenSubject ? chosenSubject.subjectId : null,
     };
   }
 
@@ -1180,6 +1168,33 @@ function renderIndexReviewUnitsStep(index, canonicalImportErrors, handlers) {
   saveButton.addEventListener('click', handlers.onSaveIndex);
   section.appendChild(saveButton);
 
+  const editButton = document.createElement('button');
+  editButton.type = 'button';
+  editButton.className = 'btn btn--text';
+  editButton.textContent = 'Edit Curriculum';
+  // Deliberately no destination yet — editing a Curriculum Index's
+  // own metadata (name, board, grade, subject) after creation is a
+  // separate, not-yet-scoped piece of work; renaming Parts/Units
+  // already works today via their own inline fields above.
+  section.appendChild(editButton);
+
+  const zone = document.createElement('div');
+  zone.className = 'learning-management__danger-zone';
+  const zoneHeading = document.createElement('p');
+  zoneHeading.className = 'learning-management__danger-zone-heading';
+  zoneHeading.textContent = 'Danger Zone';
+  zone.appendChild(zoneHeading);
+  const deleteButton = document.createElement('button');
+  deleteButton.type = 'button';
+  deleteButton.className = 'btn btn--danger';
+  deleteButton.textContent = 'Delete Curriculum';
+  deleteButton.addEventListener('click', () => {
+    if (!window.confirm(`Delete "${index.curriculum.name} \u2014 ${index.curriculum.grade} ${index.curriculum.subject}"? This can\u2019t be undone.`)) return;
+    handlers.onDeleteIndex(index.id);
+  });
+  zone.appendChild(deleteButton);
+  section.appendChild(zone);
+
   return section;
 }
 
@@ -1211,7 +1226,7 @@ function renderIndexPartSection(index, part, handlers, showHeader) {
 
     const deletePartButton = document.createElement('button');
     deletePartButton.type = 'button';
-    deletePartButton.className = 'btn btn--text btn--danger-text';
+    deletePartButton.className = 'btn btn--danger-text';
     deletePartButton.textContent = 'Delete Part';
     deletePartButton.addEventListener('click', () => {
       if (!window.confirm(`Delete "${part.name}" and all ${index.units.filter((u) => u.partId === part.id).length} of its units? This can\u2019t be undone.`)) return;
@@ -1294,7 +1309,7 @@ function renderIndexUnitRow(unit, unitIndexWithinPart, partUnitCount, allParts, 
 
   const deleteButton = document.createElement('button');
   deleteButton.type = 'button';
-  deleteButton.className = 'btn btn--text btn--danger-text';
+  deleteButton.className = 'btn btn--danger-text';
   deleteButton.textContent = 'Delete';
   deleteButton.addEventListener('click', () => {
     if (!window.confirm(`Delete "${unit.title}"?`)) return;
@@ -1445,6 +1460,62 @@ function createLabeledInput(labelText, placeholder) {
   input.placeholder = placeholder;
   wrapper.append(label, input);
   return { wrapper, input };
+}
+
+/**
+ * Replaces what used to be a free-text "Subject" field — the actual
+ * fix for the Curriculum Management half of a real, confirmed bug
+ * (see services/curriculumLinkingService.js's own header comment).
+ * Picking a canonical option assigns that option's own fixed
+ * `subjectId`; the identical list, offered the identical way, is what
+ * lets a Learning Management Subject and a Curriculum Index agree on
+ * an id without either screen ever comparing what the other one
+ * displays. "Custom..." reveals a free-text field whose id is
+ * generated deterministically from what's actually typed (see
+ * services/subjectIdentityService.js) — never matched against the
+ * canonical list by string comparison.
+ */
+function createSubjectPickerField(labelText) {
+  const wrapper = document.createElement('label');
+  wrapper.className = 'curriculum-management__labeled-input';
+  const label = document.createElement('span');
+  label.textContent = labelText;
+  wrapper.appendChild(label);
+
+  const select = document.createElement('select');
+  getCanonicalSubjects().forEach((subject) => {
+    const option = document.createElement('option');
+    option.value = subject.id;
+    option.textContent = subject.title;
+    select.appendChild(option);
+  });
+  const customOption = document.createElement('option');
+  customOption.value = '__custom__';
+  customOption.textContent = 'Custom\u2026';
+  select.appendChild(customOption);
+  wrapper.appendChild(select);
+
+  const customInput = document.createElement('input');
+  customInput.type = 'text';
+  customInput.placeholder = 'Type a subject name';
+  customInput.hidden = true;
+  wrapper.appendChild(customInput);
+
+  select.addEventListener('change', () => {
+    customInput.hidden = select.value !== '__custom__';
+  });
+
+  function getValue() {
+    if (select.value === '__custom__') {
+      const typed = customInput.value.trim();
+      if (!typed) return null;
+      return { subjectId: generateCustomSubjectId(typed), title: typed };
+    }
+    const canonical = getCanonicalSubjectById(select.value);
+    return canonical ? { subjectId: canonical.id, title: canonical.title } : null;
+  }
+
+  return { wrapper, getValue };
 }
 
 function renderExtractingStep() {

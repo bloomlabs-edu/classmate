@@ -14,6 +14,21 @@
  * Owns its AssessmentSubjects directly, the same "owns its children as
  * a plain array" pattern already used throughout this app (see
  * models/Team.js, models/LearningSubject.js).
+ *
+ * `status` — one of 'Draft' | 'Published' | 'Locked'. Only 'Draft' is
+ * functional today (every Assessment starts and stays there); the
+ * other two are real, storable values now specifically so a future
+ * milestone can implement the actual publish/lock behavior without
+ * migrating existing data or touching this field's shape.
+ *
+ * `detailsLastSavedAt` — null until the Assessment Details section's
+ * own View/Edit lifecycle (see ui/views/AssessmentManagementView.js)
+ * is explicitly saved for the first time via "Edit" -> "Save"; until
+ * then, that screen displays `createdAt` as the effective "Last
+ * saved" time, since the details were already correct the moment the
+ * Assessment was created — there's no reason to force an "Initially
+ * editable" state the way a never-saved AssessmentSubject's marks
+ * entry does.
  */
 
 import { generateId } from '../utils/idGenerator.js';
@@ -26,7 +41,9 @@ export function createAssessment({
   type,
   academicYear = '',
   date = '',
+  status = 'Draft',
   createdAt,
+  detailsLastSavedAt = null,
   assessmentSubjects = [],
 } = {}) {
   return {
@@ -36,7 +53,9 @@ export function createAssessment({
     type,
     academicYear,
     date,
+    status,
     createdAt: createdAt || getCurrentIsoDate(),
+    detailsLastSavedAt,
     assessmentSubjects,
   };
 }

@@ -72,6 +72,7 @@ import { createIcon } from '../components/Icon.js';
 import { openAddSubjectModal } from '../components/AddSubjectModal.js';
 import { openAssignCurriculumModal } from '../components/AssignCurriculumModal.js';
 import { renderExistingSubjectsList } from '../components/ExistingSubjectsList.js';
+import { createNavigationRow } from '../components/NavigationRow.js';
 import { renderCurriculumMetadataLine } from '../components/CurriculumMetadataLine.js';
 import { getDisplayName } from '../../services/classroomService.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
@@ -79,8 +80,22 @@ import * as learningRecordTeacherService from '../../services/learningRecordTeac
 import * as workspaceService from '../../services/workspaceService.js';
 import * as curriculumIndexRepository from '../../services/curriculumIndexRepository.js';
 import { resetLearningManagementData } from '../../services/devLearningManagementResetService.js';
+import { isDebugModeEnabled } from '../../services/debugModeService.js';
+import { migrateClassroomSubjects } from '../../services/subjectIdMigrationService.js';
 
 export function renderLearningManagementView(container, { classrooms, onBack, onOpenCurriculumManagement }) {
+  // One-time backfill for Subjects predating subjectId — see
+  // services/subjectIdMigrationService.js's own header comment for why
+  // this is historical migration, not part of the ongoing matching
+  // architecture. Idempotent: a no-op for any Subject that already
+  // has a subjectId, so running this on every entry costs nothing
+  // once a classroom's data has been migrated.
+  classrooms.forEach((classroom) => {
+    if (migrateClassroomSubjects(classroom) > 0) {
+      workspaceService.save(classroom);
+    }
+  });
+
   const singleClassroomMode = classrooms.length === 1;
 
   let mode = singleClassroomMode ? 'home' : 'choose-class';
@@ -292,7 +307,7 @@ function renderHomeStep(classroom, handlers) {
 
   const subjects = learningRecordService.getSubjects(classroom);
   if (subjects.length > 0) {
-    section.appendChild(renderExistingSubjectsList(subjects, handlers.onChooseSubject, handlers.onRemoveSubject));
+    section.appendChild(renderExistingSubjectsList(subjects, handlers.onChooseSubject));
   }
 
   const addSubjectButton = document.createElement('button');
@@ -302,7 +317,9 @@ function renderHomeStep(classroom, handlers) {
   addSubjectButton.addEventListener('click', handlers.onGoToAddSubject);
   section.appendChild(addSubjectButton);
 
-  section.appendChild(renderDeveloperUtilities(handlers));
+  if (isDebugModeEnabled()) {
+    section.appendChild(renderDeveloperUtilities(handlers));
+  }
 
   return section;
 }
@@ -310,8 +327,11 @@ function renderHomeStep(classroom, handlers) {
 /**
  * DEVELOPER-ONLY — see services/devLearningManagementResetService.js's
  * own header comment for exactly what "Reset Learning Management"
- * does and does not touch. Remove this whole function, its one call
- * site above, and that service file before production.
+ * does and does not touch. Gated behind
+ * services/debugModeService.js's isDebugModeEnabled() — a normal
+ * teacher never sees this section at all, regardless of scroll or
+ * screen size, unless debug mode has been explicitly turned on via
+ * ui/views/DeveloperToolsView.js.
  */
 function renderDeveloperUtilities(handlers) {
   const devSection = document.createElement('div');
@@ -357,11 +377,25 @@ function renderDeveloperUtilities(handlers) {
  * 'none', 'error') this section is simply absent, per the frozen
  * design's "Units remain unavailable until [a curriculum is chosen]."
  *
- * "Remove Subject" is available here too, not just on the home
- * screen's own list (ui/components/ExistingSubjectsList.js) —
- * regardless of curriculum state, since it's a general
- * subject-management action, not tied to whether a curriculum happens
- * to be assigned yet.
+ * Subject actions ("Change Curriculum", "Remove Subject") live in a
+ * Settings "⋮" here, beside the title — not on the home screen's own
+ * list (ui/components/ExistingSubjectsList.js), which is a plain
+ * navigation list per the platform design rules and carries no
+ * management actions of its own.
+ */
+/**
+ * Simplified per explicit product decision: the overflow menu here
+ * was causing recurring positioning bugs, and with only two actions
+ * (Change/Assign Curriculum, Remove Subject) it never genuinely
+ * needed a menu in the first place — "prefer visible primary actions
+ * over hidden menus whenever there are fewer than three actions."
+ * "Change Curriculum" is a real, visible button now, directly beneath
+ * the curriculum metadata it acts on (still deliberately does nothing
+ * on click while a curriculum is already assigned — see this
+ * function's own comment below for why); "Remove Subject" lives in a
+ * Danger Zone at the bottom of the page, visually set apart from
+ * everything else here, not hidden behind "⋮". No floating menu
+ * anywhere on this screen.
  */
 function renderSubjectStep(subject, curriculumState, selectedPartName, handlers) {
   const section = document.createElement('div');
@@ -373,8 +407,25 @@ function renderSubjectStep(subject, curriculumState, selectedPartName, handlers)
   section.appendChild(heading);
 
   const metadataSlot = document.createElement('div');
-  renderCurriculumMetadataLine(metadataSlot, { curriculumState, onAssignCurriculum: handlers.onGoToAssignCurriculum });
+  renderCurriculumMetadataLine(metadataSlot, { curriculumState });
   section.appendChild(metadataSlot);
+
+  const curriculumActionButton = document.createElement('button');
+  curriculumActionButton.type = 'button';
+  curriculumActionButton.className = 'btn btn--primary learning-management__curriculum-action';
+  if (curriculumState.status === 'ready') {
+    curriculumActionButton.textContent = 'Change Curriculum';
+    // Deliberately no click handler yet — changing curriculum has
+    // genuine data consequences (Units/Concepts/Resources are
+    // materialized from the curriculum at assignment time), and that
+    // confirmation flow is its own, separately-built piece of work.
+  } else if (curriculumState.status === 'none') {
+    curriculumActionButton.textContent = 'Assign Curriculum';
+    curriculumActionButton.addEventListener('click', handlers.onGoToAssignCurriculum);
+  }
+  if (curriculumState.status === 'ready' || curriculumState.status === 'none') {
+    section.appendChild(curriculumActionButton);
+  }
 
   const divider = document.createElement('hr');
   divider.className = 'learning-management__subject-divider';
@@ -384,14 +435,35 @@ function renderSubjectStep(subject, curriculumState, selectedPartName, handlers)
     section.appendChild(renderUnitsOrParts(subject, selectedPartName, handlers));
   }
 
-  const removeButton = document.createElement('button');
-  removeButton.type = 'button';
-  removeButton.className = 'btn btn--danger-text learning-management__subject-remove';
-  removeButton.textContent = 'Remove Subject';
-  removeButton.addEventListener('click', () => handlers.onRemoveSubject(subject));
-  section.appendChild(removeButton);
+  section.appendChild(renderDangerZone(subject, handlers));
 
   return section;
+}
+
+/**
+ * A visually distinct section at the bottom of the page for
+ * destructive, rare actions — set apart from the rest of the screen
+ * by styling alone, never hidden behind a menu. Only "Remove Subject"
+ * lives here today; a future "Remove Curriculum" (mentioned as a
+ * later requirement, not built yet) would belong here too.
+ */
+function renderDangerZone(subject, handlers) {
+  const zone = document.createElement('div');
+  zone.className = 'learning-management__danger-zone';
+
+  const zoneHeading = document.createElement('p');
+  zoneHeading.className = 'learning-management__danger-zone-heading';
+  zoneHeading.textContent = 'Danger Zone';
+  zone.appendChild(zoneHeading);
+
+  const removeButton = document.createElement('button');
+  removeButton.type = 'button';
+  removeButton.className = 'btn btn--danger';
+  removeButton.textContent = 'Remove Subject';
+  removeButton.addEventListener('click', () => handlers.onRemoveSubject(subject));
+  zone.appendChild(removeButton);
+
+  return zone;
 }
 
 function renderUnitsOrParts(subject, selectedPartName, handlers) {
@@ -405,17 +477,12 @@ function renderUnitsOrParts(subject, selectedPartName, handlers) {
     partHeading.textContent = 'Parts';
     wrapper.appendChild(partHeading);
 
-    const grid = document.createElement('div');
-    grid.className = 'learning-management__choice-grid';
+    const list = document.createElement('div');
+    list.className = 'learning-management__subject-card-list';
     distinctPartNames.forEach((partName) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'learning-management__choice-option';
-      button.textContent = partName;
-      button.addEventListener('click', () => handlers.onChoosePart(partName));
-      grid.appendChild(button);
+      list.appendChild(createNavigationRow({ label: partName, onClick: () => handlers.onChoosePart(partName) }));
     });
-    wrapper.appendChild(grid);
+    wrapper.appendChild(list);
     return wrapper;
   }
 
