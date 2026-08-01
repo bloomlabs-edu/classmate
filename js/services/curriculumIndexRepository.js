@@ -199,3 +199,20 @@ export async function listIndexes() {
 export async function deleteIndex(indexId) {
   await runRequest('readwrite', (store) => store.delete(indexId));
 }
+
+/**
+ * Every distinct Board name already used across this teacher's own
+ * Curriculum Indexes, sorted alphabetically — the suggestion list a
+ * Board SearchableSelect (see ui/components/SearchableSelect.js) is
+ * fed from. Deliberately not a separately-stored, maintained list: a
+ * Board has no identity of its own beyond its name, so "creating" one
+ * is nothing more than a future Curriculum Index using that exact
+ * text — the moment any Curriculum Index is saved with a new Board
+ * name, that name is automatically a suggestion for the next one,
+ * with no separate write required anywhere.
+ */
+export async function getKnownBoards() {
+  const all = await listIndexes();
+  const boards = new Set(all.map((index) => index.curriculum.board).filter(Boolean));
+  return [...boards].sort((a, b) => a.localeCompare(b));
+}

@@ -6572,3 +6572,59 @@ button.wizard-checklist__row:hover {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+/* SearchableSelect — reusable autocomplete dropdown. See
+   ui/components/SearchableSelect.js */
+.searchable-select {
+  position: relative;
+  width: 100%;
+}
+.searchable-select__input {
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font-size: 1rem;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.searchable-select__dropdown {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  right: 0;
+  z-index: 200;
+  background-color: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 0.3rem;
+}
+.searchable-select__option {
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-family: inherit;
+  width: 100%;
+}
+.searchable-select__option:hover {
+  background-color: var(--color-hover, #F2F5F7);
+}
+.searchable-select__option--create {
+  color: var(--color-primary);
+  font-weight: var(--font-weight-bold);
+}
+.searchable-select__empty {
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}

@@ -71,6 +71,8 @@ import { createCurriculumIndexSession } from '../../services/curriculumIndexSess
 import { createIcon } from '../components/Icon.js';
 import { getCanonicalSubjects, getCanonicalSubjectById, generateCustomSubjectId } from '../../services/subjectIdentityService.js';
 import { createCurriculumExplorerPanel } from '../components/CurriculumExplorerPanel.js';
+import { createSearchableSelect } from '../components/SearchableSelect.js';
+import { GRADE_OPTIONS } from '../../config/gradeOptionsConfig.js';
 import { showToast } from '../components/Toast.js';
 
 export function renderCurriculumManagementView(container, { onBack, onOpenLearningManagement }) {
@@ -846,19 +848,64 @@ function renderIndexCreateStep(handlers) {
   form.className = 'curriculum-management__create-form';
 
   const nameInput = createLabeledInput('Curriculum name', 'e.g. Samacheer Kalvi');
-  const boardInput = createLabeledInput('Board', 'e.g. Tamil Nadu State Board');
-  const gradeInput = createLabeledInput('Grade', 'e.g. Grade 8');
-  const subjectField = createSubjectPickerField('Subject');
-  form.append(nameInput.wrapper, boardInput.wrapper, gradeInput.wrapper, subjectField.wrapper);
+
+  const boardLabel = document.createElement('label');
+  boardLabel.className = 'curriculum-management__labeled-input';
+  const boardLabelText = document.createElement('span');
+  boardLabelText.textContent = 'Board';
+  boardLabel.appendChild(boardLabelText);
+  const boardField = createSearchableSelect({
+    options: [], // loaded asynchronously below, from this teacher's own existing curricula
+    placeholder: 'Type or select a board\u2026',
+    onSelect: () => {},
+  });
+  boardLabel.appendChild(boardField.wrapper);
+  curriculumIndexRepository.getKnownBoards().then((boards) => boardField.setOptions(boards));
+
+  const gradeLabel = document.createElement('label');
+  gradeLabel.className = 'curriculum-management__labeled-input';
+  const gradeLabelText = document.createElement('span');
+  gradeLabelText.textContent = 'Grade';
+  gradeLabel.appendChild(gradeLabelText);
+  const gradeField = createSearchableSelect({
+    options: GRADE_OPTIONS,
+    placeholder: 'Type or select a grade\u2026',
+    onSelect: () => {},
+  });
+  gradeLabel.appendChild(gradeField.wrapper);
+
+  const subjectLabel = document.createElement('label');
+  subjectLabel.className = 'curriculum-management__labeled-input';
+  const subjectLabelText = document.createElement('span');
+  subjectLabelText.textContent = 'Subject';
+  subjectLabel.appendChild(subjectLabelText);
+  let subjectDisplayTitle = '';
+  const subjectField = createSearchableSelect({
+    options: getCanonicalSubjects().map((s) => ({ value: s.id, label: s.title })),
+    placeholder: 'Type or select a subject\u2026',
+    onSelect: (value, { label, isNew }) => {
+      subjectDisplayTitle = label;
+    },
+  });
+  subjectLabel.appendChild(subjectField.wrapper);
+
+  form.append(nameInput.wrapper, boardLabel, gradeLabel, subjectLabel);
 
   function readCurriculum() {
-    const chosenSubject = subjectField.getValue();
+    const subjectValue = subjectField.getValue();
+    // A custom-typed Subject's value and label are identical (the
+    // SearchableSelect passed the typed text through as both) — a
+    // real subjectId still needs generating for it, exactly as
+    // ui/components/SubjectSelectionList.js already does for Learning
+    // Management's own custom-subject entry, so the two stay
+    // consistent with each other.
+    const isCanonical = getCanonicalSubjectById(subjectValue) !== null;
     return {
       name: nameInput.input.value.trim(),
-      board: boardInput.input.value.trim(),
-      grade: gradeInput.input.value.trim(),
-      subject: chosenSubject ? chosenSubject.title : '',
-      subjectId: chosenSubject ? chosenSubject.subjectId : null,
+      board: boardField.getValue().trim(),
+      grade: gradeField.getValue().trim(),
+      subject: subjectDisplayTitle || subjectValue,
+      subjectId: subjectValue ? (isCanonical ? subjectValue : generateCustomSubjectId(subjectValue)) : null,
     };
   }
 
@@ -1460,62 +1507,6 @@ function createLabeledInput(labelText, placeholder) {
   input.placeholder = placeholder;
   wrapper.append(label, input);
   return { wrapper, input };
-}
-
-/**
- * Replaces what used to be a free-text "Subject" field — the actual
- * fix for the Curriculum Management half of a real, confirmed bug
- * (see services/curriculumLinkingService.js's own header comment).
- * Picking a canonical option assigns that option's own fixed
- * `subjectId`; the identical list, offered the identical way, is what
- * lets a Learning Management Subject and a Curriculum Index agree on
- * an id without either screen ever comparing what the other one
- * displays. "Custom..." reveals a free-text field whose id is
- * generated deterministically from what's actually typed (see
- * services/subjectIdentityService.js) — never matched against the
- * canonical list by string comparison.
- */
-function createSubjectPickerField(labelText) {
-  const wrapper = document.createElement('label');
-  wrapper.className = 'curriculum-management__labeled-input';
-  const label = document.createElement('span');
-  label.textContent = labelText;
-  wrapper.appendChild(label);
-
-  const select = document.createElement('select');
-  getCanonicalSubjects().forEach((subject) => {
-    const option = document.createElement('option');
-    option.value = subject.id;
-    option.textContent = subject.title;
-    select.appendChild(option);
-  });
-  const customOption = document.createElement('option');
-  customOption.value = '__custom__';
-  customOption.textContent = 'Custom\u2026';
-  select.appendChild(customOption);
-  wrapper.appendChild(select);
-
-  const customInput = document.createElement('input');
-  customInput.type = 'text';
-  customInput.placeholder = 'Type a subject name';
-  customInput.hidden = true;
-  wrapper.appendChild(customInput);
-
-  select.addEventListener('change', () => {
-    customInput.hidden = select.value !== '__custom__';
-  });
-
-  function getValue() {
-    if (select.value === '__custom__') {
-      const typed = customInput.value.trim();
-      if (!typed) return null;
-      return { subjectId: generateCustomSubjectId(typed), title: typed };
-    }
-    const canonical = getCanonicalSubjectById(select.value);
-    return canonical ? { subjectId: canonical.id, title: canonical.title } : null;
-  }
-
-  return { wrapper, getValue };
 }
 
 function renderExtractingStep() {
