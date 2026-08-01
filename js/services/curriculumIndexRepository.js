@@ -74,7 +74,7 @@
 
 import { generateId } from '../utils/idGenerator.js';
 import { getCurrentIsoDate } from '../utils/dateHelpers.js';
-import { migrateCurriculumIndex } from './subjectIdMigrationService.js';
+import { migrateCurriculumIndex } from './curriculumIndexMigrationService.js';
 
 const DB_NAME = 'classmate-curriculum-index';
 const DB_VERSION = 1;
@@ -124,6 +124,16 @@ export async function createIndex({ curriculum }) {
     parts: [],
     units: [],
   };
+  // Deliberately runs the real migration pipeline here rather than
+  // simply stamping `schemaVersion: LATEST_SCHEMA_VERSION` — a caller
+  // could construct `curriculum` without every field the latest
+  // schema actually requires (subjectId, say), and blindly claiming
+  // "latest" without verifying that would create a document that
+  // silently doesn't conform despite saying it does. Running it
+  // through migrateCurriculumIndex() guarantees the document really
+  // is current, the same way getIndex()/listIndexes() guarantee it
+  // for existing documents, rather than trusting the caller.
+  migrateCurriculumIndex(index);
   await runRequest('readwrite', (store) => store.put(index));
   return index;
 }
@@ -149,12 +159,11 @@ export async function listIndexes() {
   const all = await runRequest('readonly', (store) => store.getAll());
   const sorted = all.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
 
-  // One-time backfill for documents predating subjectId — see
-  // services/subjectIdMigrationService.js's own header comment for why
-  // this is explicitly historical migration, not part of the ongoing
-  // matching architecture. Idempotent: migrateCurriculumIndex() is a
-  // no-op for anything that already has a subjectId, so this costs
-  // nothing once every document has been migrated.
+  // Runs every document through the full versioned migration pipeline
+  // — see services/curriculumIndexMigrationService.js's own header
+  // comment. Idempotent: a document already at LATEST_SCHEMA_VERSION
+  // runs zero migration steps, so this costs nothing once every
+  // document has been migrated once.
   for (const index of sorted) {
     if (migrateCurriculumIndex(index)) {
       await saveIndex(index);

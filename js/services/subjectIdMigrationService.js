@@ -6,12 +6,10 @@
  * architecture. See services/subjectIdentityService.js and
  * services/curriculumLinkingService.js for the actual, ongoing fix
  * (id-to-id comparison, decided once at creation time, never string
- * matching). Nothing in this file is ever consulted at match time by
- * anything else in the app — it runs once per record, backfills
- * `subjectId`, and is never read from again afterward.
+ * matching).
  *
  * KNOWN_HISTORICAL_SPELLINGS below is deliberately not an ongoing
- * alias table: it exists only so this migration can make a one-time,
+ * alias table: it exists only so a migration can make a one-time,
  * historical judgment call about data that already exists — "this
  * Subject titled 'Maths' and this Curriculum titled 'Mathematics'
  * were almost certainly meant to be the same subject" — a judgment
@@ -22,10 +20,20 @@
  * suggestion's own fixed id, or a fresh id generated from exactly what
  * was typed. This mapping is not consulted for anything new.
  *
- * Idempotent by construction: only ever touches a Subject or
- * Curriculum Index whose `subjectId` is still null/undefined, so
- * running this repeatedly (once per classroom load, say) is always
- * safe and eventually a complete no-op.
+ * `resolveHistoricalSubjectId` is exported specifically so
+ * services/curriculumIndexMigrationService.js's own versioned
+ * migration pipeline can reuse the exact same historical-spelling
+ * judgment call for Curriculum Index's subjectId backfill step,
+ * rather than that logic existing in two places that could drift
+ * apart.
+ *
+ * `migrateClassroomSubjects` remains a plain, one-shot function (not
+ * yet folded into a versioned schemaVersion pipeline) — Learning
+ * Management Subjects only have this one historical migration to
+ * date, so introducing a full pipeline here would be building
+ * machinery for a second step that doesn't exist yet. Worth revisiting
+ * the same way Curriculum Index just was, if or when a second
+ * Subject-shape migration is ever needed.
  */
 
 import * as learningRecordService from './learningRecordService.js';
@@ -51,9 +59,11 @@ const KNOWN_HISTORICAL_SPELLINGS = {
 /**
  * The historical-judgment-call step, run once per pre-existing title —
  * never called anywhere in the app's ongoing matching logic, only
- * from the two migration functions below.
+ * from migration code (this file's own migrateClassroomSubjects()
+ * below, and services/curriculumIndexMigrationService.js's own
+ * subjectId migration step).
  */
-function resolveHistoricalSubjectId(existingTitle) {
+export function resolveHistoricalSubjectId(existingTitle) {
   const normalized = existingTitle.trim().toLowerCase();
   return KNOWN_HISTORICAL_SPELLINGS[normalized] || generateCustomSubjectId(existingTitle);
 }
@@ -67,11 +77,4 @@ export function migrateClassroomSubjects(classroom) {
     migratedCount++;
   });
   return migratedCount;
-}
-
-/** Backfills subjectId on every pre-existing Curriculum Index that's missing one. Only ever adds subjectId — curriculum.subject (the display title) is never touched. */
-export function migrateCurriculumIndex(curriculumIndex) {
-  if (curriculumIndex.curriculum.subjectId) return false;
-  curriculumIndex.curriculum.subjectId = resolveHistoricalSubjectId(curriculumIndex.curriculum.subject);
-  return true;
 }

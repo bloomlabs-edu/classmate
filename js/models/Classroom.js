@@ -96,6 +96,23 @@
  *                    title is resolved live from that id, never copied,
  *                    so renaming a Subject later is reflected in every
  *                    past Assessment automatically.
+ *   planner -        { planningCycles: PlanningCycle[] } (see
+ *                    models/PlanningCycle.js) — a first-class domain of
+ *                    its own, alongside learningRecord and assessments
+ *                    above, not embedded inside either. Only
+ *                    PlanningCycles live here; the Lessons a cycle
+ *                    generates (see models/Lesson.js) live in their own
+ *                    Firestore subcollection
+ *                    (classrooms/{id}/lessons/{lessonId} — see
+ *                    services/plannerRepository.js) rather than on this
+ *                    document, since a multi-year history of daily
+ *                    lessons is exactly the kind of unbounded growth a
+ *                    single document shouldn't absorb. A Lesson
+ *                    references curriculum content by id only
+ *                    (curriculumUnitId, conceptIds) — Curriculum stays
+ *                    the single source of truth, the same
+ *                    reference-not-copy principle used throughout this
+ *                    file.
  *   notebookConfig - { subjects: [{id, name}], notebookTypes: [{id,
  *                    subjectId, name}] } — the classroom's configurable
  *                    notebook taxonomy (see
@@ -191,6 +208,7 @@ export function createClassroom({
   learningRecord = { subjects: [] },
   curriculumAssignment = null,
   assessments = [],
+  planner = { planningCycles: [] },
   notebookConfig = { subjects: [], notebookTypes: [] },
   notebooks = {},
   notebookCheckTemplates = {},
@@ -216,6 +234,7 @@ export function createClassroom({
     learningRecord,
     curriculumAssignment,
     assessments,
+    planner,
     notebookConfig,
     notebooks,
     notebookCheckTemplates,
