@@ -74,6 +74,7 @@ import { openAssignCurriculumModal } from '../components/AssignCurriculumModal.j
 import { renderExistingSubjectsList } from '../components/ExistingSubjectsList.js';
 import { createNavigationRow } from '../components/NavigationRow.js';
 import { renderCurriculumMetadataLine } from '../components/CurriculumMetadataLine.js';
+import { createEmptyStateElement } from '../components/EmptyState.js';
 import { getDisplayName } from '../../services/classroomService.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
 import * as learningRecordTeacherService from '../../services/learningRecordTeacherService.js';
@@ -82,6 +83,7 @@ import * as curriculumIndexRepository from '../../services/curriculumIndexReposi
 import { resetLearningManagementData } from '../../services/devLearningManagementResetService.js';
 import { isDebugModeEnabled } from '../../services/debugModeService.js';
 import { migrateClassroomSubjects } from '../../services/subjectIdMigrationService.js';
+import { renderConceptWorkspaceView } from './ConceptWorkspaceView.js';
 
 export function renderLearningManagementView(container, { classrooms, onBack, onOpenCurriculumManagement }) {
   // One-time backfill for Subjects predating subjectId — see
@@ -102,6 +104,27 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
   let selectedClassroom = singleClassroomMode ? classrooms[0] : null;
   let selectedSubject = null;
   let selectedPartName = null; // set once a Part is chosen, for a Subject whose curriculum actually has them
+  // Set once a Unit is chosen, to show that Unit's own Concepts — the
+  // one further drill-down level Phase 1.5 restores. A stable id, not
+  // a name (per explicit direction), the same convention every other
+  // stored selection in this app already uses except selectedPartName
+  // above, which genuinely can't be an id yet: Parts aren't a
+  // first-class entity today, only a derived, deduplicated string off
+  // each Unit's own partName field — promoting them to real entities
+  // with their own id is real scope beyond "restore navigation," left
+  // as an explicit, flagged gap rather than quietly worked around.
+  let selectedUnitId = null;
+  // Created only at the moment a Concept is actually opened — null
+  // the rest of the time, including while merely browsing a Unit's
+  // Concepts list. Bundles subjectId/unitId/conceptId together since
+  // those three values always travel together once a Concept is open
+  // (per explicit direction), even though services/learningRecordService.js's
+  // findConcept(classroom, conceptId) alone could technically resolve
+  // all three from conceptId — this exists for the workspace's own
+  // future needs (breadcrumbs, analytics, whatever a growing Concept
+  // Workspace ends up wanting direct access to), not because the
+  // lookup itself requires it.
+  let conceptContext = null;
   // Fetched once per Subject selection, not on every re-render — see
   // ui/components/CurriculumMetadataLine.js's own header comment for
   // why this lives here instead of inside that component. One of:
@@ -113,7 +136,7 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
     renderView(
       container,
       mode,
-      { classrooms, selectedClassroom, selectedSubject, selectedPartName, selectedSubjectCurriculumState, singleClassroomMode },
+      { classrooms, selectedClassroom, selectedSubject, selectedPartName, selectedUnitId, conceptContext, selectedSubjectCurriculumState, singleClassroomMode },
       handlers
     );
   }
@@ -171,6 +194,8 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
     onChooseSubject: (subject) => {
       selectedSubject = subject;
       selectedPartName = null;
+      selectedUnitId = null;
+      conceptContext = null;
       mode = 'subject';
       loadCurriculumStateFor(subject);
     },
@@ -191,6 +216,25 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
     },
     onChoosePart: (partName) => {
       selectedPartName = partName;
+      selectedUnitId = null;
+      rerender();
+    },
+    onSelectUnit: (unitId) => {
+      selectedUnitId = unitId;
+      rerender();
+    },
+    onSelectConcept: (concept) => {
+      conceptContext = { subjectId: selectedSubject.id, unitId: selectedUnitId, conceptId: concept.id };
+      mode = 'concept';
+      rerender();
+    },
+    onBackFromConceptWorkspace: () => {
+      // Lands back on the same Unit's Concepts list the workspace was
+      // opened from, not the Subject home screen — selectedUnitId was
+      // never cleared while conceptContext held the same value, so
+      // browsing state is exactly where the teacher left it.
+      mode = 'subject';
+      conceptContext = null;
       rerender();
     },
     onBackTo: (targetMode) => {
@@ -225,6 +269,33 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
 
 
 function renderView(container, mode, state, handlers) {
+  // The Concept Workspace owns its own screen entirely (its own
+  // header, its own Back button — see ConceptWorkspaceView.js) — a
+  // genuine hand-off between two different responsibilities
+  // (browsing the curriculum hierarchy vs. working inside a Concept),
+  // not a tab or sub-step wrapped inside Learning Management's own
+  // header, matching how DashboardView.js already hands off entirely
+  // to renderLearningManagementView() itself rather than merging the
+  // two screens' rendering.
+  if (mode === 'concept') {
+    const resolved = learningRecordService.findConcept(state.selectedClassroom, state.conceptContext.conceptId);
+    if (!resolved) {
+      // The concept this workspace was opened for no longer exists
+      // (deleted from another tab/device) — fall back to browsing
+      // rather than rendering a workspace with nothing to show.
+      handlers.onBackFromConceptWorkspace();
+      return;
+    }
+    renderConceptWorkspaceView(container, {
+      classroom: state.selectedClassroom,
+      subject: resolved.subject,
+      unit: resolved.unit,
+      concept: resolved.concept,
+      onBack: handlers.onBackFromConceptWorkspace,
+    });
+    return;
+  }
+
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
@@ -237,6 +308,13 @@ function renderView(container, mode, state, handlers) {
 
   const backButton = createBackButton(() => {
     if (isEntryStep) return handlers.onBack();
+    if (mode === 'subject' && state.selectedUnitId) {
+      // Back out of a Unit's own Concepts to that Subject's Units
+      // list, not all the way home in one step — same "step back one
+      // level within the same mode" shape as the Part case below.
+      handlers.onSelectUnit(null);
+      return;
+    }
     if (mode === 'subject' && state.selectedPartName) {
       // Back out of a Part's own units to that Subject's Part list,
       // not all the way home in one step.
@@ -258,7 +336,7 @@ function renderView(container, mode, state, handlers) {
   if (mode === 'choose-class') {
     wrapper.appendChild(renderChooseClassStep(state.classrooms, handlers));
   } else if (mode === 'subject') {
-    wrapper.appendChild(renderSubjectStep(state.selectedSubject, state.selectedSubjectCurriculumState, state.selectedPartName, handlers));
+    wrapper.appendChild(renderSubjectStep(state.selectedSubject, state.selectedSubjectCurriculumState, state.selectedPartName, state.selectedUnitId, handlers));
   } else {
     wrapper.appendChild(renderHomeStep(state.selectedClassroom, handlers));
   }
@@ -392,7 +470,7 @@ function renderDeveloperUtilities(handlers) {
  * everything else here, not hidden behind "⋮". No floating menu
  * anywhere on this screen.
  */
-function renderSubjectStep(subject, curriculumState, selectedPartName, handlers) {
+function renderSubjectStep(subject, curriculumState, selectedPartName, selectedUnitId, handlers) {
   const section = document.createElement('div');
   section.className = 'learning-management__section';
 
@@ -427,7 +505,7 @@ function renderSubjectStep(subject, curriculumState, selectedPartName, handlers)
   section.appendChild(divider);
 
   if (curriculumState.status === 'ready') {
-    section.appendChild(renderUnitsOrParts(subject, selectedPartName, handlers));
+    section.appendChild(renderUnitsOrParts(subject, selectedPartName, selectedUnitId, handlers));
   }
 
   section.appendChild(renderDangerZone(subject, handlers));
@@ -461,7 +539,7 @@ function renderDangerZone(subject, handlers) {
   return zone;
 }
 
-function renderUnitsOrParts(subject, selectedPartName, handlers) {
+function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, handlers) {
   const wrapper = document.createElement('div');
 
   const distinctPartNames = [...new Set(subject.units.map((unit) => unit.partName).filter(Boolean))];
@@ -483,18 +561,51 @@ function renderUnitsOrParts(subject, selectedPartName, handlers) {
 
   const unitsToShow = selectedPartName ? subject.units.filter((unit) => unit.partName === selectedPartName) : subject.units;
 
+  // A Unit is selected — show that Unit's own Concepts instead of the
+  // Units list, the one further drill-down level Phase 1.5 restores.
+  // Concepts render the same NavigationRow way Units do just below;
+  // selecting one hands off to the Concept Workspace entirely (see
+  // handlers.onSelectConcept in renderLearningManagementView, and
+  // renderView's own "mode === 'concept'" branch) rather than
+  // anything being rendered further here.
+  if (selectedUnitId) {
+    const selectedUnit = unitsToShow.find((unit) => unit.id === selectedUnitId);
+    // The unit this drill-down was for no longer exists (deleted from
+    // another tab/device) — fall back to the Units list rather than
+    // rendering a Concepts heading with nothing real underneath it.
+    if (!selectedUnit) {
+      handlers.onSelectUnit(null);
+      return wrapper;
+    }
+
+    const conceptsHeading = document.createElement('p');
+    conceptsHeading.className = 'learning-management__intro';
+    conceptsHeading.textContent = 'Concepts';
+    wrapper.appendChild(conceptsHeading);
+
+    if (selectedUnit.concepts.length === 0) {
+      wrapper.appendChild(createEmptyStateElement({ message: 'No concepts yet.' }));
+      return wrapper;
+    }
+
+    const conceptList = document.createElement('div');
+    conceptList.className = 'learning-management__subject-card-list';
+    selectedUnit.concepts.forEach((concept) => {
+      conceptList.appendChild(createNavigationRow({ label: concept.title, onClick: () => handlers.onSelectConcept(concept) }));
+    });
+    wrapper.appendChild(conceptList);
+    return wrapper;
+  }
+
   const unitsHeading = document.createElement('p');
   unitsHeading.className = 'learning-management__intro';
   unitsHeading.textContent = 'Units';
   wrapper.appendChild(unitsHeading);
 
   const list = document.createElement('div');
-  list.className = 'learning-management__subject-list';
+  list.className = 'learning-management__subject-card-list';
   unitsToShow.forEach((unit) => {
-    const item = document.createElement('p');
-    item.className = 'learning-management__subject-list-item';
-    item.textContent = unit.title;
-    list.appendChild(item);
+    list.appendChild(createNavigationRow({ label: unit.title, onClick: () => handlers.onSelectUnit(unit.id) }));
   });
   wrapper.appendChild(list);
 
