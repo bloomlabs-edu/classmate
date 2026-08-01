@@ -225,7 +225,7 @@ function renderStudentPortalMain(route) {
           onManageStudents: () => router.navigate('/student/manage-students'),
         });
       } else {
-        renderStudentJourneyView(content);
+        renderStudentJourneyView(content, { onSessionInvalid: () => router.navigate('/student') });
       }
     },
   });

@@ -20,7 +20,7 @@
 import * as workspaceService from '../../../services/workspaceService.js';
 import { createIcon } from '../../components/Icon.js';
 
-export function renderStudentJoinClassroomView(container, { onClassroomResolved }) {
+export function renderStudentJoinClassroomView(container, { onClassroomResolved, message = null }) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
@@ -35,6 +35,16 @@ export function renderStudentJoinClassroomView(container, { onClassroomResolved 
   const subtitle = document.createElement('p');
   subtitle.className = 'student-join-code__subtitle';
   subtitle.textContent = 'Enter your classroom code to get started.';
+
+  // Shown only for stale-session recovery — see
+  // ui/student-portal/onboarding/StudentDeviceFlow.js's own startup
+  // validation. A fresh device's first-ever join has nothing to
+  // report here, so this stays absent for the ordinary case.
+  const notice = message ? document.createElement('p') : null;
+  if (notice) {
+    notice.className = 'student-join-code__notice';
+    notice.textContent = message;
+  }
 
   const input = document.createElement('input');
   input.type = 'text';
@@ -77,6 +87,6 @@ export function renderStudentJoinClassroomView(container, { onClassroomResolved 
     if (event.key === 'Enter') continueButton.click();
   });
 
-  wrapper.append(icon, title, subtitle, input, errorMessage, continueButton);
+  wrapper.append(icon, title, subtitle, ...(notice ? [notice] : []), input, errorMessage, continueButton);
   container.appendChild(wrapper);
 }

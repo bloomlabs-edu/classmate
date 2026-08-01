@@ -30,8 +30,23 @@ import * as studentProgressService from './studentProgressService.js';
 import { getWeekRange } from '../utils/dateHelpers.js';
 import { listRecognitionCategoriesForPeriod } from '../config/recognitionCategories.js';
 
-async function loadCurrentStudentAndClassroom() {
-  const profile = studentDeviceService.getActiveProfile();
+/**
+ * Resolves the classroom/student/team for a given student profile
+ * reference — defaults to whatever's currently active on this device
+ * (studentDeviceService.getActiveProfile()), but accepts an explicit
+ * one too, so a caller can validate a profile *before* committing to
+ * it as active (see
+ * ui/student-portal/onboarding/StudentDeviceFlow.js's startup
+ * validation, which checks a profile is still real before ever
+ * calling setActiveProfile() on it).
+ *
+ * Returns null — never throws, never fabricates a value — for a
+ * missing profile, a deleted classroom, or a student no longer on the
+ * roster. This is the one place both "get today's data" and "is this
+ * stale session still valid" share the same real check, rather than
+ * two separate implementations that could drift apart.
+ */
+export async function loadCurrentStudentAndClassroom(profile = studentDeviceService.getActiveProfile()) {
   if (!profile) return null;
 
   const classroom = await workspaceService.getClassroomOnce(profile.classroomId);

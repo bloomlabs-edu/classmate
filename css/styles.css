@@ -4647,6 +4647,15 @@ button.wizard-checklist__row:hover {
   line-height: 1.5;
   margin: 0 0 0.5rem;
 }
+.student-join-code__notice {
+  background-color: rgba(225, 83, 68, 0.08);
+  color: var(--color-danger, #b3261e);
+  border-radius: var(--radius-control);
+  padding: 0.7rem 0.9rem;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  margin: 0 0 0.75rem;
+}
 .student-join-code__input {
   width: 100%;
   font-family: 'Courier New', monospace;

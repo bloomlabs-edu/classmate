@@ -29,11 +29,12 @@
  */
 
 import { getHomeSummary, getAchievements, getRecognitionWins } from '../../../services/studentPortalDataService.js';
+import * as studentDeviceService from '../../../services/studentDeviceService.js';
 import { formatKeyStatistic } from '../../components/RecognitionCard.js';
 import { createAvatarElement } from '../../components/AvatarDisplay.js';
 import { createEmptyStateElement } from '../../components/EmptyState.js';
 
-export async function renderStudentJourneyView(container) {
+export async function renderStudentJourneyView(container, { onSessionInvalid } = {}) {
   container.innerHTML = '';
 
   const [summary, achievements, recognitionWins] = await Promise.all([
@@ -46,6 +47,21 @@ export async function renderStudentJourneyView(container) {
   wrapper.className = 'student-journey';
 
   if (!summary) {
+    // The same stale-session recovery as
+    // ui/student-portal/onboarding/StudentDeviceFlow.js's own startup
+    // check, for the rarer case where a teacher deletes the classroom
+    // *while* a student is already sitting on this screen, rather than
+    // at the next app open. Clears the now-invalid device profile and
+    // hands off to the caller (see js/main.js) to re-render the
+    // Student Portal entry point, which re-runs that same startup
+    // validation and correctly lands on Join Classroom — a recovery
+    // path, not a dead end with a "try rejoining" instruction and no
+    // way to act on it.
+    studentDeviceService.clearAllApprovedProfiles();
+    if (onSessionInvalid) {
+      onSessionInvalid();
+      return;
+    }
     const notice = document.createElement('p');
     notice.className = 'student-home__empty-notice';
     notice.textContent = "We couldn't load your data right now. Try rejoining your classroom.";
