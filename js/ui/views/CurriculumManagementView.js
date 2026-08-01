@@ -70,6 +70,9 @@ import * as curriculumSubmissionsService from '../../services/curriculumSubmissi
 import { createCurriculumIndexSession } from '../../services/curriculumIndexSession.js';
 import * as unitPageRangeService from '../../services/unitPageRangeService.js';
 import * as manualAiProvider from '../../services/extractionProviders/manualAiProvider.js';
+import * as unitPageTextExtractionService from '../../services/unitPageTextExtractionService.js';
+import { createAttachmentCanvas } from '../components/AttachmentCanvas.js';
+import { generateId } from '../../utils/idGenerator.js';
 import { createBackButton } from '../components/BackButton.js';
 import { getCanonicalSubjects, getCanonicalSubjectById, generateCustomSubjectId } from '../../services/subjectIdentityService.js';
 import { createCurriculumExplorerPanel } from '../components/CurriculumExplorerPanel.js';
@@ -122,9 +125,38 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
   // Curriculum Builder design discussion for why that gap is real,
   // not silently worked around here).
   let unitPageText = '';
+  // Progress feedback while services/unitPageTextExtractionService.js
+  // works through uploaded files — OCR is genuinely slow (multiple
+  // seconds per page), so a teacher uploading several pages needs to
+  // see real progress, not one opaque spinner for however long the
+  // whole batch takes. Null when nothing is processing.
+  let ocrProgress = null;
+  // Attachments collected on ui/components/AttachmentCanvas.js before
+  // OCR ever runs — { id, file, previewUrl }[]. A teacher interacts
+  // with pages here (add via paste/drag/browse, remove a mistake),
+  // not text; OCR is a separate, later step triggered explicitly (see
+  // handlers.onProcessAttachments below), only after the attachment
+  // set is exactly what they want. previewUrl is
+  // URL.createObjectURL(file) for an image (null for a PDF, which
+  // gets a generic file icon instead — see AttachmentCanvas.js's own
+  // comment for why a real rendered PDF thumbnail isn't built here).
+  let attachments = [];
 
   // Review Submissions state.
   let selectedSubmission = null;
+
+  /**
+   * Revokes every current attachment's own object URL — real browser
+   * memory a plain page reload wouldn't otherwise reclaim quickly.
+   * Called whenever a fresh Extract Concepts session starts (a new
+   * Unit opened, or Extract Concepts re-entered), never left for
+   * garbage collection to eventually notice on its own.
+   */
+  function revokeAttachmentPreviews() {
+    attachments.forEach((attachment) => {
+      if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
+    });
+  }
 
   function rerender() {
     renderView(
@@ -145,6 +177,8 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
         selectedUnitConceptsId,
         extractionPromptText,
         unitPageText,
+        ocrProgress,
+        attachments,
       },
       {
         onBack,
@@ -332,17 +366,57 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
           selectedUnitConceptsId = unitId;
           extractionPromptText = null;
           unitPageText = '';
+          revokeAttachmentPreviews();
+          attachments = [];
           mode = 'index-unit-concepts';
           rerender();
         },
         onStartExtractConcepts: () => {
           extractionPromptText = null;
           unitPageText = '';
+          revokeAttachmentPreviews();
+          attachments = [];
           mode = 'index-extract-concepts';
           rerender();
         },
         onChangeUnitPageText: (text) => {
           unitPageText = text;
+        },
+        onAddAttachments: (files) => {
+          Array.from(files).forEach((file) => {
+            attachments.push({
+              id: generateId(),
+              file,
+              previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+            });
+          });
+          rerender();
+        },
+        onRemoveAttachment: (attachmentId) => {
+          const attachment = attachments.find((a) => a.id === attachmentId);
+          if (attachment?.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
+          attachments = attachments.filter((a) => a.id !== attachmentId);
+          rerender();
+        },
+        onProcessAttachments: async () => {
+          const files = attachments.map((a) => a.file);
+          ocrProgress = { fileIndex: 0, fileName: files[0].name, totalFiles: files.length };
+          rerender();
+          try {
+            const extractedText = await unitPageTextExtractionService.extractTextFromFiles(files, {
+              onProgress: (progress) => {
+                ocrProgress = progress;
+                rerender();
+              },
+            });
+            unitPageText = extractedText;
+          } catch (error) {
+            console.error('[CurriculumManagementView] OCR/text extraction failed:', error);
+            showToast('Could not read text from those pages \u2014 try again, or remove and re-add them');
+          } finally {
+            ocrProgress = null;
+            rerender();
+          }
         },
         onGeneratePrompt: () => {
           const index = indexSession.getIndex();
@@ -445,7 +519,7 @@ function renderView(container, mode, state, handlers) {
   } else if (mode === 'index-unit-concepts') {
     wrapper.appendChild(renderUnitConceptsStep(state.indexSession.getIndex(), state.selectedUnitConceptsId, handlers));
   } else if (mode === 'index-extract-concepts') {
-    wrapper.appendChild(renderExtractConceptsStep(state.indexSession.getIndex(), state.selectedUnitConceptsId, state.unitPageText, state.extractionPromptText, handlers));
+    wrapper.appendChild(renderExtractConceptsStep(state.indexSession.getIndex(), state.selectedUnitConceptsId, state.attachments, state.unitPageText, state.extractionPromptText, state.ocrProgress, handlers));
   } else if (mode === 'review-list') {
     wrapper.appendChild(renderReviewListStep(handlers));
   } else if (mode === 'review-detail') {
@@ -1462,7 +1536,7 @@ function renderUnitConceptsStep(index, unitId, handlers) {
  * only one wired in today (see
  * services/extractionProviders/extractionProviderRegistry.js).
  */
-function renderExtractConceptsStep(index, unitId, unitPageText, extractionPromptText, handlers) {
+function renderExtractConceptsStep(index, unitId, attachments, unitPageText, extractionPromptText, ocrProgress, handlers) {
   const section = document.createElement('div');
   section.className = 'curriculum-management__section';
 
@@ -1488,36 +1562,76 @@ function renderExtractConceptsStep(index, unitId, unitPageText, extractionPrompt
   section.appendChild(pageRangeEl);
 
   if (extractionPromptText === null) {
-    const instructions = document.createElement('p');
-    instructions.className = 'curriculum-management__intro';
-    instructions.textContent =
-      'Paste this unit\u2019s own textbook pages below, then generate a prompt to hand to your own AI assistant of choice (Claude, ChatGPT, Gemini, or any other).';
-    section.appendChild(instructions);
+    if (ocrProgress) {
+      // Genuinely slow, multi-second-per-page work — real progress,
+      // not one opaque spinner for however long the whole batch takes.
+      const progressEl = document.createElement('p');
+      progressEl.className = 'curriculum-management__intro';
+      progressEl.textContent = `Reading page ${ocrProgress.fileIndex + 1} of ${ocrProgress.totalFiles} (${ocrProgress.fileName})\u2026`;
+      section.appendChild(progressEl);
+    } else if (!unitPageText) {
+      // The teacher interacts with pages here, not text — paste a
+      // screenshot, drag files, or browse, with each attachment shown
+      // as its own thumbnail. OCR only runs once "Process Pages" is
+      // clicked, a deliberate, later, separate step — never
+      // automatic on every attachment added, which would re-run OCR
+      // repeatedly while a teacher is still assembling their set.
+      const instructions = document.createElement('p');
+      instructions.className = 'curriculum-management__intro';
+      instructions.textContent = 'Attach this unit\u2019s own textbook pages \u2014 paste a screenshot, drag files, or browse. Text is read automatically once you\u2019re ready; you never need to type or copy it yourself.';
+      section.appendChild(instructions);
 
-    const textareaLabel = document.createElement('label');
-    textareaLabel.className = 'curriculum-management__labeled-input';
-    const textareaLabelText = document.createElement('span');
-    textareaLabelText.textContent = 'Textbook pages for this unit';
-    const textarea = document.createElement('textarea');
-    textarea.className = 'curriculum-management__toc-textarea';
-    textarea.rows = 8;
-    textarea.value = unitPageText;
-    textarea.addEventListener('input', () => handlers.onChangeUnitPageText(textarea.value));
-    textareaLabel.append(textareaLabelText, textarea);
-    section.appendChild(textareaLabel);
+      const canvas = createAttachmentCanvas({
+        accept: '.pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg',
+        attachments,
+        onFilesAdded: (files) => handlers.onAddAttachments(files),
+        onRemoveAttachment: (id) => handlers.onRemoveAttachment(id),
+      });
+      section.appendChild(canvas);
 
-    const generateButton = document.createElement('button');
-    generateButton.type = 'button';
-    generateButton.className = 'btn btn--primary';
-    generateButton.textContent = 'Generate Prompt';
-    generateButton.addEventListener('click', () => {
-      if (!textarea.value.trim()) {
-        showToast('Paste this unit\u2019s textbook pages first');
-        return;
+      if (attachments.length > 0) {
+        const processButton = document.createElement('button');
+        processButton.type = 'button';
+        processButton.className = 'btn btn--primary';
+        processButton.textContent = `Process ${attachments.length} Page${attachments.length === 1 ? '' : 's'}`;
+        processButton.addEventListener('click', handlers.onProcessAttachments);
+        section.appendChild(processButton);
       }
-      handlers.onGeneratePrompt();
-    });
-    section.appendChild(generateButton);
+    } else {
+      // Text has been read (OCR or a real PDF text layer) — shown
+      // back to the teacher, and still editable, so an OCR mistake
+      // can be corrected before it's ever baked into the prompt sent
+      // to an AI assistant.
+      const reviewIntro = document.createElement('p');
+      reviewIntro.className = 'curriculum-management__intro';
+      reviewIntro.textContent = 'Here\u2019s what was read from your pages. Check it over \u2014 fix anything OCR got wrong \u2014 then generate the prompt.';
+      section.appendChild(reviewIntro);
+
+      const textareaLabel = document.createElement('label');
+      textareaLabel.className = 'curriculum-management__labeled-input';
+      const textareaLabelText = document.createElement('span');
+      textareaLabelText.textContent = 'Textbook pages for this unit';
+      const textarea = document.createElement('textarea');
+      textarea.className = 'curriculum-management__toc-textarea';
+      textarea.rows = 8;
+      textarea.value = unitPageText;
+      textarea.addEventListener('input', () => handlers.onChangeUnitPageText(textarea.value));
+      textareaLabel.append(textareaLabelText, textarea);
+      section.appendChild(textareaLabel);
+
+      const generateButton = document.createElement('button');
+      generateButton.type = 'button';
+      generateButton.className = 'btn btn--primary';
+      generateButton.textContent = 'Generate Prompt';
+      generateButton.addEventListener('click', () => {
+        if (!textarea.value.trim()) {
+          showToast('That text is empty \u2014 attach a page or type something first');
+          return;
+        }
+        handlers.onGeneratePrompt();
+      });
+      section.appendChild(generateButton);
+    }
   } else {
     const promptIntro = document.createElement('p');
     promptIntro.className = 'curriculum-management__intro';
