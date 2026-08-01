@@ -46,6 +46,15 @@ const VALIDATORS = [
       index.curriculum.subjectId = resolveHistoricalSubjectId(index.curriculum.subject);
     },
   },
+  {
+    check: (index) => index.units.every((unit) => Array.isArray(unit.concepts) && typeof unit.conceptExtractionStatus === 'string'),
+    repair: (index) => {
+      index.units.forEach((unit) => {
+        if (!Array.isArray(unit.concepts)) unit.concepts = [];
+        if (typeof unit.conceptExtractionStatus !== 'string') unit.conceptExtractionStatus = 'not_extracted';
+      });
+    },
+  },
 ];
 
 /**

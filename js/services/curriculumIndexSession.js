@@ -147,6 +147,8 @@ export function createCurriculumIndexSession() {
       title: unit.title,
       printedPage: unit.printedPage,
       partId: partIdFor(unit.partName),
+      concepts: [],
+      conceptExtractionStatus: 'not_extracted',
     }));
   }
 
@@ -213,7 +215,7 @@ export function createCurriculumIndexSession() {
     if (!targetPartId) {
       targetPartId = index.parts.length > 0 ? index.parts[0].id : addPart('General').id;
     }
-    const unit = { id: generateId(), number: null, title, printedPage: null, partId: targetPartId };
+    const unit = { id: generateId(), number: null, title, printedPage: null, partId: targetPartId, concepts: [], conceptExtractionStatus: 'not_extracted' };
     index.units.push(unit);
     return unit;
   }

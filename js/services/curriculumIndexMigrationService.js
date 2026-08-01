@@ -13,6 +13,8 @@
  *
  *   schemaVersion 0 (or missing entirely) -> 1: parts/units guaranteed present
  *   schemaVersion 1 -> 2: curriculum.subjectId guaranteed present
+ *   schemaVersion 2 -> 3: every unit's concepts[]/conceptExtractionStatus
+ *                          guaranteed present (Curriculum Builder milestone)
  *
  * `LATEST_SCHEMA_VERSION` is exported so
  * services/curriculumIndexRepository.js's createIndex() can stamp a
@@ -34,7 +36,7 @@
 import { runSchemaMigrations } from '../utils/schemaMigrationPipeline.js';
 import { resolveHistoricalSubjectId } from './subjectIdMigrationService.js';
 
-export const LATEST_SCHEMA_VERSION = 2;
+export const LATEST_SCHEMA_VERSION = 3;
 
 /** v0 -> v1: guarantees parts/units exist, as empty arrays if genuinely absent. This is the actual fix for the reproduced crash — documents predating the point where createIndex() guaranteed these together are now repaired at the boundary, not defended against in every view that reads them. */
 function migrateToV1(index) {
@@ -51,12 +53,29 @@ function migrateToV2(index) {
   index.schemaVersion = 2;
 }
 
+/**
+ * v2 -> v3: guarantees every unit carries `concepts` (an empty array,
+ * never populated by this migration itself — extracting real concepts
+ * is an explicit, later teacher action, not something a migration
+ * should fabricate) and `conceptExtractionStatus` (defaulting to
+ * 'not_extracted', the honest starting state for any unit that
+ * predates Concept Extraction existing at all). Curriculum Builder
+ * milestone.
+ */
+function migrateToV3(index) {
+  index.units.forEach((unit) => {
+    if (!Array.isArray(unit.concepts)) unit.concepts = [];
+    if (typeof unit.conceptExtractionStatus !== 'string') unit.conceptExtractionStatus = 'not_extracted';
+  });
+  index.schemaVersion = 3;
+}
+
 // Indexed by the version each step migrates *from* — MIGRATIONS[0] is
 // the v0->v1 step, MIGRATIONS[1] is v1->v2, and so on. Add a new
 // version by appending one more function here and bumping
 // LATEST_SCHEMA_VERSION; never edit an existing entry to accommodate
 // a later one.
-const MIGRATIONS = [migrateToV1, migrateToV2];
+const MIGRATIONS = [migrateToV1, migrateToV2, migrateToV3];
 
 /**
  * Advances one Curriculum Index document through every migration step

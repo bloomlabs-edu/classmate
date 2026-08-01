@@ -68,6 +68,8 @@ import * as curriculumLibraryService from '../../services/curriculumLibraryServi
 import * as curriculumIndexRepository from '../../services/curriculumIndexRepository.js';
 import * as curriculumSubmissionsService from '../../services/curriculumSubmissionsService.js';
 import { createCurriculumIndexSession } from '../../services/curriculumIndexSession.js';
+import * as unitPageRangeService from '../../services/unitPageRangeService.js';
+import * as manualAiProvider from '../../services/extractionProviders/manualAiProvider.js';
 import { createBackButton } from '../components/BackButton.js';
 import { getCanonicalSubjects, getCanonicalSubjectById, generateCustomSubjectId } from '../../services/subjectIdentityService.js';
 import { createCurriculumExplorerPanel } from '../components/CurriculumExplorerPanel.js';
@@ -102,6 +104,25 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
   let isResumingIndex = false; // true when reached via "Open" from My Curriculum Indexes, not fresh creation — changes where Back goes
   let canonicalImportErrors = []; // malformed lines from the most recent AI-Ready Import, shown as a banner on Review Units — cleared on any other entry point
 
+  // Curriculum Builder — Unit Concepts / Concept Extraction state.
+  // selectedUnitConceptsId is the one Unit currently being viewed at
+  // mode 'index-unit-concepts' or 'index-extract-concepts' — a stable
+  // id, not a stored unit reference, resolved fresh from
+  // indexSession.getIndex() on every render.
+  let selectedUnitConceptsId = null;
+  // The prompt text once generated (mode 'index-extract-concepts') —
+  // null until "Generate Prompt" is actually clicked, so the UI can
+  // tell "not generated yet" from "generated, here it is."
+  let extractionPromptText = null;
+  // What a teacher has typed/pasted as this Unit's own textbook page
+  // text, before a prompt is generated. Kept separate from
+  // extractionPromptText since Milestone 3 deliberately stops after
+  // generating the prompt — no automated PDF re-extraction is wired
+  // for Curriculum Index sessions yet (see this project's own
+  // Curriculum Builder design discussion for why that gap is real,
+  // not silently worked around here).
+  let unitPageText = '';
+
   // Review Submissions state.
   let selectedSubmission = null;
 
@@ -121,6 +142,9 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
         indexExtractionReason,
         isResumingIndex,
         canonicalImportErrors,
+        selectedUnitConceptsId,
+        extractionPromptText,
+        unitPageText,
       },
       {
         onBack,
@@ -304,6 +328,37 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
           showToast(`${indexSession.getIndex().curriculum.name} saved.`);
           rerender();
         },
+        onOpenUnitConcepts: (unitId) => {
+          selectedUnitConceptsId = unitId;
+          extractionPromptText = null;
+          unitPageText = '';
+          mode = 'index-unit-concepts';
+          rerender();
+        },
+        onStartExtractConcepts: () => {
+          extractionPromptText = null;
+          unitPageText = '';
+          mode = 'index-extract-concepts';
+          rerender();
+        },
+        onChangeUnitPageText: (text) => {
+          unitPageText = text;
+        },
+        onGeneratePrompt: () => {
+          const index = indexSession.getIndex();
+          const unit = index.units.find((u) => u.id === selectedUnitConceptsId);
+          const range = unitPageRangeService.getDerivedPageRange(index, selectedUnitConceptsId);
+          extractionPromptText = manualAiProvider.buildPrompt({
+            curriculumName: index.curriculum.name,
+            grade: index.curriculum.grade,
+            subject: index.curriculum.subject,
+            unitTitle: unit.title,
+            startPage: range ? range.startPage : '',
+            endPage: range && range.endPage != null ? range.endPage : '',
+            pageText: unitPageText,
+          });
+          rerender();
+        },
         onGoToReview: () => {
           selectedSubmission = null;
           mode = 'review-list';
@@ -353,6 +408,8 @@ function renderView(container, mode, state, handlers) {
       'index-extracting': 'index-create',
       'index-extraction-failed': 'index-create',
       'index-review-units': state.isResumingIndex ? 'hub' : 'index-create',
+      'index-unit-concepts': 'index-review-units',
+      'index-extract-concepts': 'index-unit-concepts',
       'review-list': 'hub',
       'review-detail': 'review-list',
     }[mode];
@@ -385,6 +442,10 @@ function renderView(container, mode, state, handlers) {
     wrapper.appendChild(renderIndexExtractionFailedStep(state, handlers));
   } else if (mode === 'index-review-units') {
     wrapper.appendChild(renderIndexReviewUnitsStep(state.indexSession.getIndex(), state.canonicalImportErrors, handlers));
+  } else if (mode === 'index-unit-concepts') {
+    wrapper.appendChild(renderUnitConceptsStep(state.indexSession.getIndex(), state.selectedUnitConceptsId, handlers));
+  } else if (mode === 'index-extract-concepts') {
+    wrapper.appendChild(renderExtractConceptsStep(state.indexSession.getIndex(), state.selectedUnitConceptsId, state.unitPageText, state.extractionPromptText, handlers));
   } else if (mode === 'review-list') {
     wrapper.appendChild(renderReviewListStep(handlers));
   } else if (mode === 'review-detail') {
@@ -1306,6 +1367,189 @@ function renderAddPartForm(handlers) {
   return createAddForm('New part name (e.g. History, Geography)', '+ Add Part', (name) => handlers.onAddPart(name));
 }
 
+/**
+ * The Unit Concepts screen — Curriculum Builder's first teacher-facing
+ * stage beyond Unit Review. Shows a Unit's own context (breadcrumb,
+ * page range) and either its real, already-extracted Concepts, or an
+ * honest explanation that this curriculum currently contains only
+ * index data and Concept Extraction hasn't happened yet for this Unit
+ * — never the bare, uninformative "No concepts yet." this project's
+ * own design discussion explicitly rejected.
+ */
+function renderUnitConceptsStep(index, unitId, handlers) {
+  const section = document.createElement('div');
+  section.className = 'curriculum-management__section';
+
+  const unit = index.units.find((u) => u.id === unitId);
+  if (!unit) {
+    // The Unit this screen was opened for no longer exists (deleted
+    // from another tab/session) — fall back rather than render a
+    // screen with nothing real to show.
+    section.appendChild(createEmptyStateElement({ message: 'This unit could not be found.' }));
+    return section;
+  }
+
+  const breadcrumb = document.createElement('p');
+  breadcrumb.className = 'curriculum-management__intro';
+  breadcrumb.textContent = `${index.curriculum.name} \u203a ${index.curriculum.subject}`;
+  section.appendChild(breadcrumb);
+
+  const heading = document.createElement('p');
+  heading.className = 'curriculum-management__step-heading';
+  heading.textContent = unit.title;
+  section.appendChild(heading);
+
+  const range = unitPageRangeService.getDerivedPageRange(index, unitId);
+  const pageRangeEl = document.createElement('p');
+  pageRangeEl.className = 'curriculum-management__my-index-meta';
+  if (range) {
+    pageRangeEl.textContent = range.endPage != null ? `Pages ${range.startPage}\u2013${range.endPage}` : `From page ${range.startPage} onward`;
+  } else {
+    pageRangeEl.textContent = 'No page range available for this unit.';
+  }
+  section.appendChild(pageRangeEl);
+
+  const conceptsHeading = document.createElement('p');
+  conceptsHeading.className = 'curriculum-management__intro';
+  conceptsHeading.textContent = 'Concepts';
+  section.appendChild(conceptsHeading);
+
+  if (unit.concepts.length > 0) {
+    const list = document.createElement('div');
+    list.className = 'curriculum-management__subject-card-list';
+    unit.concepts.forEach((concept) => {
+      const row = document.createElement('div');
+      row.className = 'curriculum-management__import-unit-row';
+      row.textContent = concept.title;
+      list.appendChild(row);
+    });
+    section.appendChild(list);
+  } else {
+    const emptyState = document.createElement('div');
+    emptyState.className = 'curriculum-management__empty-concepts-state';
+
+    const emptyMessage = document.createElement('p');
+    emptyMessage.className = 'curriculum-management__intro';
+    emptyMessage.textContent =
+      'This curriculum currently contains only index data \u2014 unit titles and page numbers, nothing more. Concept extraction has not yet been performed for this unit.';
+    emptyState.appendChild(emptyMessage);
+
+    const extractButton = document.createElement('button');
+    extractButton.type = 'button';
+    extractButton.className = 'btn btn--primary';
+    extractButton.textContent = 'Extract Concepts';
+    extractButton.addEventListener('click', handlers.onStartExtractConcepts);
+    emptyState.appendChild(extractButton);
+
+    section.appendChild(emptyState);
+  }
+
+  return section;
+}
+
+/**
+ * The Extract Concepts screen — the Manual AI provider's flow, per
+ * explicit Milestone scope: build a prompt, let the teacher copy it,
+ * and stop there. No automated AI call, no paste-back step yet (that
+ * follows in a later milestone) — this screen's entire job is proving
+ * the workflow is real and reachable, not completing extraction
+ * end-to-end.
+ *
+ * Provider-agnostic by construction: this screen only ever reads
+ * manualAiProvider.buildPrompt() through the same call shape any
+ * future provider's own buildPrompt() would support — nothing here
+ * assumes copy/paste is the only possible shape, even though it's the
+ * only one wired in today (see
+ * services/extractionProviders/extractionProviderRegistry.js).
+ */
+function renderExtractConceptsStep(index, unitId, unitPageText, extractionPromptText, handlers) {
+  const section = document.createElement('div');
+  section.className = 'curriculum-management__section';
+
+  const unit = index.units.find((u) => u.id === unitId);
+  if (!unit) {
+    section.appendChild(createEmptyStateElement({ message: 'This unit could not be found.' }));
+    return section;
+  }
+
+  const heading = document.createElement('p');
+  heading.className = 'curriculum-management__step-heading';
+  heading.textContent = `Extract Concepts \u2014 ${unit.title}`;
+  section.appendChild(heading);
+
+  const range = unitPageRangeService.getDerivedPageRange(index, unitId);
+  const pageRangeEl = document.createElement('p');
+  pageRangeEl.className = 'curriculum-management__my-index-meta';
+  pageRangeEl.textContent = range
+    ? range.endPage != null
+      ? `Pages ${range.startPage}\u2013${range.endPage}`
+      : `From page ${range.startPage} onward`
+    : 'No page range available for this unit.';
+  section.appendChild(pageRangeEl);
+
+  if (extractionPromptText === null) {
+    const instructions = document.createElement('p');
+    instructions.className = 'curriculum-management__intro';
+    instructions.textContent =
+      'Paste this unit\u2019s own textbook pages below, then generate a prompt to hand to your own AI assistant of choice (Claude, ChatGPT, Gemini, or any other).';
+    section.appendChild(instructions);
+
+    const textareaLabel = document.createElement('label');
+    textareaLabel.className = 'curriculum-management__labeled-input';
+    const textareaLabelText = document.createElement('span');
+    textareaLabelText.textContent = 'Textbook pages for this unit';
+    const textarea = document.createElement('textarea');
+    textarea.className = 'curriculum-management__toc-textarea';
+    textarea.rows = 8;
+    textarea.value = unitPageText;
+    textarea.addEventListener('input', () => handlers.onChangeUnitPageText(textarea.value));
+    textareaLabel.append(textareaLabelText, textarea);
+    section.appendChild(textareaLabel);
+
+    const generateButton = document.createElement('button');
+    generateButton.type = 'button';
+    generateButton.className = 'btn btn--primary';
+    generateButton.textContent = 'Generate Prompt';
+    generateButton.addEventListener('click', () => {
+      if (!textarea.value.trim()) {
+        showToast('Paste this unit\u2019s textbook pages first');
+        return;
+      }
+      handlers.onGeneratePrompt();
+    });
+    section.appendChild(generateButton);
+  } else {
+    const promptIntro = document.createElement('p');
+    promptIntro.className = 'curriculum-management__intro';
+    promptIntro.textContent = 'Copy this prompt into your own AI assistant, then paste its response back here in a later step.';
+    section.appendChild(promptIntro);
+
+    const promptDisplay = document.createElement('pre');
+    promptDisplay.className = 'curriculum-management__canonical-example';
+    promptDisplay.textContent = extractionPromptText;
+    section.appendChild(promptDisplay);
+
+    const copyButton = document.createElement('button');
+    copyButton.type = 'button';
+    copyButton.className = 'btn btn--primary';
+    copyButton.textContent = 'Copy Prompt';
+    copyButton.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(extractionPromptText);
+        copyButton.textContent = 'Copied!';
+        setTimeout(() => {
+          copyButton.textContent = 'Copy Prompt';
+        }, 1500);
+      } catch (error) {
+        showToast('Could not copy \u2014 select and copy the text above manually');
+      }
+    });
+    section.appendChild(copyButton);
+  }
+
+  return section;
+}
+
 function renderIndexUnitRow(unit, unitIndexWithinPart, partUnitCount, allParts, handlers) {
   const row = document.createElement('div');
   row.className = 'curriculum-management__import-unit-row';
@@ -1358,6 +1602,13 @@ function renderIndexUnitRow(unit, unitIndexWithinPart, partUnitCount, allParts, 
     if (partSelect.value !== unit.partId) handlers.onMoveIndexUnitToPart(unit.id, partSelect.value);
   });
   topLine.appendChild(partSelect);
+
+  const viewConceptsButton = document.createElement('button');
+  viewConceptsButton.type = 'button';
+  viewConceptsButton.className = 'btn btn--text';
+  viewConceptsButton.textContent = 'View Concepts';
+  viewConceptsButton.addEventListener('click', () => handlers.onOpenUnitConcepts(unit.id));
+  topLine.appendChild(viewConceptsButton);
 
   const deleteButton = document.createElement('button');
   deleteButton.type = 'button';
