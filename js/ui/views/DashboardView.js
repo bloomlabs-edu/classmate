@@ -354,6 +354,8 @@ const DASHBOARD_MODULES = [
     icon: 'play',
     description: 'Run today\u2019s class',
     tier: 'primary',
+    // No accentColor: this card fills with the teacher's own chosen
+    // brand accent (--color-primary-deep), not a fixed module color.
   },
   {
     id: 'classroom',
@@ -361,6 +363,7 @@ const DASHBOARD_MODULES = [
     icon: 'users',
     description: 'Students, groups, and daily operations',
     tier: 'daily',
+    accentColor: '#0F9E8E', // reuses ICON_CATEGORIES.groups (Icon.js) — Classroom owns Students and Groups, the exact same "groups" concept that color already represents elsewhere in the app
   },
   {
     id: 'learning',
@@ -368,6 +371,7 @@ const DASHBOARD_MODULES = [
     icon: 'book-open',
     description: 'Prepare lessons, support students',
     tier: 'daily',
+    accentColor: '#6D5AC4', // reuses ICON_CATEGORIES.notebook (Icon.js) — Learning owns Notebook configuration and Subjects
   },
   {
     id: 'curriculum',
@@ -375,6 +379,7 @@ const DASHBOARD_MODULES = [
     icon: 'graduation-cap',
     description: 'Install, upload, assign curriculum',
     tier: 'setup',
+    accentColor: '#B8721E', // a new, restrained amber, verified at 3.84:1 against white (WCAG 1.4.11's 3:1 non-text-UI threshold) — deliberately a different shade from ICON_CATEGORIES.recognition's gold, since that one represents celebration, not curriculum structure
   },
   {
     id: 'assessments',
@@ -382,6 +387,7 @@ const DASHBOARD_MODULES = [
     icon: 'clipboard-list',
     description: 'Record exam and test marks',
     tier: 'setup',
+    accentColor: '#5B6B8C', // a new, restrained slate-indigo, verified at 5.35:1 against white — formal without reading as plain neutral gray
   },
 ];
 
@@ -414,6 +420,7 @@ function renderPrimaryModulesSection({ onStartClassMode, onOpenClassroomManageme
         description: module.description,
         onClick,
         tier: module.tier,
+        accentColor: module.accentColor,
       })
     );
   });
@@ -452,10 +459,18 @@ function renderPrimaryModulesSection({ onStartClassMode, onOpenClassroomManageme
  * Lucide icon system, not emoji (emoji stay reserved for celebration/
  * recognition/emotion, as documented there).
  */
-function createPrimaryModuleCard({ icon, label, description, onClick, tier }) {
+function createPrimaryModuleCard({ icon, label, description, onClick, tier, accentColor }) {
   const card = document.createElement('button');
   card.type = 'button';
   card.className = `primary-module-card primary-module-card--${tier}`;
+  // A single custom property, set once here, that every tier's CSS
+  // (--daily, --setup) reads for icon color, border color, and hover
+  // treatment — the module's own identity color flows through one
+  // channel rather than being hardcoded per module name in CSS. Class
+  // Mode (tier "primary") has no accentColor at all; its own CSS rule
+  // uses --color-primary-deep directly instead, so this is simply
+  // never set for that card.
+  if (accentColor) card.style.setProperty('--module-accent', accentColor);
 
   const iconEl = createIcon(icon, { size: 28, strokeWidth: 1.75, className: 'primary-module-card__icon' });
   card.appendChild(iconEl);

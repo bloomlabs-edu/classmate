@@ -4061,21 +4061,27 @@ button.wizard-checklist__row:hover {
 
 /* Classroom and Learning — daily tools a teacher opens constantly,
    not the single primary action but still clearly present: white
-   surface, full-strength accent-colored icon, bold black label. A
-   deliberately stronger border than the occasional tier below is the
-   one visual cue separating "daily" from "occasional" once both sit
-   on the same white background. */
+   surface, full-strength accent-colored icon, bold black label. Each
+   module's own unique accent color (--module-accent, set inline per
+   card from DASHBOARD_MODULES in DashboardView.js) drives the border,
+   icon, and hover ring here — restrained accents used to improve
+   scanability between modules, applied through icon color, borders,
+   and hover only, never as a large filled area (that treatment is
+   reserved for Class Mode alone, which uses the actual brand accent,
+   --color-primary-deep, not a module color). A deliberately stronger
+   border than the setup tier below is the one visual cue separating
+   "daily" from "setup" once both sit on the same white background. */
 .primary-module-card--daily {
   background-color: var(--color-surface, #ffffff);
-  border: 1.5px solid var(--color-primary-deep);
+  border: 1.5px solid var(--module-accent);
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
 }
 .primary-module-card--daily:hover {
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.1), 0 0 0 2px var(--color-primary-deep);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.1), 0 0 0 2px var(--module-accent);
   transform: translateY(-2px);
 }
 .primary-module-card--daily .primary-module-card__icon {
-  color: var(--color-primary-deep);
+  color: var(--module-accent);
 }
 .primary-module-card--daily .primary-module-card__label {
   color: var(--color-ink);
@@ -4086,22 +4092,28 @@ button.wizard-checklist__row:hover {
 
 /* Curriculum and Assessments — administrative tasks touched
    occasionally, deliberately quieter than the daily tools above:
-   plain white surface, thin neutral border, a muted gray icon instead
-   of the accent color, and a lighter label weight. Still fully
-   visible and immediately tappable — "quieter," not "hidden" or
-   disabled-looking. */
+   plain white surface, thin neutral border, and each module's own
+   accent color again (not plain gray) but at reduced opacity on the
+   icon specifically — still a unique, recognizable identity color per
+   module, just visually quieter to match this tier's "occasional,
+   not daily" weight. Still fully visible and immediately tappable —
+   "quieter," not "hidden" or disabled-looking. Typography is
+   identical to every other tier (see .primary-module-card__label) —
+   this tier's quietness comes entirely from color/border/elevation,
+   never from a lighter font weight. */
 .primary-module-card--setup {
   background-color: var(--color-surface, #ffffff);
   border: 1px solid var(--color-border);
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
 }
 .primary-module-card--setup:hover {
-  border-color: var(--color-muted);
+  border-color: var(--module-accent);
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.1);
   transform: translateY(-2px);
 }
 .primary-module-card--setup .primary-module-card__icon {
-  color: var(--color-muted);
+  color: var(--module-accent);
+  opacity: 0.75;
 }
 .primary-module-card--setup .primary-module-card__label {
   color: var(--color-ink);
