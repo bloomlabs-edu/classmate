@@ -6476,6 +6476,9 @@ button.wizard-checklist__row:hover {
   flex-direction: column;
   padding: 0.3rem;
 }
+.overflow-menu__dropdown[hidden] {
+  display: none;
+}
 .overflow-menu__item {
   background: none;
   border: none;
@@ -6622,6 +6625,9 @@ button.wizard-checklist__row:hover {
   display: flex;
   flex-direction: column;
   padding: 0.3rem;
+}
+.searchable-select__dropdown[hidden] {
+  display: none;
 }
 .searchable-select__option {
   background: none;
