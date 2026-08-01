@@ -6848,66 +6848,62 @@ button.wizard-checklist__row:hover {
   opacity: 0.75;
 }
 
-/* FileDropZone — the first drag-and-drop file picker in this app.
-   See ui/components/FileDropZone.js. */
-.file-drop-zone {
-  border: 2px dashed var(--color-border);
+/* MultimodalInput — the reusable, ChatGPT-composer-style input.
+   Supersedes the earlier FileDropZone and AttachmentCanvas. See
+   ui/components/MultimodalInput.js. */
+.multimodal-input {
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
-  padding: 2rem 1rem;
-  text-align: center;
-  cursor: pointer;
-  background-color: var(--color-surface, #ffffff);
+  padding: 0.6rem;
   transition: border-color 150ms ease, background-color 150ms ease;
 }
-.file-drop-zone:hover,
-.file-drop-zone--active {
+.multimodal-input--active {
   border-color: var(--color-primary-deep);
   background-color: var(--color-primary-soft, #EEF6FF);
 }
-.file-drop-zone__label {
-  color: var(--color-muted);
-  font-size: 0.95rem;
-  margin: 0;
+.multimodal-input__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
 }
-.file-drop-zone__input {
-  display: none;
-}
-
-/* AttachmentCanvas — chat-app-style attachment surface (paste, drag,
-   browse) with thumbnail previews. See
-   ui/components/AttachmentCanvas.js. Replaces .file-drop-zone for the
-   Curriculum Builder's Extract Concepts stage. */
-.attachment-canvas {
-  border: 2px dashed var(--color-border);
-  border-radius: var(--radius-card);
-  padding: 1rem;
-  outline: none;
-}
-.attachment-canvas:focus,
-.attachment-canvas--active {
-  border-color: var(--color-primary-deep);
-  background-color: var(--color-primary-soft, #EEF6FF);
-}
-.attachment-canvas__surface {
-  padding: 1.5rem 1rem;
-  text-align: center;
+.multimodal-input__plus-button {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-surface, #ffffff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-}
-.attachment-canvas__label {
   color: var(--color-muted);
-  font-size: 0.95rem;
-  margin: 0;
 }
-.attachment-canvas__input {
+.multimodal-input__plus-button:hover {
+  border-color: var(--color-primary-deep);
+  color: var(--color-primary-deep);
+}
+.multimodal-input__textarea {
+  flex: 1;
+  border: none;
+  outline: none;
+  resize: vertical;
+  font: inherit;
+  background: transparent;
+  min-height: 4.5rem;
+}
+.multimodal-input__file-input {
   display: none;
 }
-.attachment-canvas__thumbnails {
+.multimodal-input__attachments {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
-  margin-top: 0.75rem;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--color-border);
 }
-.attachment-canvas__thumbnail {
+.multimodal-input__thumbnail {
   position: relative;
   width: 84px;
   border: 1px solid var(--color-border);
@@ -6916,21 +6912,21 @@ button.wizard-checklist__row:hover {
   text-align: center;
   background-color: var(--color-surface, #ffffff);
 }
-.attachment-canvas__thumbnail-image {
+.multimodal-input__thumbnail-image {
   width: 100%;
   height: 64px;
   object-fit: cover;
   border-radius: 4px;
   display: block;
 }
-.attachment-canvas__thumbnail-icon {
+.multimodal-input__thumbnail-icon {
   height: 64px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--color-muted);
 }
-.attachment-canvas__thumbnail-name {
+.multimodal-input__thumbnail-name {
   font-size: 0.7rem;
   color: var(--color-muted);
   margin: 0.25rem 0 0;
@@ -6938,7 +6934,7 @@ button.wizard-checklist__row:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.attachment-canvas__thumbnail-remove {
+.multimodal-input__thumbnail-remove {
   position: absolute;
   top: -6px;
   right: -6px;

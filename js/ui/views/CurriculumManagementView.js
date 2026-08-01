@@ -71,7 +71,7 @@ import { createCurriculumIndexSession } from '../../services/curriculumIndexSess
 import * as unitPageRangeService from '../../services/unitPageRangeService.js';
 import * as manualAiProvider from '../../services/extractionProviders/manualAiProvider.js';
 import * as unitPageTextExtractionService from '../../services/unitPageTextExtractionService.js';
-import { createAttachmentCanvas } from '../components/AttachmentCanvas.js';
+import { createMultimodalInput } from '../components/MultimodalInput.js';
 import { generateId } from '../../utils/idGenerator.js';
 import { createBackButton } from '../components/BackButton.js';
 import { getCanonicalSubjects, getCanonicalSubjectById, generateCustomSubjectId } from '../../services/subjectIdentityService.js';
@@ -131,16 +131,23 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
   // see real progress, not one opaque spinner for however long the
   // whole batch takes. Null when nothing is processing.
   let ocrProgress = null;
-  // Attachments collected on ui/components/AttachmentCanvas.js before
-  // OCR ever runs — { id, file, previewUrl }[]. A teacher interacts
-  // with pages here (add via paste/drag/browse, remove a mistake),
-  // not text; OCR is a separate, later step triggered explicitly (see
-  // handlers.onProcessAttachments below), only after the attachment
-  // set is exactly what they want. previewUrl is
+  // Attachments collected on ui/components/MultimodalInput.js before
+  // OCR ever runs — { id, file, previewUrl }[]. A teacher provides
+  // textbook pages here, in whatever form is natural (typed/pasted
+  // text, a pasted screenshot, a dragged or browsed file) — this
+  // component's own output is a normalized { text, attachments } pair,
+  // and neither OCR nor the ExtractionProvider ever needs to know
+  // which form a given page arrived in. previewUrl is
   // URL.createObjectURL(file) for an image (null for a PDF, which
-  // gets a generic file icon instead — see AttachmentCanvas.js's own
+  // gets a generic file icon instead — see MultimodalInput.js's own
   // comment for why a real rendered PDF thumbnail isn't built here).
   let attachments = [];
+  // The composer's own typed/pasted text — kept separate from
+  // unitPageText (the *combined*, post-processing result shown for
+  // review) since this is the raw input a teacher is still actively
+  // composing, before "Process" combines it with whatever OCR
+  // produces from the attachments.
+  let composerText = '';
 
   // Review Submissions state.
   let selectedSubmission = null;
@@ -179,6 +186,7 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
         unitPageText,
         ocrProgress,
         attachments,
+        composerText,
       },
       {
         onBack,
@@ -366,6 +374,7 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
           selectedUnitConceptsId = unitId;
           extractionPromptText = null;
           unitPageText = '';
+          composerText = '';
           revokeAttachmentPreviews();
           attachments = [];
           mode = 'index-unit-concepts';
@@ -374,6 +383,7 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
         onStartExtractConcepts: () => {
           extractionPromptText = null;
           unitPageText = '';
+          composerText = '';
           revokeAttachmentPreviews();
           attachments = [];
           mode = 'index-extract-concepts';
@@ -381,6 +391,9 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
         },
         onChangeUnitPageText: (text) => {
           unitPageText = text;
+        },
+        onComposerTextChange: (text) => {
+          composerText = text;
         },
         onAddAttachments: (files) => {
           Array.from(files).forEach((file) => {
@@ -398,18 +411,37 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
           attachments = attachments.filter((a) => a.id !== attachmentId);
           rerender();
         },
-        onProcessAttachments: async () => {
+        onProcessComposerInput: async () => {
           const files = attachments.map((a) => a.file);
+          const typedText = composerText.trim();
+
+          if (files.length === 0) {
+            // Nothing to OCR — the composer's own typed/pasted text
+            // is the entire input. Still routed through the same
+            // "combined text, shown for review" step below, so typed
+            // text and OCR'd text are indistinguishable to every
+            // later stage (Generate Prompt, and eventually the
+            // Extraction Provider) — the whole point of a normalized
+            // output.
+            unitPageText = typedText;
+            rerender();
+            return;
+          }
+
           ocrProgress = { fileIndex: 0, fileName: files[0].name, totalFiles: files.length };
           rerender();
           try {
-            const extractedText = await unitPageTextExtractionService.extractTextFromFiles(files, {
+            const ocrText = await unitPageTextExtractionService.extractTextFromFiles(files, {
               onProgress: (progress) => {
                 ocrProgress = progress;
                 rerender();
               },
             });
-            unitPageText = extractedText;
+            // Typed/pasted text first, then each attachment's own
+            // OCR'd text — joined the same "blank line between
+            // pieces" convention services/pdfExtractionService.js
+            // already uses for multi-page text.
+            unitPageText = typedText ? `${typedText}\n\n${ocrText}` : ocrText;
           } catch (error) {
             console.error('[CurriculumManagementView] OCR/text extraction failed:', error);
             showToast('Could not read text from those pages \u2014 try again, or remove and re-add them');
@@ -519,7 +551,7 @@ function renderView(container, mode, state, handlers) {
   } else if (mode === 'index-unit-concepts') {
     wrapper.appendChild(renderUnitConceptsStep(state.indexSession.getIndex(), state.selectedUnitConceptsId, handlers));
   } else if (mode === 'index-extract-concepts') {
-    wrapper.appendChild(renderExtractConceptsStep(state.indexSession.getIndex(), state.selectedUnitConceptsId, state.attachments, state.unitPageText, state.extractionPromptText, state.ocrProgress, handlers));
+    wrapper.appendChild(renderExtractConceptsStep(state.indexSession.getIndex(), state.selectedUnitConceptsId, state.attachments, state.composerText, state.unitPageText, state.extractionPromptText, state.ocrProgress, handlers));
   } else if (mode === 'review-list') {
     wrapper.appendChild(renderReviewListStep(handlers));
   } else if (mode === 'review-detail') {
@@ -1536,7 +1568,7 @@ function renderUnitConceptsStep(index, unitId, handlers) {
  * only one wired in today (see
  * services/extractionProviders/extractionProviderRegistry.js).
  */
-function renderExtractConceptsStep(index, unitId, attachments, unitPageText, extractionPromptText, ocrProgress, handlers) {
+function renderExtractConceptsStep(index, unitId, attachments, composerText, unitPageText, extractionPromptText, ocrProgress, handlers) {
   const section = document.createElement('div');
   section.className = 'curriculum-management__section';
 
@@ -1570,41 +1602,46 @@ function renderExtractConceptsStep(index, unitId, attachments, unitPageText, ext
       progressEl.textContent = `Reading page ${ocrProgress.fileIndex + 1} of ${ocrProgress.totalFiles} (${ocrProgress.fileName})\u2026`;
       section.appendChild(progressEl);
     } else if (!unitPageText) {
-      // The teacher interacts with pages here, not text — paste a
-      // screenshot, drag files, or browse, with each attachment shown
-      // as its own thumbnail. OCR only runs once "Process Pages" is
-      // clicked, a deliberate, later, separate step — never
-      // automatic on every attachment added, which would re-run OCR
-      // repeatedly while a teacher is still assembling their set.
+      // One composer, any natural form a teacher reaches for — type,
+      // paste text, paste a screenshot, drag files, or browse. OCR
+      // and combining happen after "Continue" is pressed, entirely
+      // hidden from what the teacher interacts with here.
       const instructions = document.createElement('p');
       instructions.className = 'curriculum-management__intro';
-      instructions.textContent = 'Attach this unit\u2019s own textbook pages \u2014 paste a screenshot, drag files, or browse. Text is read automatically once you\u2019re ready; you never need to type or copy it yourself.';
+      instructions.textContent = 'Provide this unit\u2019s own textbook pages \u2014 type or paste text, paste a screenshot, drag files, or browse. Text is read automatically; you never need to type or copy it yourself unless you want to.';
       section.appendChild(instructions);
 
-      const canvas = createAttachmentCanvas({
-        accept: '.pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg',
+      const composer = createMultimodalInput({
+        text: composerText,
         attachments,
-        onFilesAdded: (files) => handlers.onAddAttachments(files),
+        placeholder: 'Type or paste text, paste a screenshot (Ctrl+V), or drag/browse files\u2026',
+        onTextChange: (text) => handlers.onComposerTextChange(text),
+        onAttachmentsAdded: (files) => handlers.onAddAttachments(files),
         onRemoveAttachment: (id) => handlers.onRemoveAttachment(id),
       });
-      section.appendChild(canvas);
+      section.appendChild(composer);
 
-      if (attachments.length > 0) {
-        const processButton = document.createElement('button');
-        processButton.type = 'button';
-        processButton.className = 'btn btn--primary';
-        processButton.textContent = `Process ${attachments.length} Page${attachments.length === 1 ? '' : 's'}`;
-        processButton.addEventListener('click', handlers.onProcessAttachments);
-        section.appendChild(processButton);
-      }
+      const continueButton = document.createElement('button');
+      continueButton.type = 'button';
+      continueButton.className = 'btn btn--primary';
+      continueButton.textContent = 'Continue';
+      continueButton.addEventListener('click', () => {
+        if (attachments.length === 0 && !composerText.trim()) {
+          showToast('Provide a page first \u2014 type, paste, or attach one');
+          return;
+        }
+        handlers.onProcessComposerInput();
+      });
+      section.appendChild(continueButton);
     } else {
-      // Text has been read (OCR or a real PDF text layer) — shown
-      // back to the teacher, and still editable, so an OCR mistake
-      // can be corrected before it's ever baked into the prompt sent
-      // to an AI assistant.
+      // Text has been read (OCR, a real PDF text layer, typed text,
+      // or a combination) — shown back to the teacher, and still
+      // editable, so a mistake (OCR or otherwise) can be corrected
+      // before it's ever baked into the prompt sent to an AI
+      // assistant.
       const reviewIntro = document.createElement('p');
       reviewIntro.className = 'curriculum-management__intro';
-      reviewIntro.textContent = 'Here\u2019s what was read from your pages. Check it over \u2014 fix anything OCR got wrong \u2014 then generate the prompt.';
+      reviewIntro.textContent = 'Here\u2019s the combined text for this unit. Check it over \u2014 fix anything that\u2019s wrong \u2014 then generate the prompt.';
       section.appendChild(reviewIntro);
 
       const textareaLabel = document.createElement('label');
@@ -1625,7 +1662,7 @@ function renderExtractConceptsStep(index, unitId, attachments, unitPageText, ext
       generateButton.textContent = 'Generate Prompt';
       generateButton.addEventListener('click', () => {
         if (!textarea.value.trim()) {
-          showToast('That text is empty \u2014 attach a page or type something first');
+          showToast('That text is empty \u2014 provide a page first');
           return;
         }
         handlers.onGeneratePrompt();
