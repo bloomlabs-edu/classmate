@@ -19,6 +19,9 @@
 import * as workspaceService from '../../services/workspaceService.js';
 import * as studentIdentityService from '../../services/studentIdentityService.js';
 import * as studentService from '../../services/studentService.js';
+import * as teamService from '../../services/teamService.js';
+import { createOverflowMenu } from '../components/OverflowMenu.js';
+import { openChooseGroupModal, openNameEntryModal } from './ClassroomManagementView.js';
 import * as bucketService from '../../services/bucketService.js';
 import * as badgeService from '../../services/badgeService.js';
 import * as noteService from '../../services/noteService.js';
@@ -66,7 +69,7 @@ export function renderStudentProfileView(container, { classroom, studentId, tab,
   const wrapper = document.createElement('div');
   wrapper.className = 'profile-view';
 
-  wrapper.appendChild(renderProfileHeader(classroom, student, team, onBack));
+  wrapper.appendChild(renderProfileHeader(classroom, student, team, rerender, onBack));
   wrapper.appendChild(renderTabNav(activeTab, onNavigateTab));
 
   const content = document.createElement('div');
@@ -87,12 +90,15 @@ export function renderStudentProfileView(container, { classroom, studentId, tab,
   container.appendChild(wrapper);
 }
 
-function renderProfileHeader(classroom, student, team, onBack) {
+function renderProfileHeader(classroom, student, team, rerender, onBack) {
   const style = getBucketRowStyle(student.bucket);
 
   const header = document.createElement('header');
   header.className = 'profile-header';
   header.style.backgroundColor = style.background;
+
+  const topRow = document.createElement('div');
+  topRow.className = 'profile-header__top-row';
 
   const backButton = document.createElement('button');
   backButton.type = 'button';
@@ -100,7 +106,66 @@ function renderProfileHeader(classroom, student, team, onBack) {
   backButton.appendChild(createIcon('arrow-left'));
   backButton.append('Back to Dashboard');
   backButton.addEventListener('click', onBack);
-  header.appendChild(backButton);
+  topRow.appendChild(backButton);
+
+  // Rename, Move to Group, and Remove Student — moved here from the
+  // Classroom Management student row's own overflow menu, per
+  // explicit product decision: that row now only navigates (see
+  // ui/views/ClassroomManagementView.js's renderStudentRow()), and
+  // these individual-student actions belong on the profile they lead
+  // to, the same way this app's other navigation-row/destination-page
+  // pairs already work (a Subject row leads to a page whose own menu
+  // holds that Subject's actions, not the row that led there).
+  const menuActions = [
+    {
+      label: 'Rename',
+      onClick: () => {
+        openNameEntryModal({
+          heading: 'Rename Student',
+          placeholder: 'Student name',
+          initialValue: student.name,
+          confirmLabel: 'Save',
+          onConfirm: (newName) => {
+            studentService.renameStudent(team, student.id, newName);
+            workspaceService.save(classroom);
+            rerender();
+          },
+        });
+      },
+    },
+    {
+      label: 'Move to Group',
+      onClick: () => {
+        openChooseGroupModal(classroom, {
+          title: `Move ${student.name} to\u2026`,
+          excludeTeamId: team ? team.id : null,
+          onChoose: (destination) => {
+            studentService.moveStudentToTeam(classroom, team.id, student.id, destination.id);
+            workspaceService.save(classroom);
+            rerender();
+          },
+        });
+      },
+    },
+    {
+      label: 'Remove Student',
+      danger: true,
+      onClick: () => {
+        if (!window.confirm(`Remove ${student.name} from ${team ? team.name : 'this classroom'}?`)) return;
+        studentService.removeStudent(team, student.id);
+        workspaceService.save(classroom);
+        // The student this whole page is about no longer exists —
+        // navigate away rather than re-render a profile for someone
+        // who's gone, the same "delete the thing you're viewing, then
+        // leave" pattern used elsewhere in this app (e.g. deleting a
+        // Curriculum Index or an Assessment from their own page).
+        onBack();
+      },
+    },
+  ];
+  topRow.appendChild(createOverflowMenu({ actions: menuActions, ariaLabel: `${student.name} settings` }));
+
+  header.appendChild(topRow);
 
   const titleBlock = document.createElement('div');
   titleBlock.className = 'profile-header__title-block';

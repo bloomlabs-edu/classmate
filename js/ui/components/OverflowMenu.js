@@ -18,19 +18,20 @@
  * pressing Escape — never left open by accident to be triggered
  * later by an unrelated click elsewhere on the page.
  *
- * Exactly one overflow menu is ever open at a time, platform-wide —
- * a module-level `currentlyOpenMenu` tracks it. This fixes a real bug
- * found during this refactor: each trigger's click handler called
- * `event.stopPropagation()`, which silently prevented the click from
- * ever reaching `document`'s own "close on outside click" listener —
- * meaning clicking a *different* row's ⋮ never closed whichever menu
- * was already open elsewhere on the page, and both could end up open
- * and visually overlapping at once. Opening any menu now explicitly
- * closes whatever else is currently open first, before doing anything
- * else.
+ * Exactly one dismissible popup — of *any* kind, not just this
+ * component — is ever open at a time, platform-wide. Uses
+ * utils/popupCoordinator.js's shared registry rather than a tracker
+ * local to this file: an earlier version of this fix used a
+ * module-level variable scoped to this file alone, which correctly
+ * stopped two OverflowMenus from both being open, but did nothing to
+ * stop an OverflowMenu and a ui/components/SearchableSelect.js
+ * dropdown being open simultaneously, since neither file knew the
+ * other existed. Opening any menu now registers with that shared
+ * coordinator, which closes whatever else — of any type — was open
+ * first.
  */
 
-let currentlyOpenMenu = null;
+import { registerOpenPopup, clearOpenPopup } from '../../utils/popupCoordinator.js';
 
 export function createOverflowMenu({ actions, ariaLabel = 'Actions' }) {
   const wrapper = document.createElement('div');
@@ -65,12 +66,11 @@ export function createOverflowMenu({ actions, ariaLabel = 'Actions' }) {
   wrapper.appendChild(dropdown);
 
   function open() {
-    if (currentlyOpenMenu && currentlyOpenMenu !== api) currentlyOpenMenu.close();
+    registerOpenPopup(api);
     dropdown.hidden = false;
     trigger.setAttribute('aria-expanded', 'true');
     document.addEventListener('click', onOutsideClick);
     document.addEventListener('keydown', onKeyDown);
-    currentlyOpenMenu = api;
   }
 
   function close() {
@@ -78,7 +78,7 @@ export function createOverflowMenu({ actions, ariaLabel = 'Actions' }) {
     trigger.setAttribute('aria-expanded', 'false');
     document.removeEventListener('click', onOutsideClick);
     document.removeEventListener('keydown', onKeyDown);
-    if (currentlyOpenMenu === api) currentlyOpenMenu = null;
+    clearOpenPopup(api);
   }
 
   function onOutsideClick(event) {

@@ -32,13 +32,16 @@
  * genuinely reusable rather than quietly Subject-specific.
  *
  * Exactly one SearchableSelect's dropdown is ever open at a time,
- * platform-wide — the same fix already applied to
- * ui/components/OverflowMenu.js after a real bug there: opening one
- * explicitly closes whatever else is currently open, rather than
- * relying on event propagation to do it indirectly.
+ * platform-wide — and, via utils/popupCoordinator.js's shared
+ * registry, coordinated with every other dismissible popup type in
+ * the app too (ui/components/OverflowMenu.js in particular), not just
+ * other SearchableSelects. See that file's own header comment for why
+ * a per-file tracker alone isn't enough: opening one explicitly closes
+ * whatever else — of any kind — is currently open, rather than
+ * relying on each component only knowing about its own type.
  */
 
-let currentlyOpenSelect = null;
+import { registerOpenPopup, clearOpenPopup } from '../../utils/popupCoordinator.js';
 
 export function createSearchableSelect({ options, value = '', placeholder = 'Type to search\u2026', onSelect, allowCustom = true }) {
   let normalizedOptions = options.map((opt) => (typeof opt === 'string' ? { value: opt, label: opt } : opt));
@@ -66,16 +69,15 @@ export function createSearchableSelect({ options, value = '', placeholder = 'Typ
     dropdown.hidden = true;
     document.removeEventListener('click', onOutsideClick);
     document.removeEventListener('keydown', onKeyDown);
-    if (currentlyOpenSelect === api) currentlyOpenSelect = null;
+    clearOpenPopup(api);
   }
 
   function open() {
-    if (currentlyOpenSelect && currentlyOpenSelect !== api) currentlyOpenSelect.close();
+    registerOpenPopup(api);
     renderOptions();
     dropdown.hidden = false;
     document.addEventListener('click', onOutsideClick);
     document.addEventListener('keydown', onKeyDown);
-    currentlyOpenSelect = api;
   }
 
   function onOutsideClick(event) {

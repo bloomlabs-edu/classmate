@@ -356,60 +356,30 @@ function renderGroupCard(classroom, team, rerender, onSelectStudent) {
   return card;
 }
 
+/**
+ * A plain navigation row, not a card with its own overflow menu —
+ * per explicit product decision, following this app's existing
+ * platform rule (see ui/components/NavigationRow.js's own header
+ * comment): a row that leads somewhere just navigates, with a
+ * trailing chevron as the only affordance; management actions for the
+ * thing it leads to belong on the screen it navigates *to*. Rename,
+ * Move to Group, and Remove Student now live in
+ * ui/views/StudentProfileView.js's own overflow menu instead — a
+ * student row here has exactly one job, opening that profile, the
+ * same way a Subject or Assessment row elsewhere in the app does for
+ * its own destination.
+ */
 function renderStudentRow(classroom, team, student, rerender, onSelectStudent) {
-  const row = document.createElement('div');
-  row.className = 'classroom-management__student-row';
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'classroom-management__student-row navigation-row';
+  row.addEventListener('click', () => onSelectStudent(student.id));
 
   const name = document.createElement('span');
   name.className = 'classroom-management__student-name';
   name.textContent = student.name;
   row.appendChild(name);
 
-  const menuActions = [
-    { label: 'View Profile', onClick: () => onSelectStudent(student.id) },
-    {
-      label: 'Rename',
-      onClick: () => {
-        openNameEntryModal({
-          heading: 'Rename Student',
-          placeholder: 'Student name',
-          initialValue: student.name,
-          confirmLabel: 'Save',
-          onConfirm: (newName) => {
-            studentService.renameStudent(team, student.id, newName);
-            workspaceService.save(classroom);
-            rerender();
-          },
-        });
-      },
-    },
-    {
-      label: 'Move to Group',
-      onClick: () => {
-        openChooseGroupModal(classroom, {
-          title: `Move ${student.name} to\u2026`,
-          excludeTeamId: team.id,
-          onChoose: (destination) => {
-            studentService.moveStudentToTeam(classroom, team.id, student.id, destination.id);
-            workspaceService.save(classroom);
-            rerender();
-          },
-        });
-      },
-    },
-    {
-      label: 'Remove Student',
-      danger: true,
-      onClick: () => {
-        if (!window.confirm(`Remove ${student.name} from ${team.name}?`)) return;
-        studentService.removeStudent(team, student.id);
-        workspaceService.save(classroom);
-        rerender();
-      },
-    },
-  ];
-
-  row.appendChild(createOverflowMenu({ actions: menuActions, ariaLabel: `${student.name} settings` }));
   return row;
 }
 
@@ -420,7 +390,7 @@ function renderStudentRow(classroom, team, student, rerender, onSelectStudent) {
  * "+ New Group" so a teacher never has to cancel out, create a group
  * elsewhere, and start over.
  */
-function openChooseGroupModal(classroom, { title, excludeTeamId = null, onChoose }) {
+export function openChooseGroupModal(classroom, { title, excludeTeamId = null, onChoose }) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   const modal = document.createElement('div');
@@ -501,7 +471,7 @@ function openChooseGroupModal(classroom, { title, excludeTeamId = null, onChoose
  * Cancel/Confirm), differing only in heading/placeholder/confirm
  * label and what happens with the typed value.
  */
-function openNameEntryModal({ heading, placeholder = 'Student name', initialValue = '', confirmLabel, onConfirm }) {
+export function openNameEntryModal({ heading, placeholder = 'Student name', initialValue = '', confirmLabel, onConfirm }) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   const modal = document.createElement('div');
