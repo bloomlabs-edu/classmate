@@ -83,6 +83,7 @@ import * as curriculumIndexRepository from '../../services/curriculumIndexReposi
 import { resetLearningManagementData } from '../../services/devLearningManagementResetService.js';
 import { isDebugModeEnabled } from '../../services/debugModeService.js';
 import { migrateClassroomSubjects, migrateUnitNumbers } from '../../services/subjectIdMigrationService.js';
+import { logPersistenceEvent } from '../../services/persistenceLogger.js';
 import { renderConceptWorkspaceView } from './ConceptWorkspaceView.js';
 
 export function renderLearningManagementView(container, { classrooms, onBack, onOpenCurriculumManagement }) {
@@ -153,7 +154,17 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
     renderView(
       container,
       mode,
-      { classrooms, selectedClassroom, selectedSubject, selectedPartName, selectedUnitId, conceptContext, selectedSubjectCurriculumState, singleClassroomMode },
+      {
+        classrooms,
+        selectedClassroom,
+        selectedSubject,
+        selectedPartName,
+        selectedUnitId,
+        conceptContext,
+        selectedSubjectCurriculumState,
+        singleClassroomMode,
+        saveState: selectedClassroom ? workspaceService.getSaveState(selectedClassroom.id) : null,
+      },
       handlers
     );
   }
@@ -280,7 +291,8 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
       const confirmed = window.confirm(`Remove "${subject.title}" from this classroom?\n\nThis removes its Units and Concepts. This cannot be undone.`);
       if (!confirmed) return;
       learningRecordTeacherService.deleteSubject(selectedClassroom, subject.id);
-      workspaceService.save(selectedClassroom);
+      logPersistenceEvent('Subject removed', { classroomId: selectedClassroom.id, subjectTitle: subject.title });
+      workspaceService.markDirty(selectedClassroom.id);
       // Whether this was triggered from the home list or from the
       // Subject's own page, there's no longer a Subject to show —
       // always land back on the home screen, not wherever we
@@ -294,14 +306,94 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
       );
       if (!confirmed) return;
       resetLearningManagementData(selectedClassroom);
-      workspaceService.save(selectedClassroom);
+      logPersistenceEvent('Learning reset', { classroomId: selectedClassroom.id });
+      workspaceService.markDirty(selectedClassroom.id);
       rerender();
     },
+    onSaveChanges: async () => {
+      logPersistenceEvent('Save requested', { classroomId: selectedClassroom.id });
+      try {
+        await workspaceService.saveExplicitly(selectedClassroom);
+      } catch (error) {
+        // Already logged and reflected in saveState by saveExplicitly()
+        // itself — this catch exists only so a rejected save can never
+        // propagate as an unhandled promise rejection from this click
+        // handler. The "Save failed. Retry" UI (see renderSaveStatus())
+        // is what actually surfaces this to the teacher.
+      }
+    },
   };
+
+  workspaceService.onSaveStateChange((classroomId) => {
+    if (selectedClassroom && classroomId === selectedClassroom.id) rerender();
+  });
 
   rerender();
 }
 
+
+/**
+ * The temporary explicit-Save status/action, shown near the top of
+ * the Learning workspace for whichever classroom is currently
+ * selected — see services/workspaceService.js's own saveState
+ * tracking (markDirty/saveExplicitly/getSaveState) for where this
+ * data comes from. Renders nothing for 'clean' (no local change has
+ * happened yet this session that needs saving).
+ */
+function renderSaveStatus(saveState, handlers) {
+  const wrap = document.createElement('div');
+  wrap.className = 'learning-management__save-status';
+
+  if (!saveState || saveState.status === 'clean') return wrap;
+
+  if (saveState.status === 'dirty') {
+    const indicator = document.createElement('span');
+    indicator.className = 'learning-management__save-indicator learning-management__save-indicator--dirty';
+    indicator.textContent = '\u25cf Unsaved changes';
+    wrap.appendChild(indicator);
+
+    const saveButton = document.createElement('button');
+    saveButton.type = 'button';
+    saveButton.className = 'btn btn--primary learning-management__save-button';
+    saveButton.textContent = 'Save Changes';
+    saveButton.addEventListener('click', handlers.onSaveChanges);
+    wrap.appendChild(saveButton);
+    return wrap;
+  }
+
+  if (saveState.status === 'saving') {
+    const savingText = document.createElement('span');
+    savingText.className = 'learning-management__save-indicator learning-management__save-indicator--saving';
+    savingText.textContent = 'Saving\u2026';
+    wrap.appendChild(savingText);
+    return wrap;
+  }
+
+  if (saveState.status === 'saved') {
+    const savedText = document.createElement('span');
+    savedText.className = 'learning-management__save-indicator learning-management__save-indicator--saved';
+    savedText.textContent = '\u2713 Changes saved';
+    wrap.appendChild(savedText);
+    return wrap;
+  }
+
+  if (saveState.status === 'failed') {
+    const failedText = document.createElement('span');
+    failedText.className = 'learning-management__save-indicator learning-management__save-indicator--failed';
+    failedText.textContent = 'Save failed.';
+    wrap.appendChild(failedText);
+
+    const retryButton = document.createElement('button');
+    retryButton.type = 'button';
+    retryButton.className = 'btn btn--danger-text learning-management__save-retry-button';
+    retryButton.textContent = 'Retry';
+    retryButton.addEventListener('click', handlers.onSaveChanges);
+    wrap.appendChild(retryButton);
+    return wrap;
+  }
+
+  return wrap;
+}
 
 function renderView(container, mode, state, handlers) {
   // The Concept Workspace owns its own screen entirely (its own
@@ -365,6 +457,10 @@ function renderView(container, mode, state, handlers) {
   title.className = 'learning-management__title';
   title.textContent = 'Learning';
   header.appendChild(title);
+
+  if (state.selectedClassroom) {
+    header.appendChild(renderSaveStatus(state.saveState, handlers));
+  }
 
   wrapper.appendChild(header);
 

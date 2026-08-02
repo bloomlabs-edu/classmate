@@ -34,6 +34,7 @@
 import * as curriculumIndexRepository from '../../services/curriculumIndexRepository.js';
 import * as curriculumLinkingService from '../../services/curriculumLinkingService.js';
 import * as workspaceService from '../../services/workspaceService.js';
+import { logPersistenceEvent } from '../../services/persistenceLogger.js';
 
 export function openAssignCurriculumModal({ classroom, subject, onCurriculumAssigned, onOpenCurriculumManagement }) {
   const overlay = document.createElement('div');
@@ -145,7 +146,8 @@ export function openAssignCurriculumModal({ classroom, subject, onCurriculumAssi
       confirmButton.addEventListener('click', () => {
         if (!selectedIndex) return;
         curriculumLinkingService.assignCurriculumToSubject(classroom, subject, selectedIndex);
-        workspaceService.save(classroom);
+        logPersistenceEvent('Curriculum assigned', { classroomId: classroom.id, subjectTitle: subject.title });
+        workspaceService.markDirty(classroom.id);
         close();
         onCurriculumAssigned();
       });

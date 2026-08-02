@@ -17,6 +17,7 @@
  */
 
 import * as workspaceService from './services/workspaceService.js';
+import { logPersistenceEvent } from './services/persistenceLogger.js';
 import * as curriculumLibraryService from './services/curriculumLibraryService.js';
 import * as authService from './services/authService.js';
 import * as continueWorkingService from './services/continueWorkingService.js';
@@ -115,6 +116,13 @@ function handleSignIn() {
 }
 
 function handleSignOut() {
+  logPersistenceEvent('Logout requested');
+
+  if (workspaceService.isAnySaveInProgress()) {
+    const leaveAnyway = window.confirm('Changes are still being saved.\n\nLeave anyway?');
+    if (!leaveAnyway) return;
+  }
+
   // flushPendingSaves() never rejects (it's built on Promise.allSettled,
   // which resolves regardless of individual outcomes) — waiting for it
   // here closes the real gap the persistence investigation found: a
@@ -122,7 +130,9 @@ function handleSignOut() {
   // design, and nothing previously waited for it to actually reach the
   // server before the auth session tore down.
   workspaceService.flushPendingSaves().then(() => {
-    authService.signOutUser().catch((error) => {
+    authService.signOutUser().then(() => {
+      logPersistenceEvent('Logout completed');
+    }).catch((error) => {
       console.error('[main] Sign-out failed:', error);
     });
   });

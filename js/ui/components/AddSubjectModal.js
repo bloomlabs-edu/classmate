@@ -50,6 +50,7 @@
 import * as curriculumIndexRepository from '../../services/curriculumIndexRepository.js';
 import * as curriculumLinkingService from '../../services/curriculumLinkingService.js';
 import * as workspaceService from '../../services/workspaceService.js';
+import { logPersistenceEvent } from '../../services/persistenceLogger.js';
 import { renderSubjectSelectionList } from './SubjectSelectionList.js';
 
 export function openAddSubjectModal({ classroom, existingSubjectTitles, onSubjectAdded, onOpenCurriculumManagement }) {
@@ -211,7 +212,8 @@ export function openAddSubjectModal({ classroom, existingSubjectTitles, onSubjec
           // builds the complete Subject (curriculum link + every Unit)
           // atomically and pushes it in one step.
           const subject = curriculumLinkingService.createSubjectWithCurriculum(classroom, subjectName, subjectId, selectedIndex);
-          workspaceService.save(classroom);
+          logPersistenceEvent('Subject added', { classroomId: classroom.id, subjectTitle: subjectName });
+          workspaceService.markDirty(classroom.id);
           close();
           onSubjectAdded(subject);
         });

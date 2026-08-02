@@ -31,6 +31,7 @@ import { firestoreClassroomRepository as repository } from '../repositories/fire
 import * as classroomService from './classroomService.js';
 import * as memberService from './memberService.js';
 import { MEMBER_ROLES } from '../config/memberRoles.js';
+import { logPersistenceEvent } from './persistenceLogger.js';
 
 let onChangeCallback = null;
 let unsubscribeRefs = null;
@@ -45,6 +46,87 @@ const classroomSubscriptions = new Map(); // classroomId -> unsubscribe fn
 // mid-write, a real, reproducible-in-principle gap this closes
 // directly rather than papering over with a UI warning.
 const pendingSaves = new Set();
+
+/**
+ * Temporary explicit-Save workflow state — per explicit product
+ * decision, while classroom persistence (especially Subjects) is
+ * being stabilized. Deliberately separate from the fire-and-forget
+ * autosave path above (persistClassroom/save()), which stays exactly
+ * as it was for anything not yet routed through markDirty()/
+ * saveExplicitly() below.
+ *
+ * Per classroom id: { status: 'clean' | 'dirty' | 'saving' | 'saved' | 'failed', error }.
+ * 'clean' (the default, for any classroom id never seen here) means
+ * no local mutation has happened yet this session that hasn't been
+ * explicitly saved — not "we've confirmed nothing changed," just "we
+ * have no reason to believe anything did."
+ */
+const saveStates = new Map();
+let saveStateChangeCallback = null;
+
+function getDefaultSaveState() {
+  return { status: 'clean', error: null };
+}
+
+function setSaveState(classroomId, status, error = null) {
+  saveStates.set(classroomId, { status, error });
+  saveStateChangeCallback?.(classroomId, { status, error });
+}
+
+/** The one active subscriber to save-state changes — matches this file's own existing single-callback convention (see onChangeCallback above) for the same reason: one workspace UI showing at a time. */
+export function onSaveStateChange(callback) {
+  saveStateChangeCallback = callback;
+}
+
+export function getSaveState(classroomId) {
+  return saveStates.get(classroomId) || getDefaultSaveState();
+}
+
+/**
+ * Call after any in-place classroom mutation that should go through
+ * the explicit-Save workflow instead of autosaving immediately (see
+ * ui/views/LearningManagementView.js's own onAddSubject/
+ * onRemoveSubject/etc. for which mutations this applies to today).
+ * Never downgrades an in-progress save's own 'saving' status — a
+ * mutation that happens to land mid-write doesn't un-start that write,
+ * it just means there will be more to save the next time Save Changes
+ * is clicked.
+ */
+export function markDirty(classroomId) {
+  if (getSaveState(classroomId).status === 'saving') return;
+  setSaveState(classroomId, 'dirty');
+}
+
+/** True while any classroom's explicit save is currently in flight — the gate services/authService.js's caller (see main.js's handleSignOut) checks before letting sign-out proceed uninterrupted. */
+export function isAnySaveInProgress() {
+  return Array.from(saveStates.values()).some((state) => state.status === 'saving');
+}
+
+/**
+ * The explicit "Save Changes" action — genuinely awaited by its
+ * caller, unlike save()'s own fire-and-forget shape above. Sets
+ * 'saving' immediately, logs every stage (see
+ * services/persistenceLogger.js), and resolves only once the real
+ * write has actually settled — this is the one function in this file
+ * a caller can rely on to mean "this classroom's current in-memory
+ * state is now durably on the server" when it resolves successfully.
+ * Rethrows on failure so the caller's own UI can show "Save failed" —
+ * this workflow's entire purpose is never silently swallowing a
+ * failed write the way the old autosave path could.
+ */
+export async function saveExplicitly(classroom) {
+  logPersistenceEvent('Save started', { classroomId: classroom.id });
+  setSaveState(classroom.id, 'saving');
+  try {
+    await repository.saveClassroom(classroom);
+    setSaveState(classroom.id, 'saved');
+    logPersistenceEvent('Save completed', { classroomId: classroom.id });
+  } catch (error) {
+    setSaveState(classroom.id, 'failed', error);
+    logPersistenceEvent('Save failed', { classroomId: classroom.id, error: error?.message });
+    throw error;
+  }
+}
 
 /**
  * Migrates any classroom that isn't in the shared model yet to
@@ -98,11 +180,17 @@ async function migrateToSharedClassroomsIfNeeded(uid, displayName) {
 function subscribeToClassroom(classroomId) {
   if (classroomSubscriptions.has(classroomId)) return;
 
+  let hasLoggedLoad = false;
+
   const unsubscribe = repository.subscribeToClassroom(
     classroomId,
     (classroomData) => {
       if (classroomData) {
         classroomService.upsertClassroom(classroomData);
+        if (!hasLoggedLoad) {
+          hasLoggedLoad = true;
+          logPersistenceEvent('Classroom loaded', { classroomId });
+        }
       } else {
         // The document is gone, or this teacher lost access to it.
         classroomService.removeClassroomFromMemory(classroomId);

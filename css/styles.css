@@ -6859,3 +6859,29 @@ button.wizard-checklist__row:hover {
   text-align: center;
   opacity: 0.75;
 }
+
+/* Learning Management — temporary explicit-Save workflow status/action.
+   See ui/views/LearningManagementView.js's renderSaveStatus(). */
+.learning-management__save-status {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.4rem;
+}
+.learning-management__save-indicator {
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+.learning-management__save-indicator--dirty {
+  color: var(--color-warning);
+}
+.learning-management__save-indicator--saving {
+  color: var(--color-muted);
+}
+.learning-management__save-indicator--saved {
+  color: var(--color-success);
+}
+.learning-management__save-indicator--failed {
+  color: var(--color-danger);
+}
