@@ -84,6 +84,7 @@ import { resetLearningManagementData } from '../../services/devLearningManagemen
 import { isDebugModeEnabled } from '../../services/debugModeService.js';
 import { migrateClassroomSubjects, migrateUnitNumbers } from '../../services/subjectIdMigrationService.js';
 import { logPersistenceEvent } from '../../services/persistenceLogger.js';
+import * as workspaceCoordinator from '../../services/workspaceCoordinator.js';
 import { renderConceptWorkspaceView } from './ConceptWorkspaceView.js';
 
 export function renderLearningManagementView(container, { classrooms, onBack, onOpenCurriculumManagement }) {
@@ -92,7 +93,13 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
   // this is historical migration, not part of the ongoing matching
   // architecture. Idempotent: a no-op for any Subject that already
   // has a subjectId, so running this on every entry costs nothing
-  // once a classroom's data has been migrated.
+  // once a classroom's data has been migrated. Its own autosave write
+  // is safe regardless of any unsaved local work elsewhere in this
+  // classroom — services/workspaceService.js now defers an incoming
+  // snapshot echo instead of applying it while anything is dirty (see
+  // canApplyIncomingServerState()), so this write can never clobber a
+  // teacher's own in-progress edit the way it could before that
+  // existed.
   classrooms.forEach((classroom) => {
     if (migrateClassroomSubjects(classroom) > 0) {
       workspaceService.save(classroom);
@@ -120,6 +127,9 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
 
   let mode = singleClassroomMode ? 'home' : 'choose-class';
   let selectedClassroom = singleClassroomMode ? classrooms[0] : null;
+  if (selectedClassroom) {
+    workspaceCoordinator.registerActiveWorkspace(selectedClassroom.id, resyncFromServer);
+  }
   let selectedSubject = null;
   let selectedPartName = null; // set once a Part is chosen, for a Subject whose curriculum actually has them
   // Set once a Unit is chosen, to show that Unit's own Concepts — the
@@ -149,6 +159,51 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
   // {status:'loading'} | {status:'ready', curriculumIndex} |
   // {status:'none'} | {status:'error'}.
   let selectedSubjectCurriculumState = null;
+
+  /**
+   * Applies a fresh, server-confirmed classroom object in place of the
+   * one this workspace has been showing — registered with
+   * services/workspaceCoordinator.js as this classroom's own active
+   * workspace (see the registration calls below), so a background
+   * snapshot updates this screen in place instead of the coarser,
+   * older onChange-triggers-renderRoute() path tearing it down
+   * entirely.
+   *
+   * Re-resolves selectedSubject by its own stable id (subject.id, not
+   * subjectId — always present from creation, unlike subjectId which
+   * can be null before subjectIdMigrationService.js's backfill runs)
+   * in the *new* classroom's own data, rather than assuming the old
+   * object reference is still valid. selectedUnitId/conceptContext
+   * don't need this same treatment — both are already plain ids,
+   * re-resolved fresh against whatever classroom is current every time
+   * something renders (see renderUnitsOrParts()), never stored as a
+   * direct object reference the way selectedSubject is.
+   *
+   * Falls back to the Learning home screen — never all the way out to
+   * the Dashboard — only if the currently selected Subject genuinely
+   * no longer exists in the fresh data (deleted from another
+   * tab/device); anything else about where the teacher currently is
+   * (mode, navigation, in-progress unsaved edits elsewhere) is left
+   * completely untouched.
+   */
+  function resyncFromServer(freshClassroom) {
+    selectedClassroom = freshClassroom;
+
+    if (selectedSubject) {
+      const freshSubject = learningRecordService.getSubjects(freshClassroom).find((subject) => subject.id === selectedSubject.id);
+      if (freshSubject) {
+        selectedSubject = freshSubject;
+      } else {
+        selectedSubject = null;
+        selectedPartName = null;
+        selectedUnitId = null;
+        conceptContext = null;
+        mode = 'home';
+      }
+    }
+
+    rerender();
+  }
 
   function rerender() {
     renderView(
@@ -196,7 +251,10 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
   }
 
   const handlers = {
-    onBack,
+    onBack: () => {
+      if (selectedClassroom) workspaceCoordinator.unregisterActiveWorkspace(selectedClassroom.id);
+      onBack();
+    },
     /**
      * The "Change" action next to a Subject's currently-assigned
      * curriculum (see renderSubjectStep()) — opens the exact same
@@ -211,7 +269,9 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
       onOpenCurriculumManagement({ onBack: () => rerender() });
     },
     onChooseClass: (classroom) => {
+      if (selectedClassroom) workspaceCoordinator.unregisterActiveWorkspace(selectedClassroom.id);
       selectedClassroom = classroom;
+      workspaceCoordinator.registerActiveWorkspace(selectedClassroom.id, resyncFromServer);
       mode = 'home';
       rerender();
     },

@@ -32,6 +32,7 @@ import * as classroomService from './classroomService.js';
 import * as memberService from './memberService.js';
 import { MEMBER_ROLES } from '../config/memberRoles.js';
 import { logPersistenceEvent } from './persistenceLogger.js';
+import * as workspaceCoordinator from './workspaceCoordinator.js';
 
 let onChangeCallback = null;
 let unsubscribeRefs = null;
@@ -64,13 +65,82 @@ const pendingSaves = new Set();
 const saveStates = new Map();
 let saveStateChangeCallback = null;
 
+/**
+ * The latest incoming Firestore snapshot for a classroom that arrived
+ * while it wasn't safe to apply (see canApplyIncomingServerState()
+ * below) — only ever the newest one; an older deferred snapshot is
+ * simply replaced, never queued, since only the most current server
+ * state is ever worth reconciling.
+ */
+const pendingSnapshots = new Map(); // classroomId -> deferred classroom data
+
 function getDefaultSaveState() {
   return { status: 'clean', error: null };
+}
+
+/**
+ * Whether a classroom's own working copy is safe to overwrite with an
+ * incoming server snapshot right now — a named policy decision, not a
+ * raw status check inlined at each call site, specifically so a
+ * future condition (a modal dialog editing this classroom, inline
+ * editing, a drag operation in progress) can extend this one decision
+ * point later without changing anything about how snapshots actually
+ * flow through this file.
+ *
+ * Today: 'clean' or 'saved'. Deliberately not *only* 'clean' —
+ * saveExplicitly() leaves a classroom's status at 'saved' indefinitely
+ * (so "\u2713 Changes saved" keeps showing until the next edit, not
+ * just for an instant); treating only 'clean' as safe would defer
+ * every snapshot forever after the very first successful save,
+ * including that save's own echo back from the server. Both 'clean'
+ * and 'saved' represent the same real thing this function actually
+ * cares about: no known discrepancy between the working copy and the
+ * server right now.
+ */
+export function canApplyIncomingServerState(classroomId) {
+  const status = getSaveState(classroomId).status;
+  return status === 'clean' || status === 'saved';
 }
 
 function setSaveState(classroomId, status, error = null) {
   saveStates.set(classroomId, { status, error });
   saveStateChangeCallback?.(classroomId, { status, error });
+  maybeReconcilePendingSnapshot(classroomId);
+}
+
+/**
+ * Applies a classroom's own latest deferred snapshot, if one exists
+ * and it's now safe to (see canApplyIncomingServerState()). Called
+ * after every save-state transition here, since that's the only thing
+ * in this file today that can move a classroom from unsafe to safe —
+ * a future lock condition living elsewhere would call this same
+ * function once it releases, rather than this file needing to know
+ * that lock exists at all.
+ */
+function maybeReconcilePendingSnapshot(classroomId) {
+  if (!pendingSnapshots.has(classroomId)) return;
+  if (!canApplyIncomingServerState(classroomId)) return;
+  const pending = pendingSnapshots.get(classroomId);
+  pendingSnapshots.delete(classroomId);
+  applyIncomingSnapshot(classroomId, pending);
+}
+
+/**
+ * The one place an incoming server snapshot actually lands in this
+ * app's in-memory state — used both for a snapshot applied
+ * immediately (see subscribeToClassroom() below) and a previously
+ * deferred one applied once safe (see maybeReconcilePendingSnapshot()
+ * above). Updates the canonical in-memory classroom, then hands off
+ * to whichever active workspace is showing it (see
+ * services/workspaceCoordinator.js) — falling back to this file's own
+ * onChangeCallback (today's renderRoute()-triggering path) only when
+ * nobody is actively viewing this classroom right now.
+ */
+function applyIncomingSnapshot(classroomId, classroomData) {
+  classroomService.upsertClassroom(classroomData);
+  if (!workspaceCoordinator.notifyActiveWorkspace(classroomId, classroomData)) {
+    onChangeCallback?.();
+  }
 }
 
 /** The one active subscriber to save-state changes — matches this file's own existing single-callback convention (see onChangeCallback above) for the same reason: one workspace UI showing at a time. */
@@ -186,16 +256,29 @@ function subscribeToClassroom(classroomId) {
     classroomId,
     (classroomData) => {
       if (classroomData) {
-        classroomService.upsertClassroom(classroomData);
         if (!hasLoggedLoad) {
           hasLoggedLoad = true;
           logPersistenceEvent('Classroom loaded', { classroomId });
         }
+        if (canApplyIncomingServerState(classroomId)) {
+          applyIncomingSnapshot(classroomId, classroomData);
+        } else {
+          // Not safe to apply right now (unsaved local work — see
+          // canApplyIncomingServerState()'s own reasoning) — deferred,
+          // not discarded. Only the newest deferred snapshot is ever
+          // kept; an older one simply gets replaced here, never
+          // queued, since only the most current server state is worth
+          // reconciling once it's safe to.
+          pendingSnapshots.set(classroomId, classroomData);
+        }
       } else {
-        // The document is gone, or this teacher lost access to it.
+        // The document is gone, or this teacher lost access to it —
+        // applies immediately regardless of save state, unlike a
+        // normal update: there is no "local working copy" to protect
+        // once the document itself no longer exists for this teacher.
         classroomService.removeClassroomFromMemory(classroomId);
+        onChangeCallback?.();
       }
-      onChangeCallback?.();
     },
     (error) => {
       console.error(`[workspaceService] Error listening to classroom ${classroomId}:`, error);
@@ -209,6 +292,7 @@ function unsubscribeFromClassroom(classroomId) {
   classroomSubscriptions.get(classroomId)?.();
   classroomSubscriptions.delete(classroomId);
   classroomService.removeClassroomFromMemory(classroomId);
+  pendingSnapshots.delete(classroomId);
 }
 
 function unsubscribeFromAllClassrooms() {
