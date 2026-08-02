@@ -42,6 +42,37 @@ import {
 import { getFirebaseApp } from '../services/firebaseApp.js';
 import { ClassroomRepository } from './classroomRepository.js';
 
+/**
+ * TEMPORARY DIAGNOSTIC — walks an entire object tree and returns the
+ * full property path of every value that is exactly `undefined`
+ * (e.g. "learningRecord.subjects[2].linkedCurriculumIndexId"), not
+ * just the first one Firestore's own error happens to name. Called
+ * immediately before setDoc() in saveClassroom() below, purely to
+ * identify where an undefined value actually originates in the real,
+ * live classroom object — this does not strip or replace anything;
+ * the object passed to setDoc() is completely untouched by this
+ * function. Remove once the source is identified and a real fix is
+ * decided on.
+ */
+function findAllUndefinedPaths(value, path = '', results = []) {
+  if (value === undefined) {
+    results.push(path || '(root)');
+    return results;
+  }
+  if (value === null || typeof value !== 'object') {
+    return results;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => findAllUndefinedPaths(item, `${path}[${index}]`, results));
+  } else {
+    Object.keys(value).forEach((key) => {
+      const childPath = path ? `${path}.${key}` : key;
+      findAllUndefinedPaths(value[key], childPath, results);
+    });
+  }
+  return results;
+}
+
 class FirestoreClassroomRepository extends ClassroomRepository {
   constructor() {
     super();
@@ -231,6 +262,18 @@ class FirestoreClassroomRepository extends ClassroomRepository {
       throw error;
     }
     try {
+      // TEMPORARY DIAGNOSTIC — see findAllUndefinedPaths()'s own
+      // comment above. Logs every undefined path found in the real,
+      // live classroom object, immediately before the real write —
+      // does not alter `classroom` or what gets passed to setDoc().
+      const undefinedPaths = findAllUndefinedPaths(classroom);
+      if (undefinedPaths.length > 0) {
+        console.error('[firestoreClassroomRepository] TEMPORARY DIAGNOSTIC \u2014 undefined field path(s) found in classroom object, immediately before setDoc():');
+        undefinedPaths.forEach((path) => console.error('  ', path));
+      } else {
+        console.error('[firestoreClassroomRepository] TEMPORARY DIAGNOSTIC \u2014 no undefined values found anywhere in the classroom object before setDoc() (if setDoc() still throws \u201cinvalid-argument\u201d, the cause is something other than a plain undefined field \u2014 e.g. a function, a Symbol, or a value type Firestore itself cannot serialize).');
+      }
+
       await setDoc(ref, classroom);
     } catch (error) {
       console.error('[firestoreClassroomRepository] saveClassroom() \u2014 setDoc() itself threw:');
