@@ -30,6 +30,7 @@ import { openAddSubjectToAssessmentModal } from '../components/AddSubjectToAsses
 import { createNavigationRow } from '../components/NavigationRow.js';
 import { openUnsavedChangesModal } from '../components/UnsavedChangesModal.js';
 import * as assessmentService from '../../services/assessmentService.js';
+import * as assessmentImportService from '../../services/assessmentImportService.js';
 import * as workspaceService from '../../services/workspaceService.js';
 
 export function renderAssessmentManagementView(container, { classroom, onBack }) {
@@ -59,6 +60,14 @@ export function renderAssessmentManagementView(container, { classroom, onBack })
   let assessmentDetailsDraft = null;
   let hasUnsavedAssessmentDetailsChanges = false;
 
+  // Assessment Import — Phase 1 (see services/assessmentImportService.js's
+  // own header comment for the full architecture). Everything here is
+  // held only in memory between a file being selected and the teacher's
+  // own Cancel/Import decision on the review screen — nothing is written
+  // to `classroom` or persisted until "Import" is actually clicked.
+  let importReview = null; // { matchedRows, unmatchedRows, subjectMatches, unmatchedColumns, summary } once a file has been parsed and matched
+  let importError = null; // a plain string shown on the review/upload screen if parsing itself failed (e.g. an unreadable file)
+
   function rerender() {
     renderView(
       container,
@@ -72,6 +81,8 @@ export function renderAssessmentManagementView(container, { classroom, onBack })
         marksDraft,
         isEditingAssessmentDetails,
         assessmentDetailsDraft,
+        importReview,
+        importError,
       },
       handlers
     );
@@ -196,6 +207,51 @@ export function renderAssessmentManagementView(container, { classroom, onBack })
         rerender();
       }
     },
+    onImportFileSelected: async (file) => {
+      importError = null;
+      let rows;
+      try {
+        rows = await assessmentImportService.parseSpreadsheetFile(file);
+      } catch (error) {
+        importError = `Couldn't read this file. Please check it's a valid .xlsx or .csv file and try again.`;
+        mode = 'import-review';
+        rerender();
+        return;
+      }
+
+      const students = assessmentService.getClassroomStudents(classroom);
+      const { matchedRows, unmatchedRows, subjectColumns } = assessmentImportService.matchStudents(rows, students);
+      const { matches: subjectMatches, unmatchedColumns } = assessmentImportService.matchSubjectColumns(
+        subjectColumns,
+        selectedAssessment.assessmentSubjects,
+        classroom
+      );
+      const summary = assessmentImportService.buildImportSummary({ matchedRows, unmatchedRows, subjectMatches });
+
+      importReview = { matchedRows, unmatchedRows, subjectMatches, unmatchedColumns, summary };
+      mode = 'import-review';
+      rerender();
+    },
+    onConfirmImport: () => {
+      assessmentImportService.applyImport(classroom, {
+        matchedRows: importReview.matchedRows,
+        subjectMatches: importReview.subjectMatches,
+      });
+      workspaceService.save(classroom);
+      importReview = null;
+      importError = null;
+      mode = 'assessment';
+      rerender();
+    },
+    onCancelImport: () => {
+      // Pure state discard — nothing was ever written to `classroom`
+      // or persisted while on the review screen, so there is nothing
+      // to undo here beyond clearing this view's own in-memory state.
+      importReview = null;
+      importError = null;
+      mode = 'assessment';
+      rerender();
+    },
     onDeleteAssessment: (assessment) => {
       const confirmed = window.confirm(`Delete "${assessment.title}"?\n\nThis removes every Subject and every mark recorded in it. This cannot be undone.`);
       if (!confirmed) return;
@@ -304,6 +360,7 @@ function renderView(container, mode, state, handlers) {
 
   const backButton = createBackButton(() => {
     if (isEntryStep) return handlers.onBack();
+    if (mode === 'import-review') return handlers.onCancelImport();
     const previous = { assessment: 'home', subject: 'assessment' }[mode];
     handlers.onBackTo(previous);
   });
@@ -322,6 +379,8 @@ function renderView(container, mode, state, handlers) {
     wrapper.appendChild(
       renderSubjectStep(state.classroom, state.selectedAssessment, state.selectedAssessmentSubject, state.sortBy, state.isEditingMarks, state.marksDraft, handlers)
     );
+  } else if (mode === 'import-review') {
+    wrapper.appendChild(renderImportReviewStep(state.selectedAssessment, state.importReview, state.importError, handlers));
   } else {
     wrapper.appendChild(renderHomeStep(state.classroom, handlers));
   }
@@ -413,6 +472,30 @@ function renderAssessmentStep(classroom, assessment, isEditingDetails, draft, ha
   addSubjectButton.addEventListener('click', handlers.onGoToAddSubject);
   section.appendChild(addSubjectButton);
 
+  // Assessment Import — Phase 1 (see services/assessmentImportService.js).
+  // A hidden file input triggered by a visible button click — the file
+  // itself is never written anywhere; onImportFileSelected() only
+  // parses and matches, landing on the Review screen before anything
+  // is ever saved.
+  const importFileInput = document.createElement('input');
+  importFileInput.type = 'file';
+  importFileInput.accept = '.xlsx,.csv';
+  importFileInput.className = 'assessment-import__file-input';
+  importFileInput.style.display = 'none';
+  importFileInput.addEventListener('change', () => {
+    const file = importFileInput.files[0];
+    if (file) handlers.onImportFileSelected(file);
+    importFileInput.value = ''; // allows re-selecting the same file name after Cancel, which a plain file input otherwise ignores
+  });
+  section.appendChild(importFileInput);
+
+  const importButton = document.createElement('button');
+  importButton.type = 'button';
+  importButton.className = 'btn btn--secondary';
+  importButton.textContent = 'Import Spreadsheet';
+  importButton.addEventListener('click', () => importFileInput.click());
+  section.appendChild(importButton);
+
   if (assessment.status === 'Draft') {
     const publishButton = document.createElement('button');
     publishButton.type = 'button';
@@ -439,6 +522,134 @@ function renderAssessmentStep(classroom, assessment, isEditingDetails, draft, ha
  * already the Assessment Details section's own View/Edit toggle
  * above, not a separate action.
  */
+/**
+ * Assessment Import — Phase 1's own Review screen. Shown after a file
+ * has been parsed and matched (see services/assessmentImportService.js),
+ * before anything is saved — "Import" is the only action anywhere in
+ * this flow that actually writes to `classroom`. Disabled while any
+ * unmatched student exists, per explicit spec ("prevent import until
+ * resolved") — this milestone doesn't build an in-app way to resolve
+ * one manually; the teacher fixes the spreadsheet and re-uploads.
+ */
+function renderImportReviewStep(assessment, importReview, importError, handlers) {
+  const section = document.createElement('div');
+  section.className = 'learning-management__section';
+
+  const heading = document.createElement('p');
+  heading.className = 'learning-management__step-heading';
+  heading.textContent = assessment.title;
+  section.appendChild(heading);
+
+  if (importError) {
+    const errorNotice = document.createElement('p');
+    errorNotice.className = 'assessment-import__error';
+    errorNotice.textContent = importError;
+    section.appendChild(errorNotice);
+
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'btn btn--text';
+    cancelButton.textContent = 'Back';
+    cancelButton.addEventListener('click', handlers.onCancelImport);
+    section.appendChild(cancelButton);
+    return section;
+  }
+
+  const { summary, unmatchedRows, unmatchedColumns } = importReview;
+
+  const matchedRow = document.createElement('p');
+  matchedRow.className = 'assessment-import__summary-line';
+  matchedRow.append('Students matched');
+  const matchedCount = document.createElement('strong');
+  matchedCount.textContent = String(summary.studentsMatchedCount);
+  matchedRow.appendChild(document.createElement('br'));
+  matchedRow.appendChild(matchedCount);
+  section.appendChild(matchedRow);
+
+  const subjectsHeading = document.createElement('p');
+  subjectsHeading.className = 'learning-management__intro';
+  subjectsHeading.textContent = 'Subjects';
+  section.appendChild(subjectsHeading);
+
+  const subjectList = document.createElement('div');
+  subjectList.className = 'assessment-import__subject-list';
+  summary.perSubject.forEach(({ subjectTitle, withMarks, missing }) => {
+    const row = document.createElement('div');
+    row.className = 'assessment-import__subject-row';
+    const title = document.createElement('p');
+    title.className = 'assessment-import__subject-title';
+    title.textContent = subjectTitle;
+    row.appendChild(title);
+    const marksLine = document.createElement('p');
+    marksLine.className = 'assessment-import__subject-marks';
+    marksLine.textContent = `${withMarks} mark${withMarks === 1 ? '' : 's'}`;
+    row.appendChild(marksLine);
+    if (missing > 0) {
+      const missingLine = document.createElement('p');
+      missingLine.className = 'assessment-import__subject-missing';
+      missingLine.textContent = `Missing ${subjectTitle} marks: ${missing} student${missing === 1 ? '' : 's'}`;
+      row.appendChild(missingLine);
+    }
+    subjectList.appendChild(row);
+  });
+  section.appendChild(subjectList);
+
+  if (unmatchedColumns.length > 0) {
+    const unmatchedColumnsNotice = document.createElement('p');
+    unmatchedColumnsNotice.className = 'assessment-import__unmatched-columns';
+    unmatchedColumnsNotice.textContent = `Column${unmatchedColumns.length === 1 ? '' : 's'} not recognized as a Subject in this Assessment (ignored): ${unmatchedColumns.join(', ')}`;
+    section.appendChild(unmatchedColumnsNotice);
+  }
+
+  const unmatchedHeading = document.createElement('p');
+  unmatchedHeading.className = 'learning-management__intro';
+  unmatchedHeading.textContent = 'Unmatched Students';
+  section.appendChild(unmatchedHeading);
+
+  if (unmatchedRows.length === 0) {
+    const noneNotice = document.createElement('p');
+    noneNotice.className = 'assessment-import__unmatched-count';
+    noneNotice.textContent = '0';
+    section.appendChild(noneNotice);
+  } else {
+    const unmatchedList = document.createElement('ul');
+    unmatchedList.className = 'assessment-import__unmatched-list';
+    unmatchedRows.forEach(({ displayName }) => {
+      const item = document.createElement('li');
+      item.textContent = displayName;
+      unmatchedList.appendChild(item);
+    });
+    section.appendChild(unmatchedList);
+
+    const resolveNotice = document.createElement('p');
+    resolveNotice.className = 'assessment-import__resolve-notice';
+    resolveNotice.textContent = 'Import is disabled until every student in the file matches a real student on this classroom\u2019s roster (by Roll Number or Name). Fix the spreadsheet and upload it again.';
+    section.appendChild(resolveNotice);
+  }
+
+  const footer = document.createElement('div');
+  footer.className = 'assessment-marks-footer';
+
+  const importActionButton = document.createElement('button');
+  importActionButton.type = 'button';
+  importActionButton.className = 'btn btn--primary';
+  importActionButton.textContent = 'Import';
+  importActionButton.disabled = unmatchedRows.length > 0;
+  importActionButton.addEventListener('click', handlers.onConfirmImport);
+  footer.appendChild(importActionButton);
+
+  const cancelButton = document.createElement('button');
+  cancelButton.type = 'button';
+  cancelButton.className = 'btn btn--text';
+  cancelButton.textContent = 'Cancel';
+  cancelButton.addEventListener('click', handlers.onCancelImport);
+  footer.appendChild(cancelButton);
+
+  section.appendChild(footer);
+
+  return section;
+}
+
 function renderAssessmentDangerZone(assessment, handlers) {
   const zone = document.createElement('div');
   zone.className = 'learning-management__danger-zone';
