@@ -168,10 +168,27 @@ export async function getRecognitionWins() {
  * repeated here.
  */
 export async function getEventFeed() {
-  const found = await loadCurrentStudentAndClassroom();
-  if (!found) return [];
+  // TEMPORARY DIAGNOSTIC — see this project's own Student Event Feed
+  // investigation. Traces every step of this function's own
+  // resolution chain, so a caller can see exactly where (if anywhere)
+  // the data stops matching what was persisted.
+  const activeProfile = studentDeviceService.getActiveProfile();
+  console.log('[EventFeedDiagnostic] getEventFeed() called. Active profile:', activeProfile);
 
-  return studentEventService.getEventsForStudent(found.classroom, found.student.id);
+  const found = await loadCurrentStudentAndClassroom();
+  if (!found) {
+    console.log('[EventFeedDiagnostic] loadCurrentStudentAndClassroom() returned null \u2014 no active profile, no matching classroom, or no matching student. Feed is empty for this reason alone.');
+    return [];
+  }
+
+  console.log('[EventFeedDiagnostic] Resolved classroom id:', found.classroom.id);
+  console.log('[EventFeedDiagnostic] Resolved student id:', found.student.id);
+  console.log('[EventFeedDiagnostic] Total events on this classroom (before filtering by student):', found.classroom.studentEvents?.length ?? 0);
+
+  const events = studentEventService.getEventsForStudent(found.classroom, found.student.id);
+  console.log('[EventFeedDiagnostic] Events remaining after filtering for this student:', events.length);
+
+  return events;
 }
 
 export async function getTeamSummary() {

@@ -131,6 +131,23 @@ export function commitSession(classroom) {
   workspaceService.save(classroom);
   classModeService.clearUndoStack(classroom);
   sessionByClassroomId.delete(classroom.id);
+
+  // TEMPORARY DIAGNOSTIC — answers one question conclusively: does the
+  // persisted document actually contain studentEvents after a real
+  // commit, verified via a genuine fresh read through this app's own
+  // repository abstraction (not the in-memory classroom object, not a
+  // manual Firebase import). See this project's own Student Event Feed
+  // investigation. flushPendingSaves() ensures the write has actually
+  // settled before reading back — without it, this fresh read could
+  // race ahead of the write it's meant to verify.
+  workspaceService.flushPendingSaves().then(async () => {
+    const persisted = await workspaceService.getClassroomOnce(classroom.id);
+    const hasField = persisted ? 'studentEvents' in persisted : false;
+    console.log('[EventFeedDiagnostic] Fresh read after commitSession():');
+    console.log('[EventFeedDiagnostic]   studentEvents field exists?', hasField);
+    console.log('[EventFeedDiagnostic]   event count:', persisted?.studentEvents?.length ?? 0);
+    console.log('[EventFeedDiagnostic]   first event:', persisted?.studentEvents?.[0] ?? null);
+  });
 }
 
 /**
