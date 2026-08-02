@@ -206,10 +206,10 @@ export async function saveExplicitly(classroom) {
     // that distinctly, before this catch ever sees it re-thrown here.
     console.error('[workspaceService] saveExplicitly() caught an error from repository.saveClassroom():');
     console.error(error);
-    console.error('error.name:', error?.name);
-    console.error('error.code:', error?.code);
-    console.error('error.message:', error?.message);
-    console.error('error.stack:', error?.stack);
+    console.error(error.name);
+    console.error(error.code);
+    console.error(error.message);
+    console.error(error.stack);
 
     logPersistenceEvent('Save failed', {
       classroomId: classroom.id,
@@ -329,10 +329,10 @@ function persistClassroom(classroom) {
   const writePromise = repository.saveClassroom(classroom).catch((error) => {
     console.error('[workspaceService] persistClassroom() caught an error from repository.saveClassroom():');
     console.error(error);
-    console.error('error.name:', error?.name);
-    console.error('error.code:', error?.code);
-    console.error('error.message:', error?.message);
-    console.error('error.stack:', error?.stack);
+    console.error(error.name);
+    console.error(error.code);
+    console.error(error.message);
+    console.error(error.stack);
     logPersistenceEvent('Autosave failed', {
       classroomId: classroom.id,
       errorName: error?.name,

@@ -224,10 +224,10 @@ class FirestoreClassroomRepository extends ClassroomRepository {
     } catch (error) {
       console.error('[firestoreClassroomRepository] saveClassroom() \u2014 doc() reference construction threw:');
       console.error(error);
-      console.error('error.name:', error?.name);
-      console.error('error.code:', error?.code);
-      console.error('error.message:', error?.message);
-      console.error('error.stack:', error?.stack);
+      console.error(error.name);
+      console.error(error.code);
+      console.error(error.message);
+      console.error(error.stack);
       throw error;
     }
     try {
@@ -235,10 +235,10 @@ class FirestoreClassroomRepository extends ClassroomRepository {
     } catch (error) {
       console.error('[firestoreClassroomRepository] saveClassroom() \u2014 setDoc() itself threw:');
       console.error(error);
-      console.error('error.name:', error?.name);
-      console.error('error.code:', error?.code);
-      console.error('error.message:', error?.message);
-      console.error('error.stack:', error?.stack);
+      console.error(error.name);
+      console.error(error.code);
+      console.error(error.message);
+      console.error(error.stack);
       throw error;
     }
   }
