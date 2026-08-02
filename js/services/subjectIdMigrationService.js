@@ -136,3 +136,46 @@ export async function migrateUnitNumbers(classroom) {
 
   return migratedCount;
 }
+
+/**
+ * TEMPORARY — one-time repair for LearningUnits created before
+ * createLearningUnit()'s own fix (see models/LearningUnit.js's header
+ * comment): before that fix, a Unit from a single-Part Curriculum
+ * Index was given `partName: undefined` as a real, enumerable key —
+ * not simply omitted — and Firestore's setDoc() rejects an entire
+ * document containing any field set to `undefined`, anywhere, no
+ * matter how deeply nested. A classroom with even one such Unit could
+ * never successfully save *anything* again — not a new Subject, not a
+ * badge, not a StudentEvent — since every save attempt fails at the
+ * same point before any of that reaches the document at all. See this
+ * project's own Student Event Feed persistence investigation for the
+ * full trace that found this.
+ *
+ * Deliberately narrow: only ever deletes a `partName` key whose value
+ * is exactly `undefined` — never touches a key that's simply absent
+ * (nothing to repair there), never touches a key with a real string
+ * value (a genuine Part name on a multi-Part Subject), and never
+ * touches any other field on the Unit. Idempotent: after the first
+ * run removes the key entirely, `'partName' in unit` is false on every
+ * subsequent run, so there's nothing left to repair — running this
+ * again on an already-repaired classroom is a correct, harmless no-op.
+ *
+ * Remove this function, and its call site in
+ * ui/views/LearningManagementView.js, once it's confirmed to have
+ * successfully repaired every classroom that needed it — this was
+ * never meant to be a permanent migration.
+ */
+export function repairUndefinedPartNames(classroom) {
+  let repairedCount = 0;
+
+  for (const subject of learningRecordService.getSubjects(classroom)) {
+    (subject.units || []).forEach((unit) => {
+      if ('partName' in unit && unit.partName === undefined) {
+        delete unit.partName;
+        repairedCount++;
+      }
+    });
+  }
+
+  return repairedCount;
+}

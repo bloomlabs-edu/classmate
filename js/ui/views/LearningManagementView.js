@@ -82,7 +82,7 @@ import * as workspaceService from '../../services/workspaceService.js';
 import * as curriculumIndexRepository from '../../services/curriculumIndexRepository.js';
 import { resetLearningManagementData } from '../../services/devLearningManagementResetService.js';
 import { isDebugModeEnabled } from '../../services/debugModeService.js';
-import { migrateClassroomSubjects, migrateUnitNumbers } from '../../services/subjectIdMigrationService.js';
+import { migrateClassroomSubjects, migrateUnitNumbers, repairUndefinedPartNames } from '../../services/subjectIdMigrationService.js';
 import { logPersistenceEvent, logViewMounted } from '../../services/persistenceLogger.js';
 import * as workspaceCoordinator from '../../services/workspaceCoordinator.js';
 import { renderConceptWorkspaceView } from './ConceptWorkspaceView.js';
@@ -90,20 +90,26 @@ import { renderConceptWorkspaceView } from './ConceptWorkspaceView.js';
 export function renderLearningManagementView(container, { classrooms, onBack, onOpenCurriculumManagement }) {
   logViewMounted('LearningManagementView');
 
-  // One-time backfill for Subjects predating subjectId — see
-  // services/subjectIdMigrationService.js's own header comment for why
-  // this is historical migration, not part of the ongoing matching
-  // architecture. Idempotent: a no-op for any Subject that already
-  // has a subjectId, so running this on every entry costs nothing
-  // once a classroom's data has been migrated. Its own autosave write
-  // is safe regardless of any unsaved local work elsewhere in this
-  // classroom — services/workspaceService.js now defers an incoming
-  // snapshot echo instead of applying it while anything is dirty (see
-  // canApplyIncomingServerState()), so this write can never clobber a
-  // teacher's own in-progress edit the way it could before that
-  // existed.
+  // One-time backfill for Subjects predating subjectId, and one-time
+  // repair for LearningUnits with a legacy `partName: undefined` bug
+  // (see services/subjectIdMigrationService.js's own header comments
+  // for migrateClassroomSubjects()/repairUndefinedPartNames()) — run
+  // together, saved together: Firestore rejects an entire document
+  // containing any field set to `undefined`, so if a classroom needed
+  // the partName repair, migrateClassroomSubjects()'s own save on its
+  // own would still fail for the same reason this repair exists to
+  // fix. Idempotent: a no-op for any classroom already migrated/
+  // repaired, so running this on every entry costs nothing once done.
+  // Its own autosave write is safe regardless of any unsaved local
+  // work elsewhere in this classroom — services/workspaceService.js
+  // now defers an incoming snapshot echo instead of applying it while
+  // anything is dirty (see canApplyIncomingServerState()), so this
+  // write can never clobber a teacher's own in-progress edit the way
+  // it could before that existed.
   classrooms.forEach((classroom) => {
-    if (migrateClassroomSubjects(classroom) > 0) {
+    const subjectIdMigratedCount = migrateClassroomSubjects(classroom);
+    const partNameRepairedCount = repairUndefinedPartNames(classroom);
+    if (subjectIdMigratedCount > 0 || partNameRepairedCount > 0) {
       workspaceService.save(classroom);
     }
   });
