@@ -16,7 +16,12 @@
  * Science) sets it per-Unit so ui/views/LearningManagementView.js can
  * group units under their Part for display, the same "hide grouping
  * when there's only one" rule already used for Curriculum Index's own
- * Review Units screen.
+ * Review Units screen. When absent, the key itself is omitted from
+ * the returned object entirely — not set to `undefined` — since
+ * Firestore's setDoc() rejects any field whose value is `undefined`
+ * (a real, confirmed production bug this omission fixes at the root;
+ * see this project's own investigation into why every classroom save
+ * with a single-Part Subject was failing).
  *
  * `linkedCurriculumUnitId` — optional, nullable. Set only when this
  * Unit was created by linking a Curriculum Index (see
@@ -38,17 +43,36 @@
  * copy afterward. Per explicit product decision — see this project's
  * own Learning view unit-number investigation for why this distinction
  * matters.
+ *
+ * Kept as a genuine classroom snapshot rather than derived live from
+ * the linked Curriculum Index at render time — deliberate, considered
+ * choice: a live lookup would mean an already-assigned classroom's
+ * grouping display could silently change (or break entirely) if the
+ * source Curriculum Index is later edited or deleted, entirely
+ * unrelated to anything the classroom itself did; it would also
+ * require a new async lookup for what's currently an instant,
+ * synchronous render. Since partName is never independently edited
+ * after assignment anyway (confirmed: written in exactly one place,
+ * buildUnitsFromCurriculumIndex(), and read only for display grouping
+ * in LearningManagementView.js), there is no real benefit to deriving
+ * it live to offset that cost.
  */
 
 import { generateId } from '../utils/idGenerator.js';
 
-export function createLearningUnit({ id, title, concepts = [], partName = undefined, linkedCurriculumUnitId = null, number = null } = {}) {
-  return {
+export function createLearningUnit({ id, title, concepts = [], partName, linkedCurriculumUnitId = null, number = null } = {}) {
+  const unit = {
     id: id || generateId(),
     title,
     concepts,
-    partName,
     linkedCurriculumUnitId,
     number,
   };
+  // Only set the key at all when a real value was given — omitting it
+  // entirely (rather than setting it to `undefined`) is what keeps
+  // this object safe to pass straight to Firestore's setDoc().
+  if (partName !== undefined) {
+    unit.partName = partName;
+  }
+  return unit;
 }

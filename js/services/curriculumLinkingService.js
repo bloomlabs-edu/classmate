@@ -111,14 +111,22 @@ function buildUnitsFromCurriculumIndex(curriculumIndex) {
   const partNameById = new Map(curriculumIndex.parts.map((part) => [part.id, part.name]));
   const hasMultipleParts = curriculumIndex.parts.length > 1;
 
-  return curriculumIndex.units.map((unit) =>
-    createLearningUnit({
+  return curriculumIndex.units.map((unit) => {
+    const args = {
       title: unit.title,
-      partName: hasMultipleParts ? partNameById.get(unit.partId) : undefined,
       linkedCurriculumUnitId: unit.id,
       number: unit.number ?? null,
-    })
-  );
+    };
+    // Only included at all when there's a real value to give it — see
+    // createLearningUnit()'s own header comment for why passing
+    // `partName: undefined` explicitly here was the actual root cause
+    // of a real production bug (Firestore rejects any field whose
+    // value is `undefined`).
+    if (hasMultipleParts) {
+      args.partName = partNameById.get(unit.partId);
+    }
+    return createLearningUnit(args);
+  });
 }
 
 /**
