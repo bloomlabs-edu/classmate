@@ -169,6 +169,19 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
 
   const handlers = {
     onBack,
+    /**
+     * The "Change" action next to a Subject's currently-assigned
+     * curriculum (see renderSubjectStep()) — opens the exact same
+     * Curriculum Hub the Dashboard used to link to directly, only
+     * now reached contextually from within a Subject, and returning
+     * to that same Subject afterward rather than out to the
+     * Dashboard. This is the one piece of new wiring this redesign
+     * needed; ui/views/CurriculumManagementView.js itself is
+     * completely unchanged.
+     */
+    onManageCurriculum: () => {
+      onOpenCurriculumManagement({ onBack: () => rerender() });
+    },
     onChooseClass: (classroom) => {
       selectedClassroom = classroom;
       mode = 'home';
@@ -188,7 +201,7 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
           // single source of truth for what's actually persisted.
           rerender();
         },
-        onOpenCurriculumManagement,
+        onOpenCurriculumManagement: () => onOpenCurriculumManagement({ onBack: () => rerender() }),
       });
     },
     onChooseSubject: (subject) => {
@@ -211,7 +224,12 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
           // assigned.
           loadCurriculumStateFor(selectedSubject);
         },
-        onOpenCurriculumManagement,
+        // Same "return to this Subject, not the Dashboard" wrapper
+        // handlers.onManageCurriculum above uses — this modal's own
+        // "zero matches" fallback leads to the exact same Curriculum
+        // Hub takeover of the container, so it needs the same return
+        // target for the same reason.
+        onOpenCurriculumManagement: () => onOpenCurriculumManagement({ onBack: () => rerender() }),
       });
     },
     onChoosePart: (partName) => {
@@ -485,15 +503,28 @@ function renderSubjectStep(subject, curriculumState, selectedPartName, selectedU
 
   const curriculumActionButton = document.createElement('button');
   curriculumActionButton.type = 'button';
-  curriculumActionButton.className = 'btn btn--primary learning-management__curriculum-action';
   if (curriculumState.status === 'ready') {
-    curriculumActionButton.textContent = 'Change Curriculum';
-    // Deliberately no click handler yet — changing curriculum has
-    // genuine data consequences (Units/Concepts/Resources are
-    // materialized from the curriculum at assignment time), and that
-    // confirmation flow is its own, separately-built piece of work.
+    // Opens the Curriculum Hub itself (Review Units, Concepts, and
+    // everything else it already does — see
+    // ui/views/CurriculumManagementView.js, deliberately unredesigned)
+    // to manage this Subject's own curriculum structure. Distinct
+    // from — and safe, unlike — *reassigning a different* Curriculum
+    // Index to this Subject, which has genuine data consequences
+    // (Units/Concepts/Resources are materialized from the curriculum
+    // at assignment time) and remains its own, separately-built,
+    // not-yet-implemented confirmation flow.
+    curriculumActionButton.className = 'btn btn--text learning-management__curriculum-action';
+    curriculumActionButton.textContent = 'Change';
+    curriculumActionButton.addEventListener('click', handlers.onManageCurriculum);
   } else if (curriculumState.status === 'none') {
-    curriculumActionButton.textContent = 'Assign Curriculum';
+    // Still the prominent, primary call-to-action — a Subject with
+    // no curriculum installed at all is the one case where reaching
+    // the Curriculum Hub genuinely IS the most important thing on
+    // this screen, per explicit product decision (once a curriculum
+    // exists, this same action recedes to a secondary "Change" text
+    // link instead, immediately above).
+    curriculumActionButton.className = 'btn btn--primary learning-management__curriculum-action';
+    curriculumActionButton.textContent = 'Install Curriculum';
     curriculumActionButton.addEventListener('click', handlers.onGoToAssignCurriculum);
   }
   if (curriculumState.status === 'ready' || curriculumState.status === 'none') {

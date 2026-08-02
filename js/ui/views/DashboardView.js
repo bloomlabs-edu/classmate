@@ -3,39 +3,40 @@
  *
  * The Classroom Dashboard — the default landing page for a classroom.
  *
- * Information Architecture milestone: a teacher should immediately see
- * that ClassMate has three separate responsibilities, as three
- * equally-weighted cards, replacing every previous Dashboard entry
+ * Information Architecture: the Dashboard now emphasizes daily
+ * teaching only, as two equally-weighted primary cards, plus two
+ * lower-tier "setup" cards — replacing every previous Dashboard entry
  * point (the header used to carry "Start Class Mode" as its Primary
  * Action and, across earlier milestones, "📚 Manage Lessons,"
- * "✏️ Create Lesson," a "Continue Working" card, and later a single
- * "📚 Curriculum" button as Secondary Content — all of that collapses
- * into these three cards now):
+ * "✏️ Create Lesson," a "Continue Working" card, and later a
+ * standalone "⚙️ Curriculum Management" card as its own peer
+ * destination — all of that collapses into this shape now):
  *
- *   ▶ Classroom Management  — running today's class. For now, this is
- *     exactly the existing Class Mode workflow (onStartClassMode),
- *     unchanged — just presented as one of three cards instead of a
- *     standalone header button.
- *   📚 Learning Management  — preparing learning materials and
- *     supporting students. See ui/views/LearningManagementView.js —
- *     this absorbs what the old "📚 Curriculum" button did (Manage
- *     Lessons and the recent-resource shortcut both still exist,
- *     reached from inside it).
- *   ⚙️ Curriculum Management — configuring the curriculum structure
- *     itself (install/upload/edit packs, assign a curriculum to a
- *     class). Used occasionally, not part of daily teaching — see
- *     ui/views/CurriculumManagementView.js. Also reachable from
- *     Teacher Home (ui/views/HomeView.js), since a curriculum pack
- *     isn't classroom-specific data; this Dashboard card is a second,
- *     equally-convenient door to the exact same screen.
+ *   ▶ Class Mode             — running today's class (onStartClassMode).
+ *   👥 Classroom Management  — students, groups, daily operations.
+ *   📚 Learning Management   — preparing learning materials and
+ *     supporting students. See ui/views/LearningManagementView.js.
+ *   📋 Assessment Management — recording exam/test marks.
  *
- * `canAccessCurriculumManagement` (see renderPrimaryModulesSection())
- * is the intentional hook for a future permission system — hardcoded
- * `true` for every teacher today, by explicit instruction not to
- * implement real permissions yet. When that system exists, computing
- * this one boolean (teacher vs. school admin) is the entire change
- * needed to show or hide this card; nothing else here should need to
- * change.
+ * Curriculum Management (see ui/views/CurriculumManagementView.js) is
+ * deliberately *not* one of these cards anymore — per explicit product
+ * decision, editing a curriculum's own structure is administrative
+ * infrastructure that supports Learning, not a destination a teacher
+ * reaches for daily, and giving it equal dashboard weight against
+ * Class Mode/Learning/Assessments misrepresented how rarely it's
+ * actually used (setup and occasional maintenance, not every-day
+ * work). It's still the exact same screen, completely unredesigned —
+ * only *how a teacher reaches it* changed: contextually, from within
+ * a Subject on the Learning screen (see
+ * ui/views/LearningManagementView.js's own renderSubjectStep(), which
+ * shows the Subject's currently-assigned curriculum directly, with a
+ * secondary "Change" action opening this same Hub). See
+ * openCurriculumManagement() below for the one piece of supporting
+ * plumbing this needed: it now accepts an optional custom return
+ * target, so reaching the Hub from a Subject returns to that same
+ * Subject afterward, not out to the Dashboard — the thing that makes
+ * this feel like a contextual management action rather than a
+ * separate application.
  *
  * Structured around the four questions the Dashboard should answer, in
  * order:
@@ -96,11 +97,6 @@ export function renderDashboardView(container, props) {
 
   container.innerHTML = '';
 
-  // The future permission hook — see this file's own header comment.
-  // Always true today; a future permission system replaces this one
-  // line with a real check and nothing else here needs to change.
-  const canAccessCurriculumManagement = true;
-
   function openLearningManagement() {
     renderLearningManagementView(container, {
       classrooms: workspaceService.getState().classrooms,
@@ -109,9 +105,22 @@ export function renderDashboardView(container, props) {
     });
   }
 
-  function openCurriculumManagement() {
+  /**
+   * Opens the Curriculum Hub — unchanged itself (see
+   * ui/views/CurriculumManagementView.js's own "Do not redesign the
+   * Curriculum Hub" scope). What changed is *how a caller returns
+   * from it*: `onBack` defaults to the Dashboard, but a caller can
+   * supply its own return target instead — specifically,
+   * ui/views/LearningManagementView.js's own Subject screen now
+   * reaches this same function directly (see the "Change" curriculum
+   * action there) and needs "Back" to land on that same Subject, not
+   * jump all the way out to the Dashboard. That's the one genuine
+   * piece of new wiring this redesign needed; the Hub itself is
+   * completely untouched.
+   */
+  function openCurriculumManagement({ onBack: customOnBack } = {}) {
     renderCurriculumManagementView(container, {
-      onBack: () => renderDashboardView(container, props),
+      onBack: customOnBack || (() => renderDashboardView(container, props)),
       onOpenLearningManagement: openLearningManagement,
     });
   }
@@ -167,7 +176,7 @@ export function renderDashboardView(container, props) {
       onOpenStudentAccess,
       onOpenSettingsGroups: openClassroomManagement,
       onOpenSettingsNotebooks,
-    }, openLearningManagement, canAccessCurriculumManagement ? openCurriculumManagement : null, needsCurriculumAssignment ? openAssignCurriculumPrompt : null);
+    }, openLearningManagement, needsCurriculumAssignment ? openAssignCurriculumPrompt : null);
     return;
   }
 
@@ -217,7 +226,6 @@ export function renderDashboardView(container, props) {
       onStartClassMode,
       onOpenClassroomManagement: openClassroomManagement,
       onOpenLearningManagement: openLearningManagement,
-      onOpenCurriculumManagement: canAccessCurriculumManagement ? openCurriculumManagement : null,
       onOpenAssessmentManagement: openAssessmentManagement,
     })
   );
@@ -374,14 +382,6 @@ const DASHBOARD_MODULES = [
     accentColor: '#6D5AC4', // reuses ICON_CATEGORIES.notebook (Icon.js) — Learning owns Notebook configuration and Subjects
   },
   {
-    id: 'curriculum',
-    title: 'Curriculum',
-    icon: 'graduation-cap',
-    description: 'Install, upload, assign curriculum',
-    tier: 'setup',
-    accentColor: '#B8721E', // a new, restrained amber, verified at 3.84:1 against white (WCAG 1.4.11's 3:1 non-text-UI threshold) — deliberately a different shade from ICON_CATEGORIES.recognition's gold, since that one represents celebration, not curriculum structure
-  },
-  {
     id: 'assessments',
     title: 'Assessments',
     icon: 'clipboard-list',
@@ -391,22 +391,16 @@ const DASHBOARD_MODULES = [
   },
 ];
 
-function renderPrimaryModulesSection({ onStartClassMode, onOpenClassroomManagement, onOpenLearningManagement, onOpenCurriculumManagement, onOpenAssessmentManagement }) {
+function renderPrimaryModulesSection({ onStartClassMode, onOpenClassroomManagement, onOpenLearningManagement, onOpenAssessmentManagement }) {
   const section = document.createElement('div');
   section.className = 'primary-modules';
 
   // The one place runtime behavior meets static metadata — a plain
   // id -> handler lookup, not a chain of per-module conditionals.
-  // Curriculum's handler can be null (see this file's own permission-
-  // hook comment near canAccessCurriculumManagement) — that module is
-  // simply skipped, the same way any future module without a wired
-  // handler would be, rather than a special case written just for
-  // Curriculum.
   const handlersById = {
     classMode: onStartClassMode,
     classroom: onOpenClassroomManagement,
     learning: onOpenLearningManagement,
-    curriculum: onOpenCurriculumManagement,
     assessments: onOpenAssessmentManagement,
   };
 
@@ -507,7 +501,7 @@ function createPrimaryModuleCard({ icon, label, description, onClick, tier, acce
  * yet, and a teacher very plausibly wants to do either *before*
  * importing a roster, not after.
  */
-function renderPreRosterWelcome(container, classroom, assistantCallbacks, onOpenLearningManagement, onOpenCurriculumManagement, onOpenAssignCurriculumPrompt) {
+function renderPreRosterWelcome(container, classroom, assistantCallbacks, onOpenLearningManagement, onOpenAssignCurriculumPrompt) {
   const wrapper = document.createElement('div');
   wrapper.className = 'pre-roster-welcome';
 
@@ -529,29 +523,17 @@ function renderPreRosterWelcome(container, classroom, assistantCallbacks, onOpen
   const assistantSlot = document.createElement('div');
   wrapper.appendChild(assistantSlot);
 
-  if (onOpenLearningManagement || onOpenCurriculumManagement) {
+  if (onOpenLearningManagement) {
     const actionsRow = document.createElement('div');
     actionsRow.className = 'pre-roster-welcome__actions-row';
 
-    if (onOpenLearningManagement) {
-      const learningManagementButton = document.createElement('button');
-      learningManagementButton.type = 'button';
-      learningManagementButton.className = 'btn btn--primary pre-roster-welcome__curriculum-button';
-      learningManagementButton.appendChild(createIcon('book-open', { size: 16 }));
-      learningManagementButton.append('Learning');
-      learningManagementButton.addEventListener('click', onOpenLearningManagement);
-      actionsRow.appendChild(learningManagementButton);
-    }
-
-    if (onOpenCurriculumManagement) {
-      const curriculumManagementButton = document.createElement('button');
-      curriculumManagementButton.type = 'button';
-      curriculumManagementButton.className = 'btn btn--ghost pre-roster-welcome__curriculum-management-button';
-      curriculumManagementButton.appendChild(createIcon('graduation-cap', { size: 16 }));
-      curriculumManagementButton.append('Curriculum');
-      curriculumManagementButton.addEventListener('click', onOpenCurriculumManagement);
-      actionsRow.appendChild(curriculumManagementButton);
-    }
+    const learningManagementButton = document.createElement('button');
+    learningManagementButton.type = 'button';
+    learningManagementButton.className = 'btn btn--primary pre-roster-welcome__curriculum-button';
+    learningManagementButton.appendChild(createIcon('book-open', { size: 16 }));
+    learningManagementButton.append('Learning');
+    learningManagementButton.addEventListener('click', onOpenLearningManagement);
+    actionsRow.appendChild(learningManagementButton);
 
     wrapper.appendChild(actionsRow);
   }
