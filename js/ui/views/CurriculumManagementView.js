@@ -254,40 +254,49 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
           mode = 'index-review-units';
           rerender();
         },
-        onRenameIndexUnit: (unitId, title) => {
+        onRenameIndexUnit: async (unitId, title) => {
           indexSession.renameUnit(unitId, title);
+          await indexSession.saveIndex();
           rerender();
         },
-        onDeleteIndexUnit: (unitId) => {
+        onDeleteIndexUnit: async (unitId) => {
           indexSession.deleteUnit(unitId);
+          await indexSession.saveIndex();
           rerender();
         },
-        onMoveIndexUnitUp: (unitId) => {
+        onMoveIndexUnitUp: async (unitId) => {
           indexSession.moveUnitUp(unitId);
+          await indexSession.saveIndex();
           rerender();
         },
-        onMoveIndexUnitDown: (unitId) => {
+        onMoveIndexUnitDown: async (unitId) => {
           indexSession.moveUnitDown(unitId);
+          await indexSession.saveIndex();
           rerender();
         },
-        onMoveIndexUnitToPart: (unitId, targetPartId) => {
+        onMoveIndexUnitToPart: async (unitId, targetPartId) => {
           indexSession.moveUnitToPart(unitId, targetPartId);
+          await indexSession.saveIndex();
           rerender();
         },
-        onAddIndexUnit: (title, partId) => {
+        onAddIndexUnit: async (title, partId) => {
           indexSession.addUnit(title, partId);
+          await indexSession.saveIndex();
           rerender();
         },
-        onAddPart: (name) => {
+        onAddPart: async (name) => {
           indexSession.addPart(name);
+          await indexSession.saveIndex();
           rerender();
         },
-        onRenamePart: (partId, newName) => {
+        onRenamePart: async (partId, newName) => {
           indexSession.renamePart(partId, newName);
+          await indexSession.saveIndex();
           rerender();
         },
-        onDeletePart: (partId) => {
+        onDeletePart: async (partId) => {
           indexSession.deletePart(partId);
+          await indexSession.saveIndex();
           rerender();
         },
         onSaveIndex: async () => {
@@ -300,6 +309,12 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
           // or subsequent, forced an extra click just to get back to
           // the exact screen the teacher was already on. A toast
           // confirms the save without moving them anywhere.
+          //
+          // Every individual edit below (Units, Parts, Concepts) now
+          // autosaves on its own — this button's remaining, genuine
+          // job is the draft -> units_confirmed status transition for
+          // a brand new Curriculum Index (see indexSession.saveIndex()
+          // itself), not being the only path to persistence anymore.
           //
           // isResumingIndex flips to true here too, not just when
           // reached via "Open" from the Hub — once a curriculum is
@@ -317,24 +332,29 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
           mode = 'index-unit-concepts';
           rerender();
         },
-        onAddConcept: (title) => {
+        onAddConcept: async (title) => {
           indexSession.addConcept(selectedUnitConceptsId, title);
+          await indexSession.saveIndex();
           rerender();
         },
-        onRenameConcept: (conceptId, newTitle) => {
+        onRenameConcept: async (conceptId, newTitle) => {
           indexSession.renameConcept(selectedUnitConceptsId, conceptId, newTitle);
+          await indexSession.saveIndex();
           rerender();
         },
-        onDeleteConcept: (conceptId) => {
+        onDeleteConcept: async (conceptId) => {
           indexSession.deleteConcept(selectedUnitConceptsId, conceptId);
+          await indexSession.saveIndex();
           rerender();
         },
-        onMoveConceptUp: (conceptId) => {
+        onMoveConceptUp: async (conceptId) => {
           indexSession.moveConceptUp(selectedUnitConceptsId, conceptId);
+          await indexSession.saveIndex();
           rerender();
         },
-        onMoveConceptDown: (conceptId) => {
+        onMoveConceptDown: async (conceptId) => {
           indexSession.moveConceptDown(selectedUnitConceptsId, conceptId);
+          await indexSession.saveIndex();
           rerender();
         },
         onGoToReview: () => {

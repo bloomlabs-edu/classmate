@@ -36,6 +36,16 @@ let onChangeCallback = null;
 let unsubscribeRefs = null;
 const classroomSubscriptions = new Map(); // classroomId -> unsubscribe fn
 
+// Every currently in-flight classroom write, tracked so sign-out can
+// wait for all of them to actually settle (success or failure) before
+// tearing down the session — see flushPendingSaves() below. Without
+// this, save() being fire-and-forget (by design, for instant UI —
+// see persistClassroom()'s own comment) meant nothing anywhere ever
+// waited for a write to truly finish before a teacher could sign out
+// mid-write, a real, reproducible-in-principle gap this closes
+// directly rather than papering over with a UI warning.
+const pendingSaves = new Set();
+
 /**
  * Migrates any classroom that isn't in the shared model yet to
  * classrooms/{id} + a classroomRefs pointer, adding ownership/membership
@@ -120,9 +130,25 @@ function unsubscribeFromAllClassrooms() {
 
 function persistClassroom(classroom) {
   if (!classroom) return;
-  repository.saveClassroom(classroom).catch((error) => {
+  const writePromise = repository.saveClassroom(classroom).catch((error) => {
     console.error('[workspaceService] Failed to save classroom:', error);
   });
+  pendingSaves.add(writePromise);
+  writePromise.finally(() => pendingSaves.delete(writePromise));
+}
+
+/**
+ * Waits for every classroom write currently in flight to actually
+ * settle (successfully or not) — call this before signing out (see
+ * services/authService.js's signOutUser(), or whatever orchestrates
+ * sign-out at the UI layer) so a save triggered moments earlier
+ * genuinely finishes reaching the server first, rather than racing an
+ * auth-session teardown that could otherwise interrupt or invalidate
+ * it mid-flight. A no-op, resolving immediately, when nothing is
+ * pending.
+ */
+export async function flushPendingSaves() {
+  await Promise.allSettled(Array.from(pendingSaves));
 }
 
 /**

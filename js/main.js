@@ -115,8 +115,16 @@ function handleSignIn() {
 }
 
 function handleSignOut() {
-  authService.signOutUser().catch((error) => {
-    console.error('[main] Sign-out failed:', error);
+  // flushPendingSaves() never rejects (it's built on Promise.allSettled,
+  // which resolves regardless of individual outcomes) — waiting for it
+  // here closes the real gap the persistence investigation found: a
+  // save triggered moments before sign-out is fire-and-forget by
+  // design, and nothing previously waited for it to actually reach the
+  // server before the auth session tore down.
+  workspaceService.flushPendingSaves().then(() => {
+    authService.signOutUser().catch((error) => {
+      console.error('[main] Sign-out failed:', error);
+    });
   });
 }
 
