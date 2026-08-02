@@ -29,15 +29,19 @@
  *
  * `migrateClassroomSubjects` remains a plain, one-shot function (not
  * yet folded into a versioned schemaVersion pipeline) — Learning
- * Management Subjects only have this one historical migration to
- * date, so introducing a full pipeline here would be building
- * machinery for a second step that doesn't exist yet. Worth revisiting
- * the same way Curriculum Index just was, if or when a second
- * Subject-shape migration is ever needed.
+ * Management Subjects only had this one historical migration for a
+ * while; `migrateUnitNumbers` below is the second one this file's own
+ * comment anticipated ("worth revisiting... if or when a second
+ * Subject-shape migration is ever needed"). Both stay plain,
+ * independent, idempotent functions rather than becoming a versioned
+ * pipeline — two migrations doesn't yet justify that machinery, the
+ * same "smallest necessary" reasoning already applied to Curriculum
+ * Index's own schema work when it genuinely did need one.
  */
 
 import * as learningRecordService from './learningRecordService.js';
 import { generateCustomSubjectId } from './subjectIdentityService.js';
+import * as curriculumIndexRepository from './curriculumIndexRepository.js';
 
 const KNOWN_HISTORICAL_SPELLINGS = {
   science: 'science',
@@ -76,5 +80,59 @@ export function migrateClassroomSubjects(classroom) {
     subject.subjectId = resolveHistoricalSubjectId(subject.title);
     migratedCount++;
   });
+  return migratedCount;
+}
+
+/**
+ * Backfills `number` on every pre-existing LearningUnit that's missing
+ * one but was genuinely linked from a Curriculum Index
+ * (`linkedCurriculumUnitId` set) — for any Subject assigned before
+ * curriculumLinkingService.js's buildUnitsFromCurriculumIndex() copied
+ * `number` through at all. Looks the source Unit up by id in that
+ * Subject's own linked Curriculum Index and copies its `number` over,
+ * once, as a snapshot — never touching `title` or `partName`, which
+ * may already have been customized in this classroom since assignment
+ * (see models/LearningUnit.js's own header comment for why `number`,
+ * `title`, and `partName` are all classroom snapshots, not live
+ * references back to the Curriculum Index).
+ *
+ * A Unit with no `linkedCurriculumUnitId` at all (added directly by a
+ * teacher, never linked from any curriculum) is correctly left alone
+ * — it never had a source `number` to backfill from.
+ *
+ * Async, unlike migrateClassroomSubjects() above: this needs a real
+ * Curriculum Index read (services/curriculumIndexRepository.js's
+ * getIndex()), fetched once per distinct linked Curriculum Index
+ * actually referenced, not once per Unit, so backfilling several
+ * Units from the same curriculum only reads that document once.
+ */
+export async function migrateUnitNumbers(classroom) {
+  let migratedCount = 0;
+  const indexCache = new Map(); // curriculumIndexId -> fetched index (or null if not found), avoids re-fetching the same index for every Unit that needs it
+
+  for (const subject of learningRecordService.getSubjects(classroom)) {
+    if (!subject.linkedCurriculumIndexId) continue;
+
+    const unitsNeedingBackfill = (subject.units || []).filter((unit) => unit.number == null && unit.linkedCurriculumUnitId);
+    if (unitsNeedingBackfill.length === 0) continue;
+
+    if (!indexCache.has(subject.linkedCurriculumIndexId)) {
+      // eslint-disable-next-line no-await-in-loop
+      const curriculumIndex = await curriculumIndexRepository.getIndex(subject.linkedCurriculumIndexId);
+      indexCache.set(subject.linkedCurriculumIndexId, curriculumIndex);
+    }
+    const curriculumIndex = indexCache.get(subject.linkedCurriculumIndexId);
+    if (!curriculumIndex) continue; // the linked Curriculum Index no longer exists — nothing to backfill from
+
+    const sourceUnitById = new Map(curriculumIndex.units.map((unit) => [unit.id, unit]));
+    unitsNeedingBackfill.forEach((unit) => {
+      const sourceUnit = sourceUnitById.get(unit.linkedCurriculumUnitId);
+      if (sourceUnit && sourceUnit.number != null) {
+        unit.number = sourceUnit.number;
+        migratedCount++;
+      }
+    });
+  }
+
   return migratedCount;
 }

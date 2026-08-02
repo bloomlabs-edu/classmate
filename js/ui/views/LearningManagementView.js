@@ -82,7 +82,7 @@ import * as workspaceService from '../../services/workspaceService.js';
 import * as curriculumIndexRepository from '../../services/curriculumIndexRepository.js';
 import { resetLearningManagementData } from '../../services/devLearningManagementResetService.js';
 import { isDebugModeEnabled } from '../../services/debugModeService.js';
-import { migrateClassroomSubjects } from '../../services/subjectIdMigrationService.js';
+import { migrateClassroomSubjects, migrateUnitNumbers } from '../../services/subjectIdMigrationService.js';
 import { renderConceptWorkspaceView } from './ConceptWorkspaceView.js';
 
 export function renderLearningManagementView(container, { classrooms, onBack, onOpenCurriculumManagement }) {
@@ -96,6 +96,23 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
     if (migrateClassroomSubjects(classroom) > 0) {
       workspaceService.save(classroom);
     }
+  });
+
+  // One-time backfill for LearningUnits linked from a Curriculum Index
+  // before buildUnitsFromCurriculumIndex() copied `number` through at
+  // all — see services/subjectIdMigrationService.js's own
+  // migrateUnitNumbers() for the full reasoning. Async (a real
+  // Curriculum Index read), so this can't run inline with the
+  // synchronous backfill above — fire-and-forget here, re-rendering
+  // only the classrooms that actually changed, so a teacher sees Unit
+  // numbers appear without needing to reload the page themselves.
+  classrooms.forEach((classroom) => {
+    migrateUnitNumbers(classroom).then((migratedCount) => {
+      if (migratedCount > 0) {
+        workspaceService.save(classroom);
+        rerender();
+      }
+    });
   });
 
   const singleClassroomMode = classrooms.length === 1;
@@ -636,7 +653,8 @@ function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, handlers)
   const list = document.createElement('div');
   list.className = 'learning-management__subject-card-list';
   unitsToShow.forEach((unit) => {
-    list.appendChild(createNavigationRow({ label: unit.title, onClick: () => handlers.onSelectUnit(unit.id) }));
+    const label = unit.number != null ? `Unit ${unit.number} \u2013 ${unit.title}` : unit.title;
+    list.appendChild(createNavigationRow({ label, onClick: () => handlers.onSelectUnit(unit.id) }));
   });
   wrapper.appendChild(list);
 

@@ -116,6 +116,7 @@ function buildUnitsFromCurriculumIndex(curriculumIndex) {
       title: unit.title,
       partName: hasMultipleParts ? partNameById.get(unit.partId) : undefined,
       linkedCurriculumUnitId: unit.id,
+      number: unit.number ?? null,
     })
   );
 }

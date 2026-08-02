@@ -24,16 +24,31 @@
  * added directly the existing way. This is what a future Concept
  * Builder needs to find "which LearningUnit does this Curriculum
  * Index Unit's Concepts belong to" — not used for anything today.
+ *
+ * `number` — optional, nullable. Copied once from the linked
+ * Curriculum Index Unit's own `number` at the moment a curriculum is
+ * assigned (see curriculumLinkingService.js's
+ * buildUnitsFromCurriculumIndex()) — this is a classroom snapshot, not
+ * a live reference: `title`, `partName`, and `number` are this
+ * classroom's own copy from that moment forward, deliberately never
+ * re-synced if the source Curriculum Index is later edited. The
+ * Curriculum Index remains the source of truth for any *future*
+ * assignment; an already-assigned classroom keeps whatever it was
+ * given, including any customization a teacher makes to their own
+ * copy afterward. Per explicit product decision — see this project's
+ * own Learning view unit-number investigation for why this distinction
+ * matters.
  */
 
 import { generateId } from '../utils/idGenerator.js';
 
-export function createLearningUnit({ id, title, concepts = [], partName = undefined, linkedCurriculumUnitId = null } = {}) {
+export function createLearningUnit({ id, title, concepts = [], partName = undefined, linkedCurriculumUnitId = null, number = null } = {}) {
   return {
     id: id || generateId(),
     title,
     concepts,
     partName,
     linkedCurriculumUnitId,
+    number,
   };
 }
