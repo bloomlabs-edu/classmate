@@ -83,11 +83,13 @@ import * as curriculumIndexRepository from '../../services/curriculumIndexReposi
 import { resetLearningManagementData } from '../../services/devLearningManagementResetService.js';
 import { isDebugModeEnabled } from '../../services/debugModeService.js';
 import { migrateClassroomSubjects, migrateUnitNumbers } from '../../services/subjectIdMigrationService.js';
-import { logPersistenceEvent } from '../../services/persistenceLogger.js';
+import { logPersistenceEvent, logViewMounted } from '../../services/persistenceLogger.js';
 import * as workspaceCoordinator from '../../services/workspaceCoordinator.js';
 import { renderConceptWorkspaceView } from './ConceptWorkspaceView.js';
 
 export function renderLearningManagementView(container, { classrooms, onBack, onOpenCurriculumManagement }) {
+  logViewMounted('LearningManagementView');
+
   // One-time backfill for Subjects predating subjectId — see
   // services/subjectIdMigrationService.js's own header comment for why
   // this is historical migration, not part of the ongoing matching

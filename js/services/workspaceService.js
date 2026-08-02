@@ -103,6 +103,8 @@ export function canApplyIncomingServerState(classroomId) {
 }
 
 function setSaveState(classroomId, status, error = null) {
+  const previousStatus = getSaveState(classroomId).status;
+  logPersistenceEvent(`Save state transition: ${previousStatus} \u2192 ${status}`, { classroomId });
   saveStates.set(classroomId, { status, error });
   saveStateChangeCallback?.(classroomId, { status, error });
   maybeReconcilePendingSnapshot(classroomId);
@@ -163,6 +165,7 @@ export function getSaveState(classroomId) {
  * is clicked.
  */
 export function markDirty(classroomId) {
+  logPersistenceEvent('markDirty() called', { classroomId });
   if (getSaveState(classroomId).status === 'saving') return;
   setSaveState(classroomId, 'dirty');
 }
@@ -334,6 +337,7 @@ export async function flushPendingSaves() {
  * caller can re-render without the user ever needing to refresh.
  */
 export async function initForUser(uid, displayName, onChange, onError) {
+  logPersistenceEvent('workspaceService.initForUser() executing', { uid });
   stopListening();
   onChangeCallback = onChange;
 
@@ -360,6 +364,7 @@ export async function initForUser(uid, displayName, onChange, onError) {
 
 /** Call on sign-out. Stops every listener and clears the in-memory workspace. */
 export function stopListening() {
+  logPersistenceEvent('stopListening() executing', { classroomsCleared: classroomService.listClassrooms().length });
   unsubscribeRefs?.();
   unsubscribeRefs = null;
   unsubscribeFromAllClassrooms();

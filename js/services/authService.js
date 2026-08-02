@@ -39,6 +39,7 @@ import {
   browserLocalPersistence,
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 import { getFirebaseApp } from './firebaseApp.js';
+import { logPersistenceEvent } from './persistenceLogger.js';
 
 let auth = null;
 
@@ -65,15 +66,27 @@ export function initAuth() {
  * than any view calling Firebase directly. Returns Firebase's own
  * unsubscribe function.
  */
+let authCallbackCount = 0;
+
 export function onAuthStateChange(callback) {
   return onAuthStateChanged(auth, (firebaseUser) => {
+    authCallbackCount += 1;
+    // TEMPORARY DIAGNOSTIC LOGGING — instrumenting the auth lifecycle
+    // to prove/disprove onAuthStateChanged firing more than once per
+    // session (see this project's own investigation into why the
+    // Learning workspace's Save UI disappears on the deployed app but
+    // not on Live Server). Remove once that investigation concludes.
+    logPersistenceEvent(`Auth callback #${authCallbackCount} (${authCallbackCount === 1 ? 'first' : 'SUBSEQUENT'})`, {
+      uid: firebaseUser ? firebaseUser.uid : null,
+    });
+
     if (firebaseUser) {
-      // TEMPORARY DEBUG LOGGING — remove after cross-device investigation.
-      // Deliberately logs UID only, not EMAIL: this app's design (see the
-      // module doc comment above) never reads/stores/logs the teacher's
-      // email, and console output here is likely to be copy-pasted
-      // elsewhere while debugging. UID alone is enough to confirm/rule
-      // out "different account signed in on this device."
+      // Pre-existing TEMPORARY DEBUG LOGGING — remove after cross-device
+      // investigation. Deliberately logs UID only, not EMAIL: this app's
+      // design (see the module doc comment above) never reads/stores/logs
+      // the teacher's email, and console output here is likely to be
+      // copy-pasted elsewhere while debugging. UID alone is enough to
+      // confirm/rule out "different account signed in on this device."
       console.log('[AUTH]');
       console.log('UID:', firebaseUser.uid);
     }

@@ -76,8 +76,11 @@ import { renderCurriculumManagementView } from './CurriculumManagementView.js';
 import { renderAssessmentManagementView } from './AssessmentManagementView.js';
 import { renderAssignCurriculumPromptView } from './AssignCurriculumPromptView.js';
 import * as curriculumLibraryService from '../../services/curriculumLibraryService.js';
+import { logViewMounted } from '../../services/persistenceLogger.js';
 
 export function renderDashboardView(container, props) {
+  logViewMounted('DashboardView');
+
   const {
     classroom,
     currentUser,

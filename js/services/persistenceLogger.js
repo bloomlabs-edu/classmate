@@ -24,3 +24,21 @@ export function logPersistenceEvent(event, details = {}) {
     console.log(`[Persistence] ${timestamp} \u2014 ${event}`);
   }
 }
+
+// TEMPORARY DIAGNOSTIC — instrumenting whether a top-level view gets
+// torn down involuntarily (see this project's own investigation into
+// why the Learning workspace's Save UI disappears on the deployed app
+// but not on Live Server). Tracks which top-level view last announced
+// itself as mounted; if a different one mounts next without the first
+// ever announcing its own, intentional exit, that's a real, involuntary
+// teardown — logged here as "<previous view> destroyed" the moment it's
+// discovered, not assumed. Remove once that investigation concludes.
+let currentlyMountedView = null;
+
+export function logViewMounted(viewName) {
+  if (currentlyMountedView && currentlyMountedView !== viewName) {
+    logPersistenceEvent(`${currentlyMountedView} destroyed`, { replacedBy: viewName });
+  }
+  currentlyMountedView = viewName;
+  logPersistenceEvent(`${viewName} created`);
+}

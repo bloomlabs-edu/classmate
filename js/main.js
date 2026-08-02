@@ -235,7 +235,7 @@ function renderStudentPortalMain(route) {
       } else if (route.section === 'manage-students') {
         renderStudentManageProfilesView(content, {
           onBack: () => router.navigate('/student/profile'),
-          onProfilesChanged: () => renderRoute(router.getCurrentRoute()),
+          onProfilesChanged: () => renderRoute(router.getCurrentRoute(), 'student-profiles-changed'),
         });
       } else if (route.section === 'profile') {
         renderStudentPortalProfileView(content, {
@@ -249,7 +249,9 @@ function renderStudentPortalMain(route) {
   });
 }
 
-function renderRoute(route) {
+function renderRoute(route, reason = 'unspecified') {
+  logPersistenceEvent(`renderRoute() called`, { reason, routeName: route?.name });
+
   // Bloom Labs platform-level routes — deliberately checked before the
   // auth gate below. Neither of these is part of Classroom Tracker's
   // own flow; they sit one layer above it (and above Student Portal,
@@ -503,7 +505,7 @@ function init() {
 
     // Registered once — renderRoute() itself checks auth/loading state on
     // every call, so this doesn't need to be re-attached on sign-in/out.
-    router.onRouteChange(renderRoute);
+    router.onRouteChange((route) => renderRoute(route, 'url-route-changed'));
 
     // Browsers do not allow custom dialog text or buttons on
     // beforeunload (a long-standing security restriction, not something
@@ -527,10 +529,11 @@ function init() {
         currentUser = user;
 
         if (!user) {
+          logPersistenceEvent('stopListening() called', { caller: 'auth-callback-signed-out' });
           workspaceService.stopListening();
           currentAccentColorId = 'ocean';
           accentColorService.applyAccentColor('ocean');
-          renderRoute(router.getCurrentRoute());
+          renderRoute(router.getCurrentRoute(), 'auth-callback-signed-out');
           return;
         }
 
@@ -557,18 +560,19 @@ function init() {
         });
 
         workspaceLoading = true;
-        renderRoute(router.getCurrentRoute());
+        renderRoute(router.getCurrentRoute(), 'auth-callback-workspace-loading-start');
 
+        logPersistenceEvent('workspaceService.initForUser() called', { caller: 'auth-callback', uid: user.uid });
         workspaceService
           .initForUser(user.uid, user.displayName, () => {
             workspaceLoading = false;
-            renderRoute(router.getCurrentRoute());
+            renderRoute(router.getCurrentRoute(), 'workspace-init-onchange');
           })
           .catch((error) => {
             console.error('[main] Failed to load classrooms:', error);
             workspaceLoading = false;
             window.alert('We couldn\u2019t load your classrooms. Please check your connection and try again.');
-            renderRoute(router.getCurrentRoute());
+            renderRoute(router.getCurrentRoute(), 'workspace-init-error');
           });
       } catch (error) {
         showFatalStartupError(error);
