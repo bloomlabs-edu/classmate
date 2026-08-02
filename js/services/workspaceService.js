@@ -196,13 +196,21 @@ export async function saveExplicitly(classroom) {
     logPersistenceEvent('Save completed', { classroomId: classroom.id });
   } catch (error) {
     setSaveState(classroom.id, 'failed', error);
-    // Firestore errors carry a .code (e.g. 'permission-denied',
-    // 'invalid-argument', 'unavailable') distinct from .message, and a
-    // .name — logging only .message (as this used to) discards exactly
-    // the fields needed to tell "security rule rejected this" apart
-    // from "the document shape itself is invalid" apart from "the
-    // network dropped." error.stack is included too, to identify the
-    // exact throwing line/call site, not just that something threw.
+
+    // Raw, unwrapped exception logging — the object-argument form Chrome
+    // collapses as "▶ Object" wasn't visible enough on its own; these
+    // print directly, no expansion needed. This is workspaceService.js's
+    // own saveExplicitly() — the caller of repository.saveClassroom().
+    // If the actual throw happened inside doc() or setDoc() themselves,
+    // firestoreClassroomRepository.js's own saveClassroom() now logs
+    // that distinctly, before this catch ever sees it re-thrown here.
+    console.error('[workspaceService] saveExplicitly() caught an error from repository.saveClassroom():');
+    console.error(error);
+    console.error('error.name:', error?.name);
+    console.error('error.code:', error?.code);
+    console.error('error.message:', error?.message);
+    console.error('error.stack:', error?.stack);
+
     logPersistenceEvent('Save failed', {
       classroomId: classroom.id,
       errorName: error?.name,
@@ -319,7 +327,12 @@ function unsubscribeFromAllClassrooms() {
 function persistClassroom(classroom) {
   if (!classroom) return;
   const writePromise = repository.saveClassroom(classroom).catch((error) => {
-    console.error('[workspaceService] Failed to save classroom:', error);
+    console.error('[workspaceService] persistClassroom() caught an error from repository.saveClassroom():');
+    console.error(error);
+    console.error('error.name:', error?.name);
+    console.error('error.code:', error?.code);
+    console.error('error.message:', error?.message);
+    console.error('error.stack:', error?.stack);
     logPersistenceEvent('Autosave failed', {
       classroomId: classroom.id,
       errorName: error?.name,

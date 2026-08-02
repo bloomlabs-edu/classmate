@@ -218,7 +218,29 @@ class FirestoreClassroomRepository extends ClassroomRepository {
   }
 
   async saveClassroom(classroom) {
-    await setDoc(this._classroomDoc(classroom.id), classroom);
+    let ref;
+    try {
+      ref = this._classroomDoc(classroom.id);
+    } catch (error) {
+      console.error('[firestoreClassroomRepository] saveClassroom() \u2014 doc() reference construction threw:');
+      console.error(error);
+      console.error('error.name:', error?.name);
+      console.error('error.code:', error?.code);
+      console.error('error.message:', error?.message);
+      console.error('error.stack:', error?.stack);
+      throw error;
+    }
+    try {
+      await setDoc(ref, classroom);
+    } catch (error) {
+      console.error('[firestoreClassroomRepository] saveClassroom() \u2014 setDoc() itself threw:');
+      console.error(error);
+      console.error('error.name:', error?.name);
+      console.error('error.code:', error?.code);
+      console.error('error.message:', error?.message);
+      console.error('error.stack:', error?.stack);
+      throw error;
+    }
   }
 
   async getClassroomOnce(classroomId) {
