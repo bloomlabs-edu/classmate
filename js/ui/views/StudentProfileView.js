@@ -30,6 +30,8 @@ import * as learningActivityService from '../../services/learningActivityService
 import * as notebookConfigService from '../../services/notebookConfigService.js';
 import * as notebookService from '../../services/notebookService.js';
 import * as studentProgressService from '../../services/studentProgressService.js';
+import * as studentEventService from '../../services/studentEventService.js';
+import { STUDENT_EVENT_CATEGORIES } from '../../config/studentEventCategories.js';
 import { createNotebookTimelineElement } from '../components/NotebookTimeline.js';
 import { NOTEBOOK_TIMELINE_SYMBOLS, NOTEBOOK_TIMELINE_STATUS_LABELS, deriveDaySymbolKey } from '../../config/notebookStatuses.js';
 import { getCurrentYearMonth, getDaysInYearMonth, formatDateKey } from '../../utils/dateHelpers.js';
@@ -444,13 +446,33 @@ function renderAchievementsTab(content, classroom, student, team, rerender) {
     openAwardBadgeModal({
       availableBadges,
       onAwardExisting: (badgeName) => {
-        badgeService.awardBadge(student, badgeName);
+        const awarded = badgeService.awardBadge(student, badgeName);
+        if (awarded) {
+          studentEventService.publishEvent(classroom, {
+            studentId: student.id,
+            type: 'badge_awarded',
+            category: STUDENT_EVENT_CATEGORIES.RECOGNITION,
+            title: `\ud83c\udf96\ufe0f You earned the "${badgeName}" badge!`,
+            message: 'Your teacher recognized you for this.',
+            payload: { badgeName },
+          });
+        }
         workspaceService.save(classroom);
         rerender();
       },
       onCreateAndAward: (badgeName) => {
         badgeService.addBadgeToCatalog(classroom, badgeName);
-        badgeService.awardBadge(student, badgeName);
+        const awarded = badgeService.awardBadge(student, badgeName);
+        if (awarded) {
+          studentEventService.publishEvent(classroom, {
+            studentId: student.id,
+            type: 'badge_awarded',
+            category: STUDENT_EVENT_CATEGORIES.RECOGNITION,
+            title: `\ud83c\udf96\ufe0f You earned the "${badgeName}" badge!`,
+            message: 'Your teacher recognized you for this.',
+            payload: { badgeName },
+          });
+        }
         workspaceService.save(classroom);
         rerender();
       },

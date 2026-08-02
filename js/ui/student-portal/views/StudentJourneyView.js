@@ -4,19 +4,21 @@
  * "Journey" — replaces the old separate Home and Achievements tabs
  * (see this project's CHANGELOG for the navigation-simplification
  * decision). One screen answering "how am I doing?", in order:
- * welcome, today's goal, a compact progress summary, then the detail
- * modules (Stars, Streak, Recognition Wall, Badges).
+ * welcome, today's goal, a compact progress summary, the Stars/Streak
+ * modules, then the Student Event Feed ("Your Updates").
  *
- * Recognition Wall and My Badges are deliberately different data, not
- * the same thing shown twice — a real distinction worth keeping
- * straight:
- *   - Recognition Wall = getRecognitionWins(): did I (or my team, for
- *     Team Champion) win one of the computed weekly categories
- *     (Star Performer, Longest Streak, ...) — the same categories the
- *     teacher-side Recognition Wall computes.
- *   - My Badges = getAchievements(): Behaviour Badges a teacher
- *     manually awarded (Helper, Team Player, ...) — a completely
- *     separate mechanism in this app (see services/badgeService.js).
+ * "Your Updates" replaces what used to be two separate, static
+ * sections here — Recognition Wall (computed weekly categories) and
+ * My Badges (manually-awarded Behaviour Badges) — with a single,
+ * continuous timeline, newest first, tagged by category rather than
+ * grouped into sections. See services/studentEventService.js and
+ * models/StudentEvent.js for the system this is built on; this
+ * milestone wires exactly three publishers (Badge awarded, Stars
+ * awarded, Assessment published) — everything else (Learning Hub,
+ * attendance, assignments, teacher notes, announcements, ...) can
+ * publish into this same feed later without this view ever changing,
+ * since every card here reads only category/title/message/createdAt —
+ * nothing type-specific.
  *
  * "My Team" deliberately does NOT appear here — Team now has its own
  * full page (see StudentTeamView.js) and owns all team-related
@@ -28,19 +30,18 @@
  * itself.
  */
 
-import { getHomeSummary, getAchievements, getRecognitionWins } from '../../../services/studentPortalDataService.js';
+import { getHomeSummary, getEventFeed } from '../../../services/studentPortalDataService.js';
 import * as studentDeviceService from '../../../services/studentDeviceService.js';
-import { formatKeyStatistic } from '../../components/RecognitionCard.js';
 import { createAvatarElement } from '../../components/AvatarDisplay.js';
 import { createEmptyStateElement } from '../../components/EmptyState.js';
+import { formatDate } from '../../../utils/dateHelpers.js';
 
 export async function renderStudentJourneyView(container, { onSessionInvalid } = {}) {
   container.innerHTML = '';
 
-  const [summary, achievements, recognitionWins] = await Promise.all([
+  const [summary, eventFeed] = await Promise.all([
     getHomeSummary(),
-    getAchievements(),
-    getRecognitionWins(),
+    getEventFeed(),
   ]);
 
   const wrapper = document.createElement('div');
@@ -70,7 +71,7 @@ export async function renderStudentJourneyView(container, { onSessionInvalid } =
     return;
   }
 
-  const hasAnyActivity = summary.starsThisWeek > 0 || recognitionWins.length > 0 || summary.journeyStreak > 0 || achievements.length > 0;
+  const hasAnyActivity = summary.starsThisWeek > 0 || summary.journeyStreak > 0 || summary.recognitionCount > 0 || eventFeed.length > 0;
 
   // Welcome
   const greetingRow = document.createElement('div');
@@ -85,7 +86,7 @@ export async function renderStudentJourneyView(container, { onSessionInvalid } =
   wrapper.appendChild(greetingRow);
 
   // Today's Goal — always shown, keeps Journey feeling active even
-  // before any stars/recognition exist.
+  // before any stars/updates exist.
   const goal = document.createElement('div');
   goal.className = 'student-home__goal';
   const goalTitle = document.createElement('h2');
@@ -105,7 +106,7 @@ export async function renderStudentJourneyView(container, { onSessionInvalid } =
     const summaryParts = [];
     if (summary.starsThisWeek > 0) summaryParts.push(`${summary.starsThisWeek} \u2b50 this week`);
     if (summary.journeyStreak > 0) summaryParts.push(`${summary.journeyStreak}-day streak`);
-    if (achievements.length > 0) summaryParts.push(`${achievements.length} badge${achievements.length === 1 ? '' : 's'}`);
+    if (summary.recognitionCount > 0) summaryParts.push(`${summary.recognitionCount} badge${summary.recognitionCount === 1 ? '' : 's'}`);
     if (summaryParts.length > 0) {
       const summaryStrip = document.createElement('p');
       summaryStrip.className = 'student-journey__summary-strip';
@@ -152,90 +153,32 @@ export async function renderStudentJourneyView(container, { onSessionInvalid } =
 
   wrapper.appendChild(modules);
 
-  // Recognition Wall — teacher-generated, computed weekly categories.
-  // See this file's own header comment for why this is a genuinely
-  // different thing from My Badges below, not a re-skin of it.
-  const recognitionSection = document.createElement('div');
-  recognitionSection.className = 'student-journey__section';
-  const recognitionTitle = document.createElement('h2');
-  recognitionTitle.className = 'student-journey__section-title';
-  recognitionTitle.textContent = '\ud83c\udfc6 Recognition Wall';
-  recognitionSection.appendChild(recognitionTitle);
+  // Your Updates — the Student Event Feed (see
+  // services/studentEventService.js, models/StudentEvent.js): a
+  // single continuous timeline, newest first, tagged by category —
+  // not grouped sections. Deliberately generic (see renderEventCard()
+  // below): every card reads only category/title/message/createdAt,
+  // so a brand-new future publisher never requires a change here.
+  const updatesSection = document.createElement('div');
+  updatesSection.className = 'student-journey__section';
+  const updatesTitle = document.createElement('h2');
+  updatesTitle.className = 'student-journey__section-title';
+  updatesTitle.textContent = '\ud83d\udce3 Your Updates';
+  updatesSection.appendChild(updatesTitle);
 
-  if (recognitionWins.length === 0) {
-    recognitionSection.appendChild(
-      createEmptyStateElement({ message: 'The week is just getting started \u2014 recognitions will appear here soon.' })
+  if (eventFeed.length === 0) {
+    updatesSection.appendChild(
+      createEmptyStateElement({ message: 'Nothing yet \u2014 updates from your teacher will show up here.' })
     );
   } else {
-    const recognitionList = document.createElement('div');
-    recognitionList.className = 'student-achievements__list';
-    recognitionWins.forEach(({ category, winner }) => {
-      const item = document.createElement('div');
-      item.className = 'student-achievements__item';
-
-      const icon = document.createElement('span');
-      icon.className = 'student-achievements__item-icon';
-      icon.setAttribute('aria-hidden', 'true');
-      icon.textContent = category.icon;
-
-      const text = document.createElement('div');
-      const label = document.createElement('p');
-      label.className = 'student-achievements__item-label';
-      label.textContent = category.label;
-      const stat = document.createElement('p');
-      stat.className = 'student-achievements__item-meta';
-      stat.textContent = formatKeyStatistic(category, winner);
-      text.append(label, stat);
-
-      item.append(icon, text);
-      recognitionList.appendChild(item);
+    const timeline = document.createElement('div');
+    timeline.className = 'student-event-feed';
+    eventFeed.forEach((event) => {
+      timeline.appendChild(renderEventCard(event));
     });
-    recognitionSection.appendChild(recognitionList);
+    updatesSection.appendChild(timeline);
   }
-  wrapper.appendChild(recognitionSection);
-
-  // My Badges — manually-awarded Behaviour Badges. See this file's
-  // header comment for why this is kept distinct from Recognition
-  // Wall above.
-  const badgesSection = document.createElement('div');
-  badgesSection.className = 'student-journey__section';
-  const badgesTitle = document.createElement('h2');
-  badgesTitle.className = 'student-journey__section-title';
-  badgesTitle.textContent = '\ud83c\udf96\ufe0f My Badges';
-  badgesSection.appendChild(badgesTitle);
-
-  if (achievements.length === 0) {
-    badgesSection.appendChild(createEmptyStateElement({ message: 'No badges yet \u2014 keep going!' }));
-  } else {
-    const badgesList = document.createElement('div');
-    badgesList.className = 'student-achievements__list';
-    achievements.forEach((achievement) => {
-      const item = document.createElement('div');
-      item.className = 'student-achievements__item';
-
-      const icon = document.createElement('span');
-      icon.className = 'student-achievements__item-icon';
-      icon.setAttribute('aria-hidden', 'true');
-      icon.textContent = '\ud83c\udf96\ufe0f';
-
-      const text = document.createElement('div');
-      const label = document.createElement('p');
-      label.className = 'student-achievements__item-label';
-      label.textContent = achievement.label;
-      text.appendChild(label);
-      if (achievement.earnedOn) {
-        const earnedOn = document.createElement('p');
-        earnedOn.className = 'student-achievements__item-meta';
-        earnedOn.textContent = achievement.earnedOn;
-        text.appendChild(earnedOn);
-      }
-
-      item.append(icon, text);
-      badgesList.appendChild(item);
-    });
-    badgesSection.appendChild(badgesList);
-  }
-  wrapper.appendChild(badgesSection);
+  wrapper.appendChild(updatesSection);
 
   container.appendChild(wrapper);
 }
@@ -271,6 +214,47 @@ function createModule({ icon, title, value, caption, lines }) {
     captionEl.textContent = caption;
     card.append(valueEl, captionEl);
   }
+
+  return card;
+}
+
+/**
+ * A single Student Event Feed card — deliberately generic, per this
+ * file's own header comment: reads only category/title/message/
+ * createdAt, the same four fields every publisher (Recognition today;
+ * Learning Hub, attendance, teacher notes, announcements, ... later)
+ * already provides on every StudentEvent (see models/StudentEvent.js).
+ * No per-type or per-category branching logic here at all, by design —
+ * that's what lets a brand-new future publisher ship without ever
+ * touching this function. The category tag's own visual styling
+ * (color-coding per category) lives in CSS, keyed off the category
+ * name itself, not decided here.
+ */
+function renderEventCard(event) {
+  const card = document.createElement('div');
+  card.className = 'student-event-card';
+
+  const tag = document.createElement('span');
+  tag.className = `student-event-card__tag student-event-card__tag--${event.category.toLowerCase()}`;
+  tag.textContent = event.category;
+  card.appendChild(tag);
+
+  const title = document.createElement('p');
+  title.className = 'student-event-card__title';
+  title.textContent = event.title;
+  card.appendChild(title);
+
+  if (event.message) {
+    const message = document.createElement('p');
+    message.className = 'student-event-card__message';
+    message.textContent = event.message;
+    card.appendChild(message);
+  }
+
+  const time = document.createElement('p');
+  time.className = 'student-event-card__time';
+  time.textContent = formatDate(event.createdAt);
+  card.appendChild(time);
 
   return card;
 }

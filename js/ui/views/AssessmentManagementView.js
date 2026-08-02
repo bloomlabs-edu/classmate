@@ -187,6 +187,15 @@ export function renderAssessmentManagementView(container, { classroom, onBack })
         rerender();
       });
     },
+    onPublishAssessment: (assessment) => {
+      const confirmed = window.confirm(`Publish "${assessment.title}"?\n\nThis notifies every student in this classroom that their results are available.`);
+      if (!confirmed) return;
+      const published = assessmentService.publishAssessment(classroom, assessment);
+      if (published) {
+        workspaceService.save(classroom);
+        rerender();
+      }
+    },
     onDeleteAssessment: (assessment) => {
       const confirmed = window.confirm(`Delete "${assessment.title}"?\n\nThis removes every Subject and every mark recorded in it. This cannot be undone.`);
       if (!confirmed) return;
@@ -403,6 +412,20 @@ function renderAssessmentStep(classroom, assessment, isEditingDetails, draft, ha
   addSubjectButton.textContent = '+ Add Subject';
   addSubjectButton.addEventListener('click', handlers.onGoToAddSubject);
   section.appendChild(addSubjectButton);
+
+  if (assessment.status === 'Draft') {
+    const publishButton = document.createElement('button');
+    publishButton.type = 'button';
+    publishButton.className = 'btn btn--secondary learning-management__publish-assessment-button';
+    publishButton.textContent = 'Publish Assessment';
+    publishButton.addEventListener('click', () => handlers.onPublishAssessment(assessment));
+    section.appendChild(publishButton);
+  } else {
+    const publishedNotice = document.createElement('p');
+    publishedNotice.className = 'learning-management__publish-assessment-notice';
+    publishedNotice.textContent = `\u2713 Published \u2014 students have been notified.`;
+    section.appendChild(publishedNotice);
+  }
 
   section.appendChild(renderAssessmentDangerZone(assessment, handlers));
 

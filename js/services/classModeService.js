@@ -21,7 +21,9 @@ import * as bucketService from './bucketService.js';
 import * as badgeService from './badgeService.js';
 import * as studentService from './studentService.js';
 import * as timelineService from './timelineService.js';
+import * as studentEventService from './studentEventService.js';
 import { getBucketLabel } from '../config/bucketConfig.js';
+import { STUDENT_EVENT_CATEGORIES } from '../config/studentEventCategories.js';
 
 const undoStackByClassroomId = new Map();
 
@@ -45,6 +47,15 @@ export function awardStar(classroom, student) {
   pushUndo(classroom.id, () => {
     student.score -= delta;
     removeHistoryEntry(student, entry.id);
+  });
+
+  studentEventService.publishEvent(classroom, {
+    studentId: student.id,
+    type: 'star_awarded',
+    category: STUDENT_EVENT_CATEGORIES.RECOGNITION,
+    title: '\u2b50 You earned a star!',
+    message: 'Your teacher awarded you a star for your effort in class.',
+    payload: { delta },
   });
 
   return entry;
@@ -71,6 +82,15 @@ export function awardBadgeQuick(classroom, student, badgeName) {
   pushUndo(classroom.id, () => {
     badgeService.revokeBadge(student, badgeName);
     removeHistoryEntry(student, entry.id);
+  });
+
+  studentEventService.publishEvent(classroom, {
+    studentId: student.id,
+    type: 'badge_awarded',
+    category: STUDENT_EVENT_CATEGORIES.RECOGNITION,
+    title: `\ud83c\udf96\ufe0f You earned the "${badgeName}" badge!`,
+    message: 'Your teacher recognized you for this.',
+    payload: { badgeName },
   });
 
   return entry;

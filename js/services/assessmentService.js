@@ -25,6 +25,8 @@ import { createAssessment } from '../models/Assessment.js';
 import { createAssessmentSubject } from '../models/AssessmentSubject.js';
 import { createStudentResult } from '../models/StudentResult.js';
 import * as learningRecordService from './learningRecordService.js';
+import * as studentEventService from './studentEventService.js';
+import { STUDENT_EVENT_CATEGORIES } from '../config/studentEventCategories.js';
 import { getCurrentIsoDate } from '../utils/dateHelpers.js';
 
 /** Every Assessment for this classroom, most recently created first. */
@@ -173,6 +175,36 @@ export function updateAssessmentDetails(assessment, { title, type, academicYear,
   assessment.academicYear = academicYear;
   assessment.date = date;
   assessment.detailsLastSavedAt = getCurrentIsoDate();
+}
+
+/**
+ * Transitions an Assessment from 'Draft' to 'Published' — the first
+ * real code path that ever sets this status (see models/Assessment.js's
+ * own comment: the field existed already, specifically so a future
+ * milestone could implement this without a data migration; this is
+ * that milestone, for the Student Event Feed's own third publisher —
+ * see this project's own Student Event Feed milestone). A no-op,
+ * returning false, for anything already Published or Locked.
+ *
+ * Notifies every student currently on the classroom's own roster, not
+ * only those with an existing StudentResult — an Assessment applies to
+ * the whole class the moment it's published, regardless of whether a
+ * teacher has entered any marks for a given student yet.
+ */
+export function publishAssessment(classroom, assessment) {
+  if (assessment.status !== 'Draft') return false;
+
+  assessment.status = 'Published';
+
+  studentEventService.publishEventToAllStudents(classroom, {
+    type: 'assessment_published',
+    category: STUDENT_EVENT_CATEGORIES.ASSESSMENT,
+    title: `\ud83d\udcdd "${assessment.title}" has been published`,
+    message: 'Your results for this assessment are now available.',
+    payload: { assessmentId: assessment.id },
+  });
+
+  return true;
 }
 
 /**

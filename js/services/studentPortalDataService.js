@@ -27,6 +27,7 @@ import * as workspaceService from './workspaceService.js';
 import * as studentDeviceService from './studentDeviceService.js';
 import * as studentService from './studentService.js';
 import * as studentProgressService from './studentProgressService.js';
+import * as studentEventService from './studentEventService.js';
 import { getWeekRange } from '../utils/dateHelpers.js';
 import { listRecognitionCategoriesForPeriod } from '../config/recognitionCategories.js';
 
@@ -158,6 +159,19 @@ export async function getRecognitionWins() {
   });
 
   return wins;
+}
+
+/**
+ * The Student Event Feed — the "Your Updates" timeline on Student
+ * Home (see ui/student-portal/views/StudentJourneyView.js). Newest
+ * first; sorting is services/studentEventService.js's own job, not
+ * repeated here.
+ */
+export async function getEventFeed() {
+  const found = await loadCurrentStudentAndClassroom();
+  if (!found) return [];
+
+  return studentEventService.getEventsForStudent(found.classroom, found.student.id);
 }
 
 export async function getTeamSummary() {

@@ -6885,3 +6885,62 @@ button.wizard-checklist__row:hover {
 .learning-management__save-indicator--failed {
   color: var(--color-danger);
 }
+
+/* Student Event Feed ("Your Updates") — see
+   ui/student-portal/views/StudentJourneyView.js's renderEventCard().
+   Cards are deliberately generic; only the category tag's color is
+   keyed off the category name, everything else is identical styling
+   regardless of what published the event. */
+.student-event-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.student-event-card {
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 4px 16px rgba(184, 99, 26, 0.08);
+}
+.student-event-card__tag {
+  display: inline-block;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-bold);
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  margin-bottom: 0.5rem;
+  color: #ffffff;
+}
+.student-event-card__tag--recognition {
+  background-color: var(--color-accent);
+}
+.student-event-card__tag--assessment {
+  background-color: var(--color-primary);
+}
+.student-event-card__tag--learning {
+  background-color: #7c5cbf;
+}
+.student-event-card__tag--classroom {
+  background-color: var(--color-success);
+}
+.student-event-card__tag--team {
+  background-color: #1b9c85;
+}
+.student-event-card__tag--announcement {
+  background-color: var(--color-warning);
+  color: #3a2e00;
+}
+.student-event-card__title {
+  font-weight: var(--font-weight-bold);
+  margin: 0;
+}
+.student-event-card__message {
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+  margin: 0.35rem 0 0;
+}
+.student-event-card__time {
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+  margin: 0.5rem 0 0;
+}
