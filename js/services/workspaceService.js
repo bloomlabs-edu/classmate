@@ -196,7 +196,20 @@ export async function saveExplicitly(classroom) {
     logPersistenceEvent('Save completed', { classroomId: classroom.id });
   } catch (error) {
     setSaveState(classroom.id, 'failed', error);
-    logPersistenceEvent('Save failed', { classroomId: classroom.id, error: error?.message });
+    // Firestore errors carry a .code (e.g. 'permission-denied',
+    // 'invalid-argument', 'unavailable') distinct from .message, and a
+    // .name — logging only .message (as this used to) discards exactly
+    // the fields needed to tell "security rule rejected this" apart
+    // from "the document shape itself is invalid" apart from "the
+    // network dropped." error.stack is included too, to identify the
+    // exact throwing line/call site, not just that something threw.
+    logPersistenceEvent('Save failed', {
+      classroomId: classroom.id,
+      errorName: error?.name,
+      errorCode: error?.code,
+      errorMessage: error?.message,
+      errorStack: error?.stack,
+    });
     throw error;
   }
 }
@@ -307,6 +320,13 @@ function persistClassroom(classroom) {
   if (!classroom) return;
   const writePromise = repository.saveClassroom(classroom).catch((error) => {
     console.error('[workspaceService] Failed to save classroom:', error);
+    logPersistenceEvent('Autosave failed', {
+      classroomId: classroom.id,
+      errorName: error?.name,
+      errorCode: error?.code,
+      errorMessage: error?.message,
+      errorStack: error?.stack,
+    });
   });
   pendingSaves.add(writePromise);
   writePromise.finally(() => pendingSaves.delete(writePromise));
