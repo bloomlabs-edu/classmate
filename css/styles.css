@@ -6944,3 +6944,95 @@ button.wizard-checklist__row:hover {
   color: var(--color-muted);
   margin: 0.5rem 0 0;
 }
+
+/* TEMPORARY — Teacher Diagnostics (see
+   ui/views/TeacherDiagnosticsView.js's own header comment). Remove
+   alongside that file. */
+.classroom-hero__diagnostics-link {
+  display: inline-block;
+  font-size: var(--text-sm);
+  color: var(--color-danger);
+  margin-top: 0.5rem;
+  text-decoration: underline;
+}
+.teacher-diagnostics {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+.teacher-diagnostics__header {
+  margin-bottom: 1.5rem;
+}
+.teacher-diagnostics__title {
+  font-size: 1.4rem;
+  font-weight: var(--font-weight-black);
+  margin: 0.5rem 0;
+}
+.teacher-diagnostics__notice {
+  font-size: var(--text-sm);
+  color: var(--color-danger);
+  background-color: #fff3f0;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+}
+.teacher-diagnostics__refresh-button {
+  margin-top: 0.75rem;
+}
+.teacher-diagnostics__sections {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+@media (max-width: 800px) {
+  .teacher-diagnostics__sections {
+    grid-template-columns: 1fr;
+  }
+}
+.teacher-diagnostics__section {
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 1.25rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+.teacher-diagnostics__section-title {
+  font-size: 1.05rem;
+  font-weight: var(--font-weight-black);
+  margin: 0 0 0.25rem;
+}
+.teacher-diagnostics__section-subtitle {
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+  margin: 0 0 1rem;
+}
+.teacher-diagnostics__missing {
+  color: var(--color-danger);
+  font-weight: var(--font-weight-bold);
+}
+.teacher-diagnostics__table {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.4rem 1rem;
+  margin: 0;
+}
+.teacher-diagnostics__table dt {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+}
+.teacher-diagnostics__table dd {
+  margin: 0;
+  font-family: monospace;
+}
+.teacher-diagnostics__subheading {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-bold);
+  margin: 1rem 0 0.4rem;
+}
+.teacher-diagnostics__json-block {
+  background-color: #f5f5f5;
+  border-radius: 8px;
+  padding: 0.75rem;
+  font-size: var(--text-sm);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

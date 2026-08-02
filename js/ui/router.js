@@ -18,6 +18,8 @@
  *   #/classroom/{id}/notebooks/{subjectId}/{typeId}/{dateKey?}        -> register view (today if dateKey omitted)
  *   #/classroom/{id}/notebooks/{subjectId}/{typeId}/timeline/{yearMonth?} -> timeline view (current month if omitted)
  *   #/classroom/{id}/recognition/{period?}/{categoryId?}     -> recognition screen (defaults resolved by the view itself)
+ *   #/classroom/{id}/diagnostics               -> TEMPORARY Teacher Diagnostics screen (see
+ *                                                 ui/views/TeacherDiagnosticsView.js's own header comment)
  *   #/curriculum-management                   -> Curriculum Management (admin tool — create/review/save Curriculum
  *                                                 Packs; not classroom-scoped, since a pack is shared across every
  *                                                 classroom, not owned by one — see ui/views/CurriculumManagementView.js)
@@ -90,6 +92,11 @@ function resolvePathParts(parts) {
         return { name: 'notebookTimeline', classroomId: parts[1], subjectId, notebookTypeId, yearMonth: parts[6] || null };
       }
       return { name: 'notebookRegister', classroomId: parts[1], subjectId, notebookTypeId, dateKey: parts[5] || null };
+    }
+    // TEMPORARY — see ui/views/TeacherDiagnosticsView.js's own header
+    // comment for why this exists and when it should be removed.
+    if (parts[2] === 'diagnostics') {
+      return { name: 'diagnostics', classroomId: parts[1] };
     }
     // A stale bookmark to the old #/classroom/{id}/learning-record
     // URL (retired — Learning Record is opened by a direct function

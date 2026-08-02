@@ -40,6 +40,7 @@ import { renderHomeView } from './ui/views/HomeView.js';
 import { renderCurriculumManagementView } from './ui/views/CurriculumManagementView.js';
 import { renderLearningManagementView } from './ui/views/LearningManagementView.js';
 import { renderTrackerView } from './ui/views/TrackerView.js';
+import { renderTeacherDiagnosticsView } from './ui/views/TeacherDiagnosticsView.js'; // TEMPORARY — see that file's own header comment
 import { renderSettingsView } from './ui/views/SettingsView.js';
 import { renderSetupWizardView } from './ui/views/SetupWizardView.js';
 import { renderStudentProfileView } from './ui/views/StudentProfileView.js';
@@ -206,6 +207,7 @@ const CLASSROOM_ROUTE_NAMES = [
   'notebookTracker',
   'notebookRegister',
   'notebookTimeline',
+  'diagnostics', // TEMPORARY — see ui/views/TeacherDiagnosticsView.js's own header comment
 ];
 
 function renderLoadingScreen(container) {
@@ -312,8 +314,21 @@ function renderRoute(route, reason = 'unspecified') {
 
   if (CLASSROOM_ROUTE_NAMES.includes(route.name)) {
     const classroom = workspaceService.getClassroomById(route.classroomId);
-    if (!classroom) {
+    // TEMPORARY — diagnostics deliberately does NOT redirect away when
+    // the in-memory classroom is missing; observing that exact gap
+    // (in-memory missing, or differing from what's persisted) is this
+    // screen's whole reason for existing, not an error state. See
+    // ui/views/TeacherDiagnosticsView.js's own header comment.
+    if (!classroom && route.name !== 'diagnostics') {
       router.navigate('/teacher');
+      return;
+    }
+
+    if (route.name === 'diagnostics') {
+      renderTeacherDiagnosticsView(appContainer, {
+        classroomId: route.classroomId,
+        onBack: () => router.navigate(`/classroom/${route.classroomId}`),
+      });
       return;
     }
 

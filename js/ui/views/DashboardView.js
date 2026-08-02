@@ -204,6 +204,15 @@ export function renderDashboardView(container, props) {
   subtitle.textContent = getDisplaySubtitle(classroom);
   classroomContext.appendChild(subtitle);
 
+  // TEMPORARY — see ui/views/TeacherDiagnosticsView.js's own header
+  // comment. Remove this link alongside that file once its purpose is
+  // served.
+  const diagnosticsLink = document.createElement('a');
+  diagnosticsLink.href = `#/classroom/${classroom.id}/diagnostics`;
+  diagnosticsLink.className = 'classroom-hero__diagnostics-link';
+  diagnosticsLink.textContent = '\ud83d\udd27 Diagnostics (temporary)';
+  classroomContext.appendChild(diagnosticsLink);
+
   // Deliberately timeless — a sense of entering a classroom, not a
   // dashboard summary. No live stats or pending counts here; those
   // already live in their own widgets below. `classroom.motto` doesn't
