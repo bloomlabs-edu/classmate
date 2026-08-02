@@ -47,11 +47,23 @@ const VALIDATORS = [
     },
   },
   {
-    check: (index) => index.units.every((unit) => Array.isArray(unit.concepts) && typeof unit.conceptExtractionStatus === 'string'),
+    check: (index) => index.units.every((unit) => Array.isArray(unit.concepts) && !('conceptExtractionStatus' in unit)),
     repair: (index) => {
       index.units.forEach((unit) => {
         if (!Array.isArray(unit.concepts)) unit.concepts = [];
-        if (typeof unit.conceptExtractionStatus !== 'string') unit.conceptExtractionStatus = 'not_extracted';
+        delete unit.conceptExtractionStatus;
+      });
+    },
+  },
+  {
+    check: (index) => index.units.every((unit) => typeof unit.number === 'number'),
+    repair: (index) => {
+      let nextNumber = index.units.reduce((max, u) => (typeof u.number === 'number' && u.number > max ? u.number : max), 0) + 1;
+      index.units.forEach((unit) => {
+        if (typeof unit.number !== 'number') {
+          unit.number = nextNumber;
+          nextNumber += 1;
+        }
       });
     },
   },

@@ -15,6 +15,11 @@
  *   schemaVersion 1 -> 2: curriculum.subjectId guaranteed present
  *   schemaVersion 2 -> 3: every unit's concepts[]/conceptExtractionStatus
  *                          guaranteed present (Curriculum Builder milestone)
+ *   schemaVersion 3 -> 4: conceptExtractionStatus removed (Concept Extraction
+ *                          itself was removed from the app — see this
+ *                          project's own Curriculum Builder redesign
+ *                          discussion), every unit guaranteed a real,
+ *                          displayable number
  *
  * `LATEST_SCHEMA_VERSION` is exported so
  * services/curriculumIndexRepository.js's createIndex() can stamp a
@@ -36,7 +41,7 @@
 import { runSchemaMigrations } from '../utils/schemaMigrationPipeline.js';
 import { resolveHistoricalSubjectId } from './subjectIdMigrationService.js';
 
-export const LATEST_SCHEMA_VERSION = 3;
+export const LATEST_SCHEMA_VERSION = 4;
 
 /** v0 -> v1: guarantees parts/units exist, as empty arrays if genuinely absent. This is the actual fix for the reproduced crash — documents predating the point where createIndex() guaranteed these together are now repaired at the boundary, not defended against in every view that reads them. */
 function migrateToV1(index) {
@@ -70,12 +75,40 @@ function migrateToV3(index) {
   index.schemaVersion = 3;
 }
 
+/**
+ * v3 -> v4: removes the now-meaningless `conceptExtractionStatus`
+ * field — Concept Extraction itself was removed from the app (see
+ * this project's own Curriculum Builder redesign discussion);
+ * Concepts are now a plain, manually-managed list with no
+ * "extraction status" concept applying to them at all. Also
+ * guarantees every unit has a real, displayable `number` —
+ * backfilling sequential numbers (continuing from the highest number
+ * already present) for any unit that predates unit numbers being
+ * shown consistently everywhere and was left with `number: null` (a
+ * manually-added unit, before this migration, never got one).
+ */
+function migrateToV4(index) {
+  index.units.forEach((unit) => {
+    delete unit.conceptExtractionStatus;
+  });
+
+  let nextNumber = index.units.reduce((max, u) => (typeof u.number === 'number' && u.number > max ? u.number : max), 0) + 1;
+  index.units.forEach((unit) => {
+    if (typeof unit.number !== 'number') {
+      unit.number = nextNumber;
+      nextNumber += 1;
+    }
+  });
+
+  index.schemaVersion = 4;
+}
+
 // Indexed by the version each step migrates *from* — MIGRATIONS[0] is
 // the v0->v1 step, MIGRATIONS[1] is v1->v2, and so on. Add a new
 // version by appending one more function here and bumping
 // LATEST_SCHEMA_VERSION; never edit an existing entry to accommodate
 // a later one.
-const MIGRATIONS = [migrateToV1, migrateToV2, migrateToV3];
+const MIGRATIONS = [migrateToV1, migrateToV2, migrateToV3, migrateToV4];
 
 /**
  * Advances one Curriculum Index document through every migration step

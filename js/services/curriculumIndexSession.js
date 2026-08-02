@@ -148,7 +148,6 @@ export function createCurriculumIndexSession() {
       printedPage: unit.printedPage,
       partId: partIdFor(unit.partName),
       concepts: [],
-      conceptExtractionStatus: 'not_extracted',
     }));
   }
 
@@ -201,6 +200,31 @@ export function createCurriculumIndexSession() {
     curriculumReviewService.moveDraftUnitToPart(index, unitId, targetPartId, targetIndex);
   }
 
+  // Concepts — reused as-is from curriculumReviewService.js, the same
+  // way renameUnit/deleteUnit/moveUnitUp/moveUnitDown above already
+  // reuse its Unit-level equivalents. These functions already used
+  // `{ id, title }` objects (not plain strings) before this Curriculum
+  // Index ever adopted Concepts, so the shape matches exactly.
+  function addConcept(unitId, title) {
+    return curriculumReviewService.addDraftConcept(index, unitId, title);
+  }
+
+  function renameConcept(unitId, conceptId, newTitle) {
+    return curriculumReviewService.renameDraftConcept(index, unitId, conceptId, newTitle);
+  }
+
+  function deleteConcept(unitId, conceptId) {
+    curriculumReviewService.deleteDraftConcept(index, unitId, conceptId);
+  }
+
+  function moveConceptUp(unitId, conceptId) {
+    curriculumReviewService.moveDraftConceptUp(index, unitId, conceptId);
+  }
+
+  function moveConceptDown(unitId, conceptId) {
+    curriculumReviewService.moveDraftConceptDown(index, unitId, conceptId);
+  }
+
   /**
    * A manually-added unit has no printed page at all — there's no
    * source row it came from. Requires a Part to belong to; if none is
@@ -215,7 +239,12 @@ export function createCurriculumIndexSession() {
     if (!targetPartId) {
       targetPartId = index.parts.length > 0 ? index.parts[0].id : addPart('General').id;
     }
-    const unit = { id: generateId(), number: null, title, printedPage: null, partId: targetPartId, concepts: [], conceptExtractionStatus: 'not_extracted' };
+    // Next in sequence, not left null — a manually-added unit still
+    // needs a real, displayable number (see this project's own
+    // Curriculum Builder redesign discussion for why this field is
+    // now shown consistently everywhere a unit appears).
+    const highestNumber = index.units.reduce((max, u) => (typeof u.number === 'number' && u.number > max ? u.number : max), 0);
+    const unit = { id: generateId(), number: highestNumber + 1, title, printedPage: null, partId: targetPartId, concepts: [] };
     index.units.push(unit);
     return unit;
   }
@@ -261,6 +290,11 @@ export function createCurriculumIndexSession() {
     moveUnitUp,
     moveUnitDown,
     moveUnitToPart,
+    addConcept,
+    renameConcept,
+    deleteConcept,
+    moveConceptUp,
+    moveConceptDown,
     addUnit,
     addPart,
     renamePart,

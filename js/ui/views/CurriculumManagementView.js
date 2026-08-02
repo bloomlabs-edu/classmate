@@ -69,10 +69,7 @@ import * as curriculumIndexRepository from '../../services/curriculumIndexReposi
 import * as curriculumSubmissionsService from '../../services/curriculumSubmissionsService.js';
 import { createCurriculumIndexSession } from '../../services/curriculumIndexSession.js';
 import * as unitPageRangeService from '../../services/unitPageRangeService.js';
-import * as manualAiProvider from '../../services/extractionProviders/manualAiProvider.js';
-import * as unitPageTextExtractionService from '../../services/unitPageTextExtractionService.js';
-import { createMultimodalInput } from '../components/MultimodalInput.js';
-import { generateId } from '../../utils/idGenerator.js';
+import { createEmptyStateElement } from '../components/EmptyState.js';
 import { createBackButton } from '../components/BackButton.js';
 import { getCanonicalSubjects, getCanonicalSubjectById, generateCustomSubjectId } from '../../services/subjectIdentityService.js';
 import { createCurriculumExplorerPanel } from '../components/CurriculumExplorerPanel.js';
@@ -107,63 +104,13 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
   let isResumingIndex = false; // true when reached via "Open" from My Curriculum Indexes, not fresh creation — changes where Back goes
   let canonicalImportErrors = []; // malformed lines from the most recent AI-Ready Import, shown as a banner on Review Units — cleared on any other entry point
 
-  // Curriculum Builder — Unit Concepts / Concept Extraction state.
-  // selectedUnitConceptsId is the one Unit currently being viewed at
-  // mode 'index-unit-concepts' or 'index-extract-concepts' — a stable
-  // id, not a stored unit reference, resolved fresh from
-  // indexSession.getIndex() on every render.
+  // Curriculum Builder — Unit Concepts state. A stable id, not a
+  // stored unit reference, resolved fresh from indexSession.getIndex()
+  // on every render.
   let selectedUnitConceptsId = null;
-  // The prompt text once generated (mode 'index-extract-concepts') —
-  // null until "Generate Prompt" is actually clicked, so the UI can
-  // tell "not generated yet" from "generated, here it is."
-  let extractionPromptText = null;
-  // What a teacher has typed/pasted as this Unit's own textbook page
-  // text, before a prompt is generated. Kept separate from
-  // extractionPromptText since Milestone 3 deliberately stops after
-  // generating the prompt — no automated PDF re-extraction is wired
-  // for Curriculum Index sessions yet (see this project's own
-  // Curriculum Builder design discussion for why that gap is real,
-  // not silently worked around here).
-  let unitPageText = '';
-  // Progress feedback while services/unitPageTextExtractionService.js
-  // works through uploaded files — OCR is genuinely slow (multiple
-  // seconds per page), so a teacher uploading several pages needs to
-  // see real progress, not one opaque spinner for however long the
-  // whole batch takes. Null when nothing is processing.
-  let ocrProgress = null;
-  // Attachments collected on ui/components/MultimodalInput.js before
-  // OCR ever runs — { id, file, previewUrl }[]. A teacher provides
-  // textbook pages here, in whatever form is natural (typed/pasted
-  // text, a pasted screenshot, a dragged or browsed file) — this
-  // component's own output is a normalized { text, attachments } pair,
-  // and neither OCR nor the ExtractionProvider ever needs to know
-  // which form a given page arrived in. previewUrl is
-  // URL.createObjectURL(file) for an image (null for a PDF, which
-  // gets a generic file icon instead — see MultimodalInput.js's own
-  // comment for why a real rendered PDF thumbnail isn't built here).
-  let attachments = [];
-  // The composer's own typed/pasted text — kept separate from
-  // unitPageText (the *combined*, post-processing result shown for
-  // review) since this is the raw input a teacher is still actively
-  // composing, before "Process" combines it with whatever OCR
-  // produces from the attachments.
-  let composerText = '';
 
   // Review Submissions state.
   let selectedSubmission = null;
-
-  /**
-   * Revokes every current attachment's own object URL — real browser
-   * memory a plain page reload wouldn't otherwise reclaim quickly.
-   * Called whenever a fresh Extract Concepts session starts (a new
-   * Unit opened, or Extract Concepts re-entered), never left for
-   * garbage collection to eventually notice on its own.
-   */
-  function revokeAttachmentPreviews() {
-    attachments.forEach((attachment) => {
-      if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
-    });
-  }
 
   function rerender() {
     renderView(
@@ -182,11 +129,6 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
         isResumingIndex,
         canonicalImportErrors,
         selectedUnitConceptsId,
-        extractionPromptText,
-        unitPageText,
-        ocrProgress,
-        attachments,
-        composerText,
       },
       {
         onBack,
@@ -372,97 +314,27 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
         },
         onOpenUnitConcepts: (unitId) => {
           selectedUnitConceptsId = unitId;
-          extractionPromptText = null;
-          unitPageText = '';
-          composerText = '';
-          revokeAttachmentPreviews();
-          attachments = [];
           mode = 'index-unit-concepts';
           rerender();
         },
-        onStartExtractConcepts: () => {
-          extractionPromptText = null;
-          unitPageText = '';
-          composerText = '';
-          revokeAttachmentPreviews();
-          attachments = [];
-          mode = 'index-extract-concepts';
+        onAddConcept: (title) => {
+          indexSession.addConcept(selectedUnitConceptsId, title);
           rerender();
         },
-        onChangeUnitPageText: (text) => {
-          unitPageText = text;
-        },
-        onComposerTextChange: (text) => {
-          composerText = text;
-        },
-        onAddAttachments: (files) => {
-          Array.from(files).forEach((file) => {
-            attachments.push({
-              id: generateId(),
-              file,
-              previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
-            });
-          });
+        onRenameConcept: (conceptId, newTitle) => {
+          indexSession.renameConcept(selectedUnitConceptsId, conceptId, newTitle);
           rerender();
         },
-        onRemoveAttachment: (attachmentId) => {
-          const attachment = attachments.find((a) => a.id === attachmentId);
-          if (attachment?.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
-          attachments = attachments.filter((a) => a.id !== attachmentId);
+        onDeleteConcept: (conceptId) => {
+          indexSession.deleteConcept(selectedUnitConceptsId, conceptId);
           rerender();
         },
-        onProcessComposerInput: async () => {
-          const files = attachments.map((a) => a.file);
-          const typedText = composerText.trim();
-
-          if (files.length === 0) {
-            // Nothing to OCR — the composer's own typed/pasted text
-            // is the entire input. Still routed through the same
-            // "combined text, shown for review" step below, so typed
-            // text and OCR'd text are indistinguishable to every
-            // later stage (Generate Prompt, and eventually the
-            // Extraction Provider) — the whole point of a normalized
-            // output.
-            unitPageText = typedText;
-            rerender();
-            return;
-          }
-
-          ocrProgress = { fileIndex: 0, fileName: files[0].name, totalFiles: files.length };
+        onMoveConceptUp: (conceptId) => {
+          indexSession.moveConceptUp(selectedUnitConceptsId, conceptId);
           rerender();
-          try {
-            const ocrText = await unitPageTextExtractionService.extractTextFromFiles(files, {
-              onProgress: (progress) => {
-                ocrProgress = progress;
-                rerender();
-              },
-            });
-            // Typed/pasted text first, then each attachment's own
-            // OCR'd text — joined the same "blank line between
-            // pieces" convention services/pdfExtractionService.js
-            // already uses for multi-page text.
-            unitPageText = typedText ? `${typedText}\n\n${ocrText}` : ocrText;
-          } catch (error) {
-            console.error('[CurriculumManagementView] OCR/text extraction failed:', error);
-            showToast('Could not read text from those pages \u2014 try again, or remove and re-add them');
-          } finally {
-            ocrProgress = null;
-            rerender();
-          }
         },
-        onGeneratePrompt: () => {
-          const index = indexSession.getIndex();
-          const unit = index.units.find((u) => u.id === selectedUnitConceptsId);
-          const range = unitPageRangeService.getDerivedPageRange(index, selectedUnitConceptsId);
-          extractionPromptText = manualAiProvider.buildPrompt({
-            curriculumName: index.curriculum.name,
-            grade: index.curriculum.grade,
-            subject: index.curriculum.subject,
-            unitTitle: unit.title,
-            startPage: range ? range.startPage : '',
-            endPage: range && range.endPage != null ? range.endPage : '',
-            pageText: unitPageText,
-          });
+        onMoveConceptDown: (conceptId) => {
+          indexSession.moveConceptDown(selectedUnitConceptsId, conceptId);
           rerender();
         },
         onGoToReview: () => {
@@ -515,7 +387,6 @@ function renderView(container, mode, state, handlers) {
       'index-extraction-failed': 'index-create',
       'index-review-units': state.isResumingIndex ? 'hub' : 'index-create',
       'index-unit-concepts': 'index-review-units',
-      'index-extract-concepts': 'index-unit-concepts',
       'review-list': 'hub',
       'review-detail': 'review-list',
     }[mode];
@@ -550,8 +421,6 @@ function renderView(container, mode, state, handlers) {
     wrapper.appendChild(renderIndexReviewUnitsStep(state.indexSession.getIndex(), state.canonicalImportErrors, handlers));
   } else if (mode === 'index-unit-concepts') {
     wrapper.appendChild(renderUnitConceptsStep(state.indexSession.getIndex(), state.selectedUnitConceptsId, handlers));
-  } else if (mode === 'index-extract-concepts') {
-    wrapper.appendChild(renderExtractConceptsStep(state.indexSession.getIndex(), state.selectedUnitConceptsId, state.attachments, state.composerText, state.unitPageText, state.extractionPromptText, state.ocrProgress, handlers));
   } else if (mode === 'review-list') {
     wrapper.appendChild(renderReviewListStep(handlers));
   } else if (mode === 'review-detail') {
@@ -1502,7 +1371,7 @@ function renderUnitConceptsStep(index, unitId, handlers) {
 
   const heading = document.createElement('p');
   heading.className = 'curriculum-management__step-heading';
-  heading.textContent = unit.title;
+  heading.textContent = unit.number != null ? `Unit ${unit.number}: ${unit.title}` : unit.title;
   section.appendChild(heading);
 
   const range = unitPageRangeService.getDerivedPageRange(index, unitId);
@@ -1520,185 +1389,63 @@ function renderUnitConceptsStep(index, unitId, handlers) {
   conceptsHeading.textContent = 'Concepts';
   section.appendChild(conceptsHeading);
 
-  if (unit.concepts.length > 0) {
+  // Concepts remain lightweight curriculum entities — a plain,
+  // manually-managed list (add, rename, reorder, delete), the same
+  // "array position is order, id is the stable identifier" convention
+  // this app already uses for Units and Parts. No extraction, no OCR,
+  // no AI involvement anywhere in this screen — a teacher creates and
+  // manages Concepts directly, the same way they already manage Units
+  // on the Review Units screen.
+  if (unit.concepts.length === 0) {
+    section.appendChild(
+      createEmptyStateElement({ message: 'This curriculum currently contains only index data \u2014 no concepts have been added for this unit yet.' })
+    );
+  } else {
     const list = document.createElement('div');
     list.className = 'curriculum-management__subject-card-list';
-    unit.concepts.forEach((concept) => {
-      const row = document.createElement('div');
-      row.className = 'curriculum-management__import-unit-row';
-      row.textContent = concept.title;
-      list.appendChild(row);
+    unit.concepts.forEach((concept, conceptIndex) => {
+      list.appendChild(renderConceptRow(concept, conceptIndex, unit.concepts.length, handlers));
     });
     section.appendChild(list);
-  } else {
-    const emptyState = document.createElement('div');
-    emptyState.className = 'curriculum-management__empty-concepts-state';
-
-    const emptyMessage = document.createElement('p');
-    emptyMessage.className = 'curriculum-management__intro';
-    emptyMessage.textContent =
-      'This curriculum currently contains only index data \u2014 unit titles and page numbers, nothing more. Concept extraction has not yet been performed for this unit.';
-    emptyState.appendChild(emptyMessage);
-
-    const extractButton = document.createElement('button');
-    extractButton.type = 'button';
-    extractButton.className = 'btn btn--primary';
-    extractButton.textContent = 'Extract Concepts';
-    extractButton.addEventListener('click', handlers.onStartExtractConcepts);
-    emptyState.appendChild(extractButton);
-
-    section.appendChild(emptyState);
   }
+
+  section.appendChild(createAddForm('New concept title', '+ Add Concept', (title) => handlers.onAddConcept(title)));
 
   return section;
 }
 
-/**
- * The Extract Concepts screen — the Manual AI provider's flow, per
- * explicit Milestone scope: build a prompt, let the teacher copy it,
- * and stop there. No automated AI call, no paste-back step yet (that
- * follows in a later milestone) — this screen's entire job is proving
- * the workflow is real and reachable, not completing extraction
- * end-to-end.
- *
- * Provider-agnostic by construction: this screen only ever reads
- * manualAiProvider.buildPrompt() through the same call shape any
- * future provider's own buildPrompt() would support — nothing here
- * assumes copy/paste is the only possible shape, even though it's the
- * only one wired in today (see
- * services/extractionProviders/extractionProviderRegistry.js).
- */
-function renderExtractConceptsStep(index, unitId, attachments, composerText, unitPageText, extractionPromptText, ocrProgress, handlers) {
-  const section = document.createElement('div');
-  section.className = 'curriculum-management__section';
+/** One Concept's own row on the Unit Concepts screen — reorder arrows, an in-place rename input, and delete, the identical shape renderIndexUnitRow already uses for Units (minus anything Unit-specific like the Part dropdown or page number, which don't apply to a Concept at all). */
+function renderConceptRow(concept, conceptIndex, totalConcepts, handlers) {
+  const row = document.createElement('div');
+  row.className = 'curriculum-management__import-unit-row';
 
-  const unit = index.units.find((u) => u.id === unitId);
-  if (!unit) {
-    section.appendChild(createEmptyStateElement({ message: 'This unit could not be found.' }));
-    return section;
-  }
+  const topLine = document.createElement('div');
+  topLine.className = 'curriculum-management__import-unit-top-line';
 
-  const heading = document.createElement('p');
-  heading.className = 'curriculum-management__step-heading';
-  heading.textContent = `Extract Concepts \u2014 ${unit.title}`;
-  section.appendChild(heading);
+  const reorder = createReorderButtons(
+    conceptIndex === 0,
+    conceptIndex === totalConcepts - 1,
+    () => handlers.onMoveConceptUp(concept.id),
+    () => handlers.onMoveConceptDown(concept.id)
+  );
+  topLine.appendChild(reorder);
 
-  const range = unitPageRangeService.getDerivedPageRange(index, unitId);
-  const pageRangeEl = document.createElement('p');
-  pageRangeEl.className = 'curriculum-management__my-index-meta';
-  pageRangeEl.textContent = range
-    ? range.endPage != null
-      ? `Pages ${range.startPage}\u2013${range.endPage}`
-      : `From page ${range.startPage} onward`
-    : 'No page range available for this unit.';
-  section.appendChild(pageRangeEl);
+  const titleInput = createRenameInput(concept.title, (newTitle) => handlers.onRenameConcept(concept.id, newTitle));
+  titleInput.classList.add('curriculum-management__unit-title-input');
+  topLine.appendChild(titleInput);
 
-  if (extractionPromptText === null) {
-    if (ocrProgress) {
-      // Genuinely slow, multi-second-per-page work — real progress,
-      // not one opaque spinner for however long the whole batch takes.
-      const progressEl = document.createElement('p');
-      progressEl.className = 'curriculum-management__intro';
-      progressEl.textContent = `Reading page ${ocrProgress.fileIndex + 1} of ${ocrProgress.totalFiles} (${ocrProgress.fileName})\u2026`;
-      section.appendChild(progressEl);
-    } else if (!unitPageText) {
-      // One composer, any natural form a teacher reaches for — type,
-      // paste text, paste a screenshot, drag files, or browse. OCR
-      // and combining happen after "Continue" is pressed, entirely
-      // hidden from what the teacher interacts with here.
-      const instructions = document.createElement('p');
-      instructions.className = 'curriculum-management__intro';
-      instructions.textContent = 'Provide this unit\u2019s own textbook pages \u2014 type or paste text, paste a screenshot, drag files, or browse. Text is read automatically; you never need to type or copy it yourself unless you want to.';
-      section.appendChild(instructions);
+  const deleteButton = document.createElement('button');
+  deleteButton.type = 'button';
+  deleteButton.className = 'btn btn--danger-text';
+  deleteButton.textContent = 'Delete';
+  deleteButton.addEventListener('click', () => {
+    if (!window.confirm(`Delete "${concept.title}"?`)) return;
+    handlers.onDeleteConcept(concept.id);
+  });
+  topLine.appendChild(deleteButton);
 
-      const composer = createMultimodalInput({
-        text: composerText,
-        attachments,
-        placeholder: 'Type or paste text, paste a screenshot (Ctrl+V), or drag/browse files\u2026',
-        onTextChange: (text) => handlers.onComposerTextChange(text),
-        onAttachmentsAdded: (files) => handlers.onAddAttachments(files),
-        onRemoveAttachment: (id) => handlers.onRemoveAttachment(id),
-      });
-      section.appendChild(composer);
-
-      const continueButton = document.createElement('button');
-      continueButton.type = 'button';
-      continueButton.className = 'btn btn--primary';
-      continueButton.textContent = 'Continue';
-      continueButton.addEventListener('click', () => {
-        if (attachments.length === 0 && !composerText.trim()) {
-          showToast('Provide a page first \u2014 type, paste, or attach one');
-          return;
-        }
-        handlers.onProcessComposerInput();
-      });
-      section.appendChild(continueButton);
-    } else {
-      // Text has been read (OCR, a real PDF text layer, typed text,
-      // or a combination) — shown back to the teacher, and still
-      // editable, so a mistake (OCR or otherwise) can be corrected
-      // before it's ever baked into the prompt sent to an AI
-      // assistant.
-      const reviewIntro = document.createElement('p');
-      reviewIntro.className = 'curriculum-management__intro';
-      reviewIntro.textContent = 'Here\u2019s the combined text for this unit. Check it over \u2014 fix anything that\u2019s wrong \u2014 then generate the prompt.';
-      section.appendChild(reviewIntro);
-
-      const textareaLabel = document.createElement('label');
-      textareaLabel.className = 'curriculum-management__labeled-input';
-      const textareaLabelText = document.createElement('span');
-      textareaLabelText.textContent = 'Textbook pages for this unit';
-      const textarea = document.createElement('textarea');
-      textarea.className = 'curriculum-management__toc-textarea';
-      textarea.rows = 8;
-      textarea.value = unitPageText;
-      textarea.addEventListener('input', () => handlers.onChangeUnitPageText(textarea.value));
-      textareaLabel.append(textareaLabelText, textarea);
-      section.appendChild(textareaLabel);
-
-      const generateButton = document.createElement('button');
-      generateButton.type = 'button';
-      generateButton.className = 'btn btn--primary';
-      generateButton.textContent = 'Generate Prompt';
-      generateButton.addEventListener('click', () => {
-        if (!textarea.value.trim()) {
-          showToast('That text is empty \u2014 provide a page first');
-          return;
-        }
-        handlers.onGeneratePrompt();
-      });
-      section.appendChild(generateButton);
-    }
-  } else {
-    const promptIntro = document.createElement('p');
-    promptIntro.className = 'curriculum-management__intro';
-    promptIntro.textContent = 'Copy this prompt into your own AI assistant, then paste its response back here in a later step.';
-    section.appendChild(promptIntro);
-
-    const promptDisplay = document.createElement('pre');
-    promptDisplay.className = 'curriculum-management__canonical-example';
-    promptDisplay.textContent = extractionPromptText;
-    section.appendChild(promptDisplay);
-
-    const copyButton = document.createElement('button');
-    copyButton.type = 'button';
-    copyButton.className = 'btn btn--primary';
-    copyButton.textContent = 'Copy Prompt';
-    copyButton.addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(extractionPromptText);
-        copyButton.textContent = 'Copied!';
-        setTimeout(() => {
-          copyButton.textContent = 'Copy Prompt';
-        }, 1500);
-      } catch (error) {
-        showToast('Could not copy \u2014 select and copy the text above manually');
-      }
-    });
-    section.appendChild(copyButton);
-  }
-
-  return section;
+  row.appendChild(topLine);
+  return row;
 }
 
 function renderIndexUnitRow(unit, unitIndexWithinPart, partUnitCount, allParts, handlers) {
@@ -1723,6 +1470,13 @@ function renderIndexUnitRow(unit, unitIndexWithinPart, partUnitCount, allParts, 
     () => handlers.onMoveIndexUnitDown(unit.id)
   );
   topLine.appendChild(reorder);
+
+  if (unit.number != null) {
+    const numberEl = document.createElement('span');
+    numberEl.className = 'curriculum-management__unit-number';
+    numberEl.textContent = `Unit ${unit.number}`;
+    topLine.appendChild(numberEl);
+  }
 
   const titleInput = createRenameInput(unit.title, (newTitle) => handlers.onRenameIndexUnit(unit.id, newTitle));
   titleInput.classList.add('curriculum-management__unit-title-input');
