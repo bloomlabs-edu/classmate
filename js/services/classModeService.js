@@ -58,6 +58,14 @@ export function awardStar(classroom, student) {
     payload: { delta },
   });
 
+  // TEMPORARY DIAGNOSTIC \u2014 comparing this exact classroom reference
+  // against the one workspaceService.save() actually receives (see
+  // classSessionService.js's commitSession()).
+  console.log('[EventTraceDiagnostic] awardStar() \u2014 immediately AFTER publishEvent():');
+  console.log('[EventTraceDiagnostic]   classroom.studentEvents exists?', 'studentEvents' in classroom);
+  console.log('[EventTraceDiagnostic]   classroom.studentEvents.length:', classroom.studentEvents?.length);
+  console.log('[EventTraceDiagnostic]   classroom.studentEvents:', JSON.stringify(classroom.studentEvents));
+
   return entry;
 }
 
@@ -92,6 +100,14 @@ export function awardBadgeQuick(classroom, student, badgeName) {
     message: 'Your teacher recognized you for this.',
     payload: { badgeName },
   });
+
+  // TEMPORARY DIAGNOSTIC \u2014 comparing this exact classroom reference
+  // against the one workspaceService.save() actually receives (see
+  // classSessionService.js's commitSession()).
+  console.log('[EventTraceDiagnostic] awardBadgeQuick() \u2014 immediately AFTER publishEvent():');
+  console.log('[EventTraceDiagnostic]   classroom.studentEvents exists?', 'studentEvents' in classroom);
+  console.log('[EventTraceDiagnostic]   classroom.studentEvents.length:', classroom.studentEvents?.length);
+  console.log('[EventTraceDiagnostic]   classroom.studentEvents:', JSON.stringify(classroom.studentEvents));
 
   return entry;
 }

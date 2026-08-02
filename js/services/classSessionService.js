@@ -128,6 +128,18 @@ export function getTopContributors(classroom, limit = 3) {
  * to save.
  */
 export function commitSession(classroom) {
+  // TEMPORARY DIAGNOSTIC — comparing this exact classroom reference
+  // (immediately before the real write) against what
+  // awardStar()/awardBadgeQuick() logged immediately after
+  // publishEvent() (see services/classModeService.js). If these
+  // differ, the classroom reference changed identity somewhere in
+  // between; if they match, the investigation moves to Firestore
+  // persistence itself, not object identity.
+  console.log('[EventTraceDiagnostic] commitSession() \u2014 immediately BEFORE workspaceService.save():');
+  console.log('[EventTraceDiagnostic]   classroom.studentEvents exists?', 'studentEvents' in classroom);
+  console.log('[EventTraceDiagnostic]   classroom.studentEvents.length:', classroom.studentEvents?.length);
+  console.log('[EventTraceDiagnostic]   classroom.studentEvents:', JSON.stringify(classroom.studentEvents));
+
   workspaceService.save(classroom);
   classModeService.clearUndoStack(classroom);
   sessionByClassroomId.delete(classroom.id);
