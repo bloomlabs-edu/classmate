@@ -111,6 +111,12 @@ function buildUnitsFromCurriculumIndex(curriculumIndex) {
   const partNameById = new Map(curriculumIndex.parts.map((part) => [part.id, part.name]));
   const hasMultipleParts = curriculumIndex.parts.length > 1;
 
+  // TEMPORARY DIAGNOSTIC — tracing whether THIS function, in THIS
+  // deployed session, actually has the fixed logic or not. See this
+  // project's own investigation into the partName/undefined Firestore
+  // rejection bug.
+  console.error(`[buildUnitsFromCurriculumIndex] TEMPORARY DIAGNOSTIC \u2014 curriculumIndex.parts.length =`, curriculumIndex.parts.length, `hasMultipleParts =`, hasMultipleParts);
+
   return curriculumIndex.units.map((unit) => {
     const args = {
       title: unit.title,
@@ -125,7 +131,10 @@ function buildUnitsFromCurriculumIndex(curriculumIndex) {
     if (hasMultipleParts) {
       args.partName = partNameById.get(unit.partId);
     }
-    return createLearningUnit(args);
+    console.error(`[buildUnitsFromCurriculumIndex] TEMPORARY DIAGNOSTIC \u2014 args passed to createLearningUnit() for unit "${unit.title}":`, `'partName' in args?`, 'partName' in args, JSON.stringify(args));
+    const result = createLearningUnit(args);
+    console.error(`[buildUnitsFromCurriculumIndex] TEMPORARY DIAGNOSTIC \u2014 result returned for unit "${unit.title}":`, `'partName' in result?`, 'partName' in result, JSON.stringify(result));
+    return result;
   });
 }
 

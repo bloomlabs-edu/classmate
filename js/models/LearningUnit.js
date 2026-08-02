@@ -74,5 +74,14 @@ export function createLearningUnit({ id, title, concepts = [], partName, linkedC
   if (partName !== undefined) {
     unit.partName = partName;
   }
+
+  // TEMPORARY DIAGNOSTIC — tracing whether THIS function, in THIS
+  // deployed session, actually produces the fixed shape or not. See
+  // this project's own investigation into the partName/undefined
+  // Firestore rejection bug.
+  console.error(`[createLearningUnit] TEMPORARY DIAGNOSTIC \u2014 called with partName argument =`, partName);
+  console.error(`[createLearningUnit] TEMPORARY DIAGNOSTIC \u2014 'partName' in returned unit?`, 'partName' in unit);
+  console.error(`[createLearningUnit] TEMPORARY DIAGNOSTIC \u2014 returned unit:`, JSON.stringify(unit));
+
   return unit;
 }
