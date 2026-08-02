@@ -46,31 +46,49 @@ import { ClassroomRepository } from './classroomRepository.js';
  * TEMPORARY DIAGNOSTIC — walks an entire object tree and returns the
  * full property path of every value that is exactly `undefined`
  * (e.g. "learningRecord.subjects[2].linkedCurriculumIndexId"), not
- * just the first one Firestore's own error happens to name. Called
- * immediately before setDoc() in saveClassroom() below, purely to
- * identify where an undefined value actually originates in the real,
- * live classroom object — this does not strip or replace anything;
- * the object passed to setDoc() is completely untouched by this
- * function. Remove once the source is identified and a real fix is
- * decided on.
+ * just the first one Firestore's own error happens to name — along
+ * with the actual parent object each one was found on, so the
+ * surrounding context is visible too, not just an address string.
+ * Called immediately before setDoc() in saveClassroom() below, purely
+ * to identify where an undefined value actually originates in the
+ * real, live classroom object — this does not strip or replace
+ * anything; the object passed to setDoc() is completely untouched by
+ * this function. Remove once the source is identified and a real fix
+ * is decided on.
  */
-function findAllUndefinedPaths(value, path = '', results = []) {
+function findAllUndefinedPaths(value, path = '', parent = null, results = []) {
   if (value === undefined) {
-    results.push(path || '(root)');
+    results.push({ path: path || '(root)', parent });
     return results;
   }
   if (value === null || typeof value !== 'object') {
     return results;
   }
   if (Array.isArray(value)) {
-    value.forEach((item, index) => findAllUndefinedPaths(item, `${path}[${index}]`, results));
+    value.forEach((item, index) => findAllUndefinedPaths(item, `${path}[${index}]`, value, results));
   } else {
     Object.keys(value).forEach((key) => {
       const childPath = path ? `${path}.${key}` : key;
-      findAllUndefinedPaths(value[key], childPath, results);
+      findAllUndefinedPaths(value[key], childPath, value, results);
     });
   }
   return results;
+}
+
+/**
+ * A true, static text snapshot of an object — unlike passing an
+ * object reference straight to console.error/console.log (which
+ * Chrome inspects lazily: expanding it later shows the object's state
+ * *at expansion time*, not at logging time, which is exactly the kind
+ * of thing that can quietly mislead when debugging something
+ * asynchronous). JSON.stringify's own replacer function runs on every
+ * value, including undefined ones, before JSON.stringify decides to
+ * drop them — converting undefined to a visible marker string here
+ * means it survives into the final text instead of disappearing the
+ * way plain JSON.stringify(classroom) would.
+ */
+function serializeWithVisibleUndefined(value) {
+  return JSON.stringify(value, (key, val) => (val === undefined ? '<<<UNDEFINED>>>' : val), 2);
 }
 
 class FirestoreClassroomRepository extends ClassroomRepository {
@@ -262,17 +280,29 @@ class FirestoreClassroomRepository extends ClassroomRepository {
       throw error;
     }
     try {
-      // TEMPORARY DIAGNOSTIC — see findAllUndefinedPaths()'s own
+      // TEMPORARY DIAGNOSTIC (V2) — see findAllUndefinedPaths()'s own
       // comment above. Logs every undefined path found in the real,
-      // live classroom object, immediately before the real write —
-      // does not alter `classroom` or what gets passed to setDoc().
-      const undefinedPaths = findAllUndefinedPaths(classroom);
-      if (undefinedPaths.length > 0) {
-        console.error('[firestoreClassroomRepository] TEMPORARY DIAGNOSTIC \u2014 undefined field path(s) found in classroom object, immediately before setDoc():');
-        undefinedPaths.forEach((path) => console.error('  ', path));
+      // live classroom object immediately before the real write, the
+      // parent object each was found on, and a full static text
+      // snapshot of the whole object — does not alter `classroom` or
+      // what gets passed to setDoc() in any way.
+      console.error('===== TEMPORARY UNDEFINED-FIELD DIAGNOSTIC (V2) — running now, immediately before setDoc() =====');
+
+      const undefinedOccurrences = findAllUndefinedPaths(classroom);
+      if (undefinedOccurrences.length > 0) {
+        console.error(`[firestoreClassroomRepository] Found ${undefinedOccurrences.length} undefined value(s) in the classroom object:`);
+        undefinedOccurrences.forEach(({ path, parent }, index) => {
+          console.error(`  (${index + 1}) path:`, path);
+          console.error(`  (${index + 1}) parent object:`, parent);
+        });
       } else {
-        console.error('[firestoreClassroomRepository] TEMPORARY DIAGNOSTIC \u2014 no undefined values found anywhere in the classroom object before setDoc() (if setDoc() still throws \u201cinvalid-argument\u201d, the cause is something other than a plain undefined field \u2014 e.g. a function, a Symbol, or a value type Firestore itself cannot serialize).');
+        console.error('[firestoreClassroomRepository] No undefined values found anywhere in the classroom object before setDoc() (if setDoc() still throws \u201cinvalid-argument\u201d, the cause is something other than a plain undefined field \u2014 e.g. a function, a Symbol, or a value type Firestore itself cannot serialize).');
       }
+
+      console.error('[firestoreClassroomRepository] Full static snapshot of the classroom object (undefined values shown as <<<UNDEFINED>>>, since plain JSON.stringify would otherwise silently omit them):');
+      console.error(serializeWithVisibleUndefined(classroom));
+
+      console.error('===== END TEMPORARY UNDEFINED-FIELD DIAGNOSTIC (V2) =====');
 
       await setDoc(ref, classroom);
     } catch (error) {
