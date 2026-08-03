@@ -108,7 +108,6 @@ export function renderSettingsView(container, { classroom, currentUser, section,
 }
 
 /**
-/**
  * Teachers only, now that Students and Groups have moved to
  * ui/views/ClassroomManagementView.js — daily operational data, not
  * occasional configuration, per explicit product decision. Teachers
@@ -123,6 +122,213 @@ function renderClassSection(content, classroom, rerender, onOpenStudentAccess, c
 /** Subjects, Notebook Types, and learning-related settings together — everything about instruction, not administration. */
 function renderLearningSection(content, classroom, rerender) {
   renderNotebooksSection(content, classroom, rerender);
+}
+
+/**
+ * Settings > Notebooks — a classroom's own Subjects and, nested under
+ * each, its Notebook Types (see services/notebookConfigService.js's
+ * own header comment: "the notebook structure must NOT be hardcoded").
+ * This is the only place either is ever added, renamed, or removed;
+ * Notebook Tracker/Register/Timeline only ever read this
+ * configuration, never edit it.
+ *
+ * Rename is inline (click a name to edit it in place, Enter/blur to
+ * save, Escape to cancel) rather than a modal — matches this app's
+ * existing convention of reserving modals for flows with several
+ * fields at once (see ui/components/AddSubjectToAssessmentModal.js and
+ * others), not a single text value.
+ */
+function renderNotebooksSection(content, classroom, rerender) {
+  const section = document.createElement('div');
+  section.className = 'settings-section';
+
+  const heading = document.createElement('h3');
+  heading.className = 'settings-team-block__heading';
+  heading.textContent = 'Notebook Subjects';
+  section.appendChild(heading);
+
+  const subjects = notebookConfigService.listSubjects(classroom);
+
+  if (subjects.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'settings-section__meta';
+    empty.textContent = 'No subjects yet — add one below to start setting up Notebook Tracker.';
+    section.appendChild(empty);
+  } else {
+    const subjectsList = document.createElement('ul');
+    subjectsList.className = 'settings-editable-list';
+    subjects.forEach((subject) => {
+      subjectsList.appendChild(createNotebookSubjectRow(classroom, subject, rerender));
+    });
+    section.appendChild(subjectsList);
+  }
+
+  section.appendChild(
+    createAddRow({
+      placeholder: 'New subject name',
+      buttonLabel: '+ Add Subject',
+      onAdd: (name) => {
+        notebookConfigService.addSubject(classroom, name);
+        workspaceService.save(classroom);
+        rerender();
+      },
+    })
+  );
+
+  content.appendChild(section);
+}
+
+function createNotebookSubjectRow(classroom, subject, rerender) {
+  const item = document.createElement('li');
+  item.className = 'settings-editable-list__item settings-notebook-subject';
+
+  const header = document.createElement('div');
+  header.className = 'settings-notebook-subject__header';
+  header.appendChild(createInlineEditableLabel(subject.name, (newName) => {
+    notebookConfigService.renameSubject(classroom, subject.id, newName);
+    workspaceService.save(classroom);
+    rerender();
+  }));
+
+  const removeButton = document.createElement('button');
+  removeButton.type = 'button';
+  removeButton.className = 'btn btn--text settings-notebook-subject__remove';
+  removeButton.textContent = 'Remove';
+  removeButton.addEventListener('click', () => {
+    const confirmed = window.confirm(`Remove "${subject.name}" and all its Notebook Types? This cannot be undone.`);
+    if (!confirmed) return;
+    notebookConfigService.removeSubject(classroom, subject.id);
+    workspaceService.save(classroom);
+    rerender();
+  });
+  header.appendChild(removeButton);
+  item.appendChild(header);
+
+  const notebookTypes = notebookConfigService.listNotebookTypes(classroom, subject.id);
+  const typesList = document.createElement('ul');
+  typesList.className = 'settings-notebook-types-list';
+  notebookTypes.forEach((type) => {
+    typesList.appendChild(createNotebookTypeRow(classroom, type, rerender));
+  });
+  item.appendChild(typesList);
+
+  item.appendChild(
+    createAddRow({
+      placeholder: 'New notebook type',
+      buttonLabel: '+ Add Notebook Type',
+      compact: true,
+      onAdd: (name) => {
+        notebookConfigService.addNotebookType(classroom, subject.id, name);
+        workspaceService.save(classroom);
+        rerender();
+      },
+    })
+  );
+
+  return item;
+}
+
+function createNotebookTypeRow(classroom, type, rerender) {
+  const item = document.createElement('li');
+  item.className = 'settings-notebook-types-list__item';
+
+  item.appendChild(createInlineEditableLabel(type.name, (newName) => {
+    notebookConfigService.renameNotebookType(classroom, type.id, newName);
+    workspaceService.save(classroom);
+    rerender();
+  }));
+
+  const removeButton = document.createElement('button');
+  removeButton.type = 'button';
+  removeButton.className = 'btn btn--text settings-notebook-subject__remove';
+  removeButton.textContent = 'Remove';
+  removeButton.addEventListener('click', () => {
+    const confirmed = window.confirm(`Remove "${type.name}"? This cannot be undone.`);
+    if (!confirmed) return;
+    notebookConfigService.removeNotebookType(classroom, type.id);
+    workspaceService.save(classroom);
+    rerender();
+  });
+  item.appendChild(removeButton);
+
+  return item;
+}
+
+/** A name that becomes a text input on click, saving on Enter/blur and reverting on Escape — used for both Subject and Notebook Type names above. */
+function createInlineEditableLabel(currentName, onSave) {
+  const wrapper = document.createElement('span');
+  wrapper.className = 'settings-inline-editable-label';
+
+  const label = document.createElement('button');
+  label.type = 'button';
+  label.className = 'settings-inline-editable-label__display';
+  label.textContent = currentName;
+  label.title = 'Click to rename';
+
+  label.addEventListener('click', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'settings-inline-editable-label__input';
+    input.value = currentName;
+
+    function commit() {
+      const newName = input.value.trim();
+      if (newName && newName !== currentName) onSave(newName);
+      else wrapper.replaceChild(label, input);
+    }
+
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        commit();
+      } else if (event.key === 'Escape') {
+        wrapper.replaceChild(label, input);
+      }
+    });
+    input.addEventListener('blur', commit);
+
+    wrapper.replaceChild(input, label);
+    input.focus();
+    input.select();
+  });
+
+  wrapper.appendChild(label);
+  return wrapper;
+}
+
+/** A text input + button for adding a new Subject or Notebook Type — clears itself and refocuses after a successful add, so adding several in a row doesn't require re-clicking into the field each time. */
+function createAddRow({ placeholder, buttonLabel, onAdd, compact = false }) {
+  const row = document.createElement('div');
+  row.className = compact ? 'settings-add-row settings-add-row--compact' : 'settings-add-row';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'settings-add-row__input';
+  input.placeholder = placeholder;
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn btn--secondary';
+  button.textContent = buttonLabel;
+
+  function submit() {
+    const name = input.value.trim();
+    if (!name) return;
+    onAdd(name);
+    input.value = '';
+    input.focus();
+  }
+
+  button.addEventListener('click', submit);
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      submit();
+    }
+  });
+
+  row.append(input, button);
+  return row;
 }
 
 /**

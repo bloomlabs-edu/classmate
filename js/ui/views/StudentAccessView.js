@@ -22,6 +22,7 @@ import { createEmptyStateElement } from '../components/EmptyState.js';
 import { getDisplayName } from '../../services/classroomService.js';
 import { APP_BASE_URL } from '../../config/appConfig.js';
 import { createIcon } from '../components/Icon.js';
+import { createBackButton } from '../components/BackButton.js';
 
 export function renderStudentAccessView(container, { classroom, onBack, onSelectStudent }) {
   container.innerHTML = '';
