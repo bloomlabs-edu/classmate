@@ -146,9 +146,10 @@ async function handleNewClassroom() {
   } catch (error) {
     console.error('[main] Failed to load curriculum options for classroom creation:', error);
     // Falls through with an empty list — the modal shows "No curricula
-    // available yet" and blocks creation rather than crashing, since
-    // Curriculum is a required field and there's genuinely nothing to
-    // pick from a network failure until it resolves.
+    // available yet" and disables the picker itself, but Curriculum is
+    // optional (see ui/components/NewClassroomModal.js's own header
+    // comment), so a teacher can still create the classroom without one
+    // even if this fetch failed.
   }
 
   openNewClassroomModal({

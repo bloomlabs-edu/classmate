@@ -37,16 +37,15 @@ function validateDetails(details) {
   if (!isNonEmptyString(details?.gradeSection)) {
     throw new ClassroomValidationError('Grade / Section is required.');
   }
-  // Curriculum became a required field at classroom creation (see
-  // ui/components/NewClassroomModal.js) — a classroom is expected to
-  // arrive already knowing what it's teaching from, not needing a
-  // later prompt (that prompt — ui/views/AssignCurriculumPromptView.js
-  // — exists only for classrooms created before this requirement
-  // existed). Checked here too, not just in the modal's own UI, same
-  // defense-in-depth as the two checks above.
-  if (!details?.curriculumAssignment?.curriculumId || !details?.curriculumAssignment?.versionId) {
-    throw new ClassroomValidationError('Curriculum is required.');
-  }
+  // Curriculum was required here for a period (the "Curriculum
+  // Assignment at Creation" milestone) — reverted per explicit product
+  // decision (see ui/components/NewClassroomModal.js's own header
+  // comment for the full reasoning). curriculumAssignment stays
+  // optional: null is a normal, already-handled state throughout this
+  // app (see models/Classroom.js's own default, and
+  // services/curriculumLibraryService.js's getCurriculumAssignment()),
+  // and ui/views/AssignCurriculumPromptView.js already exists to let a
+  // teacher assign one later.
 }
 
 /**

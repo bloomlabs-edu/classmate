@@ -2,19 +2,29 @@
  * ui/components/NewClassroomModal.js
  *
  * The "+ New Classroom" modal: collects the essential classroom
- * details — School Name, Grade / Section, and (as of the Curriculum
- * Assignment at Creation milestone) Curriculum are all required;
- * Classroom Name, Academic Year, and Description stay optional.
+ * details — School Name and Grade / Section are required; Classroom
+ * Name, Academic Year, Curriculum, and Description all stay optional.
  * Importing students, assigning buckets, customizing groups, and
  * configuring scoring all happen afterwards in the Setup Wizard (see
  * ui/views/SetupWizardView.js) — creation itself stays a single small
  * step, per the "ask only for the essential information" brief.
  *
- * Curriculum is required now because a classroom is meant to arrive
- * already knowing what it's teaching from — Learning Management
- * should never have to ask a teacher to choose a curriculum, and the
- * only way to guarantee that is to ask once, here, before the
- * classroom exists at all. `curriculumOptions` (see
+ * Curriculum was required here for a period (the "Curriculum
+ * Assignment at Creation" milestone), on the reasoning that a
+ * classroom should arrive already knowing what it's teaching from.
+ * Reverted per explicit product decision: a teacher with no curricula
+ * in the Library yet — or simply not ready to choose one — was
+ * blocked from creating a classroom at all, with no way through. The
+ * underlying architecture this depended on was already built for
+ * exactly this optional case: `curriculumAssignment` on
+ * models/Classroom.js already defaults to `null`,
+ * services/curriculumLibraryService.js already treats a missing
+ * assignment as a normal, handled state everywhere it reads one, and
+ * ui/views/AssignCurriculumPromptView.js already exists specifically
+ * to prompt a teacher to assign a curriculum later — originally built
+ * for classrooms created before this requirement ever existed, and
+ * now simply the same path any classroom created without one takes.
+ * `curriculumOptions` (see
  * services/curriculumLibraryService.js's getAssignableCurriculumOptions())
  * is a flat, pick-one list — every curriculum in the Library with at
  * least one published version — fetched by the caller (see
@@ -61,9 +71,10 @@ export function openNewClassroomModal({ onCreate, curriculumOptions }) {
     placeholder: 'e.g. 2026\u201327',
   });
 
-  // Curriculum — required, and a picker rather than a text field,
-  // since a classroom references a specific curriculum *version* by
-  // ID (see models/Classroom.js), not a name a teacher types in.
+  // Curriculum — optional (see this file's own header comment for
+  // why), and a picker rather than a text field, since a classroom
+  // references a specific curriculum *version* by ID (see
+  // models/Classroom.js), not a name a teacher types in.
   let selectedOption = null;
   const curriculumField = createCurriculumField(form, curriculumOptions, (option) => {
     selectedOption = option;
@@ -106,11 +117,6 @@ export function openNewClassroomModal({ onCreate, curriculumOptions }) {
       gradeSectionInput.focus();
       return;
     }
-    if (!selectedOption) {
-      window.alert('Choose a Curriculum first.');
-      curriculumField.focus();
-      return;
-    }
 
     onCreate(
       {
@@ -119,10 +125,9 @@ export function openNewClassroomModal({ onCreate, curriculumOptions }) {
         classroomName: classroomNameInput.value.trim(),
         academicYear: academicYearInput.value.trim(),
         description: descriptionInput.value.trim(),
-        curriculumAssignment: {
-          curriculumId: selectedOption.curriculumId,
-          versionId: selectedOption.versionId,
-        },
+        curriculumAssignment: selectedOption
+          ? { curriculumId: selectedOption.curriculumId, versionId: selectedOption.versionId }
+          : null,
       },
       close
     );
@@ -159,17 +164,20 @@ function createField(form, { label, placeholder, required = false, multiline = f
 }
 
 /**
- * A required, flat pick-one field — expands into a short list of
+ * An optional, flat pick-one field — expands into a short list of
  * available curriculum versions on click, collapsing back into a
  * "selected" display once one is chosen. Deliberately not a native
  * <select>: each option needs two lines (curriculum name, version),
- * which a plain dropdown option can't show cleanly.
+ * which a plain dropdown option can't show cleanly. Disabled (not
+ * hidden) when the Library has no assignable curricula yet — a
+ * teacher can still create the classroom without one and assign it
+ * later (see ui/views/AssignCurriculumPromptView.js).
  */
 function createCurriculumField(form, options, onSelect) {
   const wrapper = document.createElement('div');
   wrapper.className = 'modal__label';
   const labelText = document.createElement('span');
-  labelText.textContent = 'Curriculum';
+  labelText.textContent = 'Curriculum (optional)';
   wrapper.appendChild(labelText);
 
   const toggleButton = document.createElement('button');
