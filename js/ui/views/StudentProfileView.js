@@ -186,24 +186,43 @@ function renderProfileHeader(classroom, student, team, rerender, onBack) {
   stats.className = 'profile-header__stats';
 
   [
-    ['Bucket', getBucketLabel(student.bucket)],
-    ['Session Score', student.score],
-    ['Positive', timelineService.getTotalPositivePoints(student)],
-    ['Negative', timelineService.getTotalNegativePoints(student)],
-    ['Badges', (student.badges || []).length],
-    ['Notes', (student.notes || []).length],
-    ['Learning Activities', submissionText],
-  ].forEach(([label, value]) => {
-    stats.appendChild(createHeaderChip(label, value));
+    ['Bucket', getBucketLabel(student.bucket), 'bucket'],
+    ['Session Score', student.score, null],
+    ['Positive', timelineService.getTotalPositivePoints(student), 'positive'],
+    ['Negative', timelineService.getTotalNegativePoints(student), 'negative'],
+    ['Badges', (student.badges || []).length, 'badges'],
+    ['Notes', (student.notes || []).length, null],
+    ['Learning Activities', submissionText, null],
+  ].forEach(([label, value, variant]) => {
+    stats.appendChild(createHeaderChip(label, value, variant, student.bucket));
   });
 
   header.appendChild(stats);
   return header;
 }
 
-function createHeaderChip(label, value) {
+/**
+ * `variant` picks this chip's own color, reusing existing semantic
+ * colors rather than inventing new ones: 'positive'/'negative' reuse
+ * the exact same green/red pastels config/bucketConfig.js already
+ * establishes for "good"/"needs attention"; 'badges' reuses the app's
+ * existing gold Recognition accent (--color-accent, already tied to
+ * trophy/star imagery). 'bucket' is dynamic — it always matches this
+ * specific student's own current bucket color (`bucketKey`), the same
+ * getBucketRowStyle() the header itself uses, so the chip and the
+ * header's own background never disagree. `null` (Session Score,
+ * Notes, Learning Activities) stays the existing neutral default —
+ * these are plain counts, not inherently good or bad on their own.
+ */
+function createHeaderChip(label, value, variant, bucketKey) {
   const chip = document.createElement('div');
   chip.className = 'profile-header__chip';
+  if (variant) chip.classList.add(`profile-header__chip--${variant}`);
+  if (variant === 'bucket') {
+    const bucketStyle = getBucketRowStyle(bucketKey);
+    chip.style.backgroundColor = bucketStyle.background;
+    chip.style.color = bucketStyle.text;
+  }
 
   const labelEl = document.createElement('span');
   labelEl.className = 'profile-header__chip-label';

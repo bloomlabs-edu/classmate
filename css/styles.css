@@ -2283,6 +2283,31 @@ button.wizard-checklist__row:hover {
   font-weight: var(--font-weight-black);
 }
 
+/* Stat chip color variants — see
+   ui/views/StudentProfileView.js's createHeaderChip(). Positive/
+   Negative reuse the exact green/red pastels config/bucketConfig.js
+   already establishes; Badges reuses the app's existing gold
+   Recognition accent. The Bucket chip's own color is set inline
+   (dynamic per student) rather than here — see createHeaderChip(). */
+.profile-header__chip--positive {
+  background-color: #EAF7EC;
+}
+.profile-header__chip--positive .profile-header__chip-value {
+  color: #2e7d32;
+}
+.profile-header__chip--negative {
+  background-color: #FDECEA;
+}
+.profile-header__chip--negative .profile-header__chip-value {
+  color: #c62828;
+}
+.profile-header__chip--badges {
+  background-color: color-mix(in srgb, var(--color-accent) 15%, white);
+}
+.profile-header__chip--badges .profile-header__chip-value {
+  color: color-mix(in srgb, var(--color-accent) 70%, black);
+}
+
 .profile-tabs {
   display: flex;
   flex-wrap: wrap;
