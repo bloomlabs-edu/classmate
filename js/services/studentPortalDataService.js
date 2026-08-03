@@ -70,6 +70,7 @@ export async function getCurrentStudentProfile() {
     classroomName: found.classroom.classroomName,
     groupName: found.team && !found.team.isUngrouped ? found.team.name : null,
     role: 'student',
+    bucket: found.student.bucket, // reused directly from the Student model — see config/bucketConfig.js for the shared color/label mapping every screen (teacher and student) reads from
   };
 }
 

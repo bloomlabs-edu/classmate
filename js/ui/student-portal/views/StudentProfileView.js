@@ -2,7 +2,8 @@
  * ui/student-portal/views/StudentProfileView.js
  *
  * A lightweight settings page: avatar, name, classroom, group, role,
- * plus "Customize Avatar" and "Manage Students" actions.
+ * Learning Bucket, plus "Customize Avatar" and "Manage Students"
+ * actions.
  *
  * The avatar shown here is always the illustrated 2D avatar (custom
  * or default) — never initials — since this is the student's own
@@ -13,12 +14,21 @@
  * upload anywhere, not a missing feature, a deliberate decision (see
  * this project's CHANGELOG).
  *
- * Live Firestore data for name/classroom/group/role — see
+ * Live Firestore data for name/classroom/group/role/bucket — see
  * services/studentPortalDataService.js.
+ *
+ * The Learning Bucket chip reuses config/bucketConfig.js entirely —
+ * the exact same colors, labels, and getBucketRowStyle()/
+ * getBucketLabel() the teacher-facing Student Profile
+ * (ui/views/StudentProfileView.js) already uses, so a bucket change a
+ * teacher makes (e.g. Red -> Yellow) shows up here in the same color
+ * the teacher themselves sees, the next time this student opens their
+ * own Profile — no separate color logic to keep in sync.
  */
 
 import { getCurrentStudentProfile } from '../../../services/studentPortalDataService.js';
 import { createAvatarElement } from '../../components/AvatarDisplay.js';
+import { getBucketRowStyle, getBucketLabel } from '../../../config/bucketConfig.js';
 
 export async function renderStudentProfileView(container, { onManageStudents, onCustomizeAvatar }) {
   container.innerHTML = '';
@@ -60,6 +70,15 @@ export async function renderStudentProfileView(container, { onManageStudents, on
   name.className = 'student-profile__name';
   name.textContent = profile.name;
   wrapper.appendChild(name);
+
+  const bucketStyle = getBucketRowStyle(profile.bucket);
+  const bucketChip = document.createElement('div');
+  bucketChip.className = 'student-profile__bucket-chip';
+  bucketChip.style.backgroundColor = bucketStyle.background;
+  bucketChip.style.borderColor = bucketStyle.border;
+  bucketChip.style.color = bucketStyle.text;
+  bucketChip.textContent = `Learning Bucket: ${getBucketLabel(profile.bucket)}`;
+  wrapper.appendChild(bucketChip);
 
   const details = document.createElement('dl');
   details.className = 'student-profile__details';

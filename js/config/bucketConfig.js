@@ -36,12 +36,17 @@ export const BUCKET_DISPLAY_COLORS = Object.freeze({
 
 // Soft pastel background + left-border treatment for the Tracker's
 // student rows and the Student Profile header — deliberately not bright
-// solid colours (see the brief).
+// solid colours (see the brief). `text` is the correct ink color for
+// reading directly against these light backgrounds — every one of them
+// is light enough that dark ink is the only choice that stays legible
+// (unlike accentColorConfig.js's own accent colors, which are dark
+// enough for white text); `#1a1a1a` matches the exact dark ink value
+// already established there for the same reason.
 export const BUCKET_ROW_STYLES = Object.freeze({
-  green: { background: '#EAF7EC', border: '#2e7d32' },
-  yellow: { background: '#FFF8E1', border: '#b7791f' },
-  red: { background: '#FDECEA', border: '#c62828' },
-  notAssigned: { background: '#F3F4F6', border: '#9AA5B1' },
+  green: { background: '#EAF7EC', border: '#2e7d32', text: '#1a1a1a' },
+  yellow: { background: '#FFF8E1', border: '#b7791f', text: '#1a1a1a' },
+  red: { background: '#FDECEA', border: '#c62828', text: '#1a1a1a' },
+  notAssigned: { background: '#F3F4F6', border: '#9AA5B1', text: '#1a1a1a' },
 });
 
 export function getBucketRowStyle(bucketKey) {

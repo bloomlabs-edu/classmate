@@ -98,6 +98,7 @@ function renderProfileHeader(classroom, student, team, rerender, onBack) {
   const header = document.createElement('header');
   header.className = 'profile-header';
   header.style.backgroundColor = style.background;
+  header.style.color = style.text;
 
   const topRow = document.createElement('div');
   topRow.className = 'profile-header__top-row';

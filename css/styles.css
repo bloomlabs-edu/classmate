@@ -796,19 +796,24 @@ select:focus-visible,
    .btn--text's default (--color-ink, dark) was designed for a white
    header background, which no longer applies here. */
 .tracker-header .btn--text,
-.settings-header .btn--text,
-.profile-header .btn--text {
+.settings-header .btn--text {
   color: var(--color-on-primary-deep);
   text-shadow: var(--shadow-on-primary-deep);
 }
+/* .profile-header is never this dark accent-color background (see
+   renderProfileHeader()'s own inline style, always one of the four
+   light bucket pastels) — inherits this header's own dynamically-set
+   text color instead, matching .profile-header__name/__group above. */
+.profile-header .btn--text,
 .profile-header .overflow-menu__trigger {
-  color: var(--color-on-primary-deep);
-  text-shadow: var(--shadow-on-primary-deep);
+  color: inherit;
 }
 .tracker-header .btn--text:hover,
-.settings-header .btn--text:hover,
-.profile-header .btn--text:hover {
+.settings-header .btn--text:hover {
   color: var(--color-warning);
+}
+.profile-header .btn--text:hover {
+  opacity: 0.7;
 }
 /*
  * Ghost/Danger buttons inside a header were styled for a white
@@ -2203,7 +2208,13 @@ button.wizard-checklist__row:hover {
 
 .profile-header {
   padding: 1.25rem 1.5rem 1.5rem;
-  background-color: var(--color-primary-deep); /* the chosen accent color — see config/accentColorConfig.js */
+  /* Always overridden inline by renderProfileHeader() with this
+     student's own bucket color (see config/bucketConfig.js's
+     getBucketRowStyle()) — every student gets one of these four light
+     pastel backgrounds, with or without a bucket assigned, never the
+     app's own accent color. This fallback only matters if that inline
+     style somehow fails to apply. */
+  background-color: #F3F4F6;
 }
 
 .profile-header__top-row {
@@ -2220,25 +2231,26 @@ button.wizard-checklist__row:hover {
   font-size: 1.4rem;
   font-weight: var(--font-weight-black);
   margin: 0;
-  color: var(--color-on-primary-deep);
-  text-shadow: var(--shadow-on-primary-deep);
+  /* Inherits this header's own inline-set text color (see
+     renderProfileHeader()), matched to whichever of the four bucket
+     backgrounds is currently showing — never a hardcoded white, since
+     this header's background is always one of those light pastels,
+     never the app's dark accent color. */
+  color: inherit;
 }
 
 .profile-header__group {
   margin: 0.15rem 0 0;
   font-size: 0.9rem;
-  color: var(--color-on-primary-deep);
-  text-shadow: var(--shadow-on-primary-deep);
+  color: inherit;
   /* Secondary information gets lower visual emphasis than the
      student's own name above it — per explicit product decision, the
      primary entity should read as the strongest element on the page.
-     0.88 opacity is a verified, deliberate choice, not an arbitrary
-     one: computed directly against every accent color's own
-     background (see config/accentColorConfig.js), the tightest case
-     (Sunset) still measures 4.66:1, comfortably above WCAG AA's 4.5:1
-     — a lower opacity would read as more clearly secondary but was
-     confirmed to drop Sunset below that threshold, so this is the
-     lowest value that stays fully compliant for every accent color. */
+     0.88 opacity of dark ink against any of these four light pastel
+     backgrounds stays comfortably legible — a much larger margin than
+     the white-on-dark-accent case this was originally tuned for, since
+     dark text at reduced opacity over a light background loses far
+     less effective contrast than light text over a dark one does. */
   opacity: 0.88;
 }
 
@@ -4644,6 +4656,15 @@ button.wizard-checklist__row:hover {
   font-size: 1.6rem;
   font-weight: var(--font-weight-black);
   margin: 0 0 1.5rem;
+}
+.student-profile__bucket-chip {
+  display: inline-block;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  border: 2px solid;
+  font-weight: var(--font-weight-bold);
+  font-size: 0.9rem;
+  margin: -1rem 0 1.5rem;
 }
 .student-profile__details {
   max-width: 320px;
