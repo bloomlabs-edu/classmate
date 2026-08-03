@@ -74,8 +74,6 @@ import { renderLearningManagementView } from './LearningManagementView.js';
 import { renderClassroomManagementView } from './ClassroomManagementView.js';
 import { renderCurriculumManagementView } from './CurriculumManagementView.js';
 import { renderAssessmentManagementView } from './AssessmentManagementView.js';
-import { renderAssignCurriculumPromptView } from './AssignCurriculumPromptView.js';
-import * as curriculumLibraryService from '../../services/curriculumLibraryService.js';
 import { logViewMounted } from '../../services/persistenceLogger.js';
 
 export function renderDashboardView(container, props) {
@@ -143,21 +141,6 @@ export function renderDashboardView(container, props) {
     });
   }
 
-  // The one-time prompt for a classroom that predates Curriculum being
-  // a required field at creation (see
-  // ui/components/NewClassroomModal.js, ui/views/AssignCurriculumPromptView.js's
-  // own header comment). Gated purely on whether an assignment exists
-  // — once one does, this function and the banner that calls it simply
-  // never render again for this classroom.
-  const needsCurriculumAssignment = !curriculumLibraryService.getCurriculumAssignment(classroom);
-
-  function openAssignCurriculumPrompt() {
-    renderAssignCurriculumPromptView(container, {
-      classroom,
-      onBack: () => renderDashboardView(container, props),
-    });
-  }
-
   // Every teaching-time feature (Start Class Mode, Recognition,
   // Recognition Wall, Weekly Snapshot, Groups, Subjects, Reports) is
   // suppressed entirely until the classroom has a usable roster — "a
@@ -179,7 +162,7 @@ export function renderDashboardView(container, props) {
       onOpenStudentAccess,
       onOpenSettingsGroups: openClassroomManagement,
       onOpenSettingsNotebooks,
-    }, openLearningManagement, needsCurriculumAssignment ? openAssignCurriculumPrompt : null);
+    }, openLearningManagement);
     return;
   }
 
@@ -204,15 +187,6 @@ export function renderDashboardView(container, props) {
   subtitle.textContent = getDisplaySubtitle(classroom);
   classroomContext.appendChild(subtitle);
 
-  // TEMPORARY — see ui/views/TeacherDiagnosticsView.js's own header
-  // comment. Remove this link alongside that file once its purpose is
-  // served.
-  const diagnosticsLink = document.createElement('a');
-  diagnosticsLink.href = `#/classroom/${classroom.id}/diagnostics`;
-  diagnosticsLink.className = 'classroom-hero__diagnostics-link';
-  diagnosticsLink.textContent = '\ud83d\udd27 Diagnostics (temporary)';
-  classroomContext.appendChild(diagnosticsLink);
-
   // Deliberately timeless — a sense of entering a classroom, not a
   // dashboard summary. No live stats or pending counts here; those
   // already live in their own widgets below. `classroom.motto` doesn't
@@ -228,10 +202,6 @@ export function renderDashboardView(container, props) {
   }
 
   wrapper.appendChild(createClassroomHeaderElement({ classroomContext }));
-
-  if (needsCurriculumAssignment) {
-    wrapper.appendChild(createAssignCurriculumBanner(openAssignCurriculumPrompt));
-  }
 
   wrapper.appendChild(
     renderPrimaryModulesSection({
@@ -321,32 +291,6 @@ export function renderDashboardView(container, props) {
  * page — see this file's own header comment for the full reasoning
  * and what each one replaces.
  */
-/**
- * The one-time nudge for a classroom created before Curriculum was a
- * required field — see ui/views/AssignCurriculumPromptView.js's own
- * header comment. Deliberately its own small, unmissable banner (not
- * folded into the Teaching Assistant's recommendation engine) since
- * it's a one-off migration prompt, not an ongoing "what should I do
- * next" recommendation.
- */
-function createAssignCurriculumBanner(onOpen) {
-  const banner = document.createElement('div');
-  banner.className = 'assign-curriculum-banner';
-
-  const text = document.createElement('span');
-  text.className = 'assign-curriculum-banner__text';
-  text.textContent = 'This class doesn\u2019t have a curriculum yet.';
-  banner.appendChild(text);
-
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'btn btn--primary assign-curriculum-banner__button';
-  button.textContent = 'Assign Curriculum';
-  button.addEventListener('click', onOpen);
-  banner.appendChild(button);
-
-  return banner;
-}
 
 /**
  * Dashboard module metadata — one declarative entry per module,
@@ -513,7 +457,7 @@ function createPrimaryModuleCard({ icon, label, description, onClick, tier, acce
  * yet, and a teacher very plausibly wants to do either *before*
  * importing a roster, not after.
  */
-function renderPreRosterWelcome(container, classroom, assistantCallbacks, onOpenLearningManagement, onOpenAssignCurriculumPrompt) {
+function renderPreRosterWelcome(container, classroom, assistantCallbacks, onOpenLearningManagement) {
   const wrapper = document.createElement('div');
   wrapper.className = 'pre-roster-welcome';
 
@@ -527,10 +471,6 @@ function renderPreRosterWelcome(container, classroom, assistantCallbacks, onOpen
   title.textContent = `Welcome to ${getDisplayName(classroom)}`;
 
   wrapper.append(emoji, title);
-
-  if (onOpenAssignCurriculumPrompt) {
-    wrapper.appendChild(createAssignCurriculumBanner(onOpenAssignCurriculumPrompt));
-  }
 
   const assistantSlot = document.createElement('div');
   wrapper.appendChild(assistantSlot);
