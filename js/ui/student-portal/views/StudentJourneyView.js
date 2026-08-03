@@ -35,8 +35,9 @@ import * as studentDeviceService from '../../../services/studentDeviceService.js
 import { createAvatarElement } from '../../components/AvatarDisplay.js';
 import { createEmptyStateElement } from '../../components/EmptyState.js';
 import { formatDate } from '../../../utils/dateHelpers.js';
+import { getEventDetailRoute } from '../../../config/studentEventNavigation.js';
 
-export async function renderStudentJourneyView(container, { onSessionInvalid } = {}) {
+export async function renderStudentJourneyView(container, { onSessionInvalid, onNavigateToEventDetail } = {}) {
   container.innerHTML = '';
 
   const [summary, eventFeed] = await Promise.all([
@@ -174,7 +175,7 @@ export async function renderStudentJourneyView(container, { onSessionInvalid } =
     const timeline = document.createElement('div');
     timeline.className = 'student-event-feed';
     eventFeed.forEach((event) => {
-      timeline.appendChild(renderEventCard(event));
+      timeline.appendChild(renderEventCard(event, onNavigateToEventDetail));
     });
     updatesSection.appendChild(timeline);
   }
@@ -229,10 +230,25 @@ function createModule({ icon, title, value, caption, lines }) {
  * touching this function. The category tag's own visual styling
  * (color-coding per category) lives in CSS, keyed off the category
  * name itself, not decided here.
+ *
+ * Clickability is the one exception, and it's still generic: this
+ * function never checks `event.type` itself — it asks
+ * config/studentEventNavigation.js's getEventDetailRoute() whether
+ * this event has a registered detail screen at all. An event type
+ * with no entry there (every category before Assessment Results, and
+ * any future publisher that never gets its own detail screen) renders
+ * exactly as it always has — a plain, non-interactive notification.
  */
-function renderEventCard(event) {
-  const card = document.createElement('div');
+function renderEventCard(event, onNavigateToEventDetail) {
+  const detail = getEventDetailRoute(event);
+
+  const card = document.createElement(detail ? 'button' : 'div');
   card.className = 'student-event-card';
+  if (detail) {
+    card.type = 'button';
+    card.classList.add('student-event-card--clickable');
+    card.addEventListener('click', () => onNavigateToEventDetail?.(detail.path));
+  }
 
   const tag = document.createElement('span');
   tag.className = `student-event-card__tag student-event-card__tag--${event.category.toLowerCase()}`;
@@ -255,6 +271,13 @@ function renderEventCard(event) {
   time.className = 'student-event-card__time';
   time.textContent = formatDate(event.createdAt);
   card.appendChild(time);
+
+  if (detail) {
+    const cta = document.createElement('span');
+    cta.className = 'student-event-card__cta';
+    cta.textContent = `${detail.ctaLabel} \u2192`;
+    card.appendChild(cta);
+  }
 
   return card;
 }

@@ -33,6 +33,7 @@ import { renderStudentDeviceFlow } from './ui/student-portal/onboarding/StudentD
 import { renderStudentManageProfilesView } from './ui/student-portal/views/StudentManageProfilesView.js';
 import * as studentDeviceService from './services/studentDeviceService.js';
 import { renderStudentJourneyView } from './ui/student-portal/views/StudentJourneyView.js';
+import { renderStudentAssessmentResultsView } from './ui/student-portal/views/StudentAssessmentResultsView.js';
 import { renderStudentTeamView } from './ui/student-portal/views/StudentTeamView.js';
 import { renderStudentAvatarBuilderView } from './ui/student-portal/views/StudentAvatarBuilderView.js';
 import { renderStudentProfileView as renderStudentPortalProfileView } from './ui/student-portal/views/StudentProfileView.js';
@@ -245,8 +246,21 @@ function renderStudentPortalMain(route) {
           onCustomizeAvatar: () => router.navigate('/student/avatar-builder'),
           onManageStudents: () => router.navigate('/student/manage-students'),
         });
+      } else if (route.section === 'assessment-results') {
+        renderStudentAssessmentResultsView(content, {
+          assessmentId: route.param,
+          onBack: () => router.navigate('/student'),
+        });
       } else {
-        renderStudentJourneyView(content, { onSessionInvalid: () => router.navigate('/student') });
+        renderStudentJourneyView(content, {
+          onSessionInvalid: () => router.navigate('/student'),
+          // The generic event-navigation pattern (see
+          // config/studentEventNavigation.js): the view itself never
+          // imports the router — it only ever calls back out with an
+          // already-built path, matching every other view in this app
+          // (onBack, onSelectStudent, etc.).
+          onNavigateToEventDetail: (path) => router.navigate(path),
+        });
       }
     },
   });

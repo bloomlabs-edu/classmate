@@ -7174,3 +7174,87 @@ button.wizard-checklist__row:hover {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
 }
+
+/* Clickable Student Event cards — see
+   ui/student-portal/views/StudentJourneyView.js's renderEventCard()
+   and config/studentEventNavigation.js. */
+.student-event-card--clickable {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  font: inherit;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.student-event-card--clickable:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(184, 99, 26, 0.14);
+}
+.student-event-card__cta {
+  display: block;
+  margin-top: 0.6rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary);
+  font-size: var(--text-sm);
+}
+
+/* Assessment Results — see
+   ui/student-portal/views/StudentAssessmentResultsView.js. Follows
+   the same self-contained ".student-portal"-style visual language as
+   the rest of the Student Portal, not Classroom Tracker's chrome. */
+.student-assessment-results {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem;
+}
+.student-assessment-results__header {
+  margin-bottom: 1rem;
+}
+.student-assessment-results__title {
+  font-size: 1.4rem;
+  font-weight: var(--font-weight-black);
+  margin: 0 0 1rem;
+}
+.student-assessment-results__meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.4rem 1rem;
+  margin: 0 0 1.5rem;
+}
+.student-assessment-results__meta-row {
+  display: contents;
+}
+.student-assessment-results__meta-row dt {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+}
+.student-assessment-results__meta-row dd {
+  margin: 0;
+}
+.student-assessment-results__subjects-heading {
+  font-size: 1.05rem;
+  font-weight: var(--font-weight-black);
+  margin: 0 0 0.75rem;
+}
+.student-assessment-results__subjects-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.student-assessment-results__subject-row {
+  background-color: #ffffff;
+  border-radius: 14px;
+  padding: 0.9rem 1.1rem;
+  box-shadow: 0 4px 16px rgba(184, 99, 26, 0.08);
+}
+.student-assessment-results__subject-name {
+  font-weight: var(--font-weight-bold);
+  margin: 0 0 0.3rem;
+}
+.student-assessment-results__subject-marks {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--color-primary);
+  font-weight: var(--font-weight-bold);
+}

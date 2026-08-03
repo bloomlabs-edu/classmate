@@ -199,8 +199,8 @@ export function publishAssessment(classroom, assessment) {
   studentEventService.publishEventToAllStudents(classroom, {
     type: 'assessment_published',
     category: STUDENT_EVENT_CATEGORIES.ASSESSMENT,
-    title: `\ud83d\udcdd "${assessment.title}" has been published`,
-    message: 'Your results for this assessment are now available.',
+    title: assessment.title,
+    message: 'Your results are now available.',
     payload: { assessmentId: assessment.id },
   });
 

@@ -6,7 +6,10 @@
  *   #/                                        -> Bloom Labs landing page (product picker)
  *   #/teacher                                 -> Classroom Tracker home (or welcome, decided by main.js) — the
  *                                                 existing teacher app's own entry point, unchanged in behavior
- *   #/student/{section?}                      -> Student Portal (journey/team/profile; journey if omitted)
+ *   #/student/{section?}/{param?}              -> Student Portal (journey/team/profile; journey if omitted).
+ *                                                 {param} is generic — a detail screen reachable from a clickable
+ *                                                 event card (see config/studentEventNavigation.js), e.g.
+ *                                                 #/student/assessment-results/{assessmentId}
  *   #/classroom/{id}                          -> dashboard (the classroom's landing page)
  *   #/classroom/{id}/class-mode               -> tracker (today's Class Mode — unchanged, just relocated)
  *   #/classroom/{id}/settings/{section?}      -> settings
@@ -116,7 +119,13 @@ function resolvePathParts(parts) {
 
   if (parts[0] === 'student') {
     const section = parts[1] || 'journey';
-    return { name: 'studentPortal', section };
+    // Generic — a detail screen reachable from an event card (see
+    // config/studentEventNavigation.js) needs one identifier beyond
+    // its section name; `param` is deliberately unnamed (not
+    // `assessmentId`) since this same slot serves every future
+    // clickable event type's own detail screen, not just this one.
+    const param = parts[2] || null;
+    return { name: 'studentPortal', section, param };
   }
 
   if (parts.length === 0) {

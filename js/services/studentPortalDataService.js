@@ -28,6 +28,7 @@ import * as studentDeviceService from './studentDeviceService.js';
 import * as studentService from './studentService.js';
 import * as studentProgressService from './studentProgressService.js';
 import * as studentEventService from './studentEventService.js';
+import * as assessmentService from './assessmentService.js';
 import { getWeekRange } from '../utils/dateHelpers.js';
 import { listRecognitionCategoriesForPeriod } from '../config/recognitionCategories.js';
 
@@ -189,6 +190,56 @@ export async function getEventFeed() {
   console.log('[EventFeedDiagnostic] Events remaining after filtering for this student:', events.length);
 
   return events;
+}
+
+/**
+ * The first implementation of this app's permanent event-navigation
+ * pattern (see ui/student-portal/views/StudentJourneyView.js's own
+ * EVENT_DETAIL_ROUTES header comment for the full shape this
+ * establishes): a StudentEvent's payload carries only an id
+ * (`assessmentId`); this function is what turns that id into the
+ * current student's own view of that Assessment, read fresh from the
+ * live classroom every time it's called — never from the event
+ * itself, which only ever carried a pointer.
+ *
+ * Reuses assessmentService entirely — getAssessmentById(),
+ * getStudentResult(), getSubjectTitle() are the exact same functions
+ * the teacher-side editor (ui/views/AssessmentManagementView.js) and
+ * the importer (services/assessmentImportService.js) already call.
+ * No assessment logic is duplicated here; this is purely a
+ * student-scoped read shaped for this one screen, the same role every
+ * other function in this file already plays for its own screen.
+ *
+ * Returns null (never throws) for a missing profile/classroom/student
+ * — the existing convention — and also for an assessmentId that no
+ * longer resolves to a real Assessment (e.g. deleted after the event
+ * was published), so a stale or broken link degrades to a real empty
+ * state rather than a crash.
+ */
+export async function getAssessmentResultsForCurrentStudent(assessmentId) {
+  const found = await loadCurrentStudentAndClassroom();
+  if (!found) return null;
+
+  const { classroom, student } = found;
+  const assessment = assessmentService.getAssessmentById(classroom, assessmentId);
+  if (!assessment) return null;
+
+  const subjects = assessment.assessmentSubjects.map((assessmentSubject) => {
+    const result = assessmentService.getStudentResult(assessmentSubject, student.id);
+    return {
+      subjectTitle: assessmentService.getSubjectTitle(classroom, assessmentSubject.subjectId),
+      marks: result ? result.marks : null, // null covers both "no result recorded yet" and "recorded but marks itself is null" identically — both mean "not yet published" to the student
+      maximumMarks: assessmentSubject.maximumMarks,
+    };
+  });
+
+  return {
+    title: assessment.title,
+    type: assessment.type,
+    date: assessment.date,
+    academicYear: assessment.academicYear,
+    subjects,
+  };
 }
 
 export async function getTeamSummary() {
