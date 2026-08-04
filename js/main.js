@@ -32,6 +32,7 @@ import { renderStudentPortalShell } from './ui/student-portal/StudentPortalShell
 import { renderStudentDeviceFlow } from './ui/student-portal/onboarding/StudentDeviceFlow.js';
 import { renderStudentManageProfilesView } from './ui/student-portal/views/StudentManageProfilesView.js';
 import * as studentDeviceService from './services/studentDeviceService.js';
+import * as studentPortalDataService from './services/studentPortalDataService.js';
 import { renderStudentJourneyView } from './ui/student-portal/views/StudentJourneyView.js';
 import { renderStudentAssessmentResultsView } from './ui/student-portal/views/StudentAssessmentResultsView.js';
 import { renderStudentGoalTrackerView } from './ui/student-portal/views/StudentGoalTrackerView.js';
@@ -228,7 +229,10 @@ function renderStudentPortalMain(route) {
   renderStudentPortalShell(appContainer, {
     activeSection: route.section,
     onNavigateSection: (section) => router.navigate(`/student/${section}`),
-    onBackToLanding: () => router.navigate('/'),
+    onBackToLanding: () => {
+      studentPortalDataService.stopClassroomSubscription();
+      router.navigate('/');
+    },
     renderSectionContent: (content) => {
       if (route.section === 'team') {
         renderStudentTeamView(content);
@@ -292,8 +296,28 @@ function renderRoute(route, reason = 'unspecified') {
   if (route.name === 'studentPortal') {
     userBarContainer.innerHTML = '';
 
+    // Milestone 2 — the Student Portal's own single, permanent live
+    // classroom subscription (see
+    // services/studentPortalDataService.js's own header comment for
+    // the full architecture). Once the device flow has resolved once
+    // this session and the subscription is live, a snapshot update
+    // re-runs renderRoute() and lands back here — skip re-running
+    // device/onboarding resolution entirely and go straight to the
+    // main portal render, which is the only thing that actually needs
+    // to happen on every subsequent snapshot.
+    const activeProfile = studentDeviceService.getActiveProfile();
+    if (activeProfile && studentPortalDataService.isClassroomSubscribed(activeProfile.classroomId)) {
+      renderStudentPortalMain(route);
+      return;
+    }
+
     renderStudentDeviceFlow(appContainer, {
-      onResolved: () => renderStudentPortalMain(route),
+      onResolved: async (studentRef) => {
+        await studentPortalDataService.startClassroomSubscription(studentRef.classroomId, () => {
+          renderRoute(router.getCurrentRoute(), 'student-portal-live-update');
+        });
+        renderStudentPortalMain(route);
+      },
     });
     return;
   }

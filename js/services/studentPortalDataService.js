@@ -24,6 +24,7 @@
  */
 
 import * as workspaceService from './workspaceService.js';
+import { firestoreClassroomRepository as repository } from '../repositories/firestoreClassroomRepository.js';
 import * as studentDeviceService from './studentDeviceService.js';
 import * as studentService from './studentService.js';
 import * as studentProgressService from './studentProgressService.js';
@@ -34,6 +35,64 @@ import * as goalCompletionService from './goalCompletionService.js';
 import * as goalStatisticsService from './goalStatisticsService.js';
 import { getWeekRange } from '../utils/dateHelpers.js';
 import { listRecognitionCategoriesForPeriod } from '../config/recognitionCategories.js';
+
+/**
+ * The Student Portal's own single, permanent live classroom
+ * subscription (see Milestone 2's own architecture note: one live
+ * subscription, owned once, every page a pure consumer of it —
+ * mirrors workspaceService.js's own module-level
+ * classroomSubscriptions pattern for the teacher side, since the
+ * Student Portal's own shell is torn down and rebuilt on every
+ * navigation and can never itself hold a subscription that survives
+ * across renders). `liveClassroom` is the latest known snapshot for
+ * `subscribedClassroomId`; `null` means the document doesn't exist (or
+ * this device lost access to it), matching
+ * repository.subscribeToClassroom()'s own contract.
+ */
+let subscribedClassroomId = null;
+let liveClassroom = null;
+let unsubscribeFromLiveClassroom = null;
+let onLiveUpdateCallback = null;
+
+/**
+ * Starts (or reuses) the live subscription for `classroomId` — a
+ * no-op if already subscribed to this exact classroom (idempotent, so
+ * every navigation within the portal can safely call this without
+ * ever creating a second listener). Resolves once the first real
+ * snapshot has arrived, so a caller never renders before live data
+ * actually exists; every snapshot after the first calls `onUpdate`
+ * directly, mirroring how the teacher side's own onChange callback
+ * already triggers a renderRoute() re-run on every classroom update.
+ */
+export function startClassroomSubscription(classroomId, onUpdate) {
+  onLiveUpdateCallback = onUpdate;
+
+  if (subscribedClassroomId === classroomId) return Promise.resolve();
+
+  stopClassroomSubscription();
+  subscribedClassroomId = classroomId;
+
+  return new Promise((resolve) => {
+    let isFirstSnapshot = true;
+    unsubscribeFromLiveClassroom = repository.subscribeToClassroom(classroomId, (classroomData) => {
+      liveClassroom = classroomData;
+      if (isFirstSnapshot) {
+        isFirstSnapshot = false;
+        resolve();
+      } else {
+        onLiveUpdateCallback?.();
+      }
+    });
+  });
+}
+
+/** Tears down the live subscription entirely — called when leaving the Student Portal (back to landing) or switching to a different device profile, so no listener keeps firing after nothing is looking at it. */
+export function stopClassroomSubscription() {
+  unsubscribeFromLiveClassroom?.();
+  unsubscribeFromLiveClassroom = null;
+  subscribedClassroomId = null;
+  liveClassroom = null;
+}
 
 /**
  * Resolves the classroom/student/team for a given student profile
@@ -54,7 +113,22 @@ import { listRecognitionCategoriesForPeriod } from '../config/recognitionCategor
 export async function loadCurrentStudentAndClassroom(profile = studentDeviceService.getActiveProfile()) {
   if (!profile) return null;
 
-  const classroom = await workspaceService.getClassroomOnce(profile.classroomId);
+  // Use the live, subscribed snapshot only when resolving the
+  // device's own currently-active profile — compared by value
+  // (classroomId + studentId), never by reference, since
+  // getActiveProfile() parses localStorage fresh on every call and
+  // never returns the same object twice. Any other profile (e.g.
+  // StudentDeviceFlow.js validating a profile that isn't active yet)
+  // still gets a genuine fresh read, since the live subscription is
+  // only ever scoped to one classroom at a time.
+  const activeProfile = studentDeviceService.getActiveProfile();
+  const isActiveProfile =
+    activeProfile && activeProfile.classroomId === profile.classroomId && activeProfile.studentId === profile.studentId;
+
+  const classroom =
+    isActiveProfile && subscribedClassroomId === profile.classroomId
+      ? liveClassroom
+      : await workspaceService.getClassroomOnce(profile.classroomId);
   if (!classroom) return null;
 
   const found = studentService.findStudentInClassroom(classroom, profile.studentId);
@@ -316,6 +390,11 @@ export async function setGoalCompletionForCurrentStudent(goalId, dateKey, comple
   goalCompletionService.setCompletion(cycle, goalId, dateKey, completed);
   workspaceService.save(found.classroom);
   return true;
+}
+
+/** Whether the live subscription is already active for this exact classroom — lets a caller (main.js) skip re-running onboarding/device-resolution logic on a snapshot-triggered re-render, going straight to the main portal render instead. */
+export function isClassroomSubscribed(classroomId) {
+  return subscribedClassroomId === classroomId;
 }
 
 export async function getTeamSummary() {

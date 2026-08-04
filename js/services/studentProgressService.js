@@ -83,7 +83,17 @@ function getAllStudentsWithTeams(classroom) {
 }
 
 /** Standard competition ranking (ties share a rank; the next distinct value skips accordingly). Mutates and returns the sorted array. */
-function rankDescending(entries, valueKey) {
+/**
+ * Sorts descending by `valueKey`, assigning shared ranks for ties
+ * (1, 1, 3, 4 — never 1, 1, 2, 3) — the standard competition-ranking
+ * convention this app uses everywhere entities get ranked. Exported so
+ * services/teamStatisticsService.js can reuse this exact logic for
+ * all-time, net-score ranking rather than duplicating it — this
+ * function itself has no opinion about what "value" means; callers
+ * decide whether that's positive-only stars in a date range (this
+ * file's own use) or net, all-time score (teamStatisticsService.js's).
+ */
+export function rankDescending(entries, valueKey) {
   const sorted = [...entries].sort((a, b) => b[valueKey] - a[valueKey]);
 
   let rank = 0;

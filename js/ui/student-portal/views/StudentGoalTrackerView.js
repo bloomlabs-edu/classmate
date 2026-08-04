@@ -71,6 +71,19 @@ function render(container, cycle, handlers) {
   dates.textContent = `${cycle.startDate} \u2192 ${cycle.endDate}`;
   wrapper.appendChild(dates);
 
+  if (cycle.categories.length === 0) {
+    // A cycle can genuinely exist with zero categories yet — the
+    // teacher creates the cycle and adds categories as two separate
+    // steps in ui/views/GoalManagementView.js. Without this, the
+    // student sees nothing at all below the dates, with no way to
+    // know anything is missing.
+    wrapper.appendChild(
+      createEmptyStateElement({ message: 'Your teacher hasn\u2019t added any categories to this cycle yet. Check back soon.' })
+    );
+    container.appendChild(wrapper);
+    return;
+  }
+
   cycle.categories.forEach((category) => {
     wrapper.appendChild(renderCategoryCard(category, handlers));
   });
