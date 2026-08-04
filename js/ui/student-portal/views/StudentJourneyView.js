@@ -37,7 +37,7 @@ import { createEmptyStateElement } from '../../components/EmptyState.js';
 import { formatDate } from '../../../utils/dateHelpers.js';
 import { getEventDetailRoute } from '../../../config/studentEventNavigation.js';
 
-export async function renderStudentJourneyView(container, { onSessionInvalid, onNavigateToEventDetail } = {}) {
+export async function renderStudentJourneyView(container, { onSessionInvalid, onNavigateToEventDetail, onNavigateToGoals } = {}) {
   container.innerHTML = '';
 
   const [summary, eventFeed] = await Promise.all([
@@ -99,6 +99,20 @@ export async function renderStudentJourneyView(container, { onSessionInvalid, on
     'Participate in class. Your teacher awards stars for effort, teamwork, curiosity, and responsibility.';
   goal.append(goalTitle, goalBody);
   wrapper.appendChild(goal);
+
+  // "My Goals" — Goals Phase 1's own entry point into
+  // StudentGoalTrackerView.js. Always shown (not conditional on a
+  // cycle actually existing) so a student always knows where to look;
+  // that view's own empty state handles "no active cycle yet"
+  // gracefully if they tap through before one exists.
+  if (onNavigateToGoals) {
+    const goalsLink = document.createElement('button');
+    goalsLink.type = 'button';
+    goalsLink.className = 'student-home__goals-link';
+    goalsLink.textContent = '\ud83c\udfaf My Goals \u2192';
+    goalsLink.addEventListener('click', onNavigateToGoals);
+    wrapper.appendChild(goalsLink);
+  }
 
   // Compact Progress Summary — one line, not a re-statement of every
   // module below in full-card form. Only includes a clause once

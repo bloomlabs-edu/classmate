@@ -7304,3 +7304,153 @@ button.wizard-checklist__row:hover {
   color: var(--color-primary);
   font-weight: var(--font-weight-bold);
 }
+
+/* Goal Dashboard table — see ui/views/GoalDashboardView.js */
+.goal-dashboard-table {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.goal-dashboard-table__row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background-color: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+  border: none;
+  font: inherit;
+  text-align: left;
+  width: 100%;
+}
+.goal-dashboard-table__row--header {
+  background: none;
+  box-shadow: none;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+  padding: 0 1rem;
+}
+.goal-dashboard-table__row--clickable {
+  cursor: pointer;
+}
+.goal-dashboard-table__row--clickable:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+/* "My Goals" navigation card — see
+   ui/student-portal/views/StudentJourneyView.js */
+.student-home__goals-link {
+  display: block;
+  width: 100%;
+  background-color: #ffffff;
+  border: none;
+  border-radius: 16px;
+  padding: 1rem 1.25rem;
+  margin-top: 0.75rem;
+  text-align: left;
+  font-size: 1rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary);
+  box-shadow: 0 4px 16px rgba(184, 99, 26, 0.08);
+  cursor: pointer;
+}
+
+/* Student Goal Tracker — see
+   ui/student-portal/views/StudentGoalTrackerView.js. Follows the same
+   self-contained visual language as the rest of the Student Portal. */
+.student-goal-tracker {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem;
+}
+.student-goal-tracker__header {
+  margin-bottom: 1rem;
+}
+.student-goal-tracker__title {
+  font-size: 1.4rem;
+  font-weight: var(--font-weight-black);
+  margin: 0 0 0.25rem;
+}
+.student-goal-tracker__dates {
+  color: var(--color-muted);
+  margin: 0 0 1.5rem;
+}
+.student-goal-card {
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 4px 16px rgba(184, 99, 26, 0.08);
+}
+.student-goal-card__category {
+  font-size: 1.1rem;
+  font-weight: var(--font-weight-black);
+  margin: 0 0 0.6rem;
+}
+.student-goal-card__notice {
+  font-size: var(--text-sm);
+  color: var(--color-warning);
+  margin: 0 0 0.6rem;
+}
+.student-goal-card__text {
+  font-size: 1.05rem;
+  font-style: italic;
+  color: var(--color-ink);
+  margin: 0 0 0.85rem;
+}
+.student-goal-card__toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-weight: var(--font-weight-bold);
+  margin-bottom: 0.9rem;
+  cursor: pointer;
+}
+.student-goal-card__toggle input[type='checkbox'] {
+  width: 22px;
+  height: 22px;
+  cursor: pointer;
+}
+.student-goal-card__stats {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.student-goal-card__stat-chip {
+  flex: 1;
+  min-width: 90px;
+  background-color: color-mix(in srgb, var(--color-primary) 6%, white);
+  border-radius: 10px;
+  padding: 0.5rem 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.student-goal-card__stat-label {
+  font-size: 0.7rem;
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--color-muted);
+}
+.student-goal-card__stat-value {
+  font-size: 1.05rem;
+  font-weight: var(--font-weight-black);
+  color: var(--color-primary);
+}
+.student-goal-card__entry {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.student-goal-card__input {
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font: inherit;
+  min-height: 70px;
+  resize: vertical;
+}

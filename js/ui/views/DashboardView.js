@@ -74,6 +74,7 @@ import { renderLearningManagementView } from './LearningManagementView.js';
 import { renderClassroomManagementView } from './ClassroomManagementView.js';
 import { renderCurriculumManagementView } from './CurriculumManagementView.js';
 import { renderAssessmentManagementView } from './AssessmentManagementView.js';
+import { renderGoalManagementView } from './GoalManagementView.js';
 import { logViewMounted } from '../../services/persistenceLogger.js';
 
 export function renderDashboardView(container, props) {
@@ -128,6 +129,13 @@ export function renderDashboardView(container, props) {
 
   function openAssessmentManagement() {
     renderAssessmentManagementView(container, {
+      classroom,
+      onBack: () => renderDashboardView(container, props),
+    });
+  }
+
+  function openGoalManagement() {
+    renderGoalManagementView(container, {
       classroom,
       onBack: () => renderDashboardView(container, props),
     });
@@ -209,6 +217,7 @@ export function renderDashboardView(container, props) {
       onOpenClassroomManagement: openClassroomManagement,
       onOpenLearningManagement: openLearningManagement,
       onOpenAssessmentManagement: openAssessmentManagement,
+      onOpenGoalManagement: openGoalManagement,
     })
   );
 
@@ -345,9 +354,17 @@ const DASHBOARD_MODULES = [
     tier: 'setup',
     accentColor: '#5B6B8C', // a new, restrained slate-indigo, verified at 5.35:1 against white — formal without reading as plain neutral gray
   },
+  {
+    id: 'goals',
+    title: 'Goals',
+    icon: 'check-circle-2',
+    description: 'Track student goals and streaks',
+    tier: 'daily',
+    accentColor: '#A8541A', // warm terracotta/amber, verified at 5.32:1 against white — distinct from Classroom (teal)/Learning (purple)/Assessments (slate-indigo), fitting for a growth/progress-themed module
+  },
 ];
 
-function renderPrimaryModulesSection({ onStartClassMode, onOpenClassroomManagement, onOpenLearningManagement, onOpenAssessmentManagement }) {
+function renderPrimaryModulesSection({ onStartClassMode, onOpenClassroomManagement, onOpenLearningManagement, onOpenAssessmentManagement, onOpenGoalManagement }) {
   const section = document.createElement('div');
   section.className = 'primary-modules';
 
@@ -358,6 +375,7 @@ function renderPrimaryModulesSection({ onStartClassMode, onOpenClassroomManageme
     classroom: onOpenClassroomManagement,
     learning: onOpenLearningManagement,
     assessments: onOpenAssessmentManagement,
+    goals: onOpenGoalManagement,
   };
 
   DASHBOARD_MODULES.forEach((module) => {

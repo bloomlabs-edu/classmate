@@ -29,6 +29,9 @@ import * as studentService from './studentService.js';
 import * as studentProgressService from './studentProgressService.js';
 import * as studentEventService from './studentEventService.js';
 import * as assessmentService from './assessmentService.js';
+import * as goalService from './goalService.js';
+import * as goalCompletionService from './goalCompletionService.js';
+import * as goalStatisticsService from './goalStatisticsService.js';
 import { getWeekRange } from '../utils/dateHelpers.js';
 import { listRecognitionCategoriesForPeriod } from '../config/recognitionCategories.js';
 
@@ -241,6 +244,78 @@ export async function getAssessmentResultsForCurrentStudent(assessmentId) {
     academicYear: assessment.academicYear,
     subjects,
   };
+}
+
+/**
+ * One student's own view of the active Goal Cycle — every category,
+ * whether they have a goal for it yet (and its own approval status
+ * and, once approved, its own live statistics), or null if they don't.
+ * Reuses goalService/goalStatisticsService entirely; this function
+ * only shapes their combined output for this one screen, the same
+ * role every other function in this file already plays.
+ */
+export async function getGoalCycleForCurrentStudent() {
+  const found = await loadCurrentStudentAndClassroom();
+  if (!found) return null;
+
+  const cycle = goalService.getActiveCycle(found.classroom);
+  if (!cycle) return null;
+
+  const categories = goalService.listCategories(cycle).map((category) => {
+    const goal = goalService.getGoalForStudent(cycle, category.id, found.student.id);
+    return {
+      categoryId: category.id,
+      categoryName: category.name,
+      goal: goal
+        ? {
+            id: goal.id,
+            text: goal.text,
+            status: goal.status,
+            completedToday: goalStatisticsService.isCompletedToday(cycle, goal.id),
+            currentStreak: goalStatisticsService.getCurrentStreak(cycle, goal.id),
+            longestStreak: goalStatisticsService.getLongestStreak(cycle, goal.id),
+            weeklyCompletionPercent: goalStatisticsService.getWeeklyCompletionPercent(cycle, goal.id),
+            overallCompletionPercent: goalStatisticsService.getOverallCompletionPercent(cycle, goal.id),
+          }
+        : null,
+    };
+  });
+
+  return {
+    cycleId: cycle.id,
+    cycleTitle: cycle.title,
+    startDate: cycle.startDate,
+    endDate: cycle.endDate,
+    categories,
+  };
+}
+
+/** Creates or updates this student's own pending goal for one category — refuses silently (returns false) if that goal is already approved, matching goalService.submitGoal()'s own "cannot edit once approved" rule. */
+export async function submitGoalForCurrentStudent(categoryId, text) {
+  const found = await loadCurrentStudentAndClassroom();
+  if (!found) return false;
+
+  const cycle = goalService.getActiveCycle(found.classroom);
+  if (!cycle) return false;
+
+  const result = goalService.submitGoal(cycle, categoryId, found.student.id, text);
+  if (!result) return false;
+
+  workspaceService.save(found.classroom);
+  return true;
+}
+
+/** Ticks or unticks one day's completion for one of this student's own approved goals. */
+export async function setGoalCompletionForCurrentStudent(goalId, dateKey, completed) {
+  const found = await loadCurrentStudentAndClassroom();
+  if (!found) return false;
+
+  const cycle = goalService.getActiveCycle(found.classroom);
+  if (!cycle) return false;
+
+  goalCompletionService.setCompletion(cycle, goalId, dateKey, completed);
+  workspaceService.save(found.classroom);
+  return true;
 }
 
 export async function getTeamSummary() {

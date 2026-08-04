@@ -34,6 +34,7 @@ import { renderStudentManageProfilesView } from './ui/student-portal/views/Stude
 import * as studentDeviceService from './services/studentDeviceService.js';
 import { renderStudentJourneyView } from './ui/student-portal/views/StudentJourneyView.js';
 import { renderStudentAssessmentResultsView } from './ui/student-portal/views/StudentAssessmentResultsView.js';
+import { renderStudentGoalTrackerView } from './ui/student-portal/views/StudentGoalTrackerView.js';
 import { renderStudentTeamView } from './ui/student-portal/views/StudentTeamView.js';
 import { renderStudentAvatarBuilderView } from './ui/student-portal/views/StudentAvatarBuilderView.js';
 import { renderStudentProfileView as renderStudentPortalProfileView } from './ui/student-portal/views/StudentProfileView.js';
@@ -251,6 +252,10 @@ function renderStudentPortalMain(route) {
           assessmentId: route.param,
           onBack: () => router.navigate('/student'),
         });
+      } else if (route.section === 'goals') {
+        renderStudentGoalTrackerView(content, {
+          onBack: () => router.navigate('/student'),
+        });
       } else {
         renderStudentJourneyView(content, {
           onSessionInvalid: () => router.navigate('/student'),
@@ -260,6 +265,7 @@ function renderStudentPortalMain(route) {
           // already-built path, matching every other view in this app
           // (onBack, onSelectStudent, etc.).
           onNavigateToEventDetail: (path) => router.navigate(path),
+          onNavigateToGoals: () => router.navigate('/student/goals'),
         });
       }
     },
