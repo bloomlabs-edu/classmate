@@ -1,11 +1,18 @@
 /**
  * ui/student-portal/views/StudentJourneyView.js
  *
- * "Journey" — replaces the old separate Home and Achievements tabs
- * (see this project's CHANGELOG for the navigation-simplification
- * decision). One screen answering "how am I doing?", in order:
- * welcome, today's goal, a compact progress summary, the Stars/Streak
- * modules, then the Student Event Feed ("Your Updates").
+ * "Journey" — the Student Portal's own landing page. In order: the
+ * shared Classroom Standings board (see
+ * ui/components/ClassroomStandingsBoard.js), welcome, today's goal,
+ * "My Goals," a compact progress summary, the Stars/Streak modules,
+ * then the Student Event Feed ("Your Updates").
+ *
+ * Standings lead the page per explicit product decision: "the
+ * classroom competition is the heartbeat of the Student Portal...
+ * personal progress exists to improve those standings" — the same
+ * philosophy a sports broadcast opens with the table, not an
+ * individual's own stats. Everything below the board is,
+ * structurally, motivation toward improving it.
  *
  * "Your Updates" replaces what used to be two separate, static
  * sections here — Recognition Wall (computed weekly categories) and
@@ -20,29 +27,31 @@
  * since every card here reads only category/title/message/createdAt —
  * nothing type-specific.
  *
- * "My Team" deliberately does NOT appear here — Team now has its own
- * full page (see StudentTeamView.js) and owns all team-related
- * content; repeating a team teaser here would be the same kind of
- * duplication this merge was meant to remove.
+ * The Team tab still exists as its own destination — for now, also
+ * rendering this exact same shared standings component (never a
+ * copy), pending the full team-browsing/public-profile drill-down
+ * experience it's meant to grow into.
  *
  * All data comes from studentPortalDataService.js; this view only
  * decides what to show and how to phrase it, never fetches anything
  * itself.
  */
 
-import { getHomeSummary, getEventFeed } from '../../../services/studentPortalDataService.js';
+import { getHomeSummary, getEventFeed, loadCurrentStudentAndClassroom } from '../../../services/studentPortalDataService.js';
 import * as studentDeviceService from '../../../services/studentDeviceService.js';
 import { createAvatarElement } from '../../components/AvatarDisplay.js';
 import { createEmptyStateElement } from '../../components/EmptyState.js';
+import { createClassroomStandingsBoardElement } from '../../components/ClassroomStandingsBoard.js';
 import { formatDate } from '../../../utils/dateHelpers.js';
 import { getEventDetailRoute } from '../../../config/studentEventNavigation.js';
 
 export async function renderStudentJourneyView(container, { onSessionInvalid, onNavigateToEventDetail, onNavigateToGoals } = {}) {
   container.innerHTML = '';
 
-  const [summary, eventFeed] = await Promise.all([
+  const [summary, eventFeed, found] = await Promise.all([
     getHomeSummary(),
     getEventFeed(),
+    loadCurrentStudentAndClassroom(),
   ]);
 
   const wrapper = document.createElement('div');
@@ -73,6 +82,18 @@ export async function renderStudentJourneyView(container, { onSessionInvalid, on
   }
 
   const hasAnyActivity = summary.starsThisWeek > 0 || summary.journeyStreak > 0 || summary.recognitionCount > 0 || eventFeed.length > 0;
+
+  // Classroom Standings — the very first thing a student sees, per
+  // explicit product decision: "the classroom competition is the
+  // heartbeat of the Student Portal... personal progress exists to
+  // improve those standings." The exact same shared component
+  // ui/views/DashboardView.js (teacher side) and
+  // StudentTeamView.js's own Team tab already render — never a copy;
+  // see ui/components/ClassroomStandingsBoard.js's own header comment
+  // for why there is only ever one implementation.
+  if (found) {
+    wrapper.appendChild(createClassroomStandingsBoardElement({ classroom: found.classroom }));
+  }
 
   // Welcome
   const greetingRow = document.createElement('div');
