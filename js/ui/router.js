@@ -18,9 +18,8 @@
  *   #/classroom/{id}/activities               -> learning activities list
  *   #/classroom/{id}/activities/{activityId}  -> one activity's roster
  *   #/classroom/{id}/notebooks                                       -> notebook tracker list (Subject × Notebook Type)
- *   #/classroom/{id}/work-requests/{requestId}                        -> WorkRequest checking roster (one tap per student, minimal navigation from Pending Tasks)
- *   #/classroom/{id}/notebooks/{subjectId}/{typeId}/{dateKey?}        -> register view (today if dateKey omitted)
- *   #/classroom/{id}/notebooks/{subjectId}/{typeId}/timeline/{yearMonth?} -> timeline view (current month if omitted)
+ *   #/classroom/{id}/work-requests/{requestId}                        -> WorkRequest checking + inline history, one page (see WorkRequestRosterView.js) — no separate Timeline route exists anymore
+ *   #/classroom/{id}/notebooks/{subjectId}/{typeId}                  -> create a new WorkRequest (only reached when none is currently open for this Subject x Notebook Type)
  *   #/classroom/{id}/recognition/{period?}/{categoryId?}     -> recognition screen (defaults resolved by the view itself)
  *   #/classroom/{id}/diagnostics               -> TEMPORARY Teacher Diagnostics screen (see
  *                                                 ui/views/TeacherDiagnosticsView.js's own header comment)
@@ -95,10 +94,14 @@ function resolvePathParts(parts) {
       if (!subjectId || !notebookTypeId) {
         return { name: 'notebookTracker', classroomId: parts[1] };
       }
-      if (parts[5] === 'timeline') {
-        return { name: 'notebookTimeline', classroomId: parts[1], subjectId, notebookTypeId, yearMonth: parts[6] || null };
-      }
-      return { name: 'notebookRegister', classroomId: parts[1], subjectId, notebookTypeId, dateKey: parts[5] || null };
+      // 'new' is the only sub-route left here — creating a WorkRequest
+      // when none is currently open for this Subject x Notebook Type
+      // (see ui/views/WorkRequestCreateView.js). The old date-based
+      // register and Timeline routes are retired entirely: checking
+      // and history both live on one WorkRequest roster screen now
+      // (see ui/views/WorkRequestRosterView.js) — there is no longer
+      // a route shape that needs a dateKey or yearMonth segment at all.
+      return { name: 'workRequestCreate', classroomId: parts[1], subjectId, notebookTypeId };
     }
     // TEMPORARY — see ui/views/TeacherDiagnosticsView.js's own header
     // comment for why this exists and when it should be removed.

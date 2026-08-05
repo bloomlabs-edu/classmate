@@ -20,7 +20,6 @@ import * as workspaceService from './services/workspaceService.js';
 import { logPersistenceEvent } from './services/persistenceLogger.js';
 import * as curriculumLibraryService from './services/curriculumLibraryService.js';
 import * as authService from './services/authService.js';
-import * as continueWorkingService from './services/continueWorkingService.js';
 import * as accentColorService from './services/accentColorService.js';
 import * as classSessionService from './services/classSessionService.js';
 import * as accentColorPreferenceService from './services/accentColorPreferenceService.js';
@@ -53,8 +52,8 @@ import { renderStudentAccessView } from './ui/views/StudentAccessView.js';
 import { renderActivitiesListView, renderActivityRosterView } from './ui/views/ActivitiesView.js';
 import { renderWorkRequestRosterView } from './ui/views/WorkRequestRosterView.js';
 import { renderNotebookTrackerView } from './ui/views/NotebookTrackerView.js';
-import { renderNotebookRegisterView } from './ui/views/NotebookRegisterView.js';
-import { renderNotebookTimelineView } from './ui/views/NotebookTimelineView.js';
+import { renderWorkRequestCreateView } from './ui/views/WorkRequestCreateView.js';
+import * as workRequestService from './services/workRequestService.js';
 import { renderDashboardView } from './ui/views/DashboardView.js';
 import { renderRecognitionScreenView } from './ui/views/RecognitionScreenView.js';
 import { renderLoginView } from './ui/views/LoginView.js';
@@ -213,8 +212,7 @@ const CLASSROOM_ROUTE_NAMES = [
   'activityRoster',
   'workRequestRoster',
   'notebookTracker',
-  'notebookRegister',
-  'notebookTimeline',
+  'workRequestCreate',
   'diagnostics', // TEMPORARY — see ui/views/TeacherDiagnosticsView.js's own header comment
 ];
 
@@ -504,35 +502,22 @@ function renderRoute(route, reason = 'unspecified') {
       renderNotebookTrackerView(appContainer, {
         classroom,
         onBack: () => router.navigate(`/classroom/${classroom.id}`),
-        onSelectNotebook: (subjectId, notebookTypeId) =>
-          router.navigate(`/classroom/${classroom.id}/notebooks/${subjectId}/${notebookTypeId}`),
+        onSelectNotebook: (subjectId, notebookTypeId) => {
+          const activeRequest = workRequestService.getActiveWorkRequest(classroom, { type: 'notebook', subjectId, notebookTypeId });
+          if (activeRequest) {
+            router.navigate(`/classroom/${classroom.id}/work-requests/${activeRequest.id}`);
+          } else {
+            router.navigate(`/classroom/${classroom.id}/notebooks/${subjectId}/${notebookTypeId}`);
+          }
+        },
       });
-    } else if (route.name === 'notebookRegister') {
-      continueWorkingService.recordRecentNotebook(currentUser?.uid, {
-        classroomId: classroom.id,
-        subjectId: route.subjectId,
-        notebookTypeId: route.notebookTypeId,
-      });
-      renderNotebookRegisterView(appContainer, {
+    } else if (route.name === 'workRequestCreate') {
+      renderWorkRequestCreateView(appContainer, {
         classroom,
         subjectId: route.subjectId,
         notebookTypeId: route.notebookTypeId,
-        dateKey: route.dateKey,
-        currentUser,
         onBack: () => router.navigate(`/classroom/${classroom.id}/notebooks`),
-        onNavigateDate: (dateKey) =>
-          router.navigate(`/classroom/${classroom.id}/notebooks/${route.subjectId}/${route.notebookTypeId}/${dateKey}`),
-        onOpenTimeline: () =>
-          router.navigate(`/classroom/${classroom.id}/notebooks/${route.subjectId}/${route.notebookTypeId}/timeline`),
-        onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
-      });
-    } else {
-      renderNotebookTimelineView(appContainer, {
-        classroom,
-        subjectId: route.subjectId,
-        notebookTypeId: route.notebookTypeId,
-        onBack: () => router.navigate(`/classroom/${classroom.id}/notebooks/${route.subjectId}/${route.notebookTypeId}`),
-        onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
+        onCreated: (requestId) => router.navigate(`/classroom/${classroom.id}/work-requests/${requestId}`),
       });
     }
     return;

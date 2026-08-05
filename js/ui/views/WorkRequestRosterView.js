@@ -1,31 +1,42 @@
 /**
  * ui/views/WorkRequestRosterView.js
  *
- * The teacher checking workflow, Milestone 2's own focus — reaching
- * this screen and advancing a student's entry should take as few
- * taps as possible, per explicit product decision. One primary
- * button per row advances the happy path
- * (services/workRequestService.js's own advanceStatus()) — its
- * label, color, and icon all driven by the entry's current status,
- * mirroring the same "state drives appearance" pattern
+ * The teacher checking workflow — one page, per explicit product
+ * decision: current lifecycle status AND lifecycle history both live
+ * here, so there is never a reason to navigate to a separate Timeline
+ * screen for the same WorkRequest. The old Notebook Tracker's
+ * Timeline page existed only because the previous day-by-day
+ * register had no other way to answer "what happened over time" —
+ * a WorkRequestEntry already carries its own answer
+ * (services/workRequestService.js's getEntryHistory()), so that
+ * separate page is retired entirely, not just no-longer-linked-to.
+ *
+ * One primary button per row advances the happy path
+ * (workRequestService.js's own advanceStatus()) — its label, color,
+ * and icon all driven by the entry's current status, mirroring the
+ * same "state drives appearance" pattern
  * ui/views/GoalDashboardView.js's own status column already uses.
+ * "Needs Correction" is the one distinct, secondary action, and only
+ * appears when the entry's own status makes it meaningful.
  *
- * A "Needs Correction" control appears only as a distinct, secondary
- * action, and only when the entry's own status makes it meaningful
- * (submitted/resubmitted) — per explicit product decision not to
- * make the exceptional case share the primary tap target with the
- * common workflow.
- *
- * Once an entry reaches 'reviewed' — the true terminal state (see
- * workRequestService.js's own getNextStatus(), which returns null for
- * it) — no button renders at all for that row, not a disabled one;
- * there's nothing further for the primary workflow to do here.
+ * A colored dot (\ud83d\udfe2/\ud83d\udfe1/\ud83d\udd34) communicates where a notebook
+ * currently sits without needing to open anything — tapping a row
+ * expands its own full history inline, in place, never navigating
+ * away. Once an entry reaches 'reviewed' (the true terminal state —
+ * see workRequestService.js's own getNextStatus(), which returns null
+ * for it), no button renders at all for that row, not a disabled one.
  *
  * Every row uses ui/components/StudentNameElement.js — the canonical
- * student identity component, not a bespoke rendering — clicking a
- * name opens the teacher-facing, private profile
- * (ui/views/StudentProfileView.js), correct for this teacher-side
- * screen (a Student Portal caller would open the public one instead).
+ * student identity component (avatar, bucket color, name primary,
+ * team secondary, consistent click behavior) — never a bespoke
+ * rendering. Clicking a name opens the teacher-facing, private
+ * profile (ui/views/StudentProfileView.js), correct for this
+ * teacher-side screen.
+ *
+ * The old Submission/Completion dropdown controls
+ * (ui/components/NotebookRoster.js) never appear anywhere on this
+ * page — they belong to the retired NotebookSubmission model, not
+ * this one.
  */
 
 import * as workRequestService from '../../services/workRequestService.js';
@@ -33,6 +44,7 @@ import * as notebookConfigService from '../../services/notebookConfigService.js'
 import { createStudentNameElement } from '../components/StudentNameElement.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
+import { formatDate } from '../../utils/dateHelpers.js';
 
 const STATUS_BUTTON = {
   assigned: { label: 'Mark Submitted', className: 'btn--secondary' },
@@ -49,9 +61,23 @@ const STATUS_LABEL = {
   reviewed: 'Reviewed',
 };
 
+// Communicates where a notebook sits at a glance, per explicit
+// product decision — green once genuine forward progress has been
+// made (submitted, or fully reviewed), amber while a correction is
+// outstanding, red while nothing has happened yet.
+const STATUS_DOT = {
+  assigned: '\ud83d\udd34',
+  submitted: '\ud83d\udfe2',
+  needs_correction: '\ud83d\udfe1',
+  resubmitted: '\ud83d\udfe2',
+  reviewed: '\ud83d\udfe2',
+};
+
 export function renderWorkRequestRosterView(container, { classroom, requestId, onBack, onSelectStudent }) {
+  const expandedStudentIds = new Set();
+
   function rerender() {
-    render(container, classroom, requestId, { onBack, onSelectStudent, onAdvance, onMarkNeedsCorrection });
+    render(container, classroom, requestId, expandedStudentIds, { onBack, onSelectStudent, onAdvance, onMarkNeedsCorrection, onToggleExpand });
   }
 
   function onAdvance(studentId) {
@@ -66,10 +92,16 @@ export function renderWorkRequestRosterView(container, { classroom, requestId, o
     rerender();
   }
 
+  function onToggleExpand(studentId) {
+    if (expandedStudentIds.has(studentId)) expandedStudentIds.delete(studentId);
+    else expandedStudentIds.add(studentId);
+    rerender();
+  }
+
   rerender();
 }
 
-function render(container, classroom, requestId, handlers) {
+function render(container, classroom, requestId, expandedStudentIds, handlers) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
@@ -101,23 +133,42 @@ function render(container, classroom, requestId, handlers) {
   students.forEach((student) => {
     const entry = workRequestService.getEntryForStudent(request, student.id);
     if (!entry) return;
-    list.appendChild(createRosterRow(student, findTeamContaining(classroom, student.id), entry, handlers));
+    list.appendChild(
+      createRosterRow(student, findTeamContaining(classroom, student.id), entry, expandedStudentIds.has(student.id), handlers)
+    );
   });
 
   wrapper.appendChild(list);
   container.appendChild(wrapper);
 }
 
-function createRosterRow(student, team, entry, handlers) {
+function createRosterRow(student, team, entry, isExpanded, handlers) {
   const row = document.createElement('div');
   row.className = 'work-request-roster__row';
 
-  row.appendChild(createStudentNameElement({ student, team, onSelect: handlers.onSelectStudent, size: 36 }));
+  const mainLine = document.createElement('div');
+  mainLine.className = 'work-request-roster__main-line';
+
+  const expandButton = document.createElement('button');
+  expandButton.type = 'button';
+  expandButton.className = 'work-request-roster__expand-toggle';
+  expandButton.setAttribute('aria-label', isExpanded ? 'Hide history' : 'Show history');
+  expandButton.textContent = isExpanded ? '\u25be' : '\u25b8';
+  expandButton.addEventListener('click', () => handlers.onToggleExpand(student.id));
+  mainLine.appendChild(expandButton);
+
+  const dot = document.createElement('span');
+  dot.className = 'work-request-roster__dot';
+  dot.textContent = STATUS_DOT[entry.status];
+  dot.setAttribute('aria-hidden', 'true');
+  mainLine.appendChild(dot);
+
+  mainLine.appendChild(createStudentNameElement({ student, team, onSelect: handlers.onSelectStudent, size: 36 }));
 
   const statusLabel = document.createElement('span');
   statusLabel.className = `work-request-roster__status work-request-roster__status--${entry.status}`;
   statusLabel.textContent = STATUS_LABEL[entry.status];
-  row.appendChild(statusLabel);
+  mainLine.appendChild(statusLabel);
 
   const actions = document.createElement('div');
   actions.className = 'work-request-roster__actions';
@@ -143,8 +194,38 @@ function createRosterRow(student, team, entry, handlers) {
     actions.appendChild(correctionButton);
   }
 
-  row.appendChild(actions);
+  mainLine.appendChild(actions);
+  row.appendChild(mainLine);
+
+  if (isExpanded) {
+    row.appendChild(createHistoryPanel(entry));
+  }
+
   return row;
+}
+
+function createHistoryPanel(entry) {
+  const panel = document.createElement('div');
+  panel.className = 'work-request-roster__history';
+
+  const history = workRequestService.getEntryHistory(entry);
+  history.forEach((step) => {
+    const line = document.createElement('div');
+    line.className = 'work-request-roster__history-step';
+
+    const label = document.createElement('span');
+    label.className = 'work-request-roster__history-label';
+    label.textContent = STATUS_LABEL[step.status];
+
+    const date = document.createElement('span');
+    date.className = 'work-request-roster__history-date';
+    date.textContent = formatDate(step.date);
+
+    line.append(label, date);
+    panel.appendChild(line);
+  });
+
+  return panel;
 }
 
 function getClassroomStudents(classroom) {

@@ -143,6 +143,8 @@ export function advanceStatus(workRequest, studentId) {
 
   entry.status = next;
   entry.updatedAt = getCurrentIsoDate();
+  if (!entry.history) entry.history = [];
+  entry.history.push({ status: next, date: entry.updatedAt });
   return entry;
 }
 
@@ -154,5 +156,12 @@ export function markNeedsCorrection(workRequest, studentId) {
 
   entry.status = 'needs_correction';
   entry.updatedAt = getCurrentIsoDate();
+  if (!entry.history) entry.history = [];
+  entry.history.push({ status: 'needs_correction', date: entry.updatedAt });
   return entry;
+}
+
+/** This entry's own full lifecycle history, oldest first — what the roster's inline expansion renders instead of a separate Timeline page. */
+export function getEntryHistory(entry) {
+  return entry.history || [];
 }
