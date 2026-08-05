@@ -65,6 +65,7 @@ import { getDisplayName, getDisplaySubtitle } from '../../services/classroomServ
 import { createClassroomHeaderElement } from '../components/ClassroomHeader.js';
 import { createRecognitionWidgetElement } from '../components/RecognitionWidget.js';
 import { createWeeklySnapshotWidgetElement } from '../components/WeeklySnapshotWidget.js';
+import { createClassroomStandingsBoardElement } from '../components/ClassroomStandingsBoard.js';
 import { createPendingTasksWidgetElement } from '../components/PendingTasksWidget.js';
 import { createSubjectsWidgetElement } from '../components/SubjectsWidget.js';
 import { createGroupsWidgetElement } from '../components/GroupsWidget.js';
@@ -258,6 +259,10 @@ export function renderDashboardView(container, props) {
   const hasPendingTasks = pendingTaskService.getPendingTasks(classroom).length > 0;
   const hasSubjectsConfigured = (classroom.notebookConfig?.subjects || []).length > 0;
   const hasRealGroups = classroom.teams.some((team) => !team.isUngrouped);
+
+  if (hasRealGroups) {
+    content.appendChild(createClassroomStandingsBoardElement({ classroom }));
+  }
 
   if (hasAnyRecognition || hasAnyScoreActivity) {
     const celebrateGroup = document.createElement('div');

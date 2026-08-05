@@ -7454,3 +7454,71 @@ button.wizard-checklist__row:hover {
   min-height: 70px;
   resize: vertical;
 }
+
+/* Classroom Standings Board — see
+   ui/components/ClassroomStandingsBoard.js. Shared, self-contained
+   styling that reads well in both the teacher Dashboard's own widget
+   context and the Student Portal's own card-based context, rather
+   than tightly coupling to either. */
+.standings-board {
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 1.25rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  margin-top: 1.25rem;
+}
+.standings-board__heading {
+  font-size: 1.1rem;
+  font-weight: var(--font-weight-black);
+  margin: 0 0 1rem;
+}
+.standings-board__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.standings-board__row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background-color: color-mix(in srgb, var(--color-primary) 4%, white);
+  border-radius: 12px;
+  border: none;
+  font: inherit;
+  text-align: left;
+  width: 100%;
+}
+.standings-board__row--clickable {
+  cursor: pointer;
+}
+.standings-board__row--clickable:hover {
+  background-color: color-mix(in srgb, var(--color-primary) 8%, white);
+}
+.standings-board__rank {
+  font-weight: var(--font-weight-black);
+  color: var(--color-muted);
+  min-width: 2rem;
+}
+.standings-board__team-name {
+  font-weight: var(--font-weight-bold);
+}
+.standings-board__score {
+  font-weight: var(--font-weight-black);
+  color: var(--color-primary);
+}
+.standings-board__movement {
+  font-weight: var(--font-weight-black);
+  min-width: 1.2rem;
+  text-align: center;
+}
+.standings-board__movement--up {
+  color: var(--color-success);
+}
+.standings-board__movement--down {
+  color: var(--color-danger);
+}
+.standings-board__movement--same {
+  color: var(--color-muted);
+}
