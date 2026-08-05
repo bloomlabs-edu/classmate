@@ -14,6 +14,16 @@
  * A visible "more actions" button is included alongside the gesture
  * surface: long-press is pointer-only, so keyboard and assistive-tech
  * users need an explicit, focusable way to reach Quick Actions too.
+ *
+ * `onSwipeLeft`/`onLongPress` are both genuinely optional — see
+ * ui/components/TeamStandingsBoard.js's own header comment for why:
+ * the Student Portal renders this exact same row with only `onTap`
+ * wired (opening a public profile), omitting the rest entirely rather
+ * than receiving a "student version" with fewer features. When
+ * `onLongPress` is absent, the "more actions" button doesn't render at
+ * all — there is nothing for it to open. `onTap` itself stays
+ * required: every context this row appears in needs at least one
+ * meaningful thing to happen on tap.
  */
 
 import { getBucketRowStyle } from '../../config/bucketConfig.js';
@@ -22,7 +32,7 @@ const LONG_PRESS_MS = 500;
 const MOVE_CANCEL_THRESHOLD_PX = 10;
 const SWIPE_THRESHOLD_PX = 60;
 
-export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongPress }) {
+export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongPress, tapActionLabel = 'award a star' }) {
   const style = getBucketRowStyle(student.bucket);
 
   const item = document.createElement('li');
@@ -35,10 +45,7 @@ export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongP
   surface.className = 'student-row__surface';
   surface.setAttribute('role', 'button');
   surface.tabIndex = 0;
-  surface.setAttribute(
-    'aria-label',
-    `${student.name}. Tap to award a star, swipe left to deduct a point, press and hold for more actions.`
-  );
+  surface.setAttribute('aria-label', buildAriaLabel(student.name, tapActionLabel, { onSwipeLeft, onLongPress }));
 
   const name = document.createElement('span');
   name.className = 'student-row__name';
@@ -50,17 +57,20 @@ export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongP
 
   surface.append(name, score);
 
-  const moreButton = document.createElement('button');
-  moreButton.type = 'button';
-  moreButton.className = 'student-row__more';
-  moreButton.textContent = '\u22ee';
-  moreButton.setAttribute('aria-label', `More actions for ${student.name}`);
-  moreButton.addEventListener('click', (event) => {
-    event.stopPropagation();
-    onLongPress(student);
-  });
+  item.appendChild(surface);
 
-  item.append(surface, moreButton);
+  if (onLongPress) {
+    const moreButton = document.createElement('button');
+    moreButton.type = 'button';
+    moreButton.className = 'student-row__more';
+    moreButton.textContent = '\u22ee';
+    moreButton.setAttribute('aria-label', `More actions for ${student.name}`);
+    moreButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      onLongPress(student);
+    });
+    item.appendChild(moreButton);
+  }
 
   // --- Gesture state ---
   let pointerActive = false;
@@ -94,7 +104,7 @@ export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongP
 
     const deltaX = currentX - startX;
     if (dragging && deltaX <= -SWIPE_THRESHOLD_PX) {
-      onSwipeLeft(student);
+      onSwipeLeft?.(student);
     } else if (!dragging) {
       onTap(student);
     }
@@ -118,13 +128,15 @@ export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongP
       // Pointer capture isn't available in every environment; harmless to skip.
     }
 
-    longPressTimer = setTimeout(() => {
-      if (!pointerActive) return;
-      longPressTriggered = true;
-      pointerActive = false;
-      resetVisual();
-      onLongPress(student);
-    }, LONG_PRESS_MS);
+    if (onLongPress) {
+      longPressTimer = setTimeout(() => {
+        if (!pointerActive) return;
+        longPressTriggered = true;
+        pointerActive = false;
+        resetVisual();
+        onLongPress(student);
+      }, LONG_PRESS_MS);
+    }
   });
 
   surface.addEventListener('pointermove', (event) => {
@@ -172,4 +184,12 @@ export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongP
   });
 
   return item;
+}
+
+/** Describes only the gestures genuinely available in this context — never claims an action (e.g. "swipe left to deduct a point") that isn't actually wired, since the Student Portal's own row has none of the teacher-only gestures at all. */
+function buildAriaLabel(name, tapActionLabel, { onSwipeLeft, onLongPress }) {
+  const actions = [`Tap to ${tapActionLabel}`];
+  if (onSwipeLeft) actions.push('swipe left to deduct a point');
+  if (onLongPress) actions.push('press and hold for more actions');
+  return `${name}. ${actions.join(', ')}.`;
 }

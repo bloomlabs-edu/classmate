@@ -37,6 +37,8 @@ import { renderStudentJourneyView } from './ui/student-portal/views/StudentJourn
 import { renderStudentAssessmentResultsView } from './ui/student-portal/views/StudentAssessmentResultsView.js';
 import { renderStudentGoalTrackerView } from './ui/student-portal/views/StudentGoalTrackerView.js';
 import { renderStudentTeamView } from './ui/student-portal/views/StudentTeamView.js';
+import { renderStudentTeamDetailView } from './ui/student-portal/views/StudentTeamDetailView.js';
+import { renderStudentPublicProfileView } from './ui/student-portal/views/StudentPublicProfileView.js';
 import { renderStudentAvatarBuilderView } from './ui/student-portal/views/StudentAvatarBuilderView.js';
 import { renderStudentProfileView as renderStudentPortalProfileView } from './ui/student-portal/views/StudentProfileView.js';
 import { renderHomeView } from './ui/views/HomeView.js';
@@ -234,8 +236,22 @@ function renderStudentPortalMain(route) {
       router.navigate('/');
     },
     renderSectionContent: (content) => {
-      if (route.section === 'team') {
-        renderStudentTeamView(content);
+      if (route.section === 'team' && route.param) {
+        renderStudentTeamDetailView(content, {
+          teamId: route.param,
+          onBack: () => router.navigate('/student/team'),
+          onNavigateToStudentProfile: (studentId) => router.navigate(`/student/student-profile/${studentId}`),
+        });
+      } else if (route.section === 'team') {
+        renderStudentTeamView(content, {
+          onNavigateToStudentProfile: (studentId) => router.navigate(`/student/student-profile/${studentId}`),
+          onNavigateToTeam: (teamId) => router.navigate(`/student/team/${teamId}`),
+        });
+      } else if (route.section === 'student-profile') {
+        renderStudentPublicProfileView(content, {
+          studentId: route.param,
+          onBack: () => router.navigate('/student'),
+        });
       } else if (route.section === 'avatar-builder') {
         renderStudentAvatarBuilderView(content, {
           studentId: studentDeviceService.getActiveProfile()?.studentId,
@@ -270,6 +286,8 @@ function renderStudentPortalMain(route) {
           // (onBack, onSelectStudent, etc.).
           onNavigateToEventDetail: (path) => router.navigate(path),
           onNavigateToGoals: () => router.navigate('/student/goals'),
+          onNavigateToStudentProfile: (studentId) => router.navigate(`/student/student-profile/${studentId}`),
+          onNavigateToTeam: (teamId) => router.navigate(`/student/team/${teamId}`),
         });
       }
     },

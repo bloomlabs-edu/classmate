@@ -3,7 +3,7 @@
  *
  * "Journey" — the Student Portal's own landing page. In order: the
  * shared Classroom Standings board (see
- * ui/components/ClassroomStandingsBoard.js), welcome, today's goal,
+ * ui/components/TeamStandingsBoard.js), welcome, today's goal,
  * "My Goals," a compact progress summary, the Stars/Streak modules,
  * then the Student Event Feed ("Your Updates").
  *
@@ -41,11 +41,11 @@ import { getHomeSummary, getEventFeed, loadCurrentStudentAndClassroom } from '..
 import * as studentDeviceService from '../../../services/studentDeviceService.js';
 import { createAvatarElement } from '../../components/AvatarDisplay.js';
 import { createEmptyStateElement } from '../../components/EmptyState.js';
-import { createClassroomStandingsBoardElement } from '../../components/ClassroomStandingsBoard.js';
+import { createTeamStandingsBoardElement } from '../../components/TeamStandingsBoard.js';
 import { formatDate } from '../../../utils/dateHelpers.js';
 import { getEventDetailRoute } from '../../../config/studentEventNavigation.js';
 
-export async function renderStudentJourneyView(container, { onSessionInvalid, onNavigateToEventDetail, onNavigateToGoals } = {}) {
+export async function renderStudentJourneyView(container, { onSessionInvalid, onNavigateToEventDetail, onNavigateToGoals, onNavigateToStudentProfile, onNavigateToTeam } = {}) {
   container.innerHTML = '';
 
   const [summary, eventFeed, found] = await Promise.all([
@@ -89,10 +89,18 @@ export async function renderStudentJourneyView(container, { onSessionInvalid, on
   // improve those standings." The exact same shared component
   // ui/views/DashboardView.js (teacher side) and
   // StudentTeamView.js's own Team tab already render — never a copy;
-  // see ui/components/ClassroomStandingsBoard.js's own header comment
+  // see ui/components/TeamStandingsBoard.js's own header comment
   // for why there is only ever one implementation.
   if (found) {
-    wrapper.appendChild(createClassroomStandingsBoardElement({ classroom: found.classroom }));
+    wrapper.appendChild(
+      createTeamStandingsBoardElement({
+        classroom: found.classroom,
+        onTap: (student) => onNavigateToStudentProfile?.(student.id),
+        onTapTeam: (teamId) => onNavigateToTeam?.(teamId),
+        // onSwipeLeft / onLongPress deliberately omitted — teacher-only
+        // gestures have no place in the Student Portal at all.
+      })
+    );
   }
 
   // Welcome

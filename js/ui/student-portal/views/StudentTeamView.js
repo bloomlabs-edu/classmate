@@ -1,25 +1,38 @@
 /**
  * ui/student-portal/views/StudentTeamView.js
  *
- * "Team" — now the shared Classroom Standings board (see
- * ui/components/ClassroomStandingsBoard.js), the exact same
- * implementation the teacher Dashboard shows, per explicit product
- * decision: one board, everywhere, never two versions.
+ * "Team" — renders the exact same board Class Mode has always shown
+ * (see ui/components/TeamStandingsBoard.js and, underneath it,
+ * TeamCard.js/ClassModeStudentRow.js) — the canonical implementation,
+ * never a copy. "One component, two consumers," per explicit product
+ * decision: teachers and students look at the same competition.
+ *
+ * Currently identical in content to what Journey's own landing page
+ * already shows above its other sections — a known, deliberate
+ * redundancy for this milestone, not an oversight. Team's own future
+ * role (browsing every team, richer roster exploration) isn't built
+ * yet; when it is, this becomes the page that content lives on,
+ * rather than existing purely to repeat what Journey already shows.
  *
  * Reads the live classroom directly from
  * services/studentPortalDataService.js's own single subscription
  * (loadCurrentStudentAndClassroom()) — the same source every other
  * Student Portal screen already uses. Real-time updates are automatic:
  * whenever the live classroom changes, this view is re-rendered with
- * the fresh snapshot (see main.js's own subscription wiring), and the
- * shared board recomputes standings fresh every time it's drawn.
+ * the fresh snapshot, and the shared board recomputes standings fresh
+ * every time it's drawn.
+ *
+ * Only `onTap` (open a student's public profile) and `onTapTeam` (open
+ * that team's page) are wired — `onSwipeLeft`/`onLongPress` are
+ * deliberately omitted entirely, not just hidden: teacher-only
+ * gestures have no place in the Student Portal at all.
  */
 
 import { loadCurrentStudentAndClassroom } from '../../../services/studentPortalDataService.js';
-import { createClassroomStandingsBoardElement } from '../../components/ClassroomStandingsBoard.js';
+import { createTeamStandingsBoardElement } from '../../components/TeamStandingsBoard.js';
 import { createEmptyStateElement } from '../../components/EmptyState.js';
 
-export async function renderStudentTeamView(container) {
+export async function renderStudentTeamView(container, { onNavigateToStudentProfile, onNavigateToTeam } = {}) {
   container.innerHTML = '';
 
   const found = await loadCurrentStudentAndClassroom();
@@ -37,7 +50,13 @@ export async function renderStudentTeamView(container) {
     return;
   }
 
-  wrapper.appendChild(createClassroomStandingsBoardElement({ classroom: found.classroom }));
+  wrapper.appendChild(
+    createTeamStandingsBoardElement({
+      classroom: found.classroom,
+      onTap: (student) => onNavigateToStudentProfile?.(student.id),
+      onTapTeam: (teamId) => onNavigateToTeam?.(teamId),
+    })
+  );
 
   container.appendChild(wrapper);
 }

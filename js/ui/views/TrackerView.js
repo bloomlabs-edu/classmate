@@ -32,8 +32,7 @@
  * own save, since nothing is saved until the session ends.
  */
 
-import { createTeamCardElement } from '../components/TeamCard.js';
-import { createEmptyStateElement } from '../components/EmptyState.js';
+import { createTeamStandingsBoardElement } from '../components/TeamStandingsBoard.js';
 import { openQuickActionsSheet } from '../components/QuickActionsSheet.js';
 import { openAwardBadgeModal } from '../components/AwardBadgeModal.js';
 import { openAddNoteModal } from '../components/AddNoteModal.js';
@@ -46,7 +45,6 @@ import * as badgeService from '../../services/badgeService.js';
 import * as noteService from '../../services/noteService.js';
 import * as classModeService from '../../services/classModeService.js';
 import * as classSessionService from '../../services/classSessionService.js';
-import { getTeamScore } from '../../services/teamService.js';
 import { getDisplayName, getDisplaySubtitle } from '../../services/classroomService.js';
 
 export function renderTrackerView(container, props) {
@@ -205,30 +203,13 @@ export function renderTrackerView(container, props) {
   actions.append(undoButton, notebooksButton, resetButton, endClassButton);
   header.append(backButton, titleBlock, actions);
 
-  const grid = document.createElement('section');
-  grid.className = 'team-grid';
-  grid.setAttribute('aria-label', 'Teams');
-
-  if (classroom.teams.length === 0) {
-    grid.appendChild(
-      createEmptyStateElement({
-        message: 'No groups in this classroom yet. Add some from Settings \u2192 Groups.',
-      })
-    );
-  } else {
-    classroom.teams
-      .filter((team) => team.students.length > 0)
-      .forEach((team) => {
-        grid.appendChild(
-          createTeamCardElement(team, getTeamScore(team), {
-            highlightTeamId: highlight.teamId,
-            onTap: (student) => handleTap(classroom, team, student, rerender),
-            onSwipeLeft: (student) => handleSwipeLeft(classroom, team, student, rerender),
-            onLongPress: (student) => handleLongPress(classroom, team, student, { onSelectStudent, rerender }),
-          })
-        );
-      });
-  }
+  const grid = createTeamStandingsBoardElement({
+    classroom,
+    highlight: { teamId: highlight.teamId },
+    onTap: (student) => handleTap(classroom, findTeamContaining(classroom, student.id), student, rerender),
+    onSwipeLeft: (student) => handleSwipeLeft(classroom, findTeamContaining(classroom, student.id), student, rerender),
+    onLongPress: (student) => handleLongPress(classroom, findTeamContaining(classroom, student.id), student, { onSelectStudent, rerender }),
+  });
 
   wrapper.append(header, grid);
   container.appendChild(wrapper);
@@ -237,6 +218,11 @@ export function renderTrackerView(container, props) {
     const pulseEl = container.querySelector(`[data-student-id="${highlight.studentId}"] .student-row__points`);
     pulseEl?.classList.add('student-row__points--pulse');
   }
+}
+
+/** Finds which team a given student currently belongs to — needed because ui/components/TeamStandingsBoard.js's own onTap/onSwipeLeft/onLongPress callbacks only ever pass the student (the same shape every consumer of that board, including the Student Portal, receives), not the team, so this is resolved here rather than the board needing to know why a caller wants it. */
+function findTeamContaining(classroom, studentId) {
+  return classroom.teams.find((team) => team.students.some((student) => student.id === studentId));
 }
 
 function handleTap(classroom, team, student, rerender) {

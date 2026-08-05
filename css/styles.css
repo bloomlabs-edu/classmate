@@ -7455,70 +7455,57 @@ button.wizard-checklist__row:hover {
   resize: vertical;
 }
 
-/* Classroom Standings Board — see
-   ui/components/ClassroomStandingsBoard.js. Shared, self-contained
-   styling that reads well in both the teacher Dashboard's own widget
-   context and the Student Portal's own card-based context, rather
-   than tightly coupling to either. */
-.standings-board {
-  background-color: #ffffff;
-  border-radius: 16px;
-  padding: 1.25rem;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
-  margin-top: 1.25rem;
+
+/* .team-card__header becomes a real <button> when onTapTeam is
+   provided (Student Portal) — see ui/components/TeamCard.js. Resets
+   browser default button styling so it visually matches the plain
+   <header> version exactly. */
+.team-card__header--clickable {
+  border: none;
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
-.standings-board__heading {
-  font-size: 1.1rem;
+
+/* Deliberately minimal placeholder destinations — see
+   ui/student-portal/views/StudentPublicProfileView.js and
+   StudentTeamDetailView.js's own header comments for why these are
+   intentionally bare, not the final experience. */
+.student-public-profile,
+.student-team-detail {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem;
+}
+.student-public-profile__header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+.student-public-profile__name,
+.student-team-detail__name {
+  font-size: 1.4rem;
   font-weight: var(--font-weight-black);
-  margin: 0 0 1rem;
+  margin: 1.5rem 0 0;
 }
-.standings-board__list {
+.student-team-detail__roster {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
-.standings-board__row {
-  display: grid;
-  grid-template-columns: auto 1fr auto auto;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  background-color: color-mix(in srgb, var(--color-primary) 4%, white);
-  border-radius: 12px;
-  border: none;
-  font: inherit;
-  text-align: left;
+.student-team-detail__roster-item {
   width: 100%;
-}
-.standings-board__row--clickable {
+  text-align: left;
+  padding: 0.75rem 1rem;
+  background-color: #ffffff;
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+  font: inherit;
   cursor: pointer;
-}
-.standings-board__row--clickable:hover {
-  background-color: color-mix(in srgb, var(--color-primary) 8%, white);
-}
-.standings-board__rank {
-  font-weight: var(--font-weight-black);
-  color: var(--color-muted);
-  min-width: 2rem;
-}
-.standings-board__team-name {
-  font-weight: var(--font-weight-bold);
-}
-.standings-board__score {
-  font-weight: var(--font-weight-black);
-  color: var(--color-primary);
-}
-.standings-board__movement {
-  font-weight: var(--font-weight-black);
-  min-width: 1.2rem;
-  text-align: center;
-}
-.standings-board__movement--up {
-  color: var(--color-success);
-}
-.standings-board__movement--down {
-  color: var(--color-danger);
-}
-.standings-board__movement--same {
-  color: var(--color-muted);
 }
