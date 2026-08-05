@@ -282,7 +282,7 @@ function createModule({ icon, title, value, caption, lines }) {
  * any future publisher that never gets its own detail screen) renders
  * exactly as it always has — a plain, non-interactive notification.
  */
-function renderEventCard(event, onNavigateToEventDetail) {
+export function renderEventCard(event, onNavigateToEventDetail) {
   const detail = getEventDetailRoute(event);
 
   const card = document.createElement(detail ? 'button' : 'div');

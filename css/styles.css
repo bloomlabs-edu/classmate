@@ -7468,23 +7468,17 @@ button.wizard-checklist__row:hover {
   cursor: pointer;
 }
 
-/* Deliberately minimal placeholder destinations — see
-   ui/student-portal/views/StudentPublicProfileView.js and
-   StudentTeamDetailView.js's own header comments for why these are
-   intentionally bare, not the final experience. */
+/* Deliberately minimal placeholder — see
+   ui/student-portal/views/StudentTeamDetailView.js's own header
+   comment for why this is intentionally bare, not the final
+   experience. StudentPublicProfileView.js's own richer styling
+   follows below. */
 .student-public-profile,
 .student-team-detail {
   max-width: 480px;
   margin: 0 auto;
   padding: 1.5rem 1.25rem;
 }
-.student-public-profile__header {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-top: 1.5rem;
-}
-.student-public-profile__name,
 .student-team-detail__name {
   font-size: 1.4rem;
   font-weight: var(--font-weight-black);
@@ -7508,4 +7502,97 @@ button.wizard-checklist__row:hover {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
   font: inherit;
   cursor: pointer;
+}
+
+/* Student Public Profile — see
+   ui/student-portal/views/StudentPublicProfileView.js. The header's
+   background/text color are set inline, per student, matching
+   ui/views/StudentProfileView.js's own bucket-themed header pattern
+   (see that file's own header comment for why bucket color, not the
+   app's accent color, drives this background). */
+.student-public-profile__header {
+  border-radius: 20px;
+  padding: 1.5rem 1.25rem;
+  margin-top: 1rem;
+  text-align: center;
+}
+.student-public-profile__name {
+  font-size: 1.4rem;
+  font-weight: var(--font-weight-black);
+  margin: 0.75rem 0 0.15rem;
+}
+.student-public-profile__team {
+  margin: 0;
+  opacity: 0.85;
+}
+.student-public-profile__bucket {
+  display: inline-block;
+  margin: 0.6rem 0 1rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.5);
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-bold);
+}
+.student-public-profile__stats {
+  display: flex;
+  gap: 0.6rem;
+}
+.student-public-profile__stat-chip {
+  flex: 1;
+  background-color: rgba(255, 255, 255, 0.6);
+  border-radius: 12px;
+  padding: 0.6rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.student-public-profile__stat-label {
+  font-size: 0.65rem;
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  opacity: 0.75;
+}
+.student-public-profile__stat-value {
+  font-size: 1.05rem;
+  font-weight: var(--font-weight-black);
+}
+.student-public-profile__section {
+  margin-top: 1.75rem;
+}
+.student-public-profile__section-heading {
+  font-size: 1.05rem;
+  font-weight: var(--font-weight-black);
+  margin: 0 0 0.75rem;
+}
+.student-public-profile__badge-summary {
+  color: var(--color-muted);
+  margin: 0 0 0.75rem;
+}
+.student-public-profile__timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.student-public-profile__goals-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.student-public-profile__goal-card {
+  background-color: #ffffff;
+  border-radius: 14px;
+  padding: 0.75rem 1rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+.student-public-profile__goal-category {
+  font-weight: var(--font-weight-bold);
+  margin: 0 0 0.2rem;
+}
+.student-public-profile__goal-streak {
+  margin: 0;
+  color: var(--color-primary);
+  font-weight: var(--font-weight-bold);
+  font-size: 0.9rem;
 }

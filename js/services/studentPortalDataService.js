@@ -33,6 +33,7 @@ import * as assessmentService from './assessmentService.js';
 import * as goalService from './goalService.js';
 import * as goalCompletionService from './goalCompletionService.js';
 import * as goalStatisticsService from './goalStatisticsService.js';
+import * as teamStatisticsService from './teamStatisticsService.js';
 import { getWeekRange } from '../utils/dateHelpers.js';
 import { listRecognitionCategoriesForPeriod } from '../config/recognitionCategories.js';
 
@@ -328,6 +329,70 @@ export async function getAssessmentResultsForCurrentStudent(assessmentId) {
  * only shapes their combined output for this one screen, the same
  * role every other function in this file already plays.
  */
+/**
+ * One classmate's own public profile — for an arbitrary `studentId`,
+ * never "current student." Header stats, recognition, and current
+ * goals, composed entirely from existing services:
+ * teamStatisticsService.js (rank/score), studentEventService.js
+ * (timeline), goalService.js/goalStatisticsService.js (current
+ * goals) — none of their own math is duplicated here, only shaped for
+ * this one screen, the same role every other function in this file
+ * already plays.
+ *
+ * Deliberately reusable, not coupled to how it was reached: Team
+ * Standings, a future Community Feed, Recognition cards, and future
+ * leaderboards can all call this with just a studentId. Returns null
+ * (never throws) if the student can't be found on the current live
+ * classroom.
+ */
+export async function getPublicProfileForStudent(studentId) {
+  const activeProfile = studentDeviceService.getActiveProfile();
+  if (!activeProfile) return null;
+
+  const classroom = subscribedClassroomId === activeProfile.classroomId ? liveClassroom : await workspaceService.getClassroomOnce(activeProfile.classroomId);
+  if (!classroom) return null;
+
+  const found = studentService.findStudentInClassroom(classroom, studentId);
+  if (!found) return null;
+  const { student, team } = found;
+
+  const period = teamStatisticsService.getCurrentMonthPeriod();
+  const classEntry = teamStatisticsService.getClassLeaderboard(classroom, period).find((e) => e.studentId === studentId);
+  const teamEntry = team && !team.isUngrouped
+    ? teamStatisticsService.getTeamLeaderboard(classroom, team.id, period).find((e) => e.studentId === studentId)
+    : null;
+
+  const badges = student.badges || [];
+  const latestBadgeEntry = (student.history || [])
+    .filter((entry) => entry.kind === 'badge')
+    .sort((a, b) => (a.recordedAt < b.recordedAt ? 1 : -1))[0];
+
+  const activeCycle = goalService.getActiveCycle(classroom);
+  const currentGoals = activeCycle
+    ? goalService.getGoalsForStudent(activeCycle, studentId).map((goal) => ({
+        categoryName: activeCycle.categories.find((c) => c.id === goal.categoryId)?.name || 'Goal',
+        text: goal.text,
+        status: goal.status,
+        currentStreak: goal.status === 'approved' ? goalStatisticsService.getCurrentStreak(activeCycle, goal.id) : 0,
+        overallCompletionPercent: goal.status === 'approved' ? goalStatisticsService.getOverallCompletionPercent(activeCycle, goal.id) : 0,
+      }))
+    : [];
+
+  return {
+    studentId: student.id,
+    name: student.name,
+    bucket: student.bucket,
+    teamName: team ? team.name : null,
+    monthlyScore: classEntry ? classEntry.score : 0,
+    classRank: classEntry ? classEntry.rank : null,
+    teamRank: teamEntry ? teamEntry.rank : null,
+    badgeCount: badges.length,
+    latestBadgeName: latestBadgeEntry ? latestBadgeEntry.label : null,
+    events: studentEventService.getEventsForStudent(classroom, studentId),
+    currentGoals,
+  };
+}
+
 export async function getGoalCycleForCurrentStudent() {
   const found = await loadCurrentStudentAndClassroom();
   if (!found) return null;
