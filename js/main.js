@@ -51,6 +51,7 @@ import { renderSetupWizardView } from './ui/views/SetupWizardView.js';
 import { renderStudentProfileView } from './ui/views/StudentProfileView.js';
 import { renderStudentAccessView } from './ui/views/StudentAccessView.js';
 import { renderActivitiesListView, renderActivityRosterView } from './ui/views/ActivitiesView.js';
+import { renderWorkRequestRosterView } from './ui/views/WorkRequestRosterView.js';
 import { renderNotebookTrackerView } from './ui/views/NotebookTrackerView.js';
 import { renderNotebookRegisterView } from './ui/views/NotebookRegisterView.js';
 import { renderNotebookTimelineView } from './ui/views/NotebookTimelineView.js';
@@ -210,6 +211,7 @@ const CLASSROOM_ROUTE_NAMES = [
   'studentAccess',
   'activitiesList',
   'activityRoster',
+  'workRequestRoster',
   'notebookTracker',
   'notebookRegister',
   'notebookTimeline',
@@ -414,6 +416,8 @@ function renderRoute(route, reason = 'unspecified') {
         onSelectPendingTask: (taskTypeId, item) => {
           if (item.activityId) {
             router.navigate(`/classroom/${classroom.id}/activities/${item.activityId}`);
+          } else if (item.requestId) {
+            router.navigate(`/classroom/${classroom.id}/work-requests/${item.requestId}`);
           } else if (item.subjectId && item.notebookTypeId) {
             const dateSegment = item.dateKey ? `/${item.dateKey}` : '';
             router.navigate(`/classroom/${classroom.id}/notebooks/${item.subjectId}/${item.notebookTypeId}${dateSegment}`);
@@ -487,6 +491,13 @@ function renderRoute(route, reason = 'unspecified') {
         classroom,
         activityId: route.activityId,
         onBack: () => router.navigate(`/classroom/${classroom.id}/activities`),
+        onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
+      });
+    } else if (route.name === 'workRequestRoster') {
+      renderWorkRequestRosterView(appContainer, {
+        classroom,
+        requestId: route.requestId,
+        onBack: () => router.navigate(`/classroom/${classroom.id}`),
         onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
       });
     } else if (route.name === 'notebookTracker') {

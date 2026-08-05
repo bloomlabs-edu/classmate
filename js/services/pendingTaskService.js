@@ -3,7 +3,7 @@
  *
  * Runs every checker registered below against a classroom and returns
  * what's outstanding — the data the Classroom Dashboard's Pending Tasks
- * widget (Phase 2) will render. Read-only, same as
+ * widget renders. Read-only, same as
  * services/studentProgressService.js: nothing here writes to Firestore.
  *
  * Each checker is keyed by a config/pendingTaskTypes.js id. Adding a new
@@ -13,47 +13,51 @@
  *
  * Definitions (judgment calls, documented since "pending" is inherently
  * a bit subjective):
- *   - "Notebook not checked today": a configured Subject × Notebook Type
- *     pair with zero register entries for today's date. A pair with no
- *     students marked at all today is exactly the situation this task
- *     type exists to surface.
+ *   - The three "work_request_*" checkers below deliberately query
+ *     services/workRequestService.js's own workflow state directly —
+ *     "awaiting submission," "submitted, awaiting review," and "needs
+ *     correction" are each just getEntriesByStatus() on every currently
+ *     open WorkRequest. This replaces the previous "Notebook not
+ *     checked today" check, which fired on a fixed calendar cadence
+ *     (zero register entries for today's date) that never matched how
+ *     notebook cycles actually work in a real classroom — irregular,
+ *     teacher-driven, averaging closer to two weeks than one day. There
+ *     is no calendar date involved in any of these three checks at all,
+ *     by design: a WorkRequest's own state already answers the
+ *     question directly, with nothing to reconstruct from a date range.
  *   - "Activities awaiting completion": a Learning Activity with at
  *     least one student still at status 'Not Assigned' — the teacher
  *     hasn't finished marking the whole roster for it yet.
- *   - "Homework awaiting review": a notebook entry within the last 7
- *     days where a student submitted (`submission === 'submitted'`) but
- *     the teacher hasn't yet assessed it (`completion` is still null).
- *     Deliberately not restricted to notebook types literally named
- *     "Homework" — matching by name would be fragile (a classroom might
- *     call it "Classwork" or something else entirely) and the situation
- *     ("submitted, not yet checked") is the same regardless of what the
- *     notebook type is called.
  */
 
-import * as notebookConfigService from './notebookConfigService.js';
-import * as notebookService from './notebookService.js';
 import * as learningActivityService from './learningActivityService.js';
-import { getTodayDateKey, shiftDateKey, formatDateKey } from '../utils/dateHelpers.js';
+import * as workRequestService from './workRequestService.js';
 import { PENDING_TASK_TYPES } from '../config/pendingTaskTypes.js';
 
-function checkNotebookNotCheckedToday(classroom) {
-  const today = getTodayDateKey();
+function checkWorkRequestsByStatus(classroom, statuses) {
   const items = [];
-
-  notebookConfigService.listSubjects(classroom).forEach((subject) => {
-    notebookConfigService.listNotebookTypes(classroom, subject.id).forEach((notebookType) => {
-      const todayEntries = notebookService.getRegisterForDate(classroom, subject.id, notebookType.id, today);
-      if (Object.keys(todayEntries).length === 0) {
-        items.push({
-          subjectId: subject.id,
-          notebookTypeId: notebookType.id,
-          description: `${subject.name} \u00b7 ${notebookType.name}`,
-        });
+  workRequestService
+    .listWorkRequests(classroom)
+    .filter((request) => workRequestService.isOpen(request))
+    .forEach((request) => {
+      const count = statuses.reduce((sum, status) => sum + workRequestService.getEntriesByStatus(request, status).length, 0);
+      if (count > 0) {
+        items.push({ requestId: request.id, description: request.title, count });
       }
     });
-  });
-
   return items;
+}
+
+function checkWorkRequestsAwaitingSubmission(classroom) {
+  return checkWorkRequestsByStatus(classroom, ['assigned']);
+}
+
+function checkWorkRequestsSubmittedAwaitingReview(classroom) {
+  return checkWorkRequestsByStatus(classroom, ['submitted', 'resubmitted']);
+}
+
+function checkWorkRequestsNeedingCorrection(classroom) {
+  return checkWorkRequestsByStatus(classroom, ['needs_correction']);
 }
 
 function checkActivitiesAwaitingCompletion(classroom) {
@@ -74,42 +78,11 @@ function checkActivitiesAwaitingCompletion(classroom) {
   return items;
 }
 
-function checkHomeworkAwaitingReview(classroom) {
-  const today = getTodayDateKey();
-  const lookbackStart = shiftDateKey(today, -6); // last 7 days, inclusive of today
-  const items = [];
-
-  notebookConfigService.listSubjects(classroom).forEach((subject) => {
-    notebookConfigService.listNotebookTypes(classroom, subject.id).forEach((notebookType) => {
-      let dateKey = lookbackStart;
-      while (dateKey <= today) {
-        const dateEntries = notebookService.getRegisterForDate(classroom, subject.id, notebookType.id, dateKey);
-        const awaitingCount = Object.values(dateEntries).filter(
-          (entry) => entry.submission === 'submitted' && entry.completion === null
-        ).length;
-
-        if (awaitingCount > 0) {
-          items.push({
-            subjectId: subject.id,
-            notebookTypeId: notebookType.id,
-            dateKey,
-            description: `${subject.name} \u00b7 ${notebookType.name} (${formatDateKey(dateKey)})`,
-            count: awaitingCount,
-          });
-        }
-
-        dateKey = shiftDateKey(dateKey, 1);
-      }
-    });
-  });
-
-  return items;
-}
-
 const CHECKERS = {
-  notebook_not_checked_today: checkNotebookNotCheckedToday,
+  work_request_awaiting_submission: checkWorkRequestsAwaitingSubmission,
+  work_request_submitted_awaiting_review: checkWorkRequestsSubmittedAwaitingReview,
+  work_request_needs_correction: checkWorkRequestsNeedingCorrection,
   activity_awaiting_completion: checkActivitiesAwaitingCompletion,
-  homework_awaiting_review: checkHomeworkAwaitingReview,
 };
 
 /**

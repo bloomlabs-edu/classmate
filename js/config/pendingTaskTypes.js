@@ -14,19 +14,24 @@
 
 export const PENDING_TASK_TYPES = Object.freeze([
   {
-    id: 'notebook_not_checked_today',
-    label: 'Notebook not checked today',
+    id: 'work_request_awaiting_submission',
+    label: 'Awaiting submission',
     icon: 'notebook-text',
+  },
+  {
+    id: 'work_request_submitted_awaiting_review',
+    label: 'Submitted, awaiting review',
+    icon: 'alert-triangle',
+  },
+  {
+    id: 'work_request_needs_correction',
+    label: 'Needs correction',
+    icon: 'rotate-ccw',
   },
   {
     id: 'activity_awaiting_completion',
     label: 'Activities awaiting completion',
     icon: 'clipboard-list',
-  },
-  {
-    id: 'homework_awaiting_review',
-    label: 'Homework awaiting review',
-    icon: 'alert-triangle',
   },
 ]);
 

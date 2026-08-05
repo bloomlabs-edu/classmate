@@ -7596,3 +7596,110 @@ button.wizard-checklist__row:hover {
   font-weight: var(--font-weight-bold);
   font-size: 0.9rem;
 }
+
+/* Student Name Element — the canonical student identity display. See
+   ui/components/StudentNameElement.js's own header comment. */
+.student-name-element {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  background: none;
+  border: none;
+  font: inherit;
+  text-align: left;
+  padding: 0;
+}
+.student-name-element--clickable {
+  cursor: pointer;
+}
+.student-name-element__avatar {
+  display: inline-flex;
+  border-radius: 50%;
+  border: 2px solid;
+  padding: 2px;
+  flex-shrink: 0;
+}
+.student-name-element__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.student-name-element__name {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.student-name-element__team {
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+}
+
+/* .btn--warning — used by WorkRequestRosterView.js's own "Mark
+   Resubmitted" button, the one-tap step for an entry already on the
+   correction branch. */
+.btn--warning {
+  background-color: var(--color-warning);
+  border-color: transparent;
+  font-size: var(--text-base);
+  padding: 0.75rem 1.4rem;
+  border-radius: 10px;
+  color: #ffffff;
+}
+.btn--warning:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-warning) 80%, black);
+}
+
+/* WorkRequest Roster — see ui/views/WorkRequestRosterView.js. */
+.work-request-roster {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem;
+}
+.work-request-roster__title {
+  font-size: 1.4rem;
+  font-weight: var(--font-weight-black);
+  margin: 1rem 0 0.15rem;
+}
+.work-request-roster__meta {
+  color: var(--color-muted);
+  margin: 0 0 1.25rem;
+}
+.work-request-roster__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.work-request-roster__row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background-color: #ffffff;
+  border-radius: 14px;
+  padding: 0.75rem 1rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+.work-request-roster__status {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+  flex-shrink: 0;
+}
+.work-request-roster__status--needs_correction {
+  color: var(--color-warning);
+}
+.work-request-roster__status--reviewed {
+  color: var(--color-success);
+}
+.work-request-roster__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.work-request-roster__correction-button {
+  font-size: var(--text-sm);
+  color: var(--color-danger);
+}

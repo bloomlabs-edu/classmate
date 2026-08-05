@@ -18,6 +18,7 @@
  *   #/classroom/{id}/activities               -> learning activities list
  *   #/classroom/{id}/activities/{activityId}  -> one activity's roster
  *   #/classroom/{id}/notebooks                                       -> notebook tracker list (Subject × Notebook Type)
+ *   #/classroom/{id}/work-requests/{requestId}                        -> WorkRequest checking roster (one tap per student, minimal navigation from Pending Tasks)
  *   #/classroom/{id}/notebooks/{subjectId}/{typeId}/{dateKey?}        -> register view (today if dateKey omitted)
  *   #/classroom/{id}/notebooks/{subjectId}/{typeId}/timeline/{yearMonth?} -> timeline view (current month if omitted)
  *   #/classroom/{id}/recognition/{period?}/{categoryId?}     -> recognition screen (defaults resolved by the view itself)
@@ -83,6 +84,9 @@ function resolvePathParts(parts) {
         return { name: 'activityRoster', classroomId: parts[1], activityId: parts[3] };
       }
       return { name: 'activitiesList', classroomId: parts[1] };
+    }
+    if (parts[2] === 'work-requests' && parts[3]) {
+      return { name: 'workRequestRoster', classroomId: parts[1], requestId: parts[3] };
     }
     if (parts[2] === 'notebooks') {
       const subjectId = parts[3];

@@ -32,6 +32,7 @@ const previousSnapshotByClassroomId = new Map();
 
 function getItemKey(groupId, item) {
   if (item.activityId) return `${groupId}:activity:${item.activityId}`;
+  if (item.requestId) return `${groupId}:work-request:${item.requestId}`;
   return `${groupId}:notebook:${item.subjectId}:${item.notebookTypeId}:${item.dateKey || 'today'}`;
 }
 
