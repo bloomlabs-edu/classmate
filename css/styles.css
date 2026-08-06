@@ -7750,6 +7750,25 @@ button.wizard-checklist__row:hover {
   gap: 0.15rem;
   flex-shrink: 0;
 }
+/* .btn--secondary never had its own rule at all — it fell back to the
+   base .btn's fully transparent background and border, which is why
+   "Mark Submitted" read as plain bold text rather than a real,
+   pressable action. Solid, clearly-bounded fill with its own
+   hover/pressed states, matching the same affordance level as
+   .btn--primary/.btn--warning. */
+.btn--secondary {
+  background-color: var(--color-primary);
+  border-color: transparent;
+  color: #ffffff;
+}
+.btn--secondary:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-primary) 85%, black);
+  transform: translateY(-1px);
+}
+.btn--secondary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
 .work-request-roster__chip {
   display: inline-block;
   font-size: var(--text-sm);
@@ -7757,26 +7776,32 @@ button.wizard-checklist__row:hover {
   padding: 0.25rem 0.65rem;
   border-radius: 999px;
   white-space: nowrap;
+  background-color: #ffffff;
+  border: 1.5px solid;
 }
 .work-request-roster__chip--amber {
-  background-color: #f5a623;
-  color: #ffffff;
+  border-color: #b7791f;
+  color: #92660a;
 }
 .work-request-roster__chip--purple {
-  background-color: #7c5cd6;
-  color: #ffffff;
+  border-color: #7c5cd6;
+  color: #6448b8;
 }
 .work-request-roster__chip--red {
-  background-color: #e53935;
-  color: #ffffff;
+  border-color: #e53935;
+  color: #c62828;
 }
 .work-request-roster__chip--green {
-  background-color: #2e9e5b;
-  color: #ffffff;
+  border-color: #2e9e5b;
+  color: #227a46;
+}
+.work-request-roster__chip--orange {
+  border-color: #e07b13;
+  color: #b8630f;
 }
 .work-request-roster__chip--gray {
-  background-color: #78909c;
-  color: #ffffff;
+  border-color: #78909c;
+  color: #5c7480;
 }
 .work-request-roster__date {
   font-size: 0.75rem;
@@ -7851,6 +7876,19 @@ button.wizard-checklist__row:hover {
 }
 .work-request-roster__overflow-item:hover {
   background-color: color-mix(in srgb, var(--color-primary) 8%, white);
+}
+.work-request-roster__overflow-group-label {
+  font-size: 0.65rem;
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-muted);
+  margin: 0.4rem 0.65rem 0.15rem;
+}
+.work-request-roster__overflow-group-label:not(:first-child) {
+  margin-top: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--color-border);
 }
 .work-request-roster__overflow-empty {
   padding: 0.5rem 0.65rem;

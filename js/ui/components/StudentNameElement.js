@@ -36,6 +36,15 @@
  *     needing its own marker here too.
  *   'none' — no leading marker at all.
  *
+ * `tintNameWithBucket` (default false) — when true, the student's own
+ * name text uses config/bucketConfig.js's own `nameColor` (dark,
+ * desaturated shades — dark green/amber/maroon), harmonizing with a
+ * row that's already bucket-themed as a whole (see
+ * ui/views/WorkRequestRosterView.js). Deliberately opt-in, not the
+ * default: this component is reused in contexts (leaderboards, event
+ * cards) where the surrounding row isn't bucket-tinted at all, and a
+ * silent global name-color change there wasn't asked for.
+ *
  * `onSelect`, when provided, makes the whole element a real button
  * (matching this app's own "optional callback, plain element when
  * absent" convention already established for
@@ -51,7 +60,7 @@ import { createAvatarElement } from './AvatarDisplay.js';
 import { getBucketRowStyle } from '../../config/bucketConfig.js';
 import { getGroupColorHex } from '../../config/groupColorConfig.js';
 
-export function createStudentNameElement({ student, team, onSelect, size = 40, leadingMarker = 'avatar' } = {}) {
+export function createStudentNameElement({ student, team, onSelect, size = 40, leadingMarker = 'avatar', tintNameWithBucket = false } = {}) {
   const element = document.createElement(onSelect ? 'button' : 'div');
   element.className = 'student-name-element';
   if (onSelect) {
@@ -78,7 +87,7 @@ export function createStudentNameElement({ student, team, onSelect, size = 40, l
     const badge = document.createElement('span');
     badge.className = 'student-name-element__group-badge';
     badge.style.backgroundColor = team.color ? getGroupColorHex(team.color) : 'var(--color-muted)';
-    badge.textContent = team.name.charAt(0).toUpperCase();
+    badge.textContent = abbreviateTeamName(team.name);
     badge.setAttribute('aria-hidden', 'true');
     element.appendChild(badge);
   }
@@ -89,6 +98,9 @@ export function createStudentNameElement({ student, team, onSelect, size = 40, l
   const name = document.createElement('span');
   name.className = 'student-name-element__name';
   name.textContent = student.name;
+  if (tintNameWithBucket) {
+    name.style.color = getBucketRowStyle(student.bucket).nameColor;
+  }
   textBlock.appendChild(name);
 
   if (team) {
@@ -100,4 +112,9 @@ export function createStudentNameElement({ student, team, onSelect, size = 40, l
 
   element.appendChild(textBlock);
   return element;
+}
+
+/** A short, legible abbreviation for a team's own name badge — the first two letters, uppercased, matching the "AL / BR / CH / DE" treatment: a real, readable label rather than a single letter a teacher has to memorize the meaning of. */
+function abbreviateTeamName(name) {
+  return name.trim().slice(0, 2).toUpperCase();
 }

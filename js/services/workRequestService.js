@@ -133,7 +133,7 @@ export function getNextStatus(currentStatus) {
   return HAPPY_PATH_NEXT[currentStatus] || null;
 }
 
-/** The one-tap primary action — advances this student's entry along the happy path (including through the correction branch, once already on it). A no-op (returns null) only from 'reviewed', the terminal status. */
+/** The one-tap primary action — advances this student's entry along the happy path (including through the correction branch, once already on it). When the destination is 'reviewed', this always records the common outcome ('complete') — see markReviewIncomplete() for the alternate one. A no-op (returns null) only from 'reviewed', the terminal status. */
 export function advanceStatus(workRequest, studentId) {
   const entry = getEntryForStudent(workRequest, studentId);
   if (!entry) return null;
@@ -143,8 +143,34 @@ export function advanceStatus(workRequest, studentId) {
 
   entry.status = next;
   entry.updatedAt = getCurrentIsoDate();
+  const historyEntry = { status: next, date: entry.updatedAt };
+  if (next === 'reviewed') {
+    entry.reviewOutcome = 'complete';
+    historyEntry.reviewOutcome = 'complete';
+  }
   if (!entry.history) entry.history = [];
-  entry.history.push({ status: next, date: entry.updatedAt });
+  entry.history.push(historyEntry);
+  return entry;
+}
+
+/**
+ * The alternate review outcome — offered from the overflow menu
+ * alongside "Needs Correction," per explicit product decision: review
+ * genuinely branches into complete/incomplete/needs-correction, but
+ * only the common case (complete) gets the primary one-tap button.
+ * Meaningful from 'submitted' or 'resubmitted' only (review outcomes
+ * only make sense once the work has actually reached the teacher).
+ */
+export function markReviewIncomplete(workRequest, studentId) {
+  const entry = getEntryForStudent(workRequest, studentId);
+  if (!entry) return null;
+  if (entry.status !== 'submitted' && entry.status !== 'resubmitted') return null;
+
+  entry.status = 'reviewed';
+  entry.reviewOutcome = 'incomplete';
+  entry.updatedAt = getCurrentIsoDate();
+  if (!entry.history) entry.history = [];
+  entry.history.push({ status: 'reviewed', reviewOutcome: 'incomplete', date: entry.updatedAt });
   return entry;
 }
 
@@ -197,6 +223,7 @@ export function resetWorkRequestEntry(workRequest, studentId) {
   if (entry.status === 'assigned') return null;
 
   entry.status = 'assigned';
+  entry.reviewOutcome = null;
   entry.updatedAt = getCurrentIsoDate();
   if (!entry.history) entry.history = [];
   entry.history.push({ status: 'assigned', date: entry.updatedAt });

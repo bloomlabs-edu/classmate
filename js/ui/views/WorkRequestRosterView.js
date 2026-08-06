@@ -66,6 +66,22 @@ export const STATUS_META = {
   absent: { label: 'Absent', chipClass: 'gray', icon: '\ud83d\udeab', buttonLabel: null, buttonClass: null },
 };
 
+// 'Reviewed · Incomplete' is a distinct review OUTCOME, not a fifth
+// lifecycle status (see models/WorkRequestEntry.js's own header
+// comment) — but it still needs its own chip appearance, genuinely
+// distinct from both plain 'Reviewed' (green) and 'Awaiting
+// Submission' (amber), so a teacher scanning the roster can tell the
+// two apart at a glance. Kept as a separate lookup, keyed by outcome,
+// rather than folded into STATUS_META itself, since it's the one case
+// where status alone doesn't determine the correct chip.
+const REVIEWED_INCOMPLETE_META = { label: 'Reviewed \u00b7 Incomplete', chipClass: 'orange', icon: '\ud83d\udfe0', buttonLabel: null, buttonClass: null };
+
+/** Resolves the correct chip/button metadata for an entry, accounting for reviewOutcome — the one case where `status` alone isn't enough. */
+function getStatusMeta(entry) {
+  if (entry.status === 'reviewed' && entry.reviewOutcome === 'incomplete') return REVIEWED_INCOMPLETE_META;
+  return STATUS_META[entry.status];
+}
+
 // The four cards shown at the top, matching the mockup exactly. Every
 // status (including the two without their own card) is still
 // reachable as a filter via the legend below.
@@ -87,6 +103,7 @@ export function renderWorkRequestRosterView(container, { classroom, requestId, o
       onSelectStudent,
       onAdvance,
       onMarkNeedsCorrection,
+      onMarkIncomplete,
       onMarkAbsent,
       onResetEntry,
       onToggleExpand,
@@ -104,6 +121,13 @@ export function renderWorkRequestRosterView(container, { classroom, requestId, o
   function onMarkNeedsCorrection(studentId) {
     const request = workRequestService.getWorkRequestById(classroom, requestId);
     workRequestService.markNeedsCorrection(request, studentId);
+    openOverflowStudentId = null;
+    rerender();
+  }
+
+  function onMarkIncomplete(studentId) {
+    const request = workRequestService.getWorkRequestById(classroom, requestId);
+    workRequestService.markReviewIncomplete(request, studentId);
     openOverflowStudentId = null;
     rerender();
   }
@@ -249,14 +273,14 @@ function createLegend(activeFilterStatuses, onSetFilter) {
 }
 
 function createRosterRow(student, team, entry, isExpanded, isOverflowOpen, handlers) {
-  const meta = STATUS_META[entry.status];
+  const meta = getStatusMeta(entry);
 
   const row = document.createElement('div');
   row.className = 'work-request-roster__row';
   // Bucket becomes the row's own identity tint, per explicit product
   // decision — very low opacity, just enough to recognise the
   // learner category while scanning, never competing with the status
-  // chip's own, deliberately more saturated palette.
+  // chip's own, deliberately distinct outline palette.
   row.style.backgroundColor = getBucketRowStyle(student.bucket).background;
 
   const mainLine = document.createElement('div');
@@ -270,7 +294,9 @@ function createRosterRow(student, team, entry, isExpanded, isOverflowOpen, handl
   expandButton.addEventListener('click', () => handlers.onToggleExpand(student.id));
   mainLine.appendChild(expandButton);
 
-  mainLine.appendChild(createStudentNameElement({ student, team, onSelect: handlers.onSelectStudent, leadingMarker: 'group' }));
+  mainLine.appendChild(
+    createStudentNameElement({ student, team, onSelect: handlers.onSelectStudent, leadingMarker: 'group', tintNameWithBucket: true })
+  );
 
   const statusBlock = document.createElement('div');
   statusBlock.className = 'work-request-roster__status-block';
@@ -284,7 +310,7 @@ function createRosterRow(student, team, entry, isExpanded, isOverflowOpen, handl
   if (history.length > 1) {
     const dateLine = document.createElement('span');
     dateLine.className = 'work-request-roster__date';
-    dateLine.textContent = describeMostRecentTransition(entry.status, history[history.length - 1].date);
+    dateLine.textContent = describeMostRecentTransition(entry, history[history.length - 1].date);
     statusBlock.appendChild(dateLine);
   }
   mainLine.appendChild(statusBlock);
@@ -330,16 +356,29 @@ function createOverflowMenu(student, entry, isOpen, handlers) {
     const menu = document.createElement('div');
     menu.className = 'work-request-roster__overflow-menu';
 
+    const reviewOutcomeItems = [];
     if (entry.status === 'submitted' || entry.status === 'resubmitted') {
-      menu.appendChild(createOverflowMenuItem('Needs Correction', () => handlers.onMarkNeedsCorrection(student.id)));
+      reviewOutcomeItems.push(createOverflowMenuItem('Mark Incomplete', () => handlers.onMarkIncomplete(student.id)));
+      reviewOutcomeItems.push(createOverflowMenuItem('Needs Correction', () => handlers.onMarkNeedsCorrection(student.id)));
     }
+    if (reviewOutcomeItems.length > 0) {
+      menu.appendChild(createOverflowMenuGroupLabel('Review Outcomes'));
+      reviewOutcomeItems.forEach((item) => menu.appendChild(item));
+    }
+
+    const otherActionItems = [];
     if (entry.status !== 'reviewed') {
-      menu.appendChild(createOverflowMenuItem('Mark Absent', () => handlers.onMarkAbsent(student.id)));
+      otherActionItems.push(createOverflowMenuItem('Mark Absent', () => handlers.onMarkAbsent(student.id)));
     }
     if (entry.status !== 'assigned') {
-      menu.appendChild(createOverflowMenuItem('\u21ba Reset Work Request', () => handlers.onResetEntry(student.id)));
+      otherActionItems.push(createOverflowMenuItem('\u21ba Reset Work Request', () => handlers.onResetEntry(student.id)));
     }
-    if (menu.children.length === 0) {
+    if (otherActionItems.length > 0) {
+      menu.appendChild(createOverflowMenuGroupLabel('Other Actions'));
+      otherActionItems.forEach((item) => menu.appendChild(item));
+    }
+
+    if (reviewOutcomeItems.length === 0 && otherActionItems.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'work-request-roster__overflow-empty';
       empty.textContent = 'No actions available';
@@ -350,6 +389,13 @@ function createOverflowMenu(student, entry, isOpen, handlers) {
   }
 
   return wrapper;
+}
+
+function createOverflowMenuGroupLabel(text) {
+  const label = document.createElement('p');
+  label.className = 'work-request-roster__overflow-group-label';
+  label.textContent = text;
+  return label;
 }
 
 function createOverflowMenuItem(label, onClick) {
@@ -372,7 +418,8 @@ function createHistoryPanel(entry) {
 
     const label = document.createElement('span');
     label.className = 'work-request-roster__history-label';
-    label.textContent = STATUS_META[step.status]?.label || step.status;
+    const baseLabel = STATUS_META[step.status]?.label || step.status;
+    label.textContent = step.status === 'reviewed' && step.reviewOutcome === 'incomplete' ? `${baseLabel} \u00b7 Incomplete` : baseLabel;
 
     const date = document.createElement('span');
     date.className = 'work-request-roster__history-date';
@@ -385,9 +432,10 @@ function createHistoryPanel(entry) {
   return panel;
 }
 
-function describeMostRecentTransition(status, isoDate) {
-  const verb = { submitted: 'Submitted', resubmitted: 'Resubmitted', needs_correction: 'Reviewed', reviewed: 'Reviewed', absent: 'Marked' }[status] || 'Updated';
-  return `${verb} on ${formatDate(isoDate)}`;
+function describeMostRecentTransition(entry, isoDate) {
+  const verb = { submitted: 'Submitted', resubmitted: 'Resubmitted', needs_correction: 'Reviewed', reviewed: 'Reviewed', absent: 'Marked' }[entry.status] || 'Updated';
+  const outcomeSuffix = entry.status === 'reviewed' && entry.reviewOutcome === 'incomplete' ? ' \u00b7 Incomplete' : '';
+  return `${verb} on ${formatDate(isoDate)}${outcomeSuffix}`;
 }
 
 function getClassroomStudents(classroom) {
