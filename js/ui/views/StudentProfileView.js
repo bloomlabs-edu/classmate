@@ -27,14 +27,10 @@ import * as badgeService from '../../services/badgeService.js';
 import * as noteService from '../../services/noteService.js';
 import * as timelineService from '../../services/timelineService.js';
 import * as learningActivityService from '../../services/learningActivityService.js';
-import * as notebookConfigService from '../../services/notebookConfigService.js';
-import * as notebookService from '../../services/notebookService.js';
-import * as studentProgressService from '../../services/studentProgressService.js';
+import * as workRequestService from '../../services/workRequestService.js';
 import * as studentEventService from '../../services/studentEventService.js';
 import { STUDENT_EVENT_CATEGORIES } from '../../config/studentEventCategories.js';
-import { createNotebookTimelineElement } from '../components/NotebookTimeline.js';
-import { NOTEBOOK_TIMELINE_SYMBOLS, NOTEBOOK_TIMELINE_STATUS_LABELS, deriveDaySymbolKey } from '../../config/notebookStatuses.js';
-import { getCurrentYearMonth, getDaysInYearMonth, formatDateKey } from '../../utils/dateHelpers.js';
+import { formatDateKey } from '../../utils/dateHelpers.js';
 import { BUCKET_KEYS, BUCKET_LABELS, getBucketLabel, getBucketRowStyle } from '../../config/bucketConfig.js';
 import { getGroupColorHex } from '../../config/groupColorConfig.js';
 import { formatDate } from '../../utils/dateHelpers.js';
@@ -594,9 +590,32 @@ function renderLearningTab(content, classroom, student) {
 }
 
 // ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
 // Notebooks
 // ---------------------------------------------------------------------
 
+const NOTEBOOK_STATUS_LABEL = {
+  assigned: 'Awaiting Submission',
+  submitted: 'Awaiting Review',
+  resubmitted: 'Awaiting Review',
+  needs_correction: 'Needs Correction',
+  reviewed: 'Reviewed',
+  absent: 'Absent',
+};
+
+/**
+ * Reads exclusively from services/workRequestService.js — the same
+ * single source of truth the WorkRequest roster itself is built on
+ * (see ui/views/WorkRequestRosterView.js). This tab used to read from
+ * the retired, day-by-day services/notebookService.js entirely —
+ * confirmed directly before this change: not a single line of it
+ * touched workRequestService, which is exactly why it could show
+ * "0/0/0" for a student the roster itself already showed real,
+ * current activity for. That old data source is never written to by
+ * any current notebook-checking action, so it could only ever go
+ * stale; this tab and the roster now derive from the exact same
+ * entries, so they can never disagree again.
+ */
 function renderNotebooksTab(content, classroom, student) {
   const section = document.createElement('div');
   section.className = 'profile-section';
@@ -606,67 +625,44 @@ function renderNotebooksTab(content, classroom, student) {
   heading.textContent = 'Notebooks';
   section.appendChild(heading);
 
-  const subjects = notebookConfigService.listSubjects(classroom);
-  const notebookTypePairs = [];
-  subjects.forEach((subject) => {
-    notebookConfigService.listNotebookTypes(classroom, subject.id).forEach((notebookType) => {
-      notebookTypePairs.push({ subject, notebookType });
+  const summary = workRequestService.getStudentSummary(classroom, student.id);
+  const statsRow = document.createElement('div');
+  statsRow.className = 'profile-overview';
+  statsRow.appendChild(createStatCard('Awaiting Submission', summary.awaitingSubmission));
+  statsRow.appendChild(createStatCard('Awaiting Review', summary.awaitingReview));
+  statsRow.appendChild(createStatCard('Needs Correction', summary.needsCorrection));
+  statsRow.appendChild(createStatCard('Reviewed', summary.reviewed));
+  section.appendChild(statsRow);
+
+  const recentHeading = document.createElement('h3');
+  recentHeading.className = 'settings-team-block__heading';
+  recentHeading.textContent = 'Recent Notebook Activity';
+  section.appendChild(recentHeading);
+
+  const recentActivity = workRequestService.getRecentActivityForStudent(classroom, student.id);
+  if (recentActivity.length === 0) {
+    section.appendChild(createEmptyStateElement({ message: 'No notebook activity recorded yet for this student.' }));
+  } else {
+    const list = document.createElement('div');
+    list.className = 'settings-editable-list';
+    recentActivity.forEach((item) => {
+      const row = document.createElement('div');
+      row.className = 'settings-editable-list__item';
+
+      const title = document.createElement('span');
+      title.style.flex = '1';
+      title.textContent = item.title;
+      row.appendChild(title);
+
+      const status = document.createElement('span');
+      const label = item.status === 'reviewed' && item.reviewOutcome === 'incomplete' ? 'Reviewed \u00b7 Incomplete' : NOTEBOOK_STATUS_LABEL[item.status] || item.status;
+      status.textContent = item.updatedAt ? `${label} \u00b7 ${formatDateKey(item.updatedAt.slice(0, 10))}` : label;
+      row.appendChild(status);
+
+      list.appendChild(row);
     });
-  });
-
-  if (notebookTypePairs.length === 0) {
-    section.appendChild(
-      createEmptyStateElement({
-        message: 'No notebooks configured yet for this classroom.',
-      })
-    );
-    content.appendChild(section);
-    return;
+    section.appendChild(list);
   }
-
-  const yearMonth = getCurrentYearMonth();
-  const daysInMonth = getDaysInYearMonth(yearMonth);
-
-  notebookTypePairs.forEach(({ subject, notebookType }) => {
-    const history = notebookService.getStudentHistory(classroom, subject.id, notebookType.id, student.id);
-    if (history.length === 0) return; // nothing recorded for this notebook yet — skip rather than show an empty block
-
-    const block = document.createElement('div');
-    block.className = 'settings-team-block';
-
-    const blockHeading = document.createElement('h3');
-    blockHeading.className = 'settings-team-block__heading';
-    blockHeading.textContent = `${subject.name} \u00b7 ${notebookType.name}`;
-    block.appendChild(blockHeading);
-
-    const days = [];
-    for (let day = 1; day <= daysInMonth; day++) {
-      const dateKey = `${yearMonth}-${String(day).padStart(2, '0')}`;
-      const entry = notebookService.getEntry(classroom, subject.id, notebookType.id, dateKey, student.id);
-      const symbolKey = deriveDaySymbolKey(entry);
-      days.push({
-        dateKey,
-        symbol: NOTEBOOK_TIMELINE_SYMBOLS[symbolKey],
-        statusLabel: NOTEBOOK_TIMELINE_STATUS_LABELS[symbolKey],
-      });
-    }
-    block.appendChild(createNotebookTimelineElement({ days }));
-
-    const statsRow = document.createElement('div');
-    statsRow.className = 'profile-overview';
-    const completionPercent = studentProgressService.getCompletionPercent(classroom, subject.id, notebookType.id, student.id);
-    const currentStreak = studentProgressService.getCurrentStreak(classroom, subject.id, notebookType.id, student.id);
-    const bestStreak = studentProgressService.getBestStreak(classroom, subject.id, notebookType.id, student.id);
-    const lastChecked = studentProgressService.getLastChecked(classroom, subject.id, notebookType.id, student.id);
-
-    statsRow.appendChild(createStatCard('\ud83d\udcd2 Completion', `${completionPercent}%`));
-    statsRow.appendChild(createStatCard('\ud83d\udd25 Current Streak', currentStreak));
-    statsRow.appendChild(createStatCard('\ud83c\udfc6 Best Streak', bestStreak));
-    statsRow.appendChild(createStatCard('Last Checked', lastChecked ? formatDateKey(lastChecked) : '\u2014'));
-    block.appendChild(statsRow);
-
-    section.appendChild(block);
-  });
 
   content.appendChild(section);
 }

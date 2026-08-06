@@ -234,3 +234,54 @@ export function resetWorkRequestEntry(workRequest, studentId) {
 export function getEntryHistory(entry) {
   return entry.history || [];
 }
+
+/**
+ * One student's own summary across EVERY WorkRequest they have an
+ * entry in — open and closed alike, since "Reviewed" would almost
+ * never appear otherwise (a request is typically closed once
+ * everyone's been reviewed). This is the single source of truth
+ * StudentProfileView.js's own Notebook tab now reads from, the same
+ * function the WorkRequest roster's own status chips are ultimately
+ * derived from — the roster and the profile can never disagree,
+ * because they're reading the same underlying entries, not two
+ * separately-maintained tallies.
+ */
+export function getStudentSummary(classroom, studentId) {
+  const summary = { awaitingSubmission: 0, awaitingReview: 0, needsCorrection: 0, reviewed: 0 };
+
+  listWorkRequests(classroom).forEach((request) => {
+    const entry = getEntryForStudent(request, studentId);
+    if (!entry) return;
+    if (entry.status === 'assigned') summary.awaitingSubmission += 1;
+    else if (entry.status === 'submitted' || entry.status === 'resubmitted') summary.awaitingReview += 1;
+    else if (entry.status === 'needs_correction') summary.needsCorrection += 1;
+    else if (entry.status === 'reviewed') summary.reviewed += 1;
+    // 'absent' is deliberately excluded from all four counts — it isn't
+    // a stage of the ordinary lifecycle, and folding it into any one
+    // of these four would misrepresent it as still being one of the
+    // ordinary outcomes.
+  });
+
+  return summary;
+}
+
+/**
+ * Every WorkRequest this student has an entry in, most recently
+ * updated first — the raw data behind "Recent Notebook Activity."
+ * Deliberately not filtered to open requests only, since a teacher
+ * opening a profile genuinely benefits from seeing a request that was
+ * just reviewed and closed, not only what's still outstanding.
+ */
+export function getRecentActivityForStudent(classroom, studentId, limit = 10) {
+  return listWorkRequests(classroom)
+    .map((request) => ({ request, entry: getEntryForStudent(request, studentId) }))
+    .filter(({ entry }) => entry !== null)
+    .sort((a, b) => (b.entry.updatedAt || '').localeCompare(a.entry.updatedAt || ''))
+    .slice(0, limit)
+    .map(({ request, entry }) => ({
+      title: request.title,
+      status: entry.status,
+      reviewOutcome: entry.reviewOutcome,
+      updatedAt: entry.updatedAt,
+    }));
+}

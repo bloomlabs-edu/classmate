@@ -11,53 +11,62 @@
  * new checker function here — getPendingTasks() picks it up
  * automatically, no widget changes needed.
  *
+ * The three "work_request_*" checkers are now an internal adapter over
+ * services/workTypes/NotebookWorkType.js — see this file's own
+ * getWorkRequestItemsBySubtitle() below for exactly how. This is a pure
+ * internal implementation change: NotebookWorkType now owns the actual
+ * notebook lifecycle logic (composing workRequestService.js directly,
+ * per the frozen Work Type architecture), and this file's own public
+ * output shape — { requestId, description, count } per item, three
+ * separately-registered task-type ids — is completely unchanged, so
+ * PendingTasksWidget.js and main.js's own dispatch function continue
+ * working exactly as before, with zero changes to either. The
+ * migration is invisible to both.
+ *
  * Definitions (judgment calls, documented since "pending" is inherently
  * a bit subjective):
- *   - The three "work_request_*" checkers below deliberately query
- *     services/workRequestService.js's own workflow state directly —
- *     "awaiting submission," "submitted, awaiting review," and "needs
- *     correction" are each just getEntriesByStatus() on every currently
- *     open WorkRequest. This replaces the previous "Notebook not
- *     checked today" check, which fired on a fixed calendar cadence
- *     (zero register entries for today's date) that never matched how
- *     notebook cycles actually work in a real classroom — irregular,
- *     teacher-driven, averaging closer to two weeks than one day. There
- *     is no calendar date involved in any of these three checks at all,
- *     by design: a WorkRequest's own state already answers the
- *     question directly, with nothing to reconstruct from a date range.
  *   - "Activities awaiting completion": a Learning Activity with at
  *     least one student still at status 'Not Assigned' — the teacher
  *     hasn't finished marking the whole roster for it yet.
  */
 
 import * as learningActivityService from './learningActivityService.js';
-import * as workRequestService from './workRequestService.js';
+import { NotebookWorkType } from './workTypes/NotebookWorkType.js';
 import { PENDING_TASK_TYPES } from '../config/pendingTaskTypes.js';
 
-function checkWorkRequestsByStatus(classroom, statuses) {
-  const items = [];
-  workRequestService
-    .listWorkRequests(classroom)
-    .filter((request) => workRequestService.isOpen(request))
-    .forEach((request) => {
-      const count = statuses.reduce((sum, status) => sum + workRequestService.getEntriesByStatus(request, status).length, 0);
-      if (count > 0) {
-        items.push({ requestId: request.id, description: request.title, count });
-      }
-    });
-  return items;
+/**
+ * The adapter: calls NotebookWorkType.getActiveWork() exactly once,
+ * then translates its frozen { title, subtitle, count, navigateTo }
+ * shape back into this file's own, unchanged public shape
+ * ({ requestId, description, count }), filtered to whichever subtitle
+ * this specific, legacy task-type id corresponds to. `requestId` is
+ * recovered from `navigateTo`'s own, well-defined path shape
+ * (#/classroom/{id}/work-requests/{requestId}) — a deliberate,
+ * temporary adapter step that exists only because this file's own
+ * callers still expect `requestId` directly; Milestone 4's own Open
+ * Work redesign will consume `navigateTo` itself, generically, and
+ * this adapter (along with the rest of this file) is removed then.
+ */
+function getWorkRequestItemsBySubtitle(classroom, subtitle) {
+  return NotebookWorkType.getActiveWork(classroom)
+    .filter((item) => item.subtitle === subtitle)
+    .map((item) => ({
+      requestId: item.navigateTo.split('/').pop(),
+      description: item.title,
+      count: item.count,
+    }));
 }
 
 function checkWorkRequestsAwaitingSubmission(classroom) {
-  return checkWorkRequestsByStatus(classroom, ['assigned']);
+  return getWorkRequestItemsBySubtitle(classroom, 'Awaiting Submission');
 }
 
 function checkWorkRequestsSubmittedAwaitingReview(classroom) {
-  return checkWorkRequestsByStatus(classroom, ['submitted', 'resubmitted']);
+  return getWorkRequestItemsBySubtitle(classroom, 'Awaiting Review');
 }
 
 function checkWorkRequestsNeedingCorrection(classroom) {
-  return checkWorkRequestsByStatus(classroom, ['needs_correction']);
+  return getWorkRequestItemsBySubtitle(classroom, 'Needs Correction');
 }
 
 function checkActivitiesAwaitingCompletion(classroom) {
