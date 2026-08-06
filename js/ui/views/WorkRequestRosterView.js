@@ -1,42 +1,42 @@
 /**
  * ui/views/WorkRequestRosterView.js
  *
- * The teacher checking workflow — one page, per explicit product
- * decision: current lifecycle status AND lifecycle history both live
- * here, so there is never a reason to navigate to a separate Timeline
- * screen for the same WorkRequest. The old Notebook Tracker's
- * Timeline page existed only because the previous day-by-day
- * register had no other way to answer "what happened over time" —
- * a WorkRequestEntry already carries its own answer
- * (services/workRequestService.js's getEntryHistory()), so that
- * separate page is retired entirely, not just no-longer-linked-to.
+ * The teacher checking workflow, redesigned around the mockup that is
+ * now the visual reference for WorkRequest UI platform-wide — the
+ * architecture itself is unchanged: still WorkRequest/
+ * WorkRequestEntry, still the one-tap lifecycle, still lifecycle
+ * history inline, still no separate Timeline page.
  *
- * One primary button per row advances the happy path
- * (workRequestService.js's own advanceStatus()) — its label, color,
- * and icon all driven by the entry's current status, mirroring the
- * same "state drives appearance" pattern
- * ui/views/GoalDashboardView.js's own status column already uses.
- * "Needs Correction" is the one distinct, secondary action, and only
- * appears when the entry's own status makes it meaningful.
+ * Summary cards (Students / Awaiting Submission / Awaiting Review /
+ * Reviewed) are interactive filters, not static counters — tapping
+ * one narrows the roster to exactly that status, tapping it again
+ * clears the filter. The bottom legend is the same mechanism extended
+ * to the two statuses that don't get their own top card (Needs
+ * Correction, Absent), so every status is reachable as a filter, not
+ * only the four most common ones.
  *
- * A colored dot (\ud83d\udfe2/\ud83d\udfe1/\ud83d\udd34) communicates where a notebook
- * currently sits without needing to open anything — tapping a row
- * expands its own full history inline, in place, never navigating
- * away. Once an entry reaches 'reviewed' (the true terminal state —
- * see workRequestService.js's own getNextStatus(), which returns null
- * for it), no button renders at all for that row, not a disabled one.
+ * Per explicit product decision, avatars are reserved for contexts
+ * where identity is the primary focus (profile pages, cards, tiles) —
+ * this screen is about processing a stack of work quickly, so every
+ * row uses ui/components/StudentNameElement.js with `showAvatar:
+ * false`, leading with a bucket-colored swatch instead. Name is the
+ * strongest visual element, team secondary, status tertiary (a
+ * colored chip, with a subtle date underneath once something has
+ * actually happened), dates always the most muted text on the row.
  *
- * Every row uses ui/components/StudentNameElement.js — the canonical
- * student identity component (avatar, bucket color, name primary,
- * team secondary, consistent click behavior) — never a bespoke
- * rendering. Clicking a name opens the teacher-facing, private
- * profile (ui/views/StudentProfileView.js), correct for this
- * teacher-side screen.
+ * "Needs Correction" and "Absent" both live in the row's own overflow
+ * ("\u22ef") menu — deliberately not a second, always-visible button
+ * next to the primary one, since both are exceptional actions, not
+ * part of the common one-tap workflow.
  *
- * The old Submission/Completion dropdown controls
- * (ui/components/NotebookRoster.js) never appear anywhere on this
- * page — they belong to the retired NotebookSubmission model, not
- * this one.
+ * Tapping a row's own chevron expands its full lifecycle history
+ * inline, in place — never a navigation, never a separate screen.
+ *
+ * services/workRequestService.js has no notebook-specific logic in
+ * it, and neither does this view beyond reading `request.title`/
+ * `subjectId` for display — this same component is meant to be the
+ * standard for every future WorkRequest type (Worksheet, Reading Log,
+ * Project, Lab Record), not rebuilt per type.
  */
 
 import * as workRequestService from '../../services/workRequestService.js';
@@ -46,38 +46,41 @@ import { createBackButton } from '../components/BackButton.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { formatDate } from '../../utils/dateHelpers.js';
 
-const STATUS_BUTTON = {
-  assigned: { label: 'Mark Submitted', className: 'btn--secondary' },
-  submitted: { label: 'Mark Reviewed', className: 'btn--primary' },
-  needs_correction: { label: 'Mark Resubmitted', className: 'btn--warning' },
-  resubmitted: { label: 'Mark Reviewed', className: 'btn--primary' },
+export const STATUS_META = {
+  assigned: { label: 'Awaiting Submission', chipClass: 'amber', icon: '\u23f3', buttonLabel: 'Mark Submitted', buttonClass: 'btn--secondary' },
+  submitted: { label: 'Awaiting Review', chipClass: 'purple', icon: '\ud83d\udcc4', buttonLabel: 'Mark Reviewed', buttonClass: 'btn--primary' },
+  needs_correction: { label: 'Needs Correction', chipClass: 'red', icon: '\u26a0\ufe0f', buttonLabel: 'Mark Resubmitted', buttonClass: 'btn--warning' },
+  resubmitted: { label: 'Awaiting Review', chipClass: 'purple', icon: '\ud83d\udcc4', buttonLabel: 'Mark Reviewed', buttonClass: 'btn--primary' },
+  reviewed: { label: 'Reviewed', chipClass: 'green', icon: '\u2705', buttonLabel: null, buttonClass: null },
+  absent: { label: 'Absent', chipClass: 'gray', icon: '\ud83d\udeab', buttonLabel: null, buttonClass: null },
 };
 
-const STATUS_LABEL = {
-  assigned: 'Awaiting Submission',
-  submitted: 'Submitted',
-  needs_correction: 'Needs Correction',
-  resubmitted: 'Resubmitted',
-  reviewed: 'Reviewed',
-};
-
-// Communicates where a notebook sits at a glance, per explicit
-// product decision — green once genuine forward progress has been
-// made (submitted, or fully reviewed), amber while a correction is
-// outstanding, red while nothing has happened yet.
-const STATUS_DOT = {
-  assigned: '\ud83d\udd34',
-  submitted: '\ud83d\udfe2',
-  needs_correction: '\ud83d\udfe1',
-  resubmitted: '\ud83d\udfe2',
-  reviewed: '\ud83d\udfe2',
-};
+// The four cards shown at the top, matching the mockup exactly. Every
+// status (including the two without their own card) is still
+// reachable as a filter via the legend below.
+const SUMMARY_CARDS = [
+  { id: 'total', label: 'Students', statuses: null },
+  { id: 'assigned', label: 'Awaiting Submission', statuses: ['assigned'] },
+  { id: 'awaiting_review', label: 'Awaiting Review', statuses: ['submitted', 'resubmitted'] },
+  { id: 'reviewed', label: 'Reviewed', statuses: ['reviewed'] },
+];
 
 export function renderWorkRequestRosterView(container, { classroom, requestId, onBack, onSelectStudent }) {
   const expandedStudentIds = new Set();
+  let openOverflowStudentId = null;
+  let activeFilterStatuses = null;
 
   function rerender() {
-    render(container, classroom, requestId, expandedStudentIds, { onBack, onSelectStudent, onAdvance, onMarkNeedsCorrection, onToggleExpand });
+    render(container, classroom, requestId, expandedStudentIds, openOverflowStudentId, activeFilterStatuses, {
+      onBack,
+      onSelectStudent,
+      onAdvance,
+      onMarkNeedsCorrection,
+      onMarkAbsent,
+      onToggleExpand,
+      onToggleOverflow,
+      onSetFilter,
+    });
   }
 
   function onAdvance(studentId) {
@@ -89,6 +92,14 @@ export function renderWorkRequestRosterView(container, { classroom, requestId, o
   function onMarkNeedsCorrection(studentId) {
     const request = workRequestService.getWorkRequestById(classroom, requestId);
     workRequestService.markNeedsCorrection(request, studentId);
+    openOverflowStudentId = null;
+    rerender();
+  }
+
+  function onMarkAbsent(studentId) {
+    const request = workRequestService.getWorkRequestById(classroom, requestId);
+    workRequestService.markAbsent(request, studentId);
+    openOverflowStudentId = null;
     rerender();
   }
 
@@ -98,10 +109,22 @@ export function renderWorkRequestRosterView(container, { classroom, requestId, o
     rerender();
   }
 
+  function onToggleOverflow(studentId) {
+    openOverflowStudentId = openOverflowStudentId === studentId ? null : studentId;
+    rerender();
+  }
+
+  function onSetFilter(statuses) {
+    // Tapping the already-active filter clears it — a toggle, not a one-way drill.
+    const isSame = JSON.stringify(statuses) === JSON.stringify(activeFilterStatuses);
+    activeFilterStatuses = isSame ? null : statuses;
+    rerender();
+  }
+
   rerender();
 }
 
-function render(container, classroom, requestId, expandedStudentIds, handlers) {
+function render(container, classroom, requestId, expandedStudentIds, openOverflowStudentId, activeFilterStatuses, handlers) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
@@ -126,23 +149,89 @@ function render(container, classroom, requestId, expandedStudentIds, handlers) {
   meta.textContent = [subject?.name, request.dueDate ? `Due ${request.dueDate}` : null].filter(Boolean).join(' \u00b7 ');
   wrapper.appendChild(meta);
 
-  const students = getClassroomStudents(classroom);
+  const allStudents = getClassroomStudents(classroom);
+  wrapper.appendChild(createSummaryCards(request, allStudents.length, activeFilterStatuses, handlers.onSetFilter));
+
+  const visibleStudents = activeFilterStatuses
+    ? allStudents.filter((student) => activeFilterStatuses.includes(workRequestService.getEntryForStudent(request, student.id)?.status))
+    : allStudents;
+
   const list = document.createElement('div');
   list.className = 'work-request-roster__list';
 
-  students.forEach((student) => {
+  visibleStudents.forEach((student) => {
     const entry = workRequestService.getEntryForStudent(request, student.id);
     if (!entry) return;
     list.appendChild(
-      createRosterRow(student, findTeamContaining(classroom, student.id), entry, expandedStudentIds.has(student.id), handlers)
+      createRosterRow(
+        student,
+        findTeamContaining(classroom, student.id),
+        entry,
+        expandedStudentIds.has(student.id),
+        openOverflowStudentId === student.id,
+        handlers
+      )
     );
   });
-
   wrapper.appendChild(list);
+
+  wrapper.appendChild(createLegend(activeFilterStatuses, handlers.onSetFilter));
+
   container.appendChild(wrapper);
 }
 
-function createRosterRow(student, team, entry, isExpanded, handlers) {
+function createSummaryCards(request, totalStudents, activeFilterStatuses, onSetFilter) {
+  const row = document.createElement('div');
+  row.className = 'work-request-roster__summary';
+
+  SUMMARY_CARDS.forEach((card) => {
+    const count = card.statuses
+      ? card.statuses.reduce((sum, status) => sum + workRequestService.getEntriesByStatus(request, status).length, 0)
+      : totalStudents;
+
+    const isActive = card.statuses && JSON.stringify(card.statuses) === JSON.stringify(activeFilterStatuses);
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `work-request-roster__summary-card work-request-roster__summary-card--${card.id}${isActive ? ' work-request-roster__summary-card--active' : ''}`;
+    if (card.statuses) button.addEventListener('click', () => onSetFilter(card.statuses));
+    else button.disabled = true; // "Students" is a real total, not a filter -- nothing to narrow to.
+
+    const countEl = document.createElement('span');
+    countEl.className = 'work-request-roster__summary-count';
+    countEl.textContent = String(count);
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'work-request-roster__summary-label';
+    labelEl.textContent = card.label;
+
+    button.append(countEl, labelEl);
+    row.appendChild(button);
+  });
+
+  return row;
+}
+
+function createLegend(activeFilterStatuses, onSetFilter) {
+  const legend = document.createElement('div');
+  legend.className = 'work-request-roster__legend';
+
+  Object.entries(STATUS_META).forEach(([status, meta]) => {
+    const isActive = activeFilterStatuses && activeFilterStatuses.length === 1 && activeFilterStatuses[0] === status;
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = `work-request-roster__chip work-request-roster__legend-chip work-request-roster__chip--${meta.chipClass}${isActive ? ' work-request-roster__legend-chip--active' : ''}`;
+    chip.textContent = meta.label;
+    chip.addEventListener('click', () => onSetFilter([status]));
+    legend.appendChild(chip);
+  });
+
+  return legend;
+}
+
+function createRosterRow(student, team, entry, isExpanded, isOverflowOpen, handlers) {
+  const meta = STATUS_META[entry.status];
+
   const row = document.createElement('div');
   row.className = 'work-request-roster__row';
 
@@ -157,43 +246,40 @@ function createRosterRow(student, team, entry, isExpanded, handlers) {
   expandButton.addEventListener('click', () => handlers.onToggleExpand(student.id));
   mainLine.appendChild(expandButton);
 
-  const dot = document.createElement('span');
-  dot.className = 'work-request-roster__dot';
-  dot.textContent = STATUS_DOT[entry.status];
-  dot.setAttribute('aria-hidden', 'true');
-  mainLine.appendChild(dot);
+  mainLine.appendChild(createStudentNameElement({ student, team, onSelect: handlers.onSelectStudent, showAvatar: false }));
 
-  mainLine.appendChild(createStudentNameElement({ student, team, onSelect: handlers.onSelectStudent, size: 36 }));
+  const statusBlock = document.createElement('div');
+  statusBlock.className = 'work-request-roster__status-block';
 
-  const statusLabel = document.createElement('span');
-  statusLabel.className = `work-request-roster__status work-request-roster__status--${entry.status}`;
-  statusLabel.textContent = STATUS_LABEL[entry.status];
-  mainLine.appendChild(statusLabel);
+  const chip = document.createElement('span');
+  chip.className = `work-request-roster__chip work-request-roster__chip--${meta.chipClass}`;
+  chip.textContent = `${meta.icon} ${meta.label}`;
+  statusBlock.appendChild(chip);
+
+  const history = workRequestService.getEntryHistory(entry);
+  if (history.length > 1) {
+    const dateLine = document.createElement('span');
+    dateLine.className = 'work-request-roster__date';
+    dateLine.textContent = describeMostRecentTransition(entry.status, history[history.length - 1].date);
+    statusBlock.appendChild(dateLine);
+  }
+  mainLine.appendChild(statusBlock);
 
   const actions = document.createElement('div');
   actions.className = 'work-request-roster__actions';
 
-  const buttonConfig = STATUS_BUTTON[entry.status];
-  if (buttonConfig) {
+  if (meta.buttonLabel) {
     const primaryButton = document.createElement('button');
     primaryButton.type = 'button';
-    primaryButton.className = `btn ${buttonConfig.className}`;
-    primaryButton.textContent = buttonConfig.label;
+    primaryButton.className = `btn ${meta.buttonClass}`;
+    primaryButton.textContent = meta.buttonLabel;
     primaryButton.addEventListener('click', () => handlers.onAdvance(student.id));
     actions.appendChild(primaryButton);
   }
-  // Reviewed (terminal) renders no button at all here -- not a
+  // Reviewed and Absent render no primary button at all -- not a
   // disabled one. There is genuinely nothing further to do.
 
-  if (entry.status === 'submitted' || entry.status === 'resubmitted') {
-    const correctionButton = document.createElement('button');
-    correctionButton.type = 'button';
-    correctionButton.className = 'btn btn--text work-request-roster__correction-button';
-    correctionButton.textContent = 'Needs Correction';
-    correctionButton.addEventListener('click', () => handlers.onMarkNeedsCorrection(student.id));
-    actions.appendChild(correctionButton);
-  }
-
+  actions.appendChild(createOverflowMenu(student, entry, isOverflowOpen, handlers));
   mainLine.appendChild(actions);
   row.appendChild(mainLine);
 
@@ -202,6 +288,50 @@ function createRosterRow(student, team, entry, isExpanded, handlers) {
   }
 
   return row;
+}
+
+function createOverflowMenu(student, entry, isOpen, handlers) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'work-request-roster__overflow';
+
+  const trigger = document.createElement('button');
+  trigger.type = 'button';
+  trigger.className = 'work-request-roster__overflow-trigger';
+  trigger.setAttribute('aria-label', `More actions for ${student.name}`);
+  trigger.textContent = '\u22ef';
+  trigger.addEventListener('click', () => handlers.onToggleOverflow(student.id));
+  wrapper.appendChild(trigger);
+
+  if (isOpen) {
+    const menu = document.createElement('div');
+    menu.className = 'work-request-roster__overflow-menu';
+
+    if (entry.status === 'submitted' || entry.status === 'resubmitted') {
+      menu.appendChild(createOverflowMenuItem('Needs Correction', () => handlers.onMarkNeedsCorrection(student.id)));
+    }
+    if (entry.status !== 'reviewed') {
+      menu.appendChild(createOverflowMenuItem('Absent', () => handlers.onMarkAbsent(student.id)));
+    }
+    if (menu.children.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'work-request-roster__overflow-empty';
+      empty.textContent = 'No actions available';
+      menu.appendChild(empty);
+    }
+
+    wrapper.appendChild(menu);
+  }
+
+  return wrapper;
+}
+
+function createOverflowMenuItem(label, onClick) {
+  const item = document.createElement('button');
+  item.type = 'button';
+  item.className = 'work-request-roster__overflow-item';
+  item.textContent = label;
+  item.addEventListener('click', onClick);
+  return item;
 }
 
 function createHistoryPanel(entry) {
@@ -215,7 +345,7 @@ function createHistoryPanel(entry) {
 
     const label = document.createElement('span');
     label.className = 'work-request-roster__history-label';
-    label.textContent = STATUS_LABEL[step.status];
+    label.textContent = STATUS_META[step.status]?.label || step.status;
 
     const date = document.createElement('span');
     date.className = 'work-request-roster__history-date';
@@ -226,6 +356,11 @@ function createHistoryPanel(entry) {
   });
 
   return panel;
+}
+
+function describeMostRecentTransition(status, isoDate) {
+  const verb = { submitted: 'Submitted', resubmitted: 'Resubmitted', needs_correction: 'Reviewed', reviewed: 'Reviewed', absent: 'Marked' }[status] || 'Updated';
+  return `${verb} on ${formatDate(isoDate)}`;
 }
 
 function getClassroomStudents(classroom) {

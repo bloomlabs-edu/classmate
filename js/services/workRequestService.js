@@ -161,6 +161,26 @@ export function markNeedsCorrection(workRequest, studentId) {
   return entry;
 }
 
+/**
+ * Another exceptional, secondary action — reachable only through this
+ * function, never the primary one-tap button, per explicit product
+ * decision ("Absent should remain an exceptional action... it should
+ * not become part of the primary one-tap workflow"). Meaningful from
+ * any status except 'reviewed' (once genuinely reviewed, marking
+ * absent after the fact would misrepresent real, completed work).
+ */
+export function markAbsent(workRequest, studentId) {
+  const entry = getEntryForStudent(workRequest, studentId);
+  if (!entry) return null;
+  if (entry.status === 'reviewed') return null;
+
+  entry.status = 'absent';
+  entry.updatedAt = getCurrentIsoDate();
+  if (!entry.history) entry.history = [];
+  entry.history.push({ status: 'absent', date: entry.updatedAt });
+  return entry;
+}
+
 /** This entry's own full lifecycle history, oldest first — what the roster's inline expansion renders instead of a separate Timeline page. */
 export function getEntryHistory(entry) {
   return entry.history || [];

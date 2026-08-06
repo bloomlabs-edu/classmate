@@ -7651,14 +7651,18 @@ button.wizard-checklist__row:hover {
   background-color: color-mix(in srgb, var(--color-warning) 80%, black);
 }
 
-/* WorkRequest Roster — see ui/views/WorkRequestRosterView.js. */
+
+/* WorkRequest Roster — see ui/views/WorkRequestRosterView.js. The
+   design language for WorkRequest UI platform-wide, per explicit
+   product decision — meant to be the standard for every future
+   WorkRequest type, not rebuilt per type. */
 .work-request-roster {
-  max-width: 640px;
+  max-width: 760px;
   margin: 0 auto;
   padding: 1.5rem 1.25rem;
 }
 .work-request-roster__title {
-  font-size: 1.4rem;
+  font-size: 1.5rem;
   font-weight: var(--font-weight-black);
   margin: 1rem 0 0.15rem;
 }
@@ -7666,6 +7670,52 @@ button.wizard-checklist__row:hover {
   color: var(--color-muted);
   margin: 0 0 1.25rem;
 }
+
+.work-request-roster__summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+.work-request-roster__summary-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 1.1rem 0.5rem;
+  border-radius: 14px;
+  border: 2px solid transparent;
+  background-color: color-mix(in srgb, var(--color-primary) 6%, white);
+  cursor: pointer;
+  font: inherit;
+}
+.work-request-roster__summary-card:disabled {
+  cursor: default;
+}
+.work-request-roster__summary-card--active {
+  border-color: var(--color-primary);
+}
+.work-request-roster__summary-card--assigned {
+  background-color: #fff8e1;
+}
+.work-request-roster__summary-card--awaiting_review {
+  background-color: #f3f0fb;
+}
+.work-request-roster__summary-card--reviewed {
+  background-color: #eaf7ec;
+}
+.work-request-roster__summary-count {
+  font-size: 1.6rem;
+  font-weight: var(--font-weight-black);
+  color: var(--color-ink);
+}
+.work-request-roster__summary-label {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+  text-align: center;
+}
+
 .work-request-roster__list {
   display: flex;
   flex-direction: column;
@@ -7676,7 +7726,7 @@ button.wizard-checklist__row:hover {
   flex-direction: column;
   background-color: #ffffff;
   border-radius: 14px;
-  padding: 0.6rem 1rem;
+  padding: 0.65rem 1rem;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
 }
 .work-request-roster__main-line {
@@ -7693,10 +7743,47 @@ button.wizard-checklist__row:hover {
   padding: 0.25rem;
   flex-shrink: 0;
 }
-.work-request-roster__dot {
-  font-size: 0.7rem;
+
+.work-request-roster__status-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
   flex-shrink: 0;
 }
+.work-request-roster__chip {
+  display: inline-block;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-bold);
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.work-request-roster__chip--amber {
+  background-color: #fff3d6;
+  color: #92660a;
+}
+.work-request-roster__chip--purple {
+  background-color: #ece7fb;
+  color: #5b3fb8;
+}
+.work-request-roster__chip--red {
+  background-color: #fde4e2;
+  color: #c62828;
+}
+.work-request-roster__chip--green {
+  background-color: #dff3e2;
+  color: #2e7d32;
+}
+.work-request-roster__chip--gray {
+  background-color: #eceff1;
+  color: #607d8b;
+}
+.work-request-roster__date {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  padding-left: 0.2rem;
+}
+
 .work-request-roster__history {
   margin: 0.6rem 0 0.3rem 2.4rem;
   padding-left: 0.75rem;
@@ -7717,28 +7804,75 @@ button.wizard-checklist__row:hover {
 .work-request-roster__history-date {
   color: var(--color-muted);
 }
-.work-request-roster__status {
-  font-size: var(--text-sm);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-muted);
-  flex-shrink: 0;
-}
-.work-request-roster__status--needs_correction {
-  color: var(--color-warning);
-}
-.work-request-roster__status--reviewed {
-  color: var(--color-success);
-}
+
 .work-request-roster__actions {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem;
   margin-left: auto;
   flex-shrink: 0;
 }
-.work-request-roster__correction-button {
+
+.work-request-roster__overflow {
+  position: relative;
+}
+.work-request-roster__overflow-trigger {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  font-size: 1.1rem;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+.work-request-roster__overflow-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 5;
+  background-color: #ffffff;
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+  padding: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+}
+.work-request-roster__overflow-item {
+  background: none;
+  border: none;
+  font: inherit;
+  text-align: left;
+  padding: 0.5rem 0.65rem;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--color-ink);
+}
+.work-request-roster__overflow-item:hover {
+  background-color: color-mix(in srgb, var(--color-primary) 8%, white);
+}
+.work-request-roster__overflow-empty {
+  padding: 0.5rem 0.65rem;
+  margin: 0;
+  color: var(--color-muted);
   font-size: var(--text-sm);
-  color: var(--color-danger);
+}
+
+.work-request-roster__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--color-border);
+}
+.work-request-roster__legend-chip {
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+.work-request-roster__legend-chip--active {
+  border-color: currentColor;
 }
 
 /* WorkRequest Create — see ui/views/WorkRequestCreateView.js. */
@@ -7755,4 +7889,14 @@ button.wizard-checklist__row:hover {
 .work-request-create__meta {
   color: var(--color-muted);
   margin: 0 0 1.25rem;
+}
+
+/* Bucket-color swatch — the fast-scan alternative to an avatar. See
+   ui/components/StudentNameElement.js's own showAvatar option. */
+.student-name-element__swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  flex-shrink: 0;
 }

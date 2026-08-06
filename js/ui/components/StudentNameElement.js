@@ -2,27 +2,30 @@
  * ui/components/StudentNameElement.js
  *
  * The canonical way a student's identity renders anywhere in this
- * app — avatar, bucket color, name (primary), team (secondary), and
+ * app — bucket color, name (primary), team (secondary), and
  * consistent click behavior. Introduced per explicit product
  * decision while building the WorkRequest feature, but not scoped to
  * it: every student row throughout the platform should eventually
  * migrate to this, replacing the ad-hoc rendering currently
- * duplicated across NotebookRoster.js, NotebookTimeline.js,
- * LeaderboardList.js, WeeklySnapshotWidget.js, RecognitionCard.js,
- * ActivitiesView.js, and StudentAccessView.js — all of which already
- * share the `.student-name-link` click-behavior class, but each
- * render the visual identity itself differently, or not at all.
+ * duplicated across NotebookTimeline.js, LeaderboardList.js,
+ * WeeklySnapshotWidget.js, RecognitionCard.js, ActivitiesView.js, and
+ * StudentAccessView.js — all of which already share the
+ * `.student-name-link` click-behavior class, but each render the
+ * visual identity itself differently, or not at all.
  *
  * Visual hierarchy is deliberate: the name is the primary element
  * (bold, full opacity); the team is secondary (smaller, muted) — this
  * directly fixes the "Siddharth · Alpha, equal weight" problem found
- * in NotebookRoster.js's own single, undifferentiated string.
+ * in the old NotebookRoster.js's own single, undifferentiated string.
  *
- * Bucket color is always shown — a small colored ring around the
- * avatar, reusing config/bucketConfig.js's getBucketRowStyle()
- * directly, the same color every other bucket display in this app
- * already uses. Per explicit product decision, buckets are visible
- * classroom-wide already, so this is never hidden.
+ * `showAvatar` (default true) controls the leading identity marker.
+ * Avatars are reserved for contexts where identity itself is the
+ * primary focus — profile pages, cards, tiles — per explicit product
+ * decision. In fast-scan, process-a-stack-of-work contexts (the
+ * WorkRequest roster), `showAvatar: false` swaps the avatar for a
+ * plain, bucket-colored square swatch instead: faster to scan down a
+ * long list than repeated avatars, while bucket color — always shown
+ * either way — stays the leading signal.
  *
  * `onSelect`, when provided, makes the whole element a real button
  * (matching this app's own "optional callback, plain element when
@@ -38,7 +41,7 @@
 import { createAvatarElement } from './AvatarDisplay.js';
 import { getBucketRowStyle } from '../../config/bucketConfig.js';
 
-export function createStudentNameElement({ student, team, onSelect, size = 40 } = {}) {
+export function createStudentNameElement({ student, team, onSelect, size = 40, showAvatar = true } = {}) {
   const element = document.createElement(onSelect ? 'button' : 'div');
   element.className = 'student-name-element';
   if (onSelect) {
@@ -48,11 +51,20 @@ export function createStudentNameElement({ student, team, onSelect, size = 40 } 
   }
 
   const bucketStyle = getBucketRowStyle(student.bucket);
-  const avatarWrapper = document.createElement('span');
-  avatarWrapper.className = 'student-name-element__avatar';
-  avatarWrapper.style.borderColor = bucketStyle.border;
-  avatarWrapper.appendChild(createAvatarElement({ studentId: student.id, name: student.name, size, useDefaultIfMissing: true }));
-  element.appendChild(avatarWrapper);
+
+  if (showAvatar) {
+    const avatarWrapper = document.createElement('span');
+    avatarWrapper.className = 'student-name-element__avatar';
+    avatarWrapper.style.borderColor = bucketStyle.border;
+    avatarWrapper.appendChild(createAvatarElement({ studentId: student.id, name: student.name, size, useDefaultIfMissing: true }));
+    element.appendChild(avatarWrapper);
+  } else {
+    const swatch = document.createElement('span');
+    swatch.className = 'student-name-element__swatch';
+    swatch.style.backgroundColor = bucketStyle.border;
+    swatch.setAttribute('aria-hidden', 'true');
+    element.appendChild(swatch);
+  }
 
   const textBlock = document.createElement('span');
   textBlock.className = 'student-name-element__text';
