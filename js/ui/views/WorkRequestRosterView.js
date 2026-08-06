@@ -15,19 +15,29 @@
  * Correction, Absent), so every status is reachable as a filter, not
  * only the four most common ones.
  *
- * Per explicit product decision, avatars are reserved for contexts
- * where identity is the primary focus (profile pages, cards, tiles) —
- * this screen is about processing a stack of work quickly, so every
- * row uses ui/components/StudentNameElement.js with `showAvatar:
- * false`, leading with a bucket-colored swatch instead. Name is the
- * strongest visual element, team secondary, status tertiary (a
- * colored chip, with a subtle date underneath once something has
- * actually happened), dates always the most muted text on the row.
+ * Each row's own background is tinted with the student's bucket color
+ * (config/bucketConfig.js's getBucketRowStyle(), very low opacity) —
+ * bucket becomes part of the row's own identity, scannable at a
+ * glance without a dedicated marker. The leading marker itself shows
+ * group identity instead (ui/components/StudentNameElement.js's own
+ * `leadingMarker: 'group'`), since a teacher checking notebooks
+ * usually works through students by group, not by bucket — group is
+ * the more useful glance-signal in this specific context. Status
+ * chips use a distinctly different, more saturated palette from the
+ * bucket tints so the two pieces of information (learner support
+ * level vs. current WorkRequest status) never blend into each other.
  *
- * "Needs Correction" and "Absent" both live in the row's own overflow
- * ("\u22ef") menu — deliberately not a second, always-visible button
- * next to the primary one, since both are exceptional actions, not
- * part of the common one-tap workflow.
+ * Row hierarchy, deliberately in this order: student name (primary),
+ * group (secondary), status chip (tertiary), a subtle date once
+ * something has actually happened, then the primary action.
+ *
+ * "Needs Correction," "Mark Absent," and "Reset Work Request" all
+ * live in the row's own overflow ("\u22ef") menu — deliberately not
+ * always-visible buttons next to the primary one, since none of them
+ * are part of the common one-tap workflow. Reset is the one, simple
+ * recovery path for any mistake (services/workRequestService.js's own
+ * resetWorkRequestEntry()) — not a separate "undo" per possible
+ * mistake, always returning to the true initial state.
  *
  * Tapping a row's own chevron expands its full lifecycle history
  * inline, in place — never a navigation, never a separate screen.
@@ -44,6 +54,7 @@ import * as notebookConfigService from '../../services/notebookConfigService.js'
 import { createStudentNameElement } from '../components/StudentNameElement.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
+import { getBucketRowStyle } from '../../config/bucketConfig.js';
 import { formatDate } from '../../utils/dateHelpers.js';
 
 export const STATUS_META = {
@@ -77,6 +88,7 @@ export function renderWorkRequestRosterView(container, { classroom, requestId, o
       onAdvance,
       onMarkNeedsCorrection,
       onMarkAbsent,
+      onResetEntry,
       onToggleExpand,
       onToggleOverflow,
       onSetFilter,
@@ -99,6 +111,13 @@ export function renderWorkRequestRosterView(container, { classroom, requestId, o
   function onMarkAbsent(studentId) {
     const request = workRequestService.getWorkRequestById(classroom, requestId);
     workRequestService.markAbsent(request, studentId);
+    openOverflowStudentId = null;
+    rerender();
+  }
+
+  function onResetEntry(studentId) {
+    const request = workRequestService.getWorkRequestById(classroom, requestId);
+    workRequestService.resetWorkRequestEntry(request, studentId);
     openOverflowStudentId = null;
     rerender();
   }
@@ -234,6 +253,11 @@ function createRosterRow(student, team, entry, isExpanded, isOverflowOpen, handl
 
   const row = document.createElement('div');
   row.className = 'work-request-roster__row';
+  // Bucket becomes the row's own identity tint, per explicit product
+  // decision — very low opacity, just enough to recognise the
+  // learner category while scanning, never competing with the status
+  // chip's own, deliberately more saturated palette.
+  row.style.backgroundColor = getBucketRowStyle(student.bucket).background;
 
   const mainLine = document.createElement('div');
   mainLine.className = 'work-request-roster__main-line';
@@ -246,7 +270,7 @@ function createRosterRow(student, team, entry, isExpanded, isOverflowOpen, handl
   expandButton.addEventListener('click', () => handlers.onToggleExpand(student.id));
   mainLine.appendChild(expandButton);
 
-  mainLine.appendChild(createStudentNameElement({ student, team, onSelect: handlers.onSelectStudent, showAvatar: false }));
+  mainLine.appendChild(createStudentNameElement({ student, team, onSelect: handlers.onSelectStudent, leadingMarker: 'group' }));
 
   const statusBlock = document.createElement('div');
   statusBlock.className = 'work-request-roster__status-block';
@@ -310,7 +334,10 @@ function createOverflowMenu(student, entry, isOpen, handlers) {
       menu.appendChild(createOverflowMenuItem('Needs Correction', () => handlers.onMarkNeedsCorrection(student.id)));
     }
     if (entry.status !== 'reviewed') {
-      menu.appendChild(createOverflowMenuItem('Absent', () => handlers.onMarkAbsent(student.id)));
+      menu.appendChild(createOverflowMenuItem('Mark Absent', () => handlers.onMarkAbsent(student.id)));
+    }
+    if (entry.status !== 'assigned') {
+      menu.appendChild(createOverflowMenuItem('\u21ba Reset Work Request', () => handlers.onResetEntry(student.id)));
     }
     if (menu.children.length === 0) {
       const empty = document.createElement('p');

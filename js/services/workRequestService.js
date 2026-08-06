@@ -181,6 +181,28 @@ export function markAbsent(workRequest, studentId) {
   return entry;
 }
 
+/**
+ * The one, simple recovery path for any mistake — "Reset Work
+ * Request" in the overflow menu, per explicit product decision:
+ * rather than separate "Undo Review"/"Undo Submission"/"Mark Not
+ * Submitted" actions (one per possible mistake, harder to reason
+ * about), a single reset always returns to the true initial state.
+ * The primary lifecycle itself is completely unchanged by this — this
+ * is an escape hatch, not a new path through it. A no-op from
+ * 'assigned' itself, since there's nothing to reset.
+ */
+export function resetWorkRequestEntry(workRequest, studentId) {
+  const entry = getEntryForStudent(workRequest, studentId);
+  if (!entry) return null;
+  if (entry.status === 'assigned') return null;
+
+  entry.status = 'assigned';
+  entry.updatedAt = getCurrentIsoDate();
+  if (!entry.history) entry.history = [];
+  entry.history.push({ status: 'assigned', date: entry.updatedAt });
+  return entry;
+}
+
 /** This entry's own full lifecycle history, oldest first — what the roster's inline expansion renders instead of a separate Timeline page. */
 export function getEntryHistory(entry) {
   return entry.history || [];

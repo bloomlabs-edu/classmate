@@ -2,30 +2,39 @@
  * ui/components/StudentNameElement.js
  *
  * The canonical way a student's identity renders anywhere in this
- * app — bucket color, name (primary), team (secondary), and
- * consistent click behavior. Introduced per explicit product
- * decision while building the WorkRequest feature, but not scoped to
- * it: every student row throughout the platform should eventually
- * migrate to this, replacing the ad-hoc rendering currently
- * duplicated across NotebookTimeline.js, LeaderboardList.js,
- * WeeklySnapshotWidget.js, RecognitionCard.js, ActivitiesView.js, and
- * StudentAccessView.js — all of which already share the
- * `.student-name-link` click-behavior class, but each render the
- * visual identity itself differently, or not at all.
+ * app — name (primary), team (secondary), and consistent click
+ * behavior, with a configurable leading identity marker. Introduced
+ * per explicit product decision while building the WorkRequest
+ * feature, but not scoped to it: every student row throughout the
+ * platform should eventually migrate to this, replacing the ad-hoc
+ * rendering currently duplicated across NotebookTimeline.js,
+ * LeaderboardList.js, WeeklySnapshotWidget.js, RecognitionCard.js,
+ * ActivitiesView.js, and StudentAccessView.js — all of which already
+ * share the `.student-name-link` click-behavior class, but each
+ * render the visual identity itself differently, or not at all.
  *
  * Visual hierarchy is deliberate: the name is the primary element
  * (bold, full opacity); the team is secondary (smaller, muted) — this
  * directly fixes the "Siddharth · Alpha, equal weight" problem found
  * in the old NotebookRoster.js's own single, undifferentiated string.
  *
- * `showAvatar` (default true) controls the leading identity marker.
- * Avatars are reserved for contexts where identity itself is the
- * primary focus — profile pages, cards, tiles — per explicit product
- * decision. In fast-scan, process-a-stack-of-work contexts (the
- * WorkRequest roster), `showAvatar: false` swaps the avatar for a
- * plain, bucket-colored square swatch instead: faster to scan down a
- * long list than repeated avatars, while bucket color — always shown
- * either way — stays the leading signal.
+ * `leadingMarker` picks what leads the row, since different contexts
+ * genuinely need different information there, not one universal
+ * choice:
+ *   'avatar' (default) — identity is the primary focus: profile
+ *     pages, cards, tiles.
+ *   'swatch' — a small, bucket-colored square. Faster to scan than
+ *     repeated avatars in a dense list where bucket is the relevant
+ *     signal.
+ *   'group' — a small, colored badge showing this student's own team
+ *     (reusing config/groupColorConfig.js's own team colors — the
+ *     exact color a team's own header already uses). For contexts
+ *     where a teacher is working through students by group (the
+ *     WorkRequest roster), group is the more useful glance-signal
+ *     than bucket, which can instead drive the row's own background
+ *     tint (see ui/views/WorkRequestRosterView.js) rather than
+ *     needing its own marker here too.
+ *   'none' — no leading marker at all.
  *
  * `onSelect`, when provided, makes the whole element a real button
  * (matching this app's own "optional callback, plain element when
@@ -40,8 +49,9 @@
 
 import { createAvatarElement } from './AvatarDisplay.js';
 import { getBucketRowStyle } from '../../config/bucketConfig.js';
+import { getGroupColorHex } from '../../config/groupColorConfig.js';
 
-export function createStudentNameElement({ student, team, onSelect, size = 40, showAvatar = true } = {}) {
+export function createStudentNameElement({ student, team, onSelect, size = 40, leadingMarker = 'avatar' } = {}) {
   const element = document.createElement(onSelect ? 'button' : 'div');
   element.className = 'student-name-element';
   if (onSelect) {
@@ -50,20 +60,27 @@ export function createStudentNameElement({ student, team, onSelect, size = 40, s
     element.addEventListener('click', () => onSelect(student));
   }
 
-  const bucketStyle = getBucketRowStyle(student.bucket);
-
-  if (showAvatar) {
+  if (leadingMarker === 'avatar') {
+    const bucketStyle = getBucketRowStyle(student.bucket);
     const avatarWrapper = document.createElement('span');
     avatarWrapper.className = 'student-name-element__avatar';
     avatarWrapper.style.borderColor = bucketStyle.border;
     avatarWrapper.appendChild(createAvatarElement({ studentId: student.id, name: student.name, size, useDefaultIfMissing: true }));
     element.appendChild(avatarWrapper);
-  } else {
+  } else if (leadingMarker === 'swatch') {
+    const bucketStyle = getBucketRowStyle(student.bucket);
     const swatch = document.createElement('span');
     swatch.className = 'student-name-element__swatch';
     swatch.style.backgroundColor = bucketStyle.border;
     swatch.setAttribute('aria-hidden', 'true');
     element.appendChild(swatch);
+  } else if (leadingMarker === 'group' && team) {
+    const badge = document.createElement('span');
+    badge.className = 'student-name-element__group-badge';
+    badge.style.backgroundColor = team.color ? getGroupColorHex(team.color) : 'var(--color-muted)';
+    badge.textContent = team.name.charAt(0).toUpperCase();
+    badge.setAttribute('aria-hidden', 'true');
+    element.appendChild(badge);
   }
 
   const textBlock = document.createElement('span');

@@ -7759,24 +7759,24 @@ button.wizard-checklist__row:hover {
   white-space: nowrap;
 }
 .work-request-roster__chip--amber {
-  background-color: #fff3d6;
-  color: #92660a;
+  background-color: #f5a623;
+  color: #ffffff;
 }
 .work-request-roster__chip--purple {
-  background-color: #ece7fb;
-  color: #5b3fb8;
+  background-color: #7c5cd6;
+  color: #ffffff;
 }
 .work-request-roster__chip--red {
-  background-color: #fde4e2;
-  color: #c62828;
+  background-color: #e53935;
+  color: #ffffff;
 }
 .work-request-roster__chip--green {
-  background-color: #dff3e2;
-  color: #2e7d32;
+  background-color: #2e9e5b;
+  color: #ffffff;
 }
 .work-request-roster__chip--gray {
-  background-color: #eceff1;
-  color: #607d8b;
+  background-color: #78909c;
+  color: #ffffff;
 }
 .work-request-roster__date {
   font-size: 0.75rem;
@@ -7898,5 +7898,17 @@ button.wizard-checklist__row:hover {
   width: 14px;
   height: 14px;
   border-radius: 4px;
+  flex-shrink: 0;
+}
+.student-name-element__group-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: #ffffff;
+  font-weight: var(--font-weight-black);
+  font-size: 0.9rem;
   flex-shrink: 0;
 }
