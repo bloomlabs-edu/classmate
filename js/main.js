@@ -422,6 +422,7 @@ function renderRoute(route, reason = 'unspecified') {
           }
         },
         onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
+        onNavigateOpenWork: (path) => router.navigate(path),
       });
     } else if (route.name === 'recognition') {
       renderRecognitionScreenView(appContainer, {

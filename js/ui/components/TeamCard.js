@@ -25,7 +25,7 @@
 import { getGroupColorHex } from '../../config/groupColorConfig.js';
 import { createClassModeStudentRow } from './ClassModeStudentRow.js';
 
-export function createTeamCardElement(team, teamScore, { onTap, onSwipeLeft, onLongPress, onTapTeam, tapActionLabel, highlightTeamId, movement, studentMovements = {} } = {}) {
+export function createTeamCardElement(team, teamScore, { onTap, onSwipeLeft, onLongPress, onTapTeam, tapActionLabel, highlightTeamId, movement, studentMovements = {}, studentSessionDeltas = {}, sortedStudents } = {}) {
   const card = document.createElement('article');
   card.className = 'team-card';
   card.dataset.teamId = team.id;
@@ -39,9 +39,19 @@ export function createTeamCardElement(team, teamScore, { onTap, onSwipeLeft, onL
     header.addEventListener('click', onTapTeam);
   }
 
+  const titleRow = document.createElement('div');
+  titleRow.className = 'team-card__title-row';
+
+  const badge = document.createElement('span');
+  badge.className = 'team-card__badge';
+  badge.textContent = team.name.trim().slice(0, 1).toUpperCase();
+  badge.setAttribute('aria-hidden', 'true');
+  titleRow.appendChild(badge);
+
   const title = document.createElement('h2');
   title.className = 'team-card__name';
   title.textContent = team.name;
+  titleRow.appendChild(title);
 
   const total = document.createElement('span');
   total.className = 'team-card__total';
@@ -51,7 +61,7 @@ export function createTeamCardElement(team, teamScore, { onTap, onSwipeLeft, onL
   total.textContent = `${teamScore} \u2b50`;
   total.setAttribute('aria-label', `${team.name} total score: ${teamScore} stars`);
 
-  header.append(title, total);
+  header.append(titleRow, total);
 
   if (movement) {
     header.appendChild(createMovementIndicator(movement, team.name));
@@ -59,9 +69,16 @@ export function createTeamCardElement(team, teamScore, { onTap, onSwipeLeft, onL
 
   const list = document.createElement('ul');
   list.className = 'student-list';
-  team.students.forEach((student) => {
+  (sortedStudents || team.students).forEach((student) => {
     list.appendChild(
-      createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongPress, tapActionLabel, movement: studentMovements[student.id] })
+      createClassModeStudentRow(student, {
+        onTap,
+        onSwipeLeft,
+        onLongPress,
+        tapActionLabel,
+        movement: studentMovements[student.id],
+        sessionDelta: studentSessionDeltas[student.id],
+      })
     );
   });
 

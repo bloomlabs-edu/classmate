@@ -40,7 +40,7 @@ const LONG_PRESS_MS = 500;
 const MOVE_CANCEL_THRESHOLD_PX = 10;
 const SWIPE_THRESHOLD_PX = 60;
 
-export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongPress, tapActionLabel = 'award a star', movement }) {
+export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongPress, tapActionLabel = 'award a star', movement, sessionDelta }) {
   const style = getBucketRowStyle(student.bucket);
 
   const item = document.createElement('li');
@@ -66,6 +66,9 @@ export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongP
   const trailing = document.createElement('span');
   trailing.className = 'student-row__trailing';
   trailing.appendChild(score);
+  if (sessionDelta !== undefined) {
+    trailing.appendChild(createSessionDeltaBadge(sessionDelta, student.name));
+  }
   if (movement) {
     trailing.appendChild(createStudentMovementBadge(movement, student.name));
   }
@@ -209,11 +212,49 @@ export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongP
  * `{ movement, movementAmount }` it's handed, never computing either
  * value itself.
  */
+/**
+ * The PRIMARY badge — "how many stars this student earned this
+ * session," per explicit product decision that this is the metric
+ * students should notice first, since it rewards effort rather than
+ * comparing them to classmates. Purely presentational: renders
+ * whatever signed number it's handed (already derived from real
+ * student.history deltas by
+ * services/classSessionService.js's own
+ * getStudentStarDeltaSinceSessionStart() — see
+ * ui/components/TeamStandingsBoard.js), never computing it itself.
+ * Deliberately visually distinct from — and heavier than — the
+ * ranking badge below it: this answers "did I earn stars," ranking
+ * answers "where do I stand," and per explicit product decision the
+ * two should never compete for attention.
+ */
+function createSessionDeltaBadge(sessionDelta, studentName) {
+  const badge = document.createElement('span');
+  const sign = sessionDelta > 0 ? 'positive' : sessionDelta < 0 ? 'negative' : 'neutral';
+  badge.className = `student-row__session-delta student-row__session-delta--${sign}`;
+
+  const formatted = sessionDelta > 0 ? `+${sessionDelta}` : String(sessionDelta);
+  badge.textContent = `${formatted}\u2b50`;
+  badge.setAttribute('aria-label', `${studentName} earned ${formatted} stars this session`);
+
+  return badge;
+}
+
+/**
+ * The SECONDARY badge — ranking movement since the period started,
+ * per explicit product decision now deliberately smaller and lighter
+ * than the session-performance badge beside it: "you climbed four
+ * places" is real, useful context, but it should read as metadata,
+ * not compete with "you earned three stars" for a student's first
+ * glance. Symbols match the exact requested vocabulary (▲/▼/→,
+ * distinct from the up/down arrows used elsewhere in this app, e.g.
+ * the team-level indicator) — visually calmer, matching this badge's
+ * now-secondary role.
+ */
 function createStudentMovementBadge(movement, studentName) {
   const badge = document.createElement('span');
   badge.className = `student-row__movement student-row__movement--${movement.movement}`;
 
-  const symbol = { up: '\u2191', down: '\u2193', same: '\u2192' }[movement.movement];
+  const symbol = { up: '\u25b2', down: '\u25bc', same: '\u2192' }[movement.movement];
   badge.textContent = `${symbol}${movement.movementAmount}`;
   badge.setAttribute(
     'aria-label',

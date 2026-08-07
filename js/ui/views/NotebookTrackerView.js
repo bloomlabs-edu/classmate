@@ -31,6 +31,7 @@
 import { NotebookWorkType } from '../../services/workTypes/NotebookWorkType.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { createBackButton } from '../components/BackButton.js';
+import { createWorkItemCard } from '../components/WorkItemCard.js';
 
 export function renderNotebookTrackerView(container, { classroom, onBack, onNavigate, onOpenNotebookConfiguration }) {
   container.innerHTML = '';
@@ -68,36 +69,6 @@ export function renderNotebookTrackerView(container, { classroom, onBack, onNavi
 
   wrapper.appendChild(content);
   container.appendChild(wrapper);
-}
-
-/**
- * Renders one plain {title, subtitle, count, navigateTo} item as an
- * operational card — no notebook-specific knowledge here at all; this
- * same function is meant to keep working unchanged once Open Work
- * aggregates cards from every WorkType, not only Notebook's own.
- */
-function createWorkItemCard(item, buttonLabel, onNavigate) {
-  const card = document.createElement('div');
-  card.className = 'notebook-tracker__card';
-
-  const titleEl = document.createElement('p');
-  titleEl.className = 'notebook-tracker__card-title';
-  titleEl.textContent = item.title;
-  card.appendChild(titleEl);
-
-  const subtitleEl = document.createElement('p');
-  subtitleEl.className = 'notebook-tracker__card-subtitle';
-  subtitleEl.textContent = item.count !== undefined ? `${item.count} ${item.subtitle}` : item.subtitle || 'No active work';
-  card.appendChild(subtitleEl);
-
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'btn btn--primary';
-  button.textContent = buttonLabel;
-  button.addEventListener('click', () => onNavigate(item.navigateTo));
-  card.appendChild(button);
-
-  return card;
 }
 
 /**

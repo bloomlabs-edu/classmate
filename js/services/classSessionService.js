@@ -34,6 +34,23 @@ function getOrCreateSession(classroomId) {
   return sessionByClassroomId.get(classroomId);
 }
 
+/**
+ * The sum of a student's own real history deltas since this session
+ * began — "+3⭐ this session," not their all-time score. Every award
+ * and deduction already writes a real, signed delta to
+ * student.history (see classModeService.js's own awardStar()/
+ * deductPoint()); this is a pure derivation over that existing data,
+ * no new persistence. Falls back to the start of today (calendar day)
+ * when no live session is active, so this stays meaningful outside
+ * Class Mode too (the Dashboard, Student Portal), not only mid-session.
+ */
+export function getStudentStarDeltaSinceSessionStart(classroom, student) {
+  const session = sessionByClassroomId.get(classroom.id);
+  const cutoff = session ? session.startedAt : new Date().toISOString().slice(0, 10) + 'T00:00:00.000Z';
+
+  return (student.history || []).filter((entry) => entry.recordedAt >= cutoff).reduce((sum, entry) => sum + entry.delta, 0);
+}
+
 export function isSessionActive(classroom) {
   return sessionByClassroomId.has(classroom.id);
 }

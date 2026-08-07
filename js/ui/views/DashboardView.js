@@ -65,6 +65,7 @@ import { createClassroomHeaderElement } from '../components/ClassroomHeader.js';
 import { createRecognitionWidgetElement } from '../components/RecognitionWidget.js';
 import { createWeeklySnapshotWidgetElement } from '../components/WeeklySnapshotWidget.js';
 import { createPendingTasksWidgetElement } from '../components/PendingTasksWidget.js';
+import { createOpenWorkWidgetElement } from '../components/OpenWorkWidget.js';
 import { createSubjectsWidgetElement } from '../components/SubjectsWidget.js';
 import { createGroupsWidgetElement } from '../components/GroupsWidget.js';
 import { createTeachingSectionElement } from '../components/TeachingSection.js';
@@ -94,6 +95,7 @@ export function renderDashboardView(container, props) {
     onOpenActivities,
     onSelectPendingTask,
     onSelectStudent,
+    onNavigateOpenWork,
   } = props;
 
   container.innerHTML = '';
@@ -209,6 +211,20 @@ export function renderDashboardView(container, props) {
   }
 
   wrapper.appendChild(createClassroomHeaderElement({ classroomContext }));
+
+  // Open Work — the first, minimal instance of the agreed
+  // "Open Work / Start New / Configuration" direction (see
+  // ui/components/OpenWorkWidget.js's own header comment). Positioned
+  // above the module cards deliberately: this is meant to move the
+  // product toward the final architecture now, not sit as a
+  // temporary Notebook-specific fix that gets thrown away once the
+  // full Dashboard redesign lands.
+  wrapper.appendChild(
+    createOpenWorkWidgetElement({
+      classroom,
+      onNavigate: onNavigateOpenWork,
+    })
+  );
 
   wrapper.appendChild(
     renderPrimaryModulesSection({
