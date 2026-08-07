@@ -809,8 +809,8 @@ function renderNotesTab(content, classroom, student, team, rerender) {
   addButton.textContent = '+ Add Note';
   addButton.addEventListener('click', () => {
     openAddNoteModal({
-      onSave: ({ teacherName, content }) => {
-        noteService.addNote(student, { teacherName, content });
+      onSave: ({ teacherName, content, aboutDate }) => {
+        noteService.addNote(student, { teacherName, content, aboutDate });
         workspaceService.save(classroom);
         rerender();
       },

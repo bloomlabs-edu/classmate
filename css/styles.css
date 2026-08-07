@@ -712,6 +712,18 @@ select:focus-visible,
   margin-bottom: 1rem;
 }
 
+/* "This note is about something that happened earlier" checkbox row
+   — see ui/components/AddNoteModal.js */
+.modal__checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--color-ink);
+  margin-bottom: 1rem;
+  cursor: pointer;
+}
+
 .modal__form {
   margin-bottom: 1.25rem;
 }

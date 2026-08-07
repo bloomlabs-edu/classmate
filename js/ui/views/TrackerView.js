@@ -270,8 +270,8 @@ function handleLongPress(classroom, team, student, { onSelectStudent, rerender }
     },
     onAddNote: () => {
       openAddNoteModal({
-        onSave: ({ teacherName, content }) => {
-          noteService.addNote(student, { teacherName, content });
+        onSave: ({ teacherName, content, aboutDate }) => {
+          noteService.addNote(student, { teacherName, content, aboutDate });
           showToast('Note added');
           rerender();
         },
