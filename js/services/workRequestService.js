@@ -271,6 +271,60 @@ export function getLastChecked(classroom, studentId, subjectId, notebookTypeId) 
 }
 
 /**
+ * Every distinct notebook (subjectId, notebookTypeId pair) this
+ * student has ever had a WorkRequest entry for — the Notebook-level
+ * projection Student Profile now reads from, per the frozen
+ * architecture: "the row's real identity is (Student × Notebook), not
+ * (Student × WorkRequest)." Grouped by notebook identity, not by
+ * individual request — a student's relationship to "Science
+ * Homework" is one thing, even though it may span several closed
+ * cycles and one currently open one.
+ *
+ * For each notebook, `activeEntry` is that student's own entry on
+ * whichever WorkRequest is CURRENTLY open for this exact
+ * (subjectId, notebookTypeId) — null if none is open right now (the
+ * notebook still exists as a real thing between cycles; see
+ * ui/views/NotebookTrackerView.js's own "No active work" cards for
+ * the same idea at the classroom level). `lastChecked` and
+ * `totalReviewed` are genuinely cross-request, surviving any one
+ * request's own boundary — exactly like getLastChecked() above.
+ *
+ * Requires no new persistence: entirely derived from
+ * WorkRequest.subjectId/notebookTypeId and each entry's own history.
+ */
+export function getNotebooksForStudent(classroom, studentId) {
+  const notebookKeys = new Map(); // "subjectId::notebookTypeId" -> { subjectId, notebookTypeId }
+
+  listWorkRequests(classroom).forEach((request) => {
+    if (!getEntryForStudent(request, studentId)) return;
+    const key = `${request.subjectId}::${request.notebookTypeId}`;
+    if (!notebookKeys.has(key)) notebookKeys.set(key, { subjectId: request.subjectId, notebookTypeId: request.notebookTypeId });
+  });
+
+  return Array.from(notebookKeys.values()).map(({ subjectId, notebookTypeId }) => {
+    const requestsForThisNotebook = listWorkRequests(classroom).filter(
+      (request) => request.subjectId === subjectId && request.notebookTypeId === notebookTypeId
+    );
+
+    const openRequest = requestsForThisNotebook.find((request) => isOpen(request));
+    const activeEntry = openRequest ? getEntryForStudent(openRequest, studentId) : null;
+
+    const totalReviewed = requestsForThisNotebook.reduce((sum, request) => {
+      const entry = getEntryForStudent(request, studentId);
+      return sum + (entry && entry.status === 'reviewed' ? 1 : 0);
+    }, 0);
+
+    return {
+      subjectId,
+      notebookTypeId,
+      activeEntry,
+      lastChecked: getLastChecked(classroom, studentId, subjectId, notebookTypeId),
+      totalReviewed,
+    };
+  });
+}
+
+/**
  * One student's own summary across EVERY WorkRequest they have an
  * entry in — open and closed alike, since "Reviewed" would almost
  * never appear otherwise (a request is typically closed once

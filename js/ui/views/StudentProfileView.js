@@ -28,6 +28,7 @@ import * as noteService from '../../services/noteService.js';
 import * as timelineService from '../../services/timelineService.js';
 import * as learningActivityService from '../../services/learningActivityService.js';
 import * as workRequestService from '../../services/workRequestService.js';
+import * as notebookConfigService from '../../services/notebookConfigService.js';
 import { getStatusMeta } from './WorkRequestRosterView.js';
 import * as studentEventService from '../../services/studentEventService.js';
 import { STUDENT_EVENT_CATEGORIES } from '../../config/studentEventCategories.js';
@@ -598,15 +599,15 @@ function renderLearningTab(content, classroom, student) {
 /**
  * Reads exclusively from services/workRequestService.js — the same
  * single source of truth the WorkRequest roster itself is built on
- * (see ui/views/WorkRequestRosterView.js). This tab used to read from
- * the retired, day-by-day services/notebookService.js entirely —
- * confirmed directly before this change: not a single line of it
- * touched workRequestService, which is exactly why it could show
- * "0/0/0" for a student the roster itself already showed real,
- * current activity for. That old data source is never written to by
- * any current notebook-checking action, so it could only ever go
- * stale; this tab and the roster now derive from the exact same
- * entries, so they can never disagree again.
+ * (see ui/views/WorkRequestRosterView.js).
+ *
+ * Organized by NOTEBOOK (subject x notebook type), not by individual
+ * WorkRequest — per the frozen architecture: a profile is
+ * longitudinal, and "which WorkRequests has this student
+ * participated in" is the wrong altitude for that. This answers "how
+ * is this student's Science notebook progressing over time," with
+ * the currently-open WorkRequest (if any) as just one facet of that
+ * longer-running relationship — not the other way around.
  */
 function renderNotebooksTab(content, classroom, student) {
   const section = document.createElement('div');
@@ -626,19 +627,14 @@ function renderNotebooksTab(content, classroom, student) {
   statsRow.appendChild(createStatCard('Reviewed', summary.reviewed));
   section.appendChild(statsRow);
 
-  const recentHeading = document.createElement('h3');
-  recentHeading.className = 'settings-team-block__heading';
-  recentHeading.textContent = 'Recent Notebook Activity';
-  section.appendChild(recentHeading);
-
-  const recentActivity = workRequestService.getRecentActivityForStudent(classroom, student.id);
-  if (recentActivity.length === 0) {
+  const notebooks = workRequestService.getNotebooksForStudent(classroom, student.id);
+  if (notebooks.length === 0) {
     section.appendChild(createEmptyStateElement({ message: 'No notebook activity recorded yet for this student.' }));
   } else {
     const list = document.createElement('div');
     list.className = 'profile-notebook-activity';
-    recentActivity.forEach((item) => {
-      list.appendChild(createNotebookActivityCard(item));
+    notebooks.forEach((notebook) => {
+      list.appendChild(createNotebookCard(classroom, notebook));
     });
     section.appendChild(list);
   }
@@ -647,49 +643,47 @@ function renderNotebooksTab(content, classroom, student) {
 }
 
 /**
- * Reuses WorkRequestRosterView.js's own exported getStatusMeta() for
- * the status label/color — this card and the roster's own chip must
- * always agree, since both read the same entry; sharing the lookup,
- * not just the underlying data, keeps the visual language identical
- * too, not just the numbers.
+ * One card per NOTEBOOK, not per WorkRequest. `activeEntry` is null
+ * whenever nothing is currently open for this notebook — the
+ * notebook still exists as a real thing between cycles (see
+ * ui/views/NotebookTrackerView.js's own "No active work" cards for
+ * the same idea at the classroom level), so this renders a genuine
+ * "no active work" state rather than omitting the notebook entirely.
+ * Reuses WorkRequestRosterView.js's own exported getStatusMeta() so
+ * this card and the roster's own chip always agree.
  */
-function createNotebookActivityCard(item) {
+function createNotebookCard(classroom, notebook) {
   const card = document.createElement('div');
   card.className = 'profile-notebook-activity__card';
 
+  const subject = notebookConfigService.getSubjectById(classroom, notebook.subjectId);
+  const notebookType = notebookConfigService.getNotebookTypeById(classroom, notebook.notebookTypeId);
+
   const title = document.createElement('p');
   title.className = 'profile-notebook-activity__title';
-  title.textContent = item.title;
+  title.textContent = [subject?.name, notebookType?.name].filter(Boolean).join(' \u00b7 ') || 'Notebook';
   card.appendChild(title);
 
-  const meta = getStatusMeta({ status: item.status, reviewOutcome: item.reviewOutcome });
-  const chip = document.createElement('span');
-  chip.className = `work-request-roster__chip work-request-roster__chip--${meta.chipClass}`;
-  chip.textContent = `${meta.icon} ${meta.label}`;
-  card.appendChild(chip);
+  if (notebook.activeEntry) {
+    const meta = getStatusMeta(notebook.activeEntry);
+    const chip = document.createElement('span');
+    chip.className = `work-request-roster__chip work-request-roster__chip--${meta.chipClass}`;
+    chip.textContent = `${meta.icon} ${meta.label}`;
+    card.appendChild(chip);
+  } else {
+    const chip = document.createElement('span');
+    chip.className = 'work-request-roster__chip work-request-roster__chip--gray';
+    chip.textContent = 'No active work';
+    card.appendChild(chip);
+  }
 
   const supportingLine = document.createElement('p');
   supportingLine.className = 'profile-notebook-activity__date';
-  supportingLine.textContent = describeSupportingDate(item);
-  if (supportingLine.textContent) card.appendChild(supportingLine);
+  const lastCheckedText = notebook.lastChecked ? `Last reviewed ${formatDateKey(notebook.lastChecked.slice(0, 10))}` : 'Never reviewed';
+  supportingLine.textContent = `${lastCheckedText} \u00b7 Reviewed ${notebook.totalReviewed} time${notebook.totalReviewed === 1 ? '' : 's'} overall`;
+  card.appendChild(supportingLine);
 
   return card;
-}
-
-/**
- * The one, subtle supporting date line — "Due {date}" while a
- * student's own work is still outstanding (only shown if the request
- * actually has a due date), or "{Verb} on {date}" once something has
- * actually happened. Never both, since only one is ever relevant to a
- * given status.
- */
-function describeSupportingDate(item) {
-  if (item.status === 'assigned') {
-    return item.dueDate ? `Due ${formatDateKey(item.dueDate)}` : '';
-  }
-  if (!item.updatedAt) return '';
-  const verb = { submitted: 'Submitted', resubmitted: 'Resubmitted', needs_correction: 'Reviewed', reviewed: 'Reviewed', absent: 'Marked' }[item.status] || 'Updated';
-  return `${verb} on ${formatDateKey(item.updatedAt.slice(0, 10))}`;
 }
 
 // ---------------------------------------------------------------------
