@@ -57,3 +57,19 @@ export function getTotalNegativePoints(student) {
     .reduce((sum, entry) => sum + entry.delta, 0);
   return Math.abs(total);
 }
+
+/**
+ * A student's own all-time NET star total — positive minus negative,
+ * per the platform-wide rule (see services/studentProgressService.js's
+ * own header comment for the range-scoped equivalent, getStarsInRange()).
+ * Always derived directly from history, the same source of truth
+ * every other star computation in this app already uses — never
+ * reads student.score, which is only an incrementally-maintained
+ * cache and can genuinely drift from this (confirmed: see
+ * services/studentService.js's resetAllScores(), which zeroes score
+ * while leaving history untouched). This is the function every
+ * all-time star display should call.
+ */
+export function getNetPoints(student) {
+  return getTotalPositivePoints(student) - getTotalNegativePoints(student);
+}

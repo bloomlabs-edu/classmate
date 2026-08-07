@@ -60,6 +60,7 @@
 import { createTeamCardElement } from './TeamCard.js';
 import { createEmptyStateElement } from './EmptyState.js';
 import { getTeamStandingsWithMovement, getClassLeaderboardWithMovement, getCurrentMonthPeriod } from '../../services/teamStatisticsService.js';
+import { getNetPoints } from '../../services/timelineService.js';
 
 export function createTeamStandingsBoardElement({ classroom, onTap, onSwipeLeft, onLongPress, onTapTeam, highlight = {} }) {
   const grid = document.createElement('section');
@@ -85,7 +86,7 @@ export function createTeamStandingsBoardElement({ classroom, onTap, onSwipeLeft,
 
   teamsWithStudents.forEach((team) => {
     const standing = standingsWithMovement.find((entry) => entry.teamId === team.id);
-    const sortedStudents = [...team.students].sort((a, b) => b.score - a.score);
+    const sortedStudents = [...team.students].sort((a, b) => getNetPoints(b) - getNetPoints(a));
 
     grid.appendChild(
       createTeamCardElement(team, standing ? standing.score : 0, {

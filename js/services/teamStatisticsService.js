@@ -43,8 +43,8 @@
  * leaderboard in this app already uses.
  */
 
-import { rankDescending } from './studentProgressService.js';
-import { getMonthRange, getTodayDateKey, isDateKeyInRange } from '../utils/dateHelpers.js';
+import { rankDescending, getStarsInRange } from './studentProgressService.js';
+import { getMonthRange, getTodayDateKey } from '../utils/dateHelpers.js';
 
 /** The live, current calendar month — the only period this milestone actually uses. Not a teacher-managed concept, not stored anywhere: "the current month" is simply a fact about today's date, so there is nothing to create, close, or migrate. */
 export function getCurrentMonthPeriod() {
@@ -56,15 +56,21 @@ function getRealTeams(classroom) {
 }
 
 /** Net point total for one student within a period — both positive and negative entries count, unlike studentProgressService.js's own "stars" (positive-only) convention. */
-function getStudentScoreInPeriod(student, period) {
-  return (student.history || [])
-    .filter((entry) => entry.kind === 'points')
-    .filter((entry) => isDateKeyInRange(entry.recordedAt.slice(0, 10), period))
-    .reduce((sum, entry) => sum + entry.delta, 0);
+/**
+ * A student's own net score within `period` — delegates directly to
+ * services/studentProgressService.js's own getStarsInRange(), the
+ * canonical, platform-wide implementation of "net score, positive
+ * minus negative" (see that file's own header comment). This used to
+ * be a private, duplicated copy of the same math; consolidated so
+ * there is exactly one implementation of this calculation, not two
+ * that happen to agree today.
+ */
+function getStudentScoreInPeriod(classroom, student, period) {
+  return getStarsInRange(classroom, student.id, period);
 }
 
-function getTeamScoreInPeriod(team, period) {
-  return team.students.reduce((sum, student) => sum + getStudentScoreInPeriod(student, period), 0);
+function getTeamScoreInPeriod(classroom, team, period) {
+  return team.students.reduce((sum, student) => sum + getStudentScoreInPeriod(classroom, student, period), 0);
 }
 
 /** Every real team, ranked by net score within `period`, highest first — ties share a rank. Plain ranking only; see getTeamStandingsWithMovement() for the richer, movement-enriched version the shared standings board actually uses. */
@@ -72,7 +78,7 @@ export function getTeamStandings(classroom, period) {
   const withScores = getRealTeams(classroom).map((team) => ({
     teamId: team.id,
     teamName: team.name,
-    score: getTeamScoreInPeriod(team, period),
+    score: getTeamScoreInPeriod(classroom, team, period),
   }));
 
   return rankDescending(withScores, 'score');
@@ -86,7 +92,7 @@ export function getTeamLeaderboard(classroom, teamId, period) {
   const withScores = team.students.map((student) => ({
     studentId: student.id,
     studentName: student.name,
-    score: getStudentScoreInPeriod(student, period),
+    score: getStudentScoreInPeriod(classroom, student, period),
   }));
 
   return rankDescending(withScores, 'score');
@@ -100,7 +106,7 @@ export function getClassLeaderboard(classroom, period) {
       studentName: student.name,
       teamId: team.id,
       teamName: team.name,
-      score: getStudentScoreInPeriod(student, period),
+      score: getStudentScoreInPeriod(classroom, student, period),
     }))
   );
 

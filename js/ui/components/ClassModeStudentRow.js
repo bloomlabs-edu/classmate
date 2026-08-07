@@ -35,6 +35,7 @@
  */
 
 import { getBucketRowStyle } from '../../config/bucketConfig.js';
+import { getNetPoints } from '../../services/timelineService.js';
 
 const LONG_PRESS_MS = 500;
 const MOVE_CANCEL_THRESHOLD_PX = 10;
@@ -61,7 +62,7 @@ export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongP
 
   const score = document.createElement('span');
   score.className = 'student-row__points';
-  score.textContent = `${student.score} \u2b50`;
+  score.textContent = `${getNetPoints(student)} \u2b50`;
 
   const trailing = document.createElement('span');
   trailing.className = 'student-row__trailing';

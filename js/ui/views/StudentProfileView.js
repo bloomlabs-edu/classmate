@@ -185,7 +185,7 @@ function renderProfileHeader(classroom, student, team, rerender, onBack) {
 
   [
     ['Bucket', getBucketLabel(student.bucket), 'bucket'],
-    ['Session Score', student.score, null],
+    ['Net Score', timelineService.getNetPoints(student), null],
     ['Positive', timelineService.getTotalPositivePoints(student), 'positive'],
     ['Negative', timelineService.getTotalNegativePoints(student), 'negative'],
     ['Badges', (student.badges || []).length, 'badges'],
@@ -298,7 +298,7 @@ function renderOverviewTab(content, classroom, student, team, rerender) {
 
   const statsGrid = document.createElement('div');
   statsGrid.className = 'profile-overview';
-  statsGrid.appendChild(createStatCard('Current Session Score', student.score));
+  statsGrid.appendChild(createStatCard('Net Score', timelineService.getNetPoints(student)));
   statsGrid.appendChild(createStatCard('Total Positive Points', timelineService.getTotalPositivePoints(student)));
   statsGrid.appendChild(createStatCard('Total Negative Points', timelineService.getTotalNegativePoints(student)));
   statsSection.appendChild(statsGrid);

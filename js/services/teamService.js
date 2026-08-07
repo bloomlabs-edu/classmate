@@ -10,6 +10,7 @@
 import { createTeam } from '../models/Team.js';
 import { getDefaultGroupColor } from '../config/groupColorConfig.js';
 import * as studentService from './studentService.js';
+import { getNetPoints } from './timelineService.js';
 
 export function getTeamById(classroom, teamId) {
   return classroom.teams.find((team) => team.id === teamId) || null;
@@ -67,6 +68,7 @@ export function removeTeamAndRelocateStudents(classroom, teamId, destinationTeam
  * A team's score is always derived from its students, never stored —
  * see models/Team.js for why.
  */
+/** Per the platform-wide net-score rule (see services/timelineService.js's own getNetPoints()) — derived directly from history, never the potentially-stale student.score cache. */
 export function getTeamScore(team) {
-  return team.students.reduce((sum, student) => sum + student.score, 0);
+  return team.students.reduce((sum, student) => sum + getNetPoints(student), 0);
 }

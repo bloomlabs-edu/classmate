@@ -9,6 +9,18 @@
  * shape — deliberate isolation, so either can change internally without
  * this file (or anything built on it) needing to change.
  *
+ * PLATFORM-WIDE RULE: every star count and ranking anywhere in
+ * ClassMate uses the NET score — positive minus negative — unless a
+ * screen explicitly, visibly opts out (e.g. a "Recognition Wall"
+ * showing only positive recognitions, clearly labeled as such).
+ * getStarsInRange() below is the canonical, range-scoped
+ * implementation of this rule — every ranking function in this file
+ * (getRankInRange, getTeamStarsInRange, getTeamRankInRange,
+ * getBiggestClimber, getLeaderboard) is built on top of it, so fixing
+ * it once here fixes all of them at once. See
+ * services/timelineService.js's own getNetPoints() for the all-time
+ * (not range-scoped) equivalent.
+ *
  * IMPORTANT: this service is read-only. It must never write to
  * Firestore, or mutate a classroom/student object — every function here
  * takes data in and returns a computed value out, nothing more.
@@ -235,12 +247,24 @@ export function getPerfectNotebookStudents(classroom, { start, end }) {
 // ---------------------------------------------------------------------
 
 /** Sum of this student's positive points logged within {start, end} — "stars" excludes deductions by design (see file header). */
+/**
+ * A student's own NET star total within {start, end} — positive minus
+ * negative, per the platform-wide rule that every star count and
+ * ranking uses net score unless a screen explicitly, visibly opts out
+ * (see this file's own module header). Previously filtered to
+ * `entry.delta > 0` only — confirmed and fixed: that filter meant
+ * Weekly Snapshot, Team Champion, Biggest Climber, and the Weekly
+ * Leaderboard (every one of them routes through this function, via
+ * getRankInRange()/getTeamStarsInRange()/getLeaderboard()) were all
+ * ranking on positive-only totals, not the net score the rest of the
+ * platform already uses.
+ */
 export function getStarsInRange(classroom, studentId, { start, end }) {
   const found = studentService.findStudentInClassroom(classroom, studentId);
   if (!found) return 0;
 
   return (found.student.history || [])
-    .filter((entry) => entry.kind === 'points' && entry.delta > 0)
+    .filter((entry) => entry.kind === 'points')
     .filter((entry) => isDateKeyInRange(entry.recordedAt.slice(0, 10), { start, end }))
     .reduce((sum, entry) => sum + entry.delta, 0);
 }
