@@ -64,30 +64,56 @@ export function getEventsForStudent(classroom, studentId) {
  * depending on who's currently looking at it, without the event
  * itself ever needing two versions of anything.
  *
- * `viewer` — 'student' (the default: returns the event's own stored
- * title/message, completely unchanged) or 'teacher' (returns a
- * neutral, third-person rephrasing, computed fresh every time from
- * `event.type`/`event.payload` — never read from the event's own
- * title/message fields, so a teacher-facing screen is never one
- * accidental property-read away from showing "You earned...").
+ * Three viewer contexts, not two — confirmed as genuinely distinct
+ * by direct trace of ui/student-portal/views/StudentPublicProfileView.js:
+ * that screen renders THE SAME event cards as a student's own Journey
+ * (both go through this file's own renderEventCard()), but the
+ * viewer there is looking at a CLASSMATE's public profile, not their
+ * own — "you earned a star" is only ever true for the student the
+ * event actually happened to, never for whoever happens to be
+ * looking at their profile.
+ *
+ *   - 'self'    — the student the event happened to, viewing their
+ *                 own Journey. Returns the event's own stored
+ *                 title/message, completely unchanged. The only
+ *                 context where second-person is correct.
+ *   - 'teacher' — a teacher viewing a student's profile. Neutral,
+ *                 computed fresh from event.type/event.payload —
+ *                 never read from the event's own title/message.
+ *   - 'peer'    — a different student viewing someone else's public
+ *                 profile. Also neutral, computed the same way as
+ *                 'teacher', but phrased slightly differently where
+ *                 it matters (a classmate has no reason to be told
+ *                 who awarded something — "awarded by the teacher"
+ *                 is teacher-relative context a peer doesn't need).
  *
  * Unrecognized event types fall back to the event's own stored title
- * unchanged, rather than throwing — a teacher-facing screen showing
+ * unchanged, rather than throwing — a screen showing
  * slightly-imperfect copy for a type this function doesn't know about
  * yet is a far smaller problem than that screen crashing outright.
  */
-const TEACHER_EVENT_COPY = {
-  star_awarded: () => ({ title: '\u2b50 Earned a star', message: 'Awarded by the teacher for effort in class.' }),
-  badge_awarded: (event) => ({
-    title: `\ud83c\udf96\ufe0f Earned the \u201c${event.payload?.badgeName ?? 'badge'}\u201d badge`,
-    message: 'Recognized by the teacher for this.',
-  }),
-  assessment_published: (event) => ({ title: event.title, message: 'Results are now available.' }),
+const NEUTRAL_EVENT_COPY = {
+  teacher: {
+    star_awarded: () => ({ title: '\u2b50 Earned a star', message: 'Awarded by the teacher for effort in class.' }),
+    badge_awarded: (event) => ({
+      title: `\ud83c\udf96\ufe0f Earned the \u201c${event.payload?.badgeName ?? 'badge'}\u201d badge`,
+      message: 'Recognized by the teacher for this.',
+    }),
+    assessment_published: (event) => ({ title: event.title, message: 'Results are now available.' }),
+  },
+  peer: {
+    star_awarded: () => ({ title: '\u2b50 Earned a star', message: 'Awarded for effort in class.' }),
+    badge_awarded: (event) => ({
+      title: `\ud83c\udf96\ufe0f Earned the \u201c${event.payload?.badgeName ?? 'badge'}\u201d badge`,
+      message: 'Recognized for this.',
+    }),
+    assessment_published: (event) => ({ title: event.title, message: 'Results are now available.' }),
+  },
 };
 
-export function getEventCopyForViewer(event, viewer = 'student') {
-  if (viewer !== 'teacher') return { title: event.title, message: event.message };
+export function getEventCopyForViewer(event, viewer = 'self') {
+  if (viewer !== 'teacher' && viewer !== 'peer') return { title: event.title, message: event.message };
 
-  const buildTeacherCopy = TEACHER_EVENT_COPY[event.type];
-  return buildTeacherCopy ? buildTeacherCopy(event) : { title: event.title, message: event.message };
+  const buildNeutralCopy = NEUTRAL_EVENT_COPY[viewer][event.type];
+  return buildNeutralCopy ? buildNeutralCopy(event) : { title: event.title, message: event.message };
 }

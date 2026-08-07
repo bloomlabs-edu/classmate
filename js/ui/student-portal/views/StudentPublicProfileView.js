@@ -17,7 +17,13 @@
  *     markup ui/views/StudentProfileView.js's own Behaviour Badges
  *     section already uses
  *   - Recognition timeline: StudentJourneyView.js's own exported
- *     renderEventCard() — the identical card, not a rebuilt one
+ *     renderEventCard() — the identical card structure, not a rebuilt
+ *     one, but called with `viewer: 'peer'` rather than the default
+ *     'self': the events shown here happened to a CLASSMATE, not the
+ *     person currently looking at this screen, so the copy inside
+ *     each card must stay neutral ("Earned a star") rather than
+ *     second-person ("You earned a star!") — confirmed by direct
+ *     trace after this exact confusion showed up in production.
  *   - Bucket color: config/bucketConfig.js's getBucketRowStyle()/
  *     getBucketLabel(), same as every other bucket display in this app
  *   - Learning Hub / Assessments / Community: createEmptyStateElement(),
@@ -140,7 +146,7 @@ function renderRecognitionSection(profile) {
       // No navigation on a public profile's own timeline -- these
       // cards are read-only here, not a jumping-off point into
       // someone else's assessment results, etc.
-      timeline.appendChild(renderEventCard(event, null));
+      timeline.appendChild(renderEventCard(event, null, 'peer'));
     });
     section.appendChild(timeline);
   }

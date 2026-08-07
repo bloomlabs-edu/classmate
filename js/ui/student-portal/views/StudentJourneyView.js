@@ -219,7 +219,7 @@ export async function renderStudentJourneyView(container, { onSessionInvalid, on
     const timeline = document.createElement('div');
     timeline.className = 'student-event-feed';
     eventFeed.forEach((event) => {
-      timeline.appendChild(renderEventCard(event, onNavigateToEventDetail));
+      timeline.appendChild(renderEventCard(event, onNavigateToEventDetail, 'self'));
     });
     updatesSection.appendChild(timeline);
   }
@@ -283,7 +283,17 @@ function createModule({ icon, title, value, caption, lines }) {
  * any future publisher that never gets its own detail screen) renders
  * exactly as it always has — a plain, non-interactive notification.
  */
-export function renderEventCard(event, onNavigateToEventDetail) {
+/**
+ * Shared between this file's own Journey timeline (the event's own
+ * recipient, viewing their own history — `viewer: 'self'`) and
+ * ui/student-portal/views/StudentPublicProfileView.js (a different
+ * student viewing someone else's public profile — `viewer: 'peer'`).
+ * Deliberately takes `viewer` as an explicit parameter rather than
+ * assuming one internally — confirmed by direct trace that this
+ * function has two real, distinct callers with two genuinely
+ * different correct answers for the same event data.
+ */
+export function renderEventCard(event, onNavigateToEventDetail, viewer = 'self') {
   const detail = getEventDetailRoute(event);
 
   const card = document.createElement(detail ? 'button' : 'div');
@@ -299,7 +309,7 @@ export function renderEventCard(event, onNavigateToEventDetail) {
   tag.textContent = event.category;
   card.appendChild(tag);
 
-  const copy = getEventCopyForViewer(event, 'student');
+  const copy = getEventCopyForViewer(event, viewer);
 
   const title = document.createElement('p');
   title.className = 'student-event-card__title';
