@@ -1006,6 +1006,48 @@ select:focus-visible,
   text-align: right;
 }
 
+.student-row__trailing {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-shrink: 0;
+}
+
+/* Student movement badge — the PRIMARY movement indicator, per
+   explicit product decision (more prominent than the team-level one
+   in the header). A circular pill matching .team-card__total's own
+   soft, rounded aesthetic — never a plain arrow. Purely
+   presentational; see ui/components/ClassModeStudentRow.js's own
+   createStudentMovementBadge() for why it never computes movement
+   itself. */
+.student-row__movement {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.4rem;
+  height: 1.8rem;
+  padding: 0 0.5rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-black);
+  border: 1.5px solid;
+}
+.student-row__movement--up {
+  background-color: rgba(46, 158, 91, 0.1);
+  border-color: rgba(46, 158, 91, 0.35);
+  color: #227a46;
+}
+.student-row__movement--down {
+  background-color: rgba(229, 57, 53, 0.1);
+  border-color: rgba(229, 57, 53, 0.35);
+  color: #c62828;
+}
+.student-row__movement--same {
+  background-color: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.12);
+  color: var(--color-muted);
+}
+
 /* Empty state (no classroom imported yet / no teams in a classroom) */
 
 .empty-state {

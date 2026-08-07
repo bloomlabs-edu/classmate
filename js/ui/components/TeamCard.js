@@ -25,7 +25,7 @@
 import { getGroupColorHex } from '../../config/groupColorConfig.js';
 import { createClassModeStudentRow } from './ClassModeStudentRow.js';
 
-export function createTeamCardElement(team, teamScore, { onTap, onSwipeLeft, onLongPress, onTapTeam, tapActionLabel, highlightTeamId, movement } = {}) {
+export function createTeamCardElement(team, teamScore, { onTap, onSwipeLeft, onLongPress, onTapTeam, tapActionLabel, highlightTeamId, movement, studentMovements = {} } = {}) {
   const card = document.createElement('article');
   card.className = 'team-card';
   card.dataset.teamId = team.id;
@@ -60,7 +60,9 @@ export function createTeamCardElement(team, teamScore, { onTap, onSwipeLeft, onL
   const list = document.createElement('ul');
   list.className = 'student-list';
   team.students.forEach((student) => {
-    list.appendChild(createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongPress, tapActionLabel }));
+    list.appendChild(
+      createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongPress, tapActionLabel, movement: studentMovements[student.id] })
+    );
   });
 
   card.append(header, list);

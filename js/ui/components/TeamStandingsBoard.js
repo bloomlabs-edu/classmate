@@ -8,17 +8,24 @@
  * reusable function; nothing about the rendering itself changed.
  *
  * Reuses ui/components/TeamCard.js (and, through it,
- * ClassModeStudentRow.js) entirely unchanged — those were already
- * pure, callback-driven components with zero teacher-specific logic
- * baked in; the only piece genuinely missing was this grid wrapper.
+ * ClassModeStudentRow.js) entirely unchanged in spirit — those were
+ * already pure, callback-driven components with zero teacher-specific
+ * logic baked in; the only piece genuinely missing was this grid
+ * wrapper, and now, per explicit product decision, per-student
+ * movement.
  *
- * Now sources each team's own score AND movement from
- * services/teamStatisticsService.js's own getTeamStandingsWithMovement()
- * — that function, and its own fixed sincePeriodStart baseline, already
- * existed and already worked; the only gap was that this component
- * still called the older, movement-blind teamService.getTeamScore()
- * directly. Confirmed directly before wiring this in: no new
- * persistence, no new algorithm, no redesign — a pure wiring fix.
+ * Team score/movement comes from
+ * services/teamStatisticsService.js's own getTeamStandingsWithMovement().
+ * Student movement is deliberately CLASS-WIDE, not team-relative — per
+ * explicit product decision: the motivational signal is "how have you
+ * grown, personally, since the period started," not "how do you
+ * compare to your four teammates." getClassLeaderboardWithMovement()
+ * already existed and already ranks across the whole classroom (see
+ * that function's own use of classroom.teams.flatMap()) — computed
+ * ONCE here, for the entire classroom, not once per team; every team
+ * card looks its own students up from that one shared map. Neither
+ * TeamCard.js nor ClassModeStudentRow.js recalculates anything — they
+ * only render whatever movement object they're given.
  *
  * `onTap`/`onSwipeLeft`/`onLongPress` are passed straight through to
  * every student row, exactly as TrackerView.js already did. All three
@@ -33,7 +40,7 @@
 
 import { createTeamCardElement } from './TeamCard.js';
 import { createEmptyStateElement } from './EmptyState.js';
-import { getTeamStandingsWithMovement, getCurrentMonthPeriod } from '../../services/teamStatisticsService.js';
+import { getTeamStandingsWithMovement, getClassLeaderboardWithMovement, getCurrentMonthPeriod } from '../../services/teamStatisticsService.js';
 
 export function createTeamStandingsBoardElement({ classroom, onTap, onSwipeLeft, onLongPress, onTapTeam, highlight = {} }) {
   const grid = document.createElement('section');
@@ -49,10 +56,17 @@ export function createTeamStandingsBoardElement({ classroom, onTap, onSwipeLeft,
     return grid;
   }
 
-  const standingsWithMovement = getTeamStandingsWithMovement(classroom, getCurrentMonthPeriod());
+  const period = getCurrentMonthPeriod();
+  const standingsWithMovement = getTeamStandingsWithMovement(classroom, period);
+
+  const studentMovements = {};
+  getClassLeaderboardWithMovement(classroom, period).forEach((entry) => {
+    studentMovements[entry.studentId] = { movement: entry.movement, movementAmount: entry.movementAmount };
+  });
 
   teamsWithStudents.forEach((team) => {
     const standing = standingsWithMovement.find((entry) => entry.teamId === team.id);
+
     grid.appendChild(
       createTeamCardElement(team, standing ? standing.score : 0, {
         highlightTeamId: highlight.teamId,
@@ -61,6 +75,7 @@ export function createTeamStandingsBoardElement({ classroom, onTap, onSwipeLeft,
         onLongPress,
         onTapTeam: onTapTeam ? () => onTapTeam(team.id) : undefined,
         movement: standing ? { movement: standing.movement, movementAmount: standing.movementAmount } : undefined,
+        studentMovements,
       })
     );
   });

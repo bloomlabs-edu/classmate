@@ -15,6 +15,14 @@
  * surface: long-press is pointer-only, so keyboard and assistive-tech
  * users need an explicit, focusable way to reach Quick Actions too.
  *
+ * `movement` — the optional, per-student `{ movement, movementAmount }`
+ * shape already produced by
+ * services/teamStatisticsService.js's own getTeamLeaderboardWithMovement()
+ * (see ui/components/TeamStandingsBoard.js, which computes it once per
+ * team and hands it down as plain data). This component renders it,
+ * never recalculates it — the same pure-presentation split the
+ * team-level movement badge already established.
+ *
  * `onSwipeLeft`/`onLongPress` are both genuinely optional — see
  * ui/components/TeamStandingsBoard.js's own header comment for why:
  * the Student Portal renders this exact same row with only `onTap`
@@ -32,7 +40,7 @@ const LONG_PRESS_MS = 500;
 const MOVE_CANCEL_THRESHOLD_PX = 10;
 const SWIPE_THRESHOLD_PX = 60;
 
-export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongPress, tapActionLabel = 'award a star' }) {
+export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongPress, tapActionLabel = 'award a star', movement }) {
   const style = getBucketRowStyle(student.bucket);
 
   const item = document.createElement('li');
@@ -55,7 +63,14 @@ export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongP
   score.className = 'student-row__points';
   score.textContent = `${student.score} \u2b50`;
 
-  surface.append(name, score);
+  const trailing = document.createElement('span');
+  trailing.className = 'student-row__trailing';
+  trailing.appendChild(score);
+  if (movement) {
+    trailing.appendChild(createStudentMovementBadge(movement, student.name));
+  }
+
+  surface.append(name, trailing);
 
   item.appendChild(surface);
 
@@ -184,6 +199,30 @@ export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongP
   });
 
   return item;
+}
+
+/**
+ * The circular movement badge — a soft-background, thin-bordered pill
+ * matching the score pill's own rounded aesthetic, per explicit
+ * product decision that this read as a clean, modern indicator, not
+ * a plain arrow. Purely presentational: renders whatever
+ * `{ movement, movementAmount }` it's handed, never computing either
+ * value itself.
+ */
+function createStudentMovementBadge(movement, studentName) {
+  const badge = document.createElement('span');
+  badge.className = `student-row__movement student-row__movement--${movement.movement}`;
+
+  const symbol = { up: '\u2191', down: '\u2193', same: '\u2192' }[movement.movement];
+  badge.textContent = `${symbol}${movement.movementAmount}`;
+  badge.setAttribute(
+    'aria-label',
+    movement.movement === 'same'
+      ? `${studentName} has not changed position since the period started`
+      : `${studentName} moved ${movement.movement} ${movement.movementAmount} position${movement.movementAmount === 1 ? '' : 's'} since the period started`
+  );
+
+  return badge;
 }
 
 /** Describes only the gestures genuinely available in this context — never claims an action (e.g. "swipe left to deduct a point") that isn't actually wired, since the Student Portal's own row has none of the teacher-only gestures at all. */
