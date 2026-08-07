@@ -114,7 +114,7 @@ export function createStudentNameElement({ student, team, onSelect, size = 40, l
   return element;
 }
 
-/** A short, legible abbreviation for a team's own name badge — the first two letters, uppercased, matching the "AL / BR / CH / DE" treatment: a real, readable label rather than a single letter a teacher has to memorize the meaning of. */
+/** A single, compact color-code letter for a team's own badge — deliberately just one letter, since the full team name already renders as its own line right below (see the `team` block above); a longer abbreviation would only duplicate what's already spelled out unambiguously one line down. */
 function abbreviateTeamName(name) {
-  return name.trim().slice(0, 2).toUpperCase();
+  return name.trim().slice(0, 1).toUpperCase();
 }

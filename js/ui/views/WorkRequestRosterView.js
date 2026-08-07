@@ -76,8 +76,8 @@ export const STATUS_META = {
 // where status alone doesn't determine the correct chip.
 const REVIEWED_INCOMPLETE_META = { label: 'Reviewed \u00b7 Incomplete', chipClass: 'orange', icon: '\ud83d\udfe0', buttonLabel: null, buttonClass: null };
 
-/** Resolves the correct chip/button metadata for an entry, accounting for reviewOutcome — the one case where `status` alone isn't enough. */
-function getStatusMeta(entry) {
+/** Resolves the correct chip/button metadata for an entry, accounting for reviewOutcome — the one case where `status` alone isn't enough. Exported so other views (e.g. ui/views/StudentProfileView.js's own Notebook tab) render the exact same status language and colors as this roster, rather than duplicating the lookup. */
+export function getStatusMeta(entry) {
   if (entry.status === 'reviewed' && entry.reviewOutcome === 'incomplete') return REVIEWED_INCOMPLETE_META;
   return STATUS_META[entry.status];
 }
@@ -90,6 +90,7 @@ const SUMMARY_CARDS = [
   { id: 'assigned', label: 'Awaiting Submission', statuses: ['assigned'] },
   { id: 'awaiting_review', label: 'Awaiting Review', statuses: ['submitted', 'resubmitted'] },
   { id: 'reviewed', label: 'Reviewed', statuses: ['reviewed'] },
+  { id: 'absent', label: 'Absent', statuses: ['absent'] },
 ];
 
 export function renderWorkRequestRosterView(container, { classroom, requestId, onBack, onSelectStudent }) {

@@ -7,11 +7,14 @@
  * assuming exactly one item per type, and never branching on which
  * type an item came from.
  *
- * Milestone 1 scope: NotebookWorkType only. AssessmentWorkType,
- * GoalCycleWorkType, and LearningActivityWorkType are added in
- * Milestone 3, each following this exact same shape.
+ * Milestone 3: AssessmentWorkType, GoalCycleWorkType, and
+ * LearningActivityWorkType added alongside NotebookWorkType, each
+ * following the exact same shape.
  */
 
 import { NotebookWorkType } from './NotebookWorkType.js';
+import { AssessmentWorkType } from './AssessmentWorkType.js';
+import { GoalCycleWorkType } from './GoalCycleWorkType.js';
+import { LearningActivityWorkType } from './LearningActivityWorkType.js';
 
-export const WORK_TYPES = [NotebookWorkType];
+export const WORK_TYPES = [NotebookWorkType, AssessmentWorkType, GoalCycleWorkType, LearningActivityWorkType];

@@ -28,6 +28,7 @@ import * as noteService from '../../services/noteService.js';
 import * as timelineService from '../../services/timelineService.js';
 import * as learningActivityService from '../../services/learningActivityService.js';
 import * as workRequestService from '../../services/workRequestService.js';
+import { getStatusMeta } from './WorkRequestRosterView.js';
 import * as studentEventService from '../../services/studentEventService.js';
 import { STUDENT_EVENT_CATEGORIES } from '../../config/studentEventCategories.js';
 import { formatDateKey } from '../../utils/dateHelpers.js';
@@ -594,15 +595,6 @@ function renderLearningTab(content, classroom, student) {
 // Notebooks
 // ---------------------------------------------------------------------
 
-const NOTEBOOK_STATUS_LABEL = {
-  assigned: 'Awaiting Submission',
-  submitted: 'Awaiting Review',
-  resubmitted: 'Awaiting Review',
-  needs_correction: 'Needs Correction',
-  reviewed: 'Reviewed',
-  absent: 'Absent',
-};
-
 /**
  * Reads exclusively from services/workRequestService.js — the same
  * single source of truth the WorkRequest roster itself is built on
@@ -644,27 +636,60 @@ function renderNotebooksTab(content, classroom, student) {
     section.appendChild(createEmptyStateElement({ message: 'No notebook activity recorded yet for this student.' }));
   } else {
     const list = document.createElement('div');
-    list.className = 'settings-editable-list';
+    list.className = 'profile-notebook-activity';
     recentActivity.forEach((item) => {
-      const row = document.createElement('div');
-      row.className = 'settings-editable-list__item';
-
-      const title = document.createElement('span');
-      title.style.flex = '1';
-      title.textContent = item.title;
-      row.appendChild(title);
-
-      const status = document.createElement('span');
-      const label = item.status === 'reviewed' && item.reviewOutcome === 'incomplete' ? 'Reviewed \u00b7 Incomplete' : NOTEBOOK_STATUS_LABEL[item.status] || item.status;
-      status.textContent = item.updatedAt ? `${label} \u00b7 ${formatDateKey(item.updatedAt.slice(0, 10))}` : label;
-      row.appendChild(status);
-
-      list.appendChild(row);
+      list.appendChild(createNotebookActivityCard(item));
     });
     section.appendChild(list);
   }
 
   content.appendChild(section);
+}
+
+/**
+ * Reuses WorkRequestRosterView.js's own exported getStatusMeta() for
+ * the status label/color — this card and the roster's own chip must
+ * always agree, since both read the same entry; sharing the lookup,
+ * not just the underlying data, keeps the visual language identical
+ * too, not just the numbers.
+ */
+function createNotebookActivityCard(item) {
+  const card = document.createElement('div');
+  card.className = 'profile-notebook-activity__card';
+
+  const title = document.createElement('p');
+  title.className = 'profile-notebook-activity__title';
+  title.textContent = item.title;
+  card.appendChild(title);
+
+  const meta = getStatusMeta({ status: item.status, reviewOutcome: item.reviewOutcome });
+  const chip = document.createElement('span');
+  chip.className = `work-request-roster__chip work-request-roster__chip--${meta.chipClass}`;
+  chip.textContent = `${meta.icon} ${meta.label}`;
+  card.appendChild(chip);
+
+  const supportingLine = document.createElement('p');
+  supportingLine.className = 'profile-notebook-activity__date';
+  supportingLine.textContent = describeSupportingDate(item);
+  if (supportingLine.textContent) card.appendChild(supportingLine);
+
+  return card;
+}
+
+/**
+ * The one, subtle supporting date line — "Due {date}" while a
+ * student's own work is still outstanding (only shown if the request
+ * actually has a due date), or "{Verb} on {date}" once something has
+ * actually happened. Never both, since only one is ever relevant to a
+ * given status.
+ */
+function describeSupportingDate(item) {
+  if (item.status === 'assigned') {
+    return item.dueDate ? `Due ${formatDateKey(item.dueDate)}` : '';
+  }
+  if (!item.updatedAt) return '';
+  const verb = { submitted: 'Submitted', resubmitted: 'Resubmitted', needs_correction: 'Reviewed', reviewed: 'Reviewed', absent: 'Marked' }[item.status] || 'Updated';
+  return `${verb} on ${formatDateKey(item.updatedAt.slice(0, 10))}`;
 }
 
 // ---------------------------------------------------------------------

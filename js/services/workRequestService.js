@@ -282,6 +282,7 @@ export function getRecentActivityForStudent(classroom, studentId, limit = 10) {
       title: request.title,
       status: entry.status,
       reviewOutcome: entry.reviewOutcome,
+      dueDate: request.dueDate || null,
       updatedAt: entry.updatedAt,
     }));
 }
