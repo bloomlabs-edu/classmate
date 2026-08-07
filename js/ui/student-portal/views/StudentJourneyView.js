@@ -44,6 +44,7 @@ import { createEmptyStateElement } from '../../components/EmptyState.js';
 import { createTeamStandingsBoardElement } from '../../components/TeamStandingsBoard.js';
 import { formatDate } from '../../../utils/dateHelpers.js';
 import { getEventDetailRoute } from '../../../config/studentEventNavigation.js';
+import { getEventCopyForViewer } from '../../../services/studentEventService.js';
 
 export async function renderStudentJourneyView(container, { onSessionInvalid, onNavigateToEventDetail, onNavigateToGoals, onNavigateToStudentProfile, onNavigateToTeam } = {}) {
   container.innerHTML = '';
@@ -298,15 +299,17 @@ export function renderEventCard(event, onNavigateToEventDetail) {
   tag.textContent = event.category;
   card.appendChild(tag);
 
+  const copy = getEventCopyForViewer(event, 'student');
+
   const title = document.createElement('p');
   title.className = 'student-event-card__title';
-  title.textContent = event.title;
+  title.textContent = copy.title;
   card.appendChild(title);
 
-  if (event.message) {
+  if (copy.message) {
     const message = document.createElement('p');
     message.className = 'student-event-card__message';
-    message.textContent = event.message;
+    message.textContent = copy.message;
     card.appendChild(message);
   }
 
