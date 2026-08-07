@@ -12,25 +12,30 @@
  * already pure, callback-driven components with zero teacher-specific
  * logic baked in; the only piece genuinely missing was this grid
  * wrapper, and now, per explicit product decision, per-student
- * movement AND session performance.
+ * movement.
  *
- * Two genuinely different metrics, kept deliberately separate rather
- * than conflated into one badge:
- *   - Session star delta (the PRIMARY badge) — "how many stars this
- *     student earned this session," from
- *     services/classSessionService.js's own
- *     getStudentStarDeltaSinceSessionStart(), itself a pure derivation
- *     over student.history (every award/deduction already writes a
- *     real, signed delta there) — no new persistence.
- *   - Ranking movement (the SECONDARY badge) — "where this student
- *     stands relative to the whole class since the period started,"
- *     unchanged from the prior milestone: still CLASS-WIDE (not
- *     team-relative), still from
- *     services/teamStatisticsService.js's own
- *     getClassLeaderboardWithMovement().
- * Both are computed exactly ONCE here, for the entire classroom, and
- * handed down as plain data. Team score/movement is unchanged
- * (getTeamStandingsWithMovement()).
+ * Team score/movement comes from
+ * services/teamStatisticsService.js's own getTeamStandingsWithMovement().
+ * Student movement is deliberately CLASS-WIDE, not team-relative — per
+ * explicit product decision: the motivational signal is "how have you
+ * grown, personally, since the period started," not "how do you
+ * compare to your four teammates." getClassLeaderboardWithMovement()
+ * already existed and already ranks across the whole classroom (see
+ * that function's own use of classroom.teams.flatMap()) — computed
+ * ONCE here, for the entire classroom, not once per team; every team
+ * card looks its own students up from that one shared map. Neither
+ * TeamCard.js nor ClassModeStudentRow.js recalculates anything — they
+ * only render whatever movement object they're given.
+ *
+ * A session-performance badge ("+3⭐ this session," alongside the
+ * ranking badge) was tried here and then deliberately removed as
+ * unnecessary visual clutter — see
+ * services/classSessionService.js's own
+ * getStudentStarDeltaSinceSessionStart() for the still-correct,
+ * still-tested underlying calculation, which nothing here calls
+ * anymore. This was a pure rendering removal — no business logic was
+ * touched, since nothing else in the app ever read this computation's
+ * output for anything besides that one badge.
  *
  * Each team's own roster is sorted by current score, descending,
  * before being handed to TeamCard — per explicit product decision,
@@ -55,7 +60,6 @@
 import { createTeamCardElement } from './TeamCard.js';
 import { createEmptyStateElement } from './EmptyState.js';
 import { getTeamStandingsWithMovement, getClassLeaderboardWithMovement, getCurrentMonthPeriod } from '../../services/teamStatisticsService.js';
-import { getStudentStarDeltaSinceSessionStart } from '../../services/classSessionService.js';
 
 export function createTeamStandingsBoardElement({ classroom, onTap, onSwipeLeft, onLongPress, onTapTeam, highlight = {} }) {
   const grid = document.createElement('section');
@@ -81,12 +85,7 @@ export function createTeamStandingsBoardElement({ classroom, onTap, onSwipeLeft,
 
   teamsWithStudents.forEach((team) => {
     const standing = standingsWithMovement.find((entry) => entry.teamId === team.id);
-
     const sortedStudents = [...team.students].sort((a, b) => b.score - a.score);
-    const studentSessionDeltas = {};
-    sortedStudents.forEach((student) => {
-      studentSessionDeltas[student.id] = getStudentStarDeltaSinceSessionStart(classroom, student);
-    });
 
     grid.appendChild(
       createTeamCardElement(team, standing ? standing.score : 0, {
@@ -97,7 +96,6 @@ export function createTeamStandingsBoardElement({ classroom, onTap, onSwipeLeft,
         onTapTeam: onTapTeam ? () => onTapTeam(team.id) : undefined,
         movement: standing ? { movement: standing.movement, movementAmount: standing.movementAmount } : undefined,
         studentMovements,
-        studentSessionDeltas,
         sortedStudents,
       })
     );

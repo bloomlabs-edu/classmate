@@ -1031,60 +1031,22 @@ select:focus-visible,
   flex-shrink: 0;
 }
 
-/* Student movement badge — the PRIMARY movement indicator, per
-   explicit product decision (more prominent than the team-level one
-   in the header). A circular pill matching .team-card__total's own
-   soft, rounded aesthetic — never a plain arrow. Purely
-   presentational; see ui/components/ClassModeStudentRow.js's own
-   createStudentMovementBadge() for why it never computes movement
-   itself. */
-/* PRIMARY badge — session performance. Deliberately the more
-   prominent of the two badges: larger, bolder, stronger color, per
-   explicit product decision that "did I earn stars" should be the
-   first thing a student notices. See
-   ui/components/ClassModeStudentRow.js's own createSessionDeltaBadge(). */
-.student-row__session-delta {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 3.2rem;
-  height: 1.8rem;
-  padding: 0 0.6rem;
-  border-radius: var(--radius-pill);
-  font-size: 0.95rem;
-  font-weight: var(--font-weight-black);
-  border: 2px solid;
-}
-.student-row__session-delta--positive {
-  background-color: rgba(46, 158, 91, 0.16);
-  border-color: rgba(46, 158, 91, 0.5);
-  color: #1b5e20;
-}
-.student-row__session-delta--negative {
-  background-color: rgba(229, 57, 53, 0.16);
-  border-color: rgba(229, 57, 53, 0.5);
-  color: #b71c1c;
-}
-.student-row__session-delta--neutral {
-  background-color: rgba(0, 0, 0, 0.05);
-  border-color: rgba(0, 0, 0, 0.15);
-  color: var(--color-muted);
-}
-
-/* SECONDARY badge — ranking movement. Roughly half the visual weight
-   of the session badge beside it, per explicit product decision:
-   smaller footprint, thinner border, lighter font-weight, muted
-   colors — real information, deliberately not competing for
-   attention. */
+/* Ranking movement badge — how this student stands relative to the
+   whole class since the period started. Deliberately kept small and
+   subtle, roughly the visual weight of metadata rather than another
+   score, per explicit product decision — a companion "session stars"
+   badge was tried alongside this one and removed as unnecessary
+   clutter (see ui/components/ClassModeStudentRow.js's own header
+   comment); this is now the row's only trailing badge. */
 .student-row__movement {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 1.7rem;
-  height: 1.3rem;
-  padding: 0 0.35rem;
+  min-width: 1.9rem;
+  height: 1.4rem;
+  padding: 0 0.4rem;
   border-radius: var(--radius-pill);
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   font-weight: var(--font-weight-bold);
   border: 1px solid;
 }
