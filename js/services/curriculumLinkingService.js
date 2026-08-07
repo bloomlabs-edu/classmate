@@ -213,3 +213,27 @@ export function createSubjectWithCurriculum(classroom, subjectTitle, subjectId, 
 
   return subject;
 }
+
+/**
+ * The Notebook Subject (services/notebookConfigService.js's own
+ * `classroom.notebookConfig.subjects`) and the Learning Hub's own
+ * Subject (`classroom.learningRecord.subjects`) are two genuinely
+ * separate entities today, confirmed directly — neither references
+ * the other by id anywhere in this codebase. Matching by name is the
+ * only honest bridge available without inventing a formal link that
+ * doesn't exist; if a teacher names them differently ("Science" vs.
+ * "General Science"), this correctly finds nothing, rather than
+ * guessing.
+ *
+ * Returns the real LearningUnit array for display in a "Learning
+ * Context" picker (see ui/views/WorkRequestCreateView.js), or an
+ * empty array if no matching Learning Hub Subject exists at all —
+ * never an error, since a classroom legitimately may not have set up
+ * Learning Hub at all.
+ */
+export function getUnitsForNotebookSubject(classroom, notebookSubjectName) {
+  const learningSubject = (classroom.learningRecord?.subjects || []).find(
+    (subject) => subject.title.trim().toLowerCase() === notebookSubjectName.trim().toLowerCase()
+  );
+  return learningSubject ? learningSubject.units || [] : [];
+}

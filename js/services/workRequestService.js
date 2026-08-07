@@ -81,8 +81,20 @@ export function getWorkRequestById(classroom, requestId) {
  * Creates one entry (status 'assigned') for every student currently
  * on the real roster — including Ungrouped students, since this
  * tracks individual work, not team standing.
+ *
+ * `curriculumUnitId`/`curriculumUnitNumberSnapshot`/
+ * `curriculumUnitTitleSnapshot` are all optional and all captured
+ * exactly once, right here, at creation — per the frozen snapshot
+ * rule, nothing anywhere in this service ever updates or re-resolves
+ * them afterwards, even while the request stays open. When the
+ * caller doesn't select a curriculum unit, all three are correctly
+ * left undefined — a Holiday Homework or Revision Notebook check has
+ * no curriculum relationship at all, not an empty one.
  */
-export function createNewWorkRequest(classroom, { type = 'notebook', title, subjectId, notebookTypeId, dueDate = '' }) {
+export function createNewWorkRequest(
+  classroom,
+  { type = 'notebook', title, subjectId, notebookTypeId, dueDate = '', curriculumUnitId, curriculumUnitNumberSnapshot, curriculumUnitTitleSnapshot }
+) {
   if (!classroom.workRequests) classroom.workRequests = [];
 
   const existingOpen = getActiveWorkRequest(classroom, { type, subjectId, notebookTypeId });
@@ -93,7 +105,17 @@ export function createNewWorkRequest(classroom, { type = 'notebook', title, subj
   }
 
   const entries = getClassroomStudents(classroom).map((student) => createWorkRequestEntry({ studentId: student.id }));
-  const request = createWorkRequest({ type, title, subjectId, notebookTypeId, dueDate, entries });
+  const request = createWorkRequest({
+    type,
+    title,
+    subjectId,
+    notebookTypeId,
+    dueDate,
+    entries,
+    curriculumUnitId,
+    curriculumUnitNumberSnapshot,
+    curriculumUnitTitleSnapshot,
+  });
   classroom.workRequests.push(request);
   return request;
 }

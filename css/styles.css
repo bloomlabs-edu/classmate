@@ -8115,3 +8115,12 @@ button.wizard-checklist__row:hover {
   margin-top: 0.5rem;
   text-align: center;
 }
+
+/* Learning Context field label — see ui/views/WorkRequestCreateView.js. */
+.work-request-create__field-label {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+  margin: 0.75rem 0 0.35rem;
+}

@@ -37,6 +37,41 @@
  * one per student on the roster at creation time, referencing
  * `studentId` by id, never a copy, matching this app's own
  * established reference-not-copy convention throughout.
+ *
+ * `curriculumUnitId`/`curriculumUnitNumberSnapshot`/
+ * `curriculumUnitTitleSnapshot` — optional. A notebook check may
+ * exist for reasons that have nothing to do with curriculum (Holiday
+ * Homework, Revision Notebook, a Practical Record, a surprise
+ * inspection); when it does relate to a specific unit, this is
+ * captured here, but the relationship is never required — Notebook
+ * identity stays exactly (subjectId, notebookTypeId), never including
+ * curriculum, and this must not change (see
+ * services/workRequestService.js's own getLastChecked()/
+ * getNotebooksForStudent(), whose own correctness — history and
+ * "Last Checked" spanning many cycles regardless of which unit each
+ * one happened to be for — already depends on curriculum staying
+ * outside notebook identity).
+ *
+ * Per the frozen platform principle — "references preserve
+ * relationships, snapshots preserve history" — these are two
+ * different responsibilities, not duplicated data:
+ *   - `curriculumUnitId` is a stable reference for joins, navigation,
+ *     analytics, and future Learning Hub integration. It may resolve
+ *     to a unit that has since been renamed, reorganized, or deleted
+ *     entirely — that's expected, not an error condition, and this
+ *     field alone should never be used for display.
+ *   - `curriculumUnitNumberSnapshot`/`curriculumUnitTitleSnapshot` are
+ *     captured ONCE, at creation, and never updated or re-resolved
+ *     afterwards — even while the request stays open for corrections.
+ *     The teacher's intent is recorded at the moment they created the
+ *     check, not at whatever moment it happens to close; renaming the
+ *     unit six months later must never rewrite what this request
+ *     already, correctly means. These are raw context DATA, not
+ *     preformatted display strings — every renderer composes them
+ *     however fits that screen (see
+ *     ui/views/WorkRequestRosterView.js and
+ *     services/workTypes/NotebookWorkType.js for two different, real
+ *     compositions of the same two raw fields).
  */
 
 import { generateId } from '../utils/idGenerator.js';
@@ -52,8 +87,11 @@ export function createWorkRequest({
   dueDate = '',
   status = 'open',
   entries = [],
+  curriculumUnitId,
+  curriculumUnitNumberSnapshot,
+  curriculumUnitTitleSnapshot,
 } = {}) {
-  return {
+  const request = {
     id: id || generateId(),
     type,
     title,
@@ -64,4 +102,15 @@ export function createWorkRequest({
     status,
     entries,
   };
+
+  // Only set when actually provided -- an explicit `key: undefined`
+  // still creates the key in the object literal, and Firestore
+  // rejects undefined values outright. A request with no curriculum
+  // relationship must have these keys genuinely absent, not present
+  // with an undefined value.
+  if (curriculumUnitId !== undefined) request.curriculumUnitId = curriculumUnitId;
+  if (curriculumUnitNumberSnapshot !== undefined) request.curriculumUnitNumberSnapshot = curriculumUnitNumberSnapshot;
+  if (curriculumUnitTitleSnapshot !== undefined) request.curriculumUnitTitleSnapshot = curriculumUnitTitleSnapshot;
+
+  return request;
 }
