@@ -8009,3 +8009,21 @@ button.wizard-checklist__row:hover {
   font-weight: var(--font-weight-bold);
   cursor: pointer;
 }
+
+/* Team movement indicator — see ui/components/TeamCard.js's own
+   createMovementIndicator(). Communicates change since the current
+   period started, not just current score. */
+.team-card__movement {
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-black);
+  margin-left: 0.4rem;
+}
+.team-card__movement--up {
+  color: #2e9e5b;
+}
+.team-card__movement--down {
+  color: #e53935;
+}
+.team-card__movement--same {
+  color: rgba(255, 255, 255, 0.6);
+}

@@ -12,6 +12,14 @@
  * pure, callback-driven components with zero teacher-specific logic
  * baked in; the only piece genuinely missing was this grid wrapper.
  *
+ * Now sources each team's own score AND movement from
+ * services/teamStatisticsService.js's own getTeamStandingsWithMovement()
+ * — that function, and its own fixed sincePeriodStart baseline, already
+ * existed and already worked; the only gap was that this component
+ * still called the older, movement-blind teamService.getTeamScore()
+ * directly. Confirmed directly before wiring this in: no new
+ * persistence, no new algorithm, no redesign — a pure wiring fix.
+ *
  * `onTap`/`onSwipeLeft`/`onLongPress` are passed straight through to
  * every student row, exactly as TrackerView.js already did. All three
  * are optional here (student rows handle a missing onSwipeLeft/
@@ -25,7 +33,7 @@
 
 import { createTeamCardElement } from './TeamCard.js';
 import { createEmptyStateElement } from './EmptyState.js';
-import { getTeamScore } from '../../services/teamService.js';
+import { getTeamStandingsWithMovement, getCurrentMonthPeriod } from '../../services/teamStatisticsService.js';
 
 export function createTeamStandingsBoardElement({ classroom, onTap, onSwipeLeft, onLongPress, onTapTeam, highlight = {} }) {
   const grid = document.createElement('section');
@@ -41,14 +49,18 @@ export function createTeamStandingsBoardElement({ classroom, onTap, onSwipeLeft,
     return grid;
   }
 
+  const standingsWithMovement = getTeamStandingsWithMovement(classroom, getCurrentMonthPeriod());
+
   teamsWithStudents.forEach((team) => {
+    const standing = standingsWithMovement.find((entry) => entry.teamId === team.id);
     grid.appendChild(
-      createTeamCardElement(team, getTeamScore(team), {
+      createTeamCardElement(team, standing ? standing.score : 0, {
         highlightTeamId: highlight.teamId,
         onTap,
         onSwipeLeft,
         onLongPress,
         onTapTeam: onTapTeam ? () => onTapTeam(team.id) : undefined,
+        movement: standing ? { movement: standing.movement, movementAmount: standing.movementAmount } : undefined,
       })
     );
   });

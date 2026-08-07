@@ -11,80 +11,60 @@
  * new checker function here — getPendingTasks() picks it up
  * automatically, no widget changes needed.
  *
- * The three "work_request_*" checkers are now an internal adapter over
- * services/workTypes/NotebookWorkType.js — see this file's own
- * getWorkRequestItemsBySubtitle() below for exactly how. This is a pure
- * internal implementation change: NotebookWorkType now owns the actual
- * notebook lifecycle logic (composing workRequestService.js directly,
- * per the frozen Work Type architecture), and this file's own public
- * output shape — { requestId, description, count } per item, three
- * separately-registered task-type ids — is completely unchanged, so
- * PendingTasksWidget.js and main.js's own dispatch function continue
- * working exactly as before, with zero changes to either. The
- * migration is invisible to both.
- *
- * Definitions (judgment calls, documented since "pending" is inherently
- * a bit subjective):
- *   - "Activities awaiting completion": a Learning Activity with at
- *     least one student still at status 'Not Assigned' — the teacher
- *     hasn't finished marking the whole roster for it yet.
+ * Every checker below is now a thin adapter over the frozen WorkType
+ * architecture (see services/workTypes/index.js) — this file contains
+ * zero duplicated notebook or activity logic of its own. Both
+ * NotebookWorkType and LearningActivityWorkType now own their actual
+ * business logic, composing workRequestService.js/
+ * learningActivityService.js directly; this file's own job is purely
+ * translating their frozen { title, subtitle, count, navigateTo }
+ * shape back into this file's own, unchanged public shape (per
+ * task-type id) — the exact shape PendingTasksWidget.js and main.js's
+ * own dispatch function already expect, with zero changes to either.
+ * `requestId`/`activityId` are recovered from `navigateTo`'s own,
+ * well-defined path shape. This adapter (and the rest of this file)
+ * is removed once Open Work replaces Pending Tasks entirely and
+ * consumes `navigateTo` itself, generically.
  */
 
-import * as learningActivityService from './learningActivityService.js';
 import { NotebookWorkType } from './workTypes/NotebookWorkType.js';
+import { LearningActivityWorkType } from './workTypes/LearningActivityWorkType.js';
 import { PENDING_TASK_TYPES } from '../config/pendingTaskTypes.js';
 
 /**
- * The adapter: calls NotebookWorkType.getActiveWork() exactly once,
- * then translates its frozen { title, subtitle, count, navigateTo }
- * shape back into this file's own, unchanged public shape
- * ({ requestId, description, count }), filtered to whichever subtitle
- * this specific, legacy task-type id corresponds to. `requestId` is
- * recovered from `navigateTo`'s own, well-defined path shape
- * (#/classroom/{id}/work-requests/{requestId}) — a deliberate,
- * temporary adapter step that exists only because this file's own
- * callers still expect `requestId` directly; Milestone 4's own Open
- * Work redesign will consume `navigateTo` itself, generically, and
- * this adapter (along with the rest of this file) is removed then.
+ * The one, shared adapter every checker below uses — calls a given
+ * WorkType's own getActiveWork() exactly once, optionally filters to
+ * one specific subtitle (Notebook's three separate task-type ids each
+ * correspond to one subtitle; Activities has only one, so `subtitle`
+ * is omitted there), and maps the result back into this file's own
+ * legacy shape under whichever id key the caller (main.js's own route
+ * dispatch) still expects.
  */
-function getWorkRequestItemsBySubtitle(classroom, subtitle) {
-  return NotebookWorkType.getActiveWork(classroom)
-    .filter((item) => item.subtitle === subtitle)
+function getWorkTypeItemsAsPendingTasks(workType, classroom, idKey, subtitle) {
+  return workType
+    .getActiveWork(classroom)
+    .filter((item) => !subtitle || item.subtitle === subtitle)
     .map((item) => ({
-      requestId: item.navigateTo.split('/').pop(),
+      [idKey]: item.navigateTo.split('/').pop(),
       description: item.title,
       count: item.count,
     }));
 }
 
 function checkWorkRequestsAwaitingSubmission(classroom) {
-  return getWorkRequestItemsBySubtitle(classroom, 'Awaiting Submission');
+  return getWorkTypeItemsAsPendingTasks(NotebookWorkType, classroom, 'requestId', 'Awaiting Submission');
 }
 
 function checkWorkRequestsSubmittedAwaitingReview(classroom) {
-  return getWorkRequestItemsBySubtitle(classroom, 'Awaiting Review');
+  return getWorkTypeItemsAsPendingTasks(NotebookWorkType, classroom, 'requestId', 'Awaiting Review');
 }
 
 function checkWorkRequestsNeedingCorrection(classroom) {
-  return getWorkRequestItemsBySubtitle(classroom, 'Needs Correction');
+  return getWorkTypeItemsAsPendingTasks(NotebookWorkType, classroom, 'requestId', 'Needs Correction');
 }
 
 function checkActivitiesAwaitingCompletion(classroom) {
-  const items = [];
-
-  learningActivityService.listActivities(classroom).forEach((activity) => {
-    const summary = learningActivityService.getActivityRosterSummary(classroom, activity.id);
-    const notAssignedCount = summary['Not Assigned'] || 0;
-    if (notAssignedCount > 0) {
-      items.push({
-        activityId: activity.id,
-        description: activity.title,
-        count: notAssignedCount,
-      });
-    }
-  });
-
-  return items;
+  return getWorkTypeItemsAsPendingTasks(LearningActivityWorkType, classroom, 'activityId', null);
 }
 
 const CHECKERS = {
