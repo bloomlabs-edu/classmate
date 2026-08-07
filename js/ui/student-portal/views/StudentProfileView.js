@@ -80,6 +80,8 @@ export async function renderStudentProfileView(container, { onManageStudents, on
   bucketChip.textContent = `Learning Bucket: ${getBucketLabel(profile.bucket)}`;
   wrapper.appendChild(bucketChip);
 
+  wrapper.appendChild(createJourneySnapshotCard(profile));
+
   const details = document.createElement('dl');
   details.className = 'student-profile__details';
   details.append(
@@ -99,6 +101,40 @@ export async function renderStudentProfileView(container, { onManageStudents, on
   }
 
   container.appendChild(wrapper);
+}
+
+function createJourneySnapshotCard(profile) {
+  const card = document.createElement('div');
+  card.className = 'journey-snapshot-card';
+
+  const metrics = [
+    { icon: '\u2b50', label: 'Total Stars', value: profile.totalStars },
+    { icon: '\ud83c\udf96\ufe0f', label: 'Badges Earned', value: profile.badgeCount },
+    { icon: '\ud83d\udd25', label: 'Current Streak', value: profile.currentStreak },
+    { icon: '\ud83d\udcc8', label: 'Biggest Climb', value: profile.biggestClimb },
+  ];
+
+  metrics.forEach(({ icon, label, value }) => {
+    const metric = document.createElement('div');
+    metric.className = 'journey-snapshot-card__metric';
+
+    const iconEl = document.createElement('span');
+    iconEl.className = 'journey-snapshot-card__icon';
+    iconEl.textContent = icon;
+
+    const valueEl = document.createElement('span');
+    valueEl.className = 'journey-snapshot-card__value';
+    valueEl.textContent = value;
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'journey-snapshot-card__label';
+    labelEl.textContent = label;
+
+    metric.append(iconEl, valueEl, labelEl);
+    card.appendChild(metric);
+  });
+
+  return card;
 }
 
 function createDetailRow(label, value) {

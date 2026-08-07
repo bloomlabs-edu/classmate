@@ -8197,3 +8197,34 @@ button.wizard-checklist__row:hover {
   padding: 0.85rem 1.75rem;
   font-size: 1rem;
 }
+
+/* Journey Snapshot card — ui/student-portal/views/StudentProfileView.js */
+.journey-snapshot-card {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 1.25rem;
+  margin: 1rem 0;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+}
+.journey-snapshot-card__metric {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+}
+.journey-snapshot-card__icon {
+  font-size: 1.5rem;
+}
+.journey-snapshot-card__value {
+  font-size: 1.4rem;
+  font-weight: var(--font-weight-black);
+  color: var(--color-ink);
+}
+.journey-snapshot-card__label {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  text-align: center;
+}

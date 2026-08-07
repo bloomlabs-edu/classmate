@@ -28,6 +28,7 @@ import { firestoreClassroomRepository as repository } from '../repositories/fire
 import * as studentDeviceService from './studentDeviceService.js';
 import * as studentService from './studentService.js';
 import * as studentProgressService from './studentProgressService.js';
+import * as timelineService from './timelineService.js';
 import * as studentEventService from './studentEventService.js';
 import * as assessmentService from './assessmentService.js';
 import * as goalService from './goalService.js';
@@ -142,13 +143,21 @@ export async function getCurrentStudentProfile() {
   const found = await loadCurrentStudentAndClassroom();
   if (!found) return null;
 
+  const { classroom, student } = found;
+  const period = teamStatisticsService.getCurrentMonthPeriod();
+  const classEntry = teamStatisticsService.getClassLeaderboardWithMovement(classroom, period).find((e) => e.studentId === student.id);
+
   return {
-    studentId: found.student.id,
-    name: found.student.name,
+    studentId: student.id,
+    name: student.name,
     classroomName: found.classroom.classroomName,
     groupName: found.team && !found.team.isUngrouped ? found.team.name : null,
     role: 'student',
     bucket: found.student.bucket, // reused directly from the Student model — see config/bucketConfig.js for the shared color/label mapping every screen (teacher and student) reads from
+    totalStars: timelineService.getTotalPositivePoints(student),
+    badgeCount: (student.badges || []).length,
+    currentStreak: studentProgressService.getBestActiveStreakAcrossNotebooks(classroom, student.id),
+    biggestClimb: classEntry && classEntry.movement === 'up' ? classEntry.movementAmount : 0,
   };
 }
 
