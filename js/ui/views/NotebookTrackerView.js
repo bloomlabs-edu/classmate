@@ -11,27 +11,36 @@
  * WorkType orchestrates domain services, never duplicates business
  * logic").
  *
- * Deliberately built as a preview of the future, unified Open Work
- * section (Phase 3/4), scoped to one WorkType today — the card
- * renderer itself (createWorkItemCard()) takes only the plain
- * {title, subtitle, count, navigateTo} shape and has no notebook
- * awareness at all, so it can be reused unchanged once Open Work
- * aggregates across every WorkType, rather than being rebuilt then.
+ * Redesigned into a card dashboard (ui/components/OperationalWorkCard.js)
+ * — a pure presentation-layer change. No service touched, no WorkType
+ * interface touched, no new persistence: every card still consumes
+ * exactly the same plain { title, subtitle, count, navigateTo } shape
+ * that already existed. One real, pre-existing bug fixed along the
+ * way: the "start a new check" button used to display item.title
+ * itself ("New Homework") as its own button label, instead of a real
+ * call-to-action — now correctly reads "Start Notebook Check".
+ *
+ * The grid (.operational-work-grid) is responsive via CSS alone —
+ * 2-3 columns on desktop, 2 on tablet, 1 on mobile — no JS layout
+ * logic, matching how every other grid in this app already works.
  *
  * "⚙ Configure Notebook Types" is deliberately phrased as a doorway
  * out, not an action that belongs to this screen — per the frozen
  * Operational Work / Configuration boundary, this tracker is
  * operational; adding a new Subject/Notebook Type is configuration,
  * and the link should read as "you are about to leave this space,"
- * not as "this is one more thing this screen does." It links straight
- * to the existing Settings → Notebooks screen; nothing here duplicates
- * that screen's own creation form.
+ * not as "this is one more thing this screen does." Visually
+ * lightweight and set apart from the card grid by explicit product
+ * decision — configuration should recede, not compete with real
+ * operational work for attention. It links straight to the existing
+ * Settings → Notebooks screen; nothing here duplicates that screen's
+ * own creation form.
  */
 
 import { NotebookWorkType } from '../../services/workTypes/NotebookWorkType.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { createBackButton } from '../components/BackButton.js';
-import { createWorkItemCard } from '../components/WorkItemCard.js';
+import { createOperationalWorkCard } from '../components/OperationalWorkCard.js';
 
 export function renderNotebookTrackerView(container, { classroom, onBack, onNavigate, onOpenNotebookConfiguration }) {
   container.innerHTML = '';
@@ -57,12 +66,17 @@ export function renderNotebookTrackerView(container, { classroom, onBack, onNavi
   if (activeWork.length === 0 && startActions.length === 0) {
     content.appendChild(createEmptyStateElement({ message: 'No subjects or notebook types configured yet.' }));
   } else {
+    const grid = document.createElement('div');
+    grid.className = 'operational-work-grid';
+
     activeWork.forEach((item) => {
-      content.appendChild(createWorkItemCard(item, 'Continue', onNavigate));
+      grid.appendChild(createOperationalWorkCard(item, 'Continue', onNavigate));
     });
     startActions.forEach((item) => {
-      content.appendChild(createWorkItemCard(item, item.title, onNavigate));
+      grid.appendChild(createOperationalWorkCard(item, 'Start Notebook Check', onNavigate));
     });
+
+    content.appendChild(grid);
   }
 
   content.appendChild(createConfigureNotebookTypesLink(onOpenNotebookConfiguration));
