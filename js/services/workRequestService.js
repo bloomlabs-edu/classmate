@@ -236,6 +236,41 @@ export function getEntryHistory(entry) {
 }
 
 /**
+ * "Last Checked" for one student's own (subjectId, notebookTypeId)
+ * notebook — a Notebook-level projection, per the frozen architecture
+ * ("Last Checked... persists across request boundaries; a new
+ * request opening doesn't erase the fact that the teacher looked
+ * three days ago"). Deliberately searches across EVERY WorkRequest
+ * sharing this exact notebook identity, open or closed — never scoped
+ * to only the request currently on screen, since a teacher's
+ * relationship to a student's notebook outlives any one administrative
+ * cycle. Requires no new persistence: this is a query over
+ * WorkRequestEntry.history, which already records every 'reviewed'
+ * transition with a real date.
+ *
+ * Returns the most recent 'reviewed' date (an ISO string), or null if
+ * this student's notebook for this Subject x Type has never been
+ * reviewed at all.
+ */
+export function getLastChecked(classroom, studentId, subjectId, notebookTypeId) {
+  let mostRecent = null;
+
+  listWorkRequests(classroom)
+    .filter((request) => request.subjectId === subjectId && request.notebookTypeId === notebookTypeId)
+    .forEach((request) => {
+      const entry = getEntryForStudent(request, studentId);
+      if (!entry) return;
+      getEntryHistory(entry)
+        .filter((step) => step.status === 'reviewed')
+        .forEach((step) => {
+          if (!mostRecent || step.date > mostRecent) mostRecent = step.date;
+        });
+    });
+
+  return mostRecent;
+}
+
+/**
  * One student's own summary across EVERY WorkRequest they have an
  * entry in — open and closed alike, since "Reviewed" would almost
  * never appear otherwise (a request is typically closed once

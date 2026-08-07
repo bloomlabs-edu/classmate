@@ -57,7 +57,6 @@
  * Class Mode are all reached through here, never reimplemented here.
  */
 
-import * as workspaceService from '../../services/workspaceService.js';
 import { createIcon } from '../components/Icon.js';
 import * as pendingTaskService from '../../services/pendingTaskService.js';
 import { renderTeachingAssistant } from '../components/TeachingAssistant.js';
@@ -101,7 +100,7 @@ export function renderDashboardView(container, props) {
 
   function openLearningManagement() {
     renderLearningManagementView(container, {
-      classrooms: workspaceService.getState().classrooms,
+      classrooms: [classroom],
       onBack: () => renderDashboardView(container, props),
       onOpenCurriculumManagement: openCurriculumManagement,
     });

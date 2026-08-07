@@ -206,6 +206,7 @@ function render(container, classroom, requestId, expandedStudentIds, openOverflo
   visibleStudents.forEach((student) => {
     const entry = workRequestService.getEntryForStudent(request, student.id);
     if (!entry) return;
+    const lastChecked = workRequestService.getLastChecked(classroom, student.id, request.subjectId, request.notebookTypeId);
     list.appendChild(
       createRosterRow(
         student,
@@ -213,7 +214,8 @@ function render(container, classroom, requestId, expandedStudentIds, openOverflo
         entry,
         expandedStudentIds.has(student.id),
         openOverflowStudentId === student.id,
-        handlers
+        handlers,
+        lastChecked
       )
     );
   });
@@ -273,7 +275,28 @@ function createLegend(activeFilterStatuses, onSetFilter) {
   return legend;
 }
 
-function createRosterRow(student, team, entry, isExpanded, isOverflowOpen, handlers) {
+/**
+ * Relative-time phrasing for workRequestService.js's own
+ * getLastChecked() — a Notebook-level fact (survives this request
+ * closing), deliberately phrased distinctly from the request-scoped
+ * status chip right next to it, so the two pieces of information
+ * never read as the same thing.
+ */
+function describeLastChecked(lastCheckedIso) {
+  if (!lastCheckedIso) return 'Never checked';
+
+  const lastCheckedDate = new Date(lastCheckedIso.slice(0, 10));
+  const today = new Date(new Date().toISOString().slice(0, 10));
+  const daysAgo = Math.round((today - lastCheckedDate) / (1000 * 60 * 60 * 24));
+
+  if (daysAgo <= 0) return 'Checked today';
+  if (daysAgo === 1) return 'Checked yesterday';
+  if (daysAgo < 30) return `Last checked ${daysAgo} days ago`;
+  const monthsAgo = Math.round(daysAgo / 30);
+  return `Last checked ${monthsAgo} month${monthsAgo === 1 ? '' : 's'} ago`;
+}
+
+function createRosterRow(student, team, entry, isExpanded, isOverflowOpen, handlers, lastChecked) {
   const meta = getStatusMeta(entry);
 
   const row = document.createElement('div');
@@ -296,7 +319,13 @@ function createRosterRow(student, team, entry, isExpanded, isOverflowOpen, handl
   mainLine.appendChild(expandButton);
 
   mainLine.appendChild(
-    createStudentNameElement({ student, team, onSelect: handlers.onSelectStudent, leadingMarker: 'group', tintNameWithBucket: true })
+    createStudentNameElement({
+      student,
+      team,
+      onSelect: (selectedStudent) => handlers.onSelectStudent(selectedStudent.id),
+      leadingMarker: 'group',
+      tintNameWithBucket: true,
+    })
   );
 
   const statusBlock = document.createElement('div');
@@ -314,6 +343,12 @@ function createRosterRow(student, team, entry, isExpanded, isOverflowOpen, handl
     dateLine.textContent = describeMostRecentTransition(entry, history[history.length - 1].date);
     statusBlock.appendChild(dateLine);
   }
+
+  const lastCheckedLine = document.createElement('span');
+  lastCheckedLine.className = 'work-request-roster__last-checked';
+  lastCheckedLine.textContent = describeLastChecked(lastChecked);
+  statusBlock.appendChild(lastCheckedLine);
+
   mainLine.appendChild(statusBlock);
 
   const actions = document.createElement('div');

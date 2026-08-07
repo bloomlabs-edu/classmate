@@ -7816,6 +7816,12 @@ button.wizard-checklist__row:hover {
   color: var(--color-muted);
   padding-left: 0.2rem;
 }
+.work-request-roster__last-checked {
+  font-size: 0.72rem;
+  color: var(--color-muted);
+  padding-left: 0.2rem;
+  font-style: italic;
+}
 
 .work-request-roster__history {
   margin: 0.6rem 0 0.3rem 2.4rem;
@@ -7983,4 +7989,23 @@ button.wizard-checklist__row:hover {
   font-size: 0.8rem;
   color: var(--color-muted);
   margin: 0;
+}
+
+/* Notebook Tracker's own "Configure Notebook Types" doorway. See
+   ui/views/NotebookTrackerView.js's own header comment for why this
+   is deliberately phrased as leaving the operational screen, not an
+   action the screen itself performs. */
+.notebook-tracker__configure-link {
+  display: block;
+  width: 100%;
+  text-align: center;
+  margin-top: 1.5rem;
+  padding: 0.75rem 1rem;
+  background: none;
+  border: 1px dashed var(--color-border);
+  border-radius: 12px;
+  color: var(--color-muted);
+  font: inherit;
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
 }

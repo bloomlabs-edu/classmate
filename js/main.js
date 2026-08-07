@@ -502,14 +502,8 @@ function renderRoute(route, reason = 'unspecified') {
       renderNotebookTrackerView(appContainer, {
         classroom,
         onBack: () => router.navigate(`/classroom/${classroom.id}`),
-        onSelectNotebook: (subjectId, notebookTypeId) => {
-          const activeRequest = workRequestService.getActiveWorkRequest(classroom, { type: 'notebook', subjectId, notebookTypeId });
-          if (activeRequest) {
-            router.navigate(`/classroom/${classroom.id}/work-requests/${activeRequest.id}`);
-          } else {
-            router.navigate(`/classroom/${classroom.id}/notebooks/${subjectId}/${notebookTypeId}`);
-          }
-        },
+        onNavigate: (path) => router.navigate(path),
+        onOpenNotebookConfiguration: () => router.navigate(`/classroom/${classroom.id}/settings/learning`),
       });
     } else if (route.name === 'workRequestCreate') {
       renderWorkRequestCreateView(appContainer, {
