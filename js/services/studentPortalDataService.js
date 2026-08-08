@@ -77,11 +77,40 @@ export function startClassroomSubscription(classroomId, onUpdate) {
   return new Promise((resolve) => {
     let isFirstSnapshot = true;
     unsubscribeFromLiveClassroom = repository.subscribeToClassroom(classroomId, (classroomData) => {
+      // TEMPORARY DIAGNOSTIC — investigating why a just-submitted LSRW
+      // goal's own "Submitted" state reverts to an empty entry form in
+      // the real browser. This is the one spot in the whole render
+      // chain with zero prior visibility: every snapshot this
+      // subscription receives replaces liveClassroom wholesale, and
+      // this log is the only way to see, directly, what that snapshot
+      // actually contained for a specific goal category at the exact
+      // moment it arrived — including whether it arrives mid-submission.
+      try {
+        const activeStudentId = studentDeviceService.getActiveProfile()?.studentId;
+        const activeCycle = (classroomData.goalCycles || []).find((c) => c.status === 'active');
+        const listeningCategory = activeCycle?.categories.find((c) => c.name === 'Listening');
+        const listeningGoal = listeningCategory
+          ? activeCycle.goals.find((g) => g.categoryId === listeningCategory.id && g.studentId === activeStudentId)
+          : null;
+        console.log('[LSRW-DIAG] startClassroomSubscription() SNAPSHOT RECEIVED — liveClassroom is about to be REPLACED', {
+          timestamp: Date.now(),
+          isFirstSnapshot,
+          activeStudentId,
+          activeCycleId: activeCycle?.id,
+          listeningCategoryId: listeningCategory?.id,
+          anyListeningGoalExistsInThisSnapshot: !!listeningGoal,
+          listeningGoalText: listeningGoal?.text,
+          listeningGoalStatus: listeningGoal?.status,
+        });
+      } catch (diagError) {
+        console.log('[LSRW-DIAG] startClassroomSubscription() diagnostic logging itself failed (non-fatal, does not affect real behavior)', diagError);
+      }
       liveClassroom = classroomData;
       if (isFirstSnapshot) {
         isFirstSnapshot = false;
         resolve();
       } else {
+        console.log('[LSRW-DIAG] startClassroomSubscription() calling onLiveUpdateCallback() — this triggers renderRoute(..., "student-portal-live-update")', { timestamp: Date.now() });
         onLiveUpdateCallback?.();
       }
     });

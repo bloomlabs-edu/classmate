@@ -82,9 +82,14 @@ const editingCategoryIds = new Set();
 // same function studentPortalDataService.js itself already uses to
 // resolve "who is active"); cycleId comes from the cycle this file
 // already fetches. No new model field — both ids already existed.
+console.log('[LSRW-DIAG] StudentGoalTrackerView.js MODULE LOADED — build marker: optimisticGoals-with-scoping-diagnostic-v1', { timestamp: Date.now() });
+
 const optimisticGoals = {};
 
 export async function renderStudentGoalTrackerView(container, { onBack }) {
+  window.__lsrwInvocationCount = (window.__lsrwInvocationCount || 0) + 1;
+  const instanceId = Math.random().toString(36).slice(2, 8);
+  console.log(`[LSRW-DIAG][${instanceId}] renderStudentGoalTrackerView() CALLED — invocation #${window.__lsrwInvocationCount}`, { timestamp: Date.now() });
   let lastCycle = null;
 
   // Scopes a module-level optimisticGoals entry to this exact
@@ -111,23 +116,14 @@ export async function renderStudentGoalTrackerView(container, { onBack }) {
         drafts[categoryId] = text;
       },
       onSubmitGoal: async (categoryId, text) => {
+        console.log(`[LSRW-DIAG][${instanceId}] onSubmitGoal() CALLED for categoryId=${categoryId}`, { timestamp: Date.now(), text });
         const succeeded = await submitGoalForCurrentStudent(categoryId, text);
+        console.log(`[LSRW-DIAG][${instanceId}] submitGoalForCurrentStudent() RETURNED succeeded=${succeeded}`, { timestamp: Date.now() });
         if (succeeded) {
           delete drafts[categoryId];
           editingCategoryIds.delete(categoryId);
-          // The confirmed-correct value, tracked at module level so it
-          // survives any later re-render — internal or externally
-          // triggered — even one whose own fresh read hasn't caught up
-          // with this write yet. See this file's own header comment
-          // for exactly why lastCycle alone wasn't sufficient.
-          //
-          // Keyed by student + cycle + category, not categoryId alone
-          // — categoryId is only guaranteed unique within one cycle,
-          // never across a different student's own session or a
-          // different (e.g. later-created) cycle reusing the same
-          // category id. This is module-level state, so without this,
-          // a stale entry could otherwise leak across either.
           const key = buildOptimisticKey(categoryId);
+          console.log(`[LSRW-DIAG][${instanceId}] WRITING optimisticGoals[${key}] = pending_approval, text="${text}"`, { timestamp: Date.now(), lastCycleId: lastCycle?.cycleId, allOptimisticKeysBeforeWrite: Object.keys(optimisticGoals) });
           optimisticGoals[key] = {
             id: optimisticGoals[key]?.id ?? categoryId,
             text,
@@ -138,8 +134,10 @@ export async function renderStudentGoalTrackerView(container, { onBack }) {
             weeklyCompletionPercent: 0,
             overallCompletionPercent: 0,
           };
+          console.log(`[LSRW-DIAG][${instanceId}] AFTER WRITE, calling renderNow(). Full optimisticGoals now:`, { timestamp: Date.now(), optimisticGoals: JSON.parse(JSON.stringify(optimisticGoals)) });
           renderNow();
         } else {
+          console.log(`[LSRW-DIAG][${instanceId}] submission FAILED, falling back to rerender()`, { timestamp: Date.now() });
           await rerender();
         }
       },
@@ -164,13 +162,33 @@ export async function renderStudentGoalTrackerView(container, { onBack }) {
   // cycle directly rather than re-fetching it, avoiding an
   // unnecessary data round-trip for a UI-only toggle.
   function renderNow() {
+    console.log(`[LSRW-DIAG][${instanceId}] renderNow() CALLED (uses existing lastCycle, no fresh fetch)`, { timestamp: Date.now(), lastCycleId: lastCycle?.cycleId });
     applyOptimisticOverrides(lastCycle);
     render(container, lastCycle, buildHandlers());
   }
 
   async function rerender() {
+    console.log(`[LSRW-DIAG][${instanceId}] rerender() CALLED — about to fetch FRESH cycle data`, { timestamp: Date.now() });
     lastCycle = await getGoalCycleForCurrentStudent();
+    const listeningCategory = lastCycle?.categories.find((c) => c.categoryName === 'Listening');
+    console.log(`[LSRW-DIAG][${instanceId}] rerender() FRESH FETCH RETURNED`, {
+      timestamp: Date.now(),
+      cycleId: lastCycle?.cycleId,
+      studentId: getActiveProfile()?.studentId,
+      listeningCategoryId: listeningCategory?.categoryId,
+      listeningGoalExists: !!listeningCategory?.goal,
+      listeningGoalText: listeningCategory?.goal?.text,
+      listeningGoalStatus: listeningCategory?.goal?.status,
+      optimisticGoalsHasListeningKey: listeningCategory ? Object.keys(optimisticGoals).some((k) => k.endsWith(`::${listeningCategory.categoryId}`)) : null,
+    });
     applyOptimisticOverrides(lastCycle);
+    const listeningAfterOverride = lastCycle?.categories.find((c) => c.categoryName === 'Listening');
+    console.log(`[LSRW-DIAG][${instanceId}] rerender() AFTER applyOptimisticOverrides — final state about to be rendered`, {
+      timestamp: Date.now(),
+      listeningGoalExists: !!listeningAfterOverride?.goal,
+      listeningGoalText: listeningAfterOverride?.goal?.text,
+      listeningGoalStatus: listeningAfterOverride?.goal?.status,
+    });
     render(container, lastCycle, buildHandlers());
   }
 
@@ -193,26 +211,55 @@ export async function renderStudentGoalTrackerView(container, { onBack }) {
  * all.
  */
 function applyOptimisticOverrides(cycle) {
-  if (!cycle) return;
+  if (!cycle) {
+    console.log('[LSRW-DIAG] applyOptimisticOverrides() called with cycle=null, returning early', { timestamp: Date.now() });
+    return;
+  }
   const studentId = getActiveProfile()?.studentId ?? 'unknown';
   cycle.categories.forEach((category) => {
     const key = `${studentId}::${cycle.cycleId}::${category.categoryId}`;
     const override = optimisticGoals[key];
+    if (category.categoryName === 'Listening') {
+      console.log('[LSRW-DIAG] applyOptimisticOverrides() checking Listening', {
+        timestamp: Date.now(),
+        key,
+        overrideExists: !!override,
+        overrideText: override?.text,
+        currentCategoryGoalExists: !!category.goal,
+        currentCategoryGoalText: category.goal?.text,
+        allOptimisticKeys: Object.keys(optimisticGoals),
+      });
+    }
     if (!override) return;
 
     if (category.goal && category.goal.text === override.text) {
       // The real data has caught up — defer to it from now on, since
       // it may already know things the override never could (e.g. a
       // teacher's own approval).
+      if (category.categoryName === 'Listening') {
+        console.log('[LSRW-DIAG] applyOptimisticOverrides() Listening — CLEARING override, real data matches', { timestamp: Date.now() });
+      }
       delete optimisticGoals[key];
       return;
     }
 
+    if (category.categoryName === 'Listening') {
+      console.log('[LSRW-DIAG] applyOptimisticOverrides() Listening — APPLYING override on top of category.goal', { timestamp: Date.now() });
+    }
     category.goal = override;
   });
 }
 
 function render(container, cycle, handlers) {
+  const listeningCategory = cycle?.categories.find((c) => c.categoryName === 'Listening');
+  console.log('[LSRW-DIAG] render() — FINAL state immediately before container.innerHTML is written', {
+    timestamp: Date.now(),
+    hasCycle: !!cycle,
+    listeningGoalExists: !!listeningCategory?.goal,
+    listeningGoalText: listeningCategory?.goal?.text,
+    listeningGoalStatus: listeningCategory?.goal?.status,
+    willRenderBranch: !listeningCategory ? 'no-category' : !listeningCategory.goal ? 'EMPTY ENTRY FORM (no goal)' : listeningCategory.goal.status === 'pending_approval' ? 'SUBMITTED' : 'approved',
+  });
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
