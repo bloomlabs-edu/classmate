@@ -8203,6 +8203,7 @@ button.wizard-checklist__row:hover {
   font-size: 0.9rem;
   color: var(--color-muted);
   margin: 0;
+  text-align: left;
 }
 .recognition-moment-card {
   background-color: #ffffff;
@@ -8210,6 +8211,7 @@ button.wizard-checklist__row:hover {
   padding: 0.9rem 1.1rem;
   margin-bottom: 0.65rem;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  text-align: left;
 }
 .recognition-moment-card__title {
   font-size: 0.95rem;
