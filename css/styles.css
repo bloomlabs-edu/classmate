@@ -4751,11 +4751,38 @@ button.wizard-checklist__row:hover {
   padding: 1.5rem 1.5rem 1.25rem;
   box-shadow: 0 4px 16px rgba(184, 99, 26, 0.08);
 }
+.student-profile__identity-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  text-align: left;
+}
+.student-profile__avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
 .student-profile__avatar {
-  margin: 0 0 1rem;
+  margin: 0;
 }
 .student-profile__customize-avatar {
-  margin-bottom: 1rem;
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  background-color: var(--color-accent);
+  color: #ffffff;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+}
+.student-profile__title-block {
+  min-width: 0;
 }
 .student-profile__name {
   font-size: 1.6rem;
@@ -4766,7 +4793,7 @@ button.wizard-checklist__row:hover {
   color: var(--color-muted);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-bold);
-  margin: 0 0 1rem;
+  margin: 0;
 }
 .student-profile__bucket-chip {
   display: inline-block;
@@ -4775,7 +4802,7 @@ button.wizard-checklist__row:hover {
   border: 2px solid;
   font-weight: var(--font-weight-bold);
   font-size: 0.9rem;
-  margin: 0 0 1.25rem;
+  margin: 1rem 0 1.25rem;
 }
 
 /* Avatar Builder */
@@ -7533,7 +7560,9 @@ button.wizard-checklist__row:hover {
    comment for why this is intentionally bare, not the final
    experience. StudentPublicProfileView.js's own richer styling
    follows below. */
-.student-public-profile,
+.student-public-profile {
+  padding: 1.5rem 1.25rem;
+}
 .student-team-detail {
   max-width: 480px;
   margin: 0 auto;

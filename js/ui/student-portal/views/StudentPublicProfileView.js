@@ -48,17 +48,17 @@ export async function renderStudentPublicProfileView(container, { studentId, onB
 
   const wrapper = document.createElement('div');
   wrapper.className = 'student-public-profile';
-  wrapper.appendChild(createBackButton(onBack));
 
   const profile = await getPublicProfileForStudent(studentId);
 
   if (!profile) {
+    wrapper.appendChild(createBackButton(onBack));
     wrapper.appendChild(createEmptyStateElement({ message: "This student's profile isn't available right now." }));
     container.appendChild(wrapper);
     return;
   }
 
-  wrapper.appendChild(renderHeader(profile));
+  wrapper.appendChild(renderHeader(profile, onBack));
   wrapper.appendChild(renderRecognitionSection(profile));
   wrapper.appendChild(renderJourneySection(profile));
   wrapper.appendChild(renderPlaceholderSection('Learning Hub', 'Learning Hub progress will show up here once it\u2019s available.'));
@@ -68,9 +68,14 @@ export async function renderStudentPublicProfileView(container, { studentId, onB
   container.appendChild(wrapper);
 }
 
-function renderHeader(profile) {
+function renderHeader(profile, onBack) {
   const header = document.createElement('div');
   header.className = 'student-public-profile__header';
+
+  const topRow = document.createElement('div');
+  topRow.className = 'profile-header__top-row';
+  topRow.appendChild(createBackButton(onBack));
+  header.appendChild(topRow);
 
   header.appendChild(createAvatarElement({ studentId: profile.studentId, name: profile.name, size: 72, useDefaultIfMissing: true }));
 

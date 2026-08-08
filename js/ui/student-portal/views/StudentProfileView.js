@@ -68,11 +68,16 @@ export async function renderStudentProfileView(container, { onManageStudents, on
   }
   header.appendChild(topRow);
 
-  header.appendChild(
+  const identityRow = document.createElement('div');
+  identityRow.className = 'student-profile__identity-row';
+
+  const avatarWrap = document.createElement('div');
+  avatarWrap.className = 'student-profile__avatar-wrap';
+  avatarWrap.appendChild(
     createAvatarElement({
       studentId: profile.studentId,
       name: profile.name,
-      size: 96,
+      size: 72,
       useDefaultIfMissing: true,
       className: 'student-profile__avatar',
     })
@@ -81,23 +86,32 @@ export async function renderStudentProfileView(container, { onManageStudents, on
   if (onCustomizeAvatar) {
     const customizeButton = document.createElement('button');
     customizeButton.type = 'button';
-    customizeButton.className = 'btn btn--text student-profile__customize-avatar';
-    customizeButton.textContent = 'Customize Avatar';
+    customizeButton.className = 'student-profile__customize-avatar';
+    customizeButton.setAttribute('aria-label', 'Customize Avatar');
+    customizeButton.title = 'Customize Avatar';
+    customizeButton.textContent = '\u270e';
     customizeButton.addEventListener('click', () => onCustomizeAvatar(profile.studentId));
-    header.appendChild(customizeButton);
+    avatarWrap.appendChild(customizeButton);
   }
+  identityRow.appendChild(avatarWrap);
+
+  const titleBlock = document.createElement('div');
+  titleBlock.className = 'student-profile__title-block';
 
   const name = document.createElement('h1');
   name.className = 'student-profile__name';
   name.textContent = profile.name;
-  header.appendChild(name);
+  titleBlock.appendChild(name);
 
   if (profile.groupName) {
     const team = document.createElement('p');
     team.className = 'student-profile__team';
     team.textContent = profile.groupName;
-    header.appendChild(team);
+    titleBlock.appendChild(team);
   }
+  identityRow.appendChild(titleBlock);
+
+  header.appendChild(identityRow);
 
   const bucketStyle = getBucketRowStyle(profile.bucket);
   const bucketChip = document.createElement('div');
