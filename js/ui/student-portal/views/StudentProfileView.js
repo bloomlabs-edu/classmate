@@ -49,7 +49,10 @@ export async function renderStudentProfileView(container, { onManageStudents, on
     return;
   }
 
-  wrapper.appendChild(
+  const header = document.createElement('div');
+  header.className = 'student-profile__header';
+
+  header.appendChild(
     createAvatarElement({
       studentId: profile.studentId,
       name: profile.name,
@@ -65,13 +68,20 @@ export async function renderStudentProfileView(container, { onManageStudents, on
     customizeButton.className = 'btn btn--text student-profile__customize-avatar';
     customizeButton.textContent = 'Customize Avatar';
     customizeButton.addEventListener('click', () => onCustomizeAvatar(profile.studentId));
-    wrapper.appendChild(customizeButton);
+    header.appendChild(customizeButton);
   }
 
   const name = document.createElement('h1');
   name.className = 'student-profile__name';
   name.textContent = profile.name;
-  wrapper.appendChild(name);
+  header.appendChild(name);
+
+  if (profile.groupName) {
+    const team = document.createElement('p');
+    team.className = 'student-profile__team';
+    team.textContent = profile.groupName;
+    header.appendChild(team);
+  }
 
   const bucketStyle = getBucketRowStyle(profile.bucket);
   const bucketChip = document.createElement('div');
@@ -80,11 +90,13 @@ export async function renderStudentProfileView(container, { onManageStudents, on
   bucketChip.style.borderColor = bucketStyle.border;
   bucketChip.style.color = bucketStyle.text;
   bucketChip.textContent = `Learning Bucket: ${getBucketLabel(profile.bucket)}`;
-  wrapper.appendChild(bucketChip);
+  header.appendChild(bucketChip);
 
-  wrapper.appendChild(createJourneySnapshotCard(profile));
-  wrapper.appendChild(createRecentRecognitionSection(profile));
-
+  // Classroom/Group/Role are part of the person's own profile
+  // context, not a separate administrative card — kept inside the
+  // same header block, directly below identity, per the canonical
+  // profile-header pattern shared with the Teacher Portal's own
+  // student-profile strip.
   const details = document.createElement('dl');
   details.className = 'student-profile__details';
   details.append(
@@ -92,16 +104,24 @@ export async function renderStudentProfileView(container, { onManageStudents, on
     createDetailRow('Group', profile.groupName || 'Not assigned yet'),
     createDetailRow('Role', profile.role)
   );
-  wrapper.appendChild(details);
+  header.appendChild(details);
 
+  // Role-specific action, inside the same header block — not treated
+  // as profile identity, but placed where a role-specific action
+  // belongs on any ClassMate profile, regardless of viewer.
   if (onManageStudents) {
     const manageStudentsButton = document.createElement('button');
     manageStudentsButton.type = 'button';
     manageStudentsButton.className = 'btn btn--ghost student-profile__join-another';
     manageStudentsButton.textContent = 'Manage Students';
     manageStudentsButton.addEventListener('click', onManageStudents);
-    wrapper.appendChild(manageStudentsButton);
+    header.appendChild(manageStudentsButton);
   }
+
+  wrapper.appendChild(header);
+
+  wrapper.appendChild(createJourneySnapshotCard(profile));
+  wrapper.appendChild(createRecentRecognitionSection(profile));
 
   container.appendChild(wrapper);
 }
