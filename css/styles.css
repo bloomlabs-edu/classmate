@@ -8235,3 +8235,59 @@ button.wizard-checklist__row:hover {
   color: var(--color-muted);
   margin: 0;
 }
+
+/* Weekly Net Points graph — ui/student-portal/views/StudentJourneyView.js.
+   Pure evidence, zero interpretation: no per-point value labels, no
+   "good/bad day" language, no legend. Position relative to the zero
+   line is the only thing communicated. */
+.weekly-net-graph__subtitle {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  margin: -0.35rem 0 0.75rem;
+}
+.weekly-net-graph {
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 0.75rem 0.5rem 0.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+.weekly-net-graph svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.weekly-net-graph__zero-line {
+  stroke: var(--color-border);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
+}
+.weekly-net-graph__area {
+  fill: var(--color-accent);
+  opacity: 0.1;
+  stroke: none;
+}
+.weekly-net-graph__line {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.weekly-net-graph__dot {
+  stroke: #ffffff;
+  stroke-width: 1.5;
+}
+.weekly-net-graph__dot--positive {
+  fill: #2e9e5b;
+}
+.weekly-net-graph__dot--negative {
+  fill: #e53935;
+}
+.weekly-net-graph__dot--zero {
+  fill: var(--color-muted);
+}
+.weekly-net-graph__day-label {
+  font-size: 9px;
+  fill: var(--color-muted);
+  font-weight: bold;
+}
