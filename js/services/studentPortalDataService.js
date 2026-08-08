@@ -158,6 +158,7 @@ export async function getCurrentStudentProfile() {
     badgeCount: (student.badges || []).length,
     currentStreak: studentProgressService.getBestActiveStreakAcrossNotebooks(classroom, student.id),
     biggestClimb: classEntry && classEntry.movement === 'up' ? classEntry.movementAmount : 0,
+    recentEvents: studentEventService.getEventsForStudent(classroom, student.id).slice(0, 3),
   };
 }
 

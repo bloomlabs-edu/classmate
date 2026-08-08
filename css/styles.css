@@ -8228,3 +8228,42 @@ button.wizard-checklist__row:hover {
   color: var(--color-muted);
   text-align: center;
 }
+
+/* Recent Recognition section — ui/student-portal/views/StudentProfileView.js */
+.recent-recognition-section {
+  margin: 1.25rem 0;
+}
+.recent-recognition-section__heading {
+  font-size: 1rem;
+  font-weight: var(--font-weight-black);
+  color: var(--color-ink);
+  margin: 0 0 0.75rem;
+}
+.recent-recognition-section__empty {
+  font-size: 0.9rem;
+  color: var(--color-muted);
+  margin: 0;
+}
+.recognition-moment-card {
+  background-color: #ffffff;
+  border-radius: 14px;
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 0.65rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+.recognition-moment-card__title {
+  font-size: 0.95rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+  margin: 0 0 0.2rem;
+}
+.recognition-moment-card__message {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  margin: 0 0 0.35rem;
+}
+.recognition-moment-card__date {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  margin: 0;
+}

@@ -29,6 +29,8 @@
 import { getCurrentStudentProfile } from '../../../services/studentPortalDataService.js';
 import { createAvatarElement } from '../../components/AvatarDisplay.js';
 import { getBucketRowStyle, getBucketLabel } from '../../../config/bucketConfig.js';
+import { getEventCopyForViewer } from '../../../services/studentEventService.js';
+import { formatDate } from '../../../utils/dateHelpers.js';
 
 export async function renderStudentProfileView(container, { onManageStudents, onCustomizeAvatar }) {
   container.innerHTML = '';
@@ -81,6 +83,7 @@ export async function renderStudentProfileView(container, { onManageStudents, on
   wrapper.appendChild(bucketChip);
 
   wrapper.appendChild(createJourneySnapshotCard(profile));
+  wrapper.appendChild(createRecentRecognitionSection(profile));
 
   const details = document.createElement('dl');
   details.className = 'student-profile__details';
@@ -101,6 +104,54 @@ export async function renderStudentProfileView(container, { onManageStudents, on
   }
 
   container.appendChild(wrapper);
+}
+
+function createRecentRecognitionSection(profile) {
+  const section = document.createElement('div');
+  section.className = 'recent-recognition-section';
+
+  const heading = document.createElement('h2');
+  heading.className = 'recent-recognition-section__heading';
+  heading.textContent = 'Recent Recognition';
+  section.appendChild(heading);
+
+  const events = profile.recentEvents || [];
+
+  if (events.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'recent-recognition-section__empty';
+    empty.textContent = 'No recognition yet.';
+    section.appendChild(empty);
+    return section;
+  }
+
+  events.forEach((event) => {
+    const copy = getEventCopyForViewer(event, 'self');
+
+    const card = document.createElement('div');
+    card.className = 'recognition-moment-card';
+
+    const title = document.createElement('p');
+    title.className = 'recognition-moment-card__title';
+    title.textContent = copy.title;
+    card.appendChild(title);
+
+    if (copy.message) {
+      const message = document.createElement('p');
+      message.className = 'recognition-moment-card__message';
+      message.textContent = copy.message;
+      card.appendChild(message);
+    }
+
+    const date = document.createElement('p');
+    date.className = 'recognition-moment-card__date';
+    date.textContent = formatDate(event.createdAt);
+    card.appendChild(date);
+
+    section.appendChild(card);
+  });
+
+  return section;
 }
 
 function createJourneySnapshotCard(profile) {
