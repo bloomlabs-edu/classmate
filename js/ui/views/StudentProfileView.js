@@ -29,6 +29,7 @@ import * as timelineService from '../../services/timelineService.js';
 import * as studentProgressService from '../../services/studentProgressService.js';
 import { createWeeklyNetPointsSection } from '../components/WeeklyNetPointsGraph.js';
 import * as learningActivityService from '../../services/learningActivityService.js';
+import * as goalService from '../../services/goalService.js';
 import * as workRequestService from '../../services/workRequestService.js';
 import * as notebookConfigService from '../../services/notebookConfigService.js';
 import { getStatusMeta } from './WorkRequestRosterView.js';
@@ -523,14 +524,86 @@ function renderAchievementsTab(content, classroom, student, team, rerender) {
 // Learning
 // ---------------------------------------------------------------------
 
+/**
+ * One category's own goal status, for the teacher-facing profile.
+ * Read-only — a teacher approves/edits goals through
+ * ui/views/GoalManagementView.js's own existing "Goals Awaiting
+ * Approval" flow, not from here; this card exists purely so a
+ * teacher checking one specific student doesn't have to already know
+ * to visit a separate, classroom-wide screen to see whether that
+ * student has submitted anything at all.
+ */
+function createGoalSummaryCard(category, goal) {
+  const card = document.createElement('div');
+  card.className = 'activity-card';
+
+  const titleRow = document.createElement('div');
+  titleRow.className = 'activity-card__title-row';
+  const title = document.createElement('span');
+  title.className = 'activity-card__title';
+  title.textContent = category.name;
+  titleRow.appendChild(title);
+
+  if (goal) {
+    const statusLabel = document.createElement('span');
+    statusLabel.className = 'activity-card__type';
+    statusLabel.textContent = goal.status === 'approved' ? 'Approved' : 'Awaiting Approval';
+    titleRow.appendChild(statusLabel);
+  }
+  card.appendChild(titleRow);
+
+  const text = document.createElement('p');
+  text.className = 'profile-section__meta';
+  text.textContent = goal ? `\u201C${goal.text}\u201D` : 'No goal submitted yet.';
+  card.appendChild(text);
+
+  return card;
+}
+
 function renderLearningTab(content, classroom, student) {
   const section = document.createElement('div');
   section.className = 'profile-section';
 
-  const heading = document.createElement('h2');
-  heading.className = 'profile-section__heading';
-  heading.textContent = 'Learning Activities';
-  section.appendChild(heading);
+  // LSRW Goals — reads the exact same persisted source
+  // (services/goalService.js's own cycle.goals, via getGoalsForStudent())
+  // the student-facing Goal Tracker writes to and reads from. This is
+  // the fix for a real, confirmed gap: a teacher viewing this exact
+  // profile previously had no way to see this student's own goals at
+  // all, even though they were already correctly saved — the data was
+  // always there, this tab simply never asked for it.
+  const goalsHeading = document.createElement('h2');
+  goalsHeading.className = 'profile-section__heading';
+  goalsHeading.textContent = 'Goals';
+  section.appendChild(goalsHeading);
+
+  const activeCycle = goalService.getActiveCycle(classroom);
+  if (!activeCycle) {
+    const noCycle = document.createElement('p');
+    noCycle.className = 'profile-section__meta';
+    noCycle.textContent = 'No active Goal Cycle right now.';
+    section.appendChild(noCycle);
+  } else {
+    const categories = goalService.listCategories(activeCycle);
+    if (categories.length === 0) {
+      const noCategories = document.createElement('p');
+      noCategories.className = 'profile-section__meta';
+      noCategories.textContent = 'This cycle has no categories yet.';
+      section.appendChild(noCategories);
+    } else {
+      const goalsList = document.createElement('div');
+      goalsList.className = 'activity-list';
+      categories.forEach((category) => {
+        const goal = goalService.getGoalForStudent(activeCycle, category.id, student.id);
+        goalsList.appendChild(createGoalSummaryCard(category, goal));
+      });
+      section.appendChild(goalsList);
+    }
+  }
+
+  const activitiesHeading = document.createElement('h2');
+  activitiesHeading.className = 'profile-section__heading';
+  activitiesHeading.textContent = 'Learning Activities';
+  section.appendChild(activitiesHeading);
 
   const activities = learningActivityService.listActivities(classroom);
 

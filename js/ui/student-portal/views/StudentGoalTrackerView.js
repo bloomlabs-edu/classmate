@@ -3,8 +3,8 @@
  *
  * Goals — Phase 1, student-facing. One screen, per category, showing
  * whichever state that category is actually in: no goal yet (a text
- * entry form), pending approval (the student's own text, still
- * editable), or approved (locked text, a one-tap daily "Completed
+ * entry form), pending approval (locked-looking, with an explicit
+ * Edit action), or approved (locked text, a one-tap daily "Completed
  * Today" toggle, and live streak/completion stats).
  *
  * All data — reads and writes — goes through
@@ -14,6 +14,22 @@
  * owns all data access" split for every other Student Portal screen.
  * Every number shown here is read fresh, every time this screen opens
  * — there is no cached streak or percentage anywhere in this file.
+ *
+ * Four categories are four fully independent submissions — each has
+ * its own Goal record (see models/Goal.js), its own status, its own
+ * text. Submitting one never touches the other three's own data.
+ *
+ * DRAFTS (below) exists specifically because submitting one category
+ * re-renders the whole screen (the simplest, already-established
+ * pattern every other Student Portal view uses) — without it, any
+ * unsaved text a student had typed into a SIBLING category's own
+ * textarea would be lost the instant any one category re-renders,
+ * since a freshly-rebuilt textarea only knows about its own
+ * category's own PERSISTED text, never what's still sitting,
+ * unsubmitted, in a browser field. Deliberately local, in-memory,
+ * per-category state — never written to Firestore, exactly matching
+ * the explicit product decision that unsaved draft text doesn't need
+ * to survive anything beyond this one browser session.
  */
 
 import {
@@ -26,19 +42,55 @@ import { createEmptyStateElement } from '../../components/EmptyState.js';
 import { getTodayDateKey } from '../../../utils/dateHelpers.js';
 
 export async function renderStudentGoalTrackerView(container, { onBack }) {
-  async function rerender() {
-    const cycle = await getGoalCycleForCurrentStudent();
-    render(container, cycle, {
+  // Per-category unsaved draft text, and per-category "currently
+  // editing an already-submitted goal" flags — both local to this
+  // one render session, both survive every rerender() below because
+  // they live in THIS closure, not inside render() itself.
+  const drafts = {};
+  const editingCategoryIds = new Set();
+  let lastCycle = null;
+
+  function buildHandlers() {
+    return {
       onBack,
+      drafts,
+      editingCategoryIds,
+      onDraftChange: (categoryId, text) => {
+        drafts[categoryId] = text;
+      },
       onSubmitGoal: async (categoryId, text) => {
         await submitGoalForCurrentStudent(categoryId, text);
+        delete drafts[categoryId];
+        editingCategoryIds.delete(categoryId);
         await rerender();
+      },
+      onStartEdit: (categoryId) => {
+        editingCategoryIds.add(categoryId);
+        renderNow();
+      },
+      onCancelEdit: (categoryId) => {
+        editingCategoryIds.delete(categoryId);
+        delete drafts[categoryId];
+        renderNow();
       },
       onToggleCompletion: async (goalId, completed) => {
         await setGoalCompletionForCurrentStudent(goalId, getTodayDateKey(), completed);
         await rerender();
       },
-    });
+    };
+  }
+
+  // Starting/cancelling an edit is a pure local-state change — no
+  // data actually changed, so this re-renders from the last-fetched
+  // cycle directly rather than re-fetching it, avoiding an
+  // unnecessary data round-trip for a UI-only toggle.
+  function renderNow() {
+    render(container, lastCycle, buildHandlers());
+  }
+
+  async function rerender() {
+    lastCycle = await getGoalCycleForCurrentStudent();
+    render(container, lastCycle, buildHandlers());
   }
 
   await rerender();
@@ -101,20 +153,54 @@ function renderCategoryCard(category, handlers) {
   card.appendChild(heading);
 
   if (!category.goal) {
-    card.appendChild(renderGoalEntryForm(category, handlers, ''));
+    card.appendChild(renderGoalEntryForm(category, handlers, handlers.drafts[category.categoryId] ?? ''));
     return card;
   }
 
   if (category.goal.status === 'pending_approval') {
-    const notice = document.createElement('p');
-    notice.className = 'student-goal-card__notice';
-    notice.textContent = 'Waiting for your teacher to approve this goal. You can still change it until then.';
-    card.appendChild(notice);
-    card.appendChild(renderGoalEntryForm(category, handlers, category.goal.text));
+    if (handlers.editingCategoryIds.has(category.categoryId)) {
+      card.appendChild(renderGoalEntryForm(category, handlers, handlers.drafts[category.categoryId] ?? category.goal.text));
+      const cancelButton = document.createElement('button');
+      cancelButton.type = 'button';
+      cancelButton.className = 'btn btn--text';
+      cancelButton.textContent = 'Cancel';
+      cancelButton.addEventListener('click', () => handlers.onCancelEdit(category.categoryId));
+      card.appendChild(cancelButton);
+      return card;
+    }
+
+    // Locked-looking, per explicit product decision: a submitted
+    // goal reads as "done," not as an always-open textarea a student
+    // has to notice is still editable. Still genuinely
+    // 'pending_approval' underneath — this is a presentation choice
+    // only; the teacher-approval gate itself (see
+    // services/goalService.js's own approveGoal()) is completely
+    // untouched.
+    const goalText = document.createElement('p');
+    goalText.className = 'student-goal-card__text';
+    goalText.textContent = `\u201C${category.goal.text}\u201D`;
+    card.appendChild(goalText);
+
+    const statusRow = document.createElement('div');
+    statusRow.className = 'student-goal-card__status-row';
+    const statusBadge = document.createElement('span');
+    statusBadge.className = 'student-goal-card__submitted-badge';
+    statusBadge.textContent = 'Submitted';
+    const editButton = document.createElement('button');
+    editButton.type = 'button';
+    editButton.className = 'btn btn--text';
+    editButton.textContent = 'Edit';
+    editButton.addEventListener('click', () => handlers.onStartEdit(category.categoryId));
+    statusRow.append(statusBadge, editButton);
+    card.appendChild(statusRow);
+
     return card;
   }
 
-  // Approved — locked text, daily toggle, live stats.
+  // Approved — locked text, daily toggle, live stats. Per explicit
+  // product decision (models/Goal.js's own header comment), editing
+  // an approved goal is a deliberately deferred future feature, not
+  // built here — unaffected by this change.
   const goalText = document.createElement('p');
   goalText.className = 'student-goal-card__text';
   goalText.textContent = `\u201C${category.goal.text}\u201D`;
@@ -149,11 +235,16 @@ function renderGoalEntryForm(category, handlers, currentText) {
   input.className = 'student-goal-card__input';
   input.placeholder = 'e.g. I will watch a 3-minute English video every day.';
   input.value = currentText;
+  // Tracks every keystroke into the shared drafts object so a
+  // sibling category's own re-render (from submitting a DIFFERENT
+  // category) never loses this unsaved text — see this file's own
+  // header comment for why this exists at all.
+  input.addEventListener('input', () => handlers.onDraftChange(category.categoryId, input.value));
 
   const submitButton = document.createElement('button');
   submitButton.type = 'button';
   submitButton.className = 'btn btn--primary';
-  submitButton.textContent = currentText ? 'Update Goal' : 'Submit Goal';
+  submitButton.textContent = category.goal ? 'Save Changes' : 'Submit Goal';
   submitButton.addEventListener('click', () => {
     if (!input.value.trim()) return;
     handlers.onSubmitGoal(category.categoryId, input.value.trim());
