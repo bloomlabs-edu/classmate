@@ -68,16 +68,13 @@ export async function renderStudentProfileView(container, { onManageStudents, on
   }
   header.appendChild(topRow);
 
-  const identityRow = document.createElement('div');
-  identityRow.className = 'student-profile__identity-row';
-
   const avatarWrap = document.createElement('div');
   avatarWrap.className = 'student-profile__avatar-wrap';
   avatarWrap.appendChild(
     createAvatarElement({
       studentId: profile.studentId,
       name: profile.name,
-      size: 72,
+      size: 96,
       useDefaultIfMissing: true,
       className: 'student-profile__avatar',
     })
@@ -93,25 +90,19 @@ export async function renderStudentProfileView(container, { onManageStudents, on
     customizeButton.addEventListener('click', () => onCustomizeAvatar(profile.studentId));
     avatarWrap.appendChild(customizeButton);
   }
-  identityRow.appendChild(avatarWrap);
-
-  const titleBlock = document.createElement('div');
-  titleBlock.className = 'student-profile__title-block';
+  header.appendChild(avatarWrap);
 
   const name = document.createElement('h1');
   name.className = 'student-profile__name';
   name.textContent = profile.name;
-  titleBlock.appendChild(name);
+  header.appendChild(name);
 
   if (profile.groupName) {
     const team = document.createElement('p');
     team.className = 'student-profile__team';
     team.textContent = profile.groupName;
-    titleBlock.appendChild(team);
+    header.appendChild(team);
   }
-  identityRow.appendChild(titleBlock);
-
-  header.appendChild(identityRow);
 
   const bucketStyle = getBucketRowStyle(profile.bucket);
   const bucketChip = document.createElement('div');
