@@ -2280,13 +2280,14 @@ button.wizard-checklist__row:hover {
 
 .profile-header {
   padding: 1.25rem 1.5rem 1.5rem;
-  /* Always overridden inline by renderProfileHeader() with this
-     student's own bucket color (see config/bucketConfig.js's
-     getBucketRowStyle()) — every student gets one of these four light
-     pastel backgrounds, with or without a bucket assigned, never the
-     app's own accent color. This fallback only matters if that inline
-     style somehow fails to apply. */
-  background-color: #F3F4F6;
+  background-color: #ffffff;
+  box-shadow: 0 4px 16px rgba(184, 99, 26, 0.08);
+  border-radius: 20px;
+  margin: 0 0 1rem;
+  text-align: center;
+}
+.profile-header__avatar {
+  margin: 0.5rem 0 0.75rem;
 }
 
 .profile-header__top-row {
@@ -7593,6 +7594,8 @@ button.wizard-checklist__row:hover {
    (see that file's own header comment for why bucket color, not the
    app's accent color, drives this background). */
 .student-public-profile__header {
+  background-color: #ffffff;
+  box-shadow: 0 4px 16px rgba(184, 99, 26, 0.08);
   border-radius: 20px;
   padding: 1.5rem 1.25rem;
   margin-top: 1rem;
@@ -7612,7 +7615,7 @@ button.wizard-checklist__row:hover {
   margin: 0.6rem 0 1rem;
   padding: 0.3rem 0.75rem;
   border-radius: 999px;
-  background-color: rgba(255, 255, 255, 0.5);
+  border: 2px solid;
   font-size: 0.85rem;
   font-weight: var(--font-weight-bold);
 }

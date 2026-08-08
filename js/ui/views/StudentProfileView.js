@@ -34,6 +34,7 @@ import * as studentEventService from '../../services/studentEventService.js';
 import { STUDENT_EVENT_CATEGORIES } from '../../config/studentEventCategories.js';
 import { formatDateKey } from '../../utils/dateHelpers.js';
 import { BUCKET_KEYS, BUCKET_LABELS, getBucketLabel, getBucketRowStyle } from '../../config/bucketConfig.js';
+import { createAvatarElement } from '../components/AvatarDisplay.js';
 import { getGroupColorHex } from '../../config/groupColorConfig.js';
 import { formatDate } from '../../utils/dateHelpers.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
@@ -91,12 +92,8 @@ export function renderStudentProfileView(container, { classroom, studentId, tab,
 }
 
 function renderProfileHeader(classroom, student, team, rerender, onBack) {
-  const style = getBucketRowStyle(student.bucket);
-
   const header = document.createElement('header');
   header.className = 'profile-header';
-  header.style.backgroundColor = style.background;
-  header.style.color = style.text;
 
   const topRow = document.createElement('div');
   topRow.className = 'profile-header__top-row';
@@ -162,6 +159,10 @@ function renderProfileHeader(classroom, student, team, rerender, onBack) {
   topRow.appendChild(createOverflowMenu({ actions: menuActions, ariaLabel: `${student.name} settings` }));
 
   header.appendChild(topRow);
+
+  header.appendChild(
+    createAvatarElement({ studentId: student.id, name: student.name, size: 72, useDefaultIfMissing: true, className: 'profile-header__avatar' })
+  );
 
   const titleBlock = document.createElement('div');
   titleBlock.className = 'profile-header__title-block';

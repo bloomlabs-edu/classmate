@@ -72,10 +72,6 @@ function renderHeader(profile) {
   const header = document.createElement('div');
   header.className = 'student-public-profile__header';
 
-  const bucketStyle = getBucketRowStyle(profile.bucket);
-  header.style.backgroundColor = bucketStyle.background;
-  header.style.color = bucketStyle.text;
-
   header.appendChild(createAvatarElement({ studentId: profile.studentId, name: profile.name, size: 72, useDefaultIfMissing: true }));
 
   const name = document.createElement('h1');
@@ -90,8 +86,12 @@ function renderHeader(profile) {
     header.appendChild(team);
   }
 
+  const bucketStyle = getBucketRowStyle(profile.bucket);
   const bucketChip = document.createElement('p');
   bucketChip.className = 'student-public-profile__bucket';
+  bucketChip.style.backgroundColor = bucketStyle.background;
+  bucketChip.style.color = bucketStyle.text;
+  bucketChip.style.borderColor = bucketStyle.border;
   bucketChip.textContent = `Learning Bucket: ${getBucketLabel(profile.bucket)}`;
   header.appendChild(bucketChip);
 
