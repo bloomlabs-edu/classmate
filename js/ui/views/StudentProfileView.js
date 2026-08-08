@@ -160,7 +160,10 @@ function renderProfileHeader(classroom, student, team, rerender, onBack) {
 
   header.appendChild(topRow);
 
-  header.appendChild(
+  const identityRow = document.createElement('div');
+  identityRow.className = 'profile-header__identity-row';
+
+  identityRow.appendChild(
     createAvatarElement({ studentId: student.id, name: student.name, size: 72, useDefaultIfMissing: true, className: 'profile-header__avatar' })
   );
 
@@ -176,7 +179,8 @@ function renderProfileHeader(classroom, student, team, rerender, onBack) {
   groupLine.textContent = team ? team.name : 'Ungrouped';
 
   titleBlock.append(name, groupLine);
-  header.appendChild(titleBlock);
+  identityRow.appendChild(titleBlock);
+  header.appendChild(identityRow);
 
   const summary = learningActivityService.getSubmissionSummary(classroom, student);
   const submissionText = `${summary.Submitted} Submitted \u00b7 ${summary['Submitted Late']} Late \u00b7 ${summary.Missing} Missing`;

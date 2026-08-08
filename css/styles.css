@@ -2286,8 +2286,16 @@ button.wizard-checklist__row:hover {
   margin: 0 0 1rem;
   text-align: center;
 }
+.profile-header__identity-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  text-align: left;
+}
+
 .profile-header__avatar {
-  margin: 0.5rem 0 0.75rem;
+  margin: 0;
+  flex-shrink: 0;
 }
 
 .profile-header__top-row {
@@ -2297,18 +2305,18 @@ button.wizard-checklist__row:hover {
 }
 
 .profile-header__title-block {
-  margin: 0.75rem 0 1rem;
+  margin: 0;
+  min-width: 0;
 }
 
 .profile-header__name {
   font-size: 1.4rem;
   font-weight: var(--font-weight-black);
   margin: 0;
-  /* Inherits this header's own inline-set text color (see
-     renderProfileHeader()), matched to whichever of the four bucket
-     backgrounds is currently showing — never a hardcoded white, since
-     this header's background is always one of those light pastels,
-     never the app's dark accent color. */
+  /* Plain dark ink text on the header's own neutral white background
+     — no inline color-matching needed here; the header stopped being
+     tinted by bucket color entirely (bucket now lives only in its own
+     chip, see createHeaderChip()'s own 'bucket' variant). */
   color: inherit;
 }
 
@@ -2319,11 +2327,8 @@ button.wizard-checklist__row:hover {
   /* Secondary information gets lower visual emphasis than the
      student's own name above it — per explicit product decision, the
      primary entity should read as the strongest element on the page.
-     0.88 opacity of dark ink against any of these four light pastel
-     backgrounds stays comfortably legible — a much larger margin than
-     the white-on-dark-accent case this was originally tuned for, since
-     dark text at reduced opacity over a light background loses far
-     less effective contrast than light text over a dark one does. */
+     0.88 opacity of dark ink against the header's own plain white
+     background stays comfortably legible. */
   opacity: 0.88;
 }
 
