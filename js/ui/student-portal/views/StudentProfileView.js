@@ -51,6 +51,7 @@ export async function renderStudentProfileView(container, { onManageStudents, on
 
   const header = document.createElement('div');
   header.className = 'student-profile__header';
+  header.style.borderTopColor = getBucketRowStyle(profile.bucket).border;
 
   const topRow = document.createElement('div');
   topRow.className = 'profile-header__top-row';

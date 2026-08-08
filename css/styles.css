@@ -2283,6 +2283,7 @@ button.wizard-checklist__row:hover {
   background-color: #ffffff;
   box-shadow: 0 4px 16px rgba(184, 99, 26, 0.08);
   border-radius: 20px;
+  border-top: 6px solid transparent;
   margin: 0 0 1rem;
   text-align: center;
 }
@@ -4753,6 +4754,7 @@ button.wizard-checklist__row:hover {
   margin: 0 0 1.5rem;
   background-color: #ffffff;
   border-radius: 16px;
+  border-top: 6px solid transparent;
   padding: 1.5rem 1.5rem 1.25rem;
   box-shadow: 0 4px 16px rgba(184, 99, 26, 0.08);
 }
@@ -7599,6 +7601,7 @@ button.wizard-checklist__row:hover {
   background-color: #ffffff;
   box-shadow: 0 4px 16px rgba(184, 99, 26, 0.08);
   border-radius: 20px;
+  border-top: 6px solid transparent;
   padding: 1.5rem 1.25rem;
   margin-top: 1rem;
   text-align: center;
