@@ -69,10 +69,44 @@ export async function renderStudentGoalTrackerView(container, { onBack }) {
         drafts[categoryId] = text;
       },
       onSubmitGoal: async (categoryId, text) => {
-        await submitGoalForCurrentStudent(categoryId, text);
-        delete drafts[categoryId];
-        editingCategoryIds.delete(categoryId);
-        await rerender();
+        const succeeded = await submitGoalForCurrentStudent(categoryId, text);
+        if (succeeded) {
+          delete drafts[categoryId];
+          editingCategoryIds.delete(categoryId);
+          // Update THIS render's own local copy of the category directly,
+          // rather than re-fetching via rerender() — a subsequent fetch
+          // races against the live classroom subscription's own,
+          // asynchronous, unconditional replacement of its cached
+          // classroom object (see studentPortalDataService.js's own
+          // startClassroomSubscription(): every snapshot fully replaces
+          // that object, on its own timing, independent of this local
+          // mutation having just happened). Confirmed as the actual root
+          // cause: the submitted state was correct in memory the instant
+          // submitGoalForCurrentStudent() returned, but a subsequent
+          // fresh read could still observe a stale pre-submission
+          // snapshot if the subscription's own callback interleaved at
+          // the wrong moment. Updating the already-known-correct local
+          // state directly removes that race entirely for this one,
+          // specific transition.
+          if (lastCycle) {
+            const category = lastCycle.categories.find((c) => c.categoryId === categoryId);
+            if (category) {
+              category.goal = {
+                id: category.goal?.id ?? categoryId,
+                text,
+                status: 'pending_approval',
+                completedToday: false,
+                currentStreak: 0,
+                longestStreak: 0,
+                weeklyCompletionPercent: 0,
+                overallCompletionPercent: 0,
+              };
+            }
+          }
+          renderNow();
+        } else {
+          await rerender();
+        }
       },
       onStartEdit: (categoryId) => {
         editingCategoryIds.add(categoryId);
