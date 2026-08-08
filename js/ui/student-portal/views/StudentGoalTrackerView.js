@@ -41,13 +41,23 @@ import { createBackButton } from '../../components/BackButton.js';
 import { createEmptyStateElement } from '../../components/EmptyState.js';
 import { getTodayDateKey } from '../../../utils/dateHelpers.js';
 
+// Module-level, not closure-scoped inside renderStudentGoalTrackerView()
+// below — confirmed, this screen is re-invoked from scratch (a fresh
+// call to the exported function itself, not this file's own internal
+// rerender()) by the Student Portal's live classroom subscription
+// (see main.js's own startClassroomSubscription() callback), which
+// fires on every workspaceService.save() — including the one this
+// screen's own goal submission triggers. State scoped inside the
+// exported function is wiped out by that external re-invocation;
+// state scoped here, at module level, survives it. This was the
+// actual root cause of drafts being lost on submission — the
+// original, closure-scoped version only ever protected against this
+// file's own internal re-renders, never the live-subscription-driven
+// external ones that a save itself sets in motion.
+const drafts = {};
+const editingCategoryIds = new Set();
+
 export async function renderStudentGoalTrackerView(container, { onBack }) {
-  // Per-category unsaved draft text, and per-category "currently
-  // editing an already-submitted goal" flags — both local to this
-  // one render session, both survive every rerender() below because
-  // they live in THIS closure, not inside render() itself.
-  const drafts = {};
-  const editingCategoryIds = new Set();
   let lastCycle = null;
 
   function buildHandlers() {
