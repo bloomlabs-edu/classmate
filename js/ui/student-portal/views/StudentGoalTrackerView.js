@@ -40,6 +40,7 @@ import {
 import { createBackButton } from '../../components/BackButton.js';
 import { createEmptyStateElement } from '../../components/EmptyState.js';
 import { getTodayDateKey } from '../../../utils/dateHelpers.js';
+import { getActiveProfile } from '../../../services/studentDeviceService.js';
 
 // Module-level, not closure-scoped inside renderStudentGoalTrackerView()
 // below — confirmed, this screen is re-invoked from scratch (a fresh
@@ -57,8 +58,49 @@ import { getTodayDateKey } from '../../../utils/dateHelpers.js';
 const drafts = {};
 const editingCategoryIds = new Set();
 
+// Same reasoning as drafts/editingCategoryIds above, applied to one
+// more thing that needs to survive any re-invocation: a category's
+// own "just submitted" goal. Mutating lastCycle locally (what the
+// previous fix did) is correct the instant it happens, but lastCycle
+// itself is closure-scoped to ONE invocation — a later, externally
+// triggered re-invocation's own fresh getGoalCycleForCurrentStudent()
+// read can still land before that write has round-tripped in a real,
+// networked Firestore (this app's own test harness resolves
+// everything synchronously, which is exactly why that race was never
+// visible there), silently repainting the category back to its
+// pre-submission state. Tracking the confirmed-correct value here, at
+// module level, and applying it as an override in render() below,
+// means a stale read can never regress an already-known-correct
+// submission — it only ever gets replaced once a fresh read agrees
+// with (or supersedes) it.
+//
+// Keyed by `${studentId}::${cycleId}::${categoryId}`, not categoryId
+// alone — this is module-level state, so a bare categoryId key could
+// otherwise leak across a different student's own session, or across
+// a different Goal Cycle that happens to reuse the same category id.
+// studentId comes from studentDeviceService.getActiveProfile() (the
+// same function studentPortalDataService.js itself already uses to
+// resolve "who is active"); cycleId comes from the cycle this file
+// already fetches. No new model field — both ids already existed.
+const optimisticGoals = {};
+
 export async function renderStudentGoalTrackerView(container, { onBack }) {
   let lastCycle = null;
+
+  // Scopes a module-level optimisticGoals entry to this exact
+  // student + cycle + category, never categoryId alone — categoryId
+  // is only guaranteed unique within one cycle (see
+  // models/GoalCycle.js), never across a different student's own
+  // session or a different cycle that happens to reuse the same
+  // category id. Uses only IDs the existing data already exposes —
+  // getActiveProfile().studentId (the same function
+  // studentPortalDataService.js itself uses to resolve "who is
+  // active") and lastCycle.cycleId — no new model field introduced.
+  function buildOptimisticKey(categoryId) {
+    const studentId = getActiveProfile()?.studentId ?? 'unknown';
+    const cycleId = lastCycle?.cycleId ?? 'unknown';
+    return `${studentId}::${cycleId}::${categoryId}`;
+  }
 
   function buildHandlers() {
     return {
@@ -73,36 +115,29 @@ export async function renderStudentGoalTrackerView(container, { onBack }) {
         if (succeeded) {
           delete drafts[categoryId];
           editingCategoryIds.delete(categoryId);
-          // Update THIS render's own local copy of the category directly,
-          // rather than re-fetching via rerender() — a subsequent fetch
-          // races against the live classroom subscription's own,
-          // asynchronous, unconditional replacement of its cached
-          // classroom object (see studentPortalDataService.js's own
-          // startClassroomSubscription(): every snapshot fully replaces
-          // that object, on its own timing, independent of this local
-          // mutation having just happened). Confirmed as the actual root
-          // cause: the submitted state was correct in memory the instant
-          // submitGoalForCurrentStudent() returned, but a subsequent
-          // fresh read could still observe a stale pre-submission
-          // snapshot if the subscription's own callback interleaved at
-          // the wrong moment. Updating the already-known-correct local
-          // state directly removes that race entirely for this one,
-          // specific transition.
-          if (lastCycle) {
-            const category = lastCycle.categories.find((c) => c.categoryId === categoryId);
-            if (category) {
-              category.goal = {
-                id: category.goal?.id ?? categoryId,
-                text,
-                status: 'pending_approval',
-                completedToday: false,
-                currentStreak: 0,
-                longestStreak: 0,
-                weeklyCompletionPercent: 0,
-                overallCompletionPercent: 0,
-              };
-            }
-          }
+          // The confirmed-correct value, tracked at module level so it
+          // survives any later re-render — internal or externally
+          // triggered — even one whose own fresh read hasn't caught up
+          // with this write yet. See this file's own header comment
+          // for exactly why lastCycle alone wasn't sufficient.
+          //
+          // Keyed by student + cycle + category, not categoryId alone
+          // — categoryId is only guaranteed unique within one cycle,
+          // never across a different student's own session or a
+          // different (e.g. later-created) cycle reusing the same
+          // category id. This is module-level state, so without this,
+          // a stale entry could otherwise leak across either.
+          const key = buildOptimisticKey(categoryId);
+          optimisticGoals[key] = {
+            id: optimisticGoals[key]?.id ?? categoryId,
+            text,
+            status: 'pending_approval',
+            completedToday: false,
+            currentStreak: 0,
+            longestStreak: 0,
+            weeklyCompletionPercent: 0,
+            overallCompletionPercent: 0,
+          };
           renderNow();
         } else {
           await rerender();
@@ -129,15 +164,52 @@ export async function renderStudentGoalTrackerView(container, { onBack }) {
   // cycle directly rather than re-fetching it, avoiding an
   // unnecessary data round-trip for a UI-only toggle.
   function renderNow() {
+    applyOptimisticOverrides(lastCycle);
     render(container, lastCycle, buildHandlers());
   }
 
   async function rerender() {
     lastCycle = await getGoalCycleForCurrentStudent();
+    applyOptimisticOverrides(lastCycle);
     render(container, lastCycle, buildHandlers());
   }
 
   await rerender();
+}
+
+/**
+ * Overwrites each category's own `goal` with its module-level
+ * optimisticGoals entry, when one exists AND the fresh read hasn't
+ * caught up to it yet — applied on every render, from every path
+ * (internal or externally triggered), so a fresh-but-stale read of
+ * the cycle can never silently undo an already-confirmed submission.
+ *
+ * The override is cleared the moment a fresh read's own text matches
+ * it — deliberately, not kept forever: once the real data has caught
+ * up, it may already be MORE current than the override (e.g. a
+ * teacher has since approved it, or real streak/completion stats now
+ * exist) — an override that never expired would permanently hide
+ * that. See this file's own header comment for why this exists at
+ * all.
+ */
+function applyOptimisticOverrides(cycle) {
+  if (!cycle) return;
+  const studentId = getActiveProfile()?.studentId ?? 'unknown';
+  cycle.categories.forEach((category) => {
+    const key = `${studentId}::${cycle.cycleId}::${category.categoryId}`;
+    const override = optimisticGoals[key];
+    if (!override) return;
+
+    if (category.goal && category.goal.text === override.text) {
+      // The real data has caught up — defer to it from now on, since
+      // it may already know things the override never could (e.g. a
+      // teacher's own approval).
+      delete optimisticGoals[key];
+      return;
+    }
+
+    category.goal = override;
+  });
 }
 
 function render(container, cycle, handlers) {
