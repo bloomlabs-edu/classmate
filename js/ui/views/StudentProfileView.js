@@ -179,8 +179,13 @@ function renderProfileHeader(classroom, student, team, rerender, onBack) {
   groupLine.textContent = team ? team.name : 'Ungrouped';
   header.appendChild(groupLine);
 
+  const hasLearningActivities = (classroom.learningActivities || []).length > 0;
   const summary = learningActivityService.getSubmissionSummary(classroom, student);
   const submissionText = `${summary.Submitted} Submitted \u00b7 ${summary['Submitted Late']} Late \u00b7 ${summary.Missing} Missing`;
+
+  const notebookSummary = workRequestService.getStudentSummary(classroom, student.id);
+  const hasNotebookActivity = workRequestService.listWorkRequests(classroom).some((request) => workRequestService.getEntryForStudent(request, student.id));
+  const notebookText = `${notebookSummary.awaitingSubmission} Awaiting \u00b7 ${notebookSummary.awaitingReview} Review \u00b7 ${notebookSummary.needsCorrection} Correction \u00b7 ${notebookSummary.reviewed} Reviewed`;
 
   const stats = document.createElement('div');
   stats.className = 'profile-header__stats';
@@ -192,7 +197,8 @@ function renderProfileHeader(classroom, student, team, rerender, onBack) {
     ['Negative', timelineService.getTotalNegativePoints(student), 'negative'],
     ['Badges', (student.badges || []).length, 'badges'],
     ['Notes', (student.notes || []).length, null],
-    ['Learning Activities', submissionText, null],
+    ...(hasLearningActivities ? [['Learning Activities', submissionText, null]] : []),
+    ...(hasNotebookActivity ? [['Notebooks', notebookText, null]] : []),
   ].forEach(([label, value, variant]) => {
     stats.appendChild(createHeaderChip(label, value, variant, student.bucket));
   });
@@ -210,9 +216,17 @@ function renderProfileHeader(classroom, student, team, rerender, onBack) {
  * trophy/star imagery). 'bucket' is dynamic — it always matches this
  * specific student's own current bucket color (`bucketKey`), the same
  * getBucketRowStyle() the header itself uses, so the chip and the
- * header's own background never disagree. `null` (Session Score,
- * Notes, Learning Activities) stays the existing neutral default —
- * these are plain counts, not inherently good or bad on their own.
+ * header's own background never disagree. `null` (Net Score, Notes,
+ * Learning Activities, Notebooks) stays the existing neutral default
+ * — these are plain counts, not inherently good or bad on their own.
+ *
+ * Learning Activities and Notebooks are both conditional — shown only
+ * when this classroom/student actually has real activity in that
+ * domain, per explicit product decision: an always-present "0
+ * Submitted · 0 Late · 0 Missing" chip for a domain with nothing in
+ * it reads as a real number, not as "this doesn't apply here," and
+ * invites exactly the kind of comparison against an unrelated
+ * domain's own chip that a teacher correctly flagged as confusing.
  */
 function createHeaderChip(label, value, variant, bucketKey) {
   const chip = document.createElement('div');
