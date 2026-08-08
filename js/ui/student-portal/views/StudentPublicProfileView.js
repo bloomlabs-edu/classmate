@@ -96,7 +96,7 @@ function renderHeader(profile) {
   header.appendChild(bucketChip);
 
   const stats = document.createElement('div');
-  stats.className = 'student-public-profile__stats';
+  stats.className = 'profile-header__stats';
   stats.append(
     createStatChip('Monthly Score', `${profile.monthlyScore} \u2b50`),
     createStatChip('Class Rank', profile.classRank ? `#${profile.classRank}` : '\u2014'),
@@ -109,12 +109,12 @@ function renderHeader(profile) {
 
 function createStatChip(label, value) {
   const chip = document.createElement('div');
-  chip.className = 'student-public-profile__stat-chip';
+  chip.className = 'profile-header__chip';
   const labelEl = document.createElement('span');
-  labelEl.className = 'student-public-profile__stat-label';
+  labelEl.className = 'profile-header__chip-label';
   labelEl.textContent = label;
   const valueEl = document.createElement('span');
-  valueEl.className = 'student-public-profile__stat-value';
+  valueEl.className = 'profile-header__chip-value';
   valueEl.textContent = value;
   chip.append(labelEl, valueEl);
   return chip;

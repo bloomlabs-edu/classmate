@@ -52,6 +52,22 @@ export async function renderStudentProfileView(container, { onManageStudents, on
   const header = document.createElement('div');
   header.className = 'student-profile__header';
 
+  const topRow = document.createElement('div');
+  topRow.className = 'profile-header__top-row';
+
+  const topRowSpacer = document.createElement('span');
+  topRow.appendChild(topRowSpacer);
+
+  if (onManageStudents) {
+    const manageStudentsButton = document.createElement('button');
+    manageStudentsButton.type = 'button';
+    manageStudentsButton.className = 'btn btn--ghost student-profile__join-another';
+    manageStudentsButton.textContent = 'Manage Students';
+    manageStudentsButton.addEventListener('click', onManageStudents);
+    topRow.appendChild(manageStudentsButton);
+  }
+  header.appendChild(topRow);
+
   header.appendChild(
     createAvatarElement({
       studentId: profile.studentId,
@@ -92,35 +108,34 @@ export async function renderStudentProfileView(container, { onManageStudents, on
   bucketChip.textContent = `Learning Bucket: ${getBucketLabel(profile.bucket)}`;
   header.appendChild(bucketChip);
 
-  // Classroom/Group/Role are part of the person's own profile
-  // context, not a separate administrative card — kept inside the
-  // same header block, directly below identity, per the canonical
-  // profile-header pattern shared with the Teacher Portal's own
-  // student-profile strip.
-  const details = document.createElement('dl');
-  details.className = 'student-profile__details';
-  details.append(
-    createDetailRow('Classroom', profile.classroomName),
-    createDetailRow('Group', profile.groupName || 'Not assigned yet'),
-    createDetailRow('Role', profile.role)
-  );
-  header.appendChild(details);
-
-  // Role-specific action, inside the same header block — not treated
-  // as profile identity, but placed where a role-specific action
-  // belongs on any ClassMate profile, regardless of viewer.
-  if (onManageStudents) {
-    const manageStudentsButton = document.createElement('button');
-    manageStudentsButton.type = 'button';
-    manageStudentsButton.className = 'btn btn--ghost student-profile__join-another';
-    manageStudentsButton.textContent = 'Manage Students';
-    manageStudentsButton.addEventListener('click', onManageStudents);
-    header.appendChild(manageStudentsButton);
-  }
+  // The four Journey metrics, as one horizontal chip row inside the
+  // SAME header block — reusing profile-header__chip verbatim, the
+  // exact class the Teacher Portal's own header already uses for its
+  // own metrics. Same visual component, different role-appropriate
+  // data, not a separately-designed metrics card underneath.
+  const stats = document.createElement('div');
+  stats.className = 'profile-header__stats';
+  [
+    ['Total Stars', profile.totalStars],
+    ['Badges Earned', profile.badgeCount],
+    ['Current Streak', profile.currentStreak],
+    ['Biggest Climb', profile.biggestClimb],
+  ].forEach(([label, value]) => {
+    const chip = document.createElement('div');
+    chip.className = 'profile-header__chip';
+    const labelEl = document.createElement('span');
+    labelEl.className = 'profile-header__chip-label';
+    labelEl.textContent = label;
+    const valueEl = document.createElement('span');
+    valueEl.className = 'profile-header__chip-value';
+    valueEl.textContent = String(value);
+    chip.append(labelEl, valueEl);
+    stats.appendChild(chip);
+  });
+  header.appendChild(stats);
 
   wrapper.appendChild(header);
 
-  wrapper.appendChild(createJourneySnapshotCard(profile));
   wrapper.appendChild(createRecentRecognitionSection(profile));
 
   container.appendChild(wrapper);
@@ -172,54 +187,4 @@ function createRecentRecognitionSection(profile) {
   });
 
   return section;
-}
-
-function createJourneySnapshotCard(profile) {
-  const card = document.createElement('div');
-  card.className = 'journey-snapshot-card';
-
-  const metrics = [
-    { icon: '\u2b50', label: 'Total Stars', value: profile.totalStars },
-    { icon: '\ud83c\udf96\ufe0f', label: 'Badges Earned', value: profile.badgeCount },
-    { icon: '\ud83d\udd25', label: 'Current Streak', value: profile.currentStreak },
-    { icon: '\ud83d\udcc8', label: 'Biggest Climb', value: profile.biggestClimb },
-  ];
-
-  metrics.forEach(({ icon, label, value }) => {
-    const metric = document.createElement('div');
-    metric.className = 'journey-snapshot-card__metric';
-
-    const iconEl = document.createElement('span');
-    iconEl.className = 'journey-snapshot-card__icon';
-    iconEl.textContent = icon;
-
-    const valueEl = document.createElement('span');
-    valueEl.className = 'journey-snapshot-card__value';
-    valueEl.textContent = value;
-
-    const labelEl = document.createElement('span');
-    labelEl.className = 'journey-snapshot-card__label';
-    labelEl.textContent = label;
-
-    metric.append(iconEl, valueEl, labelEl);
-    card.appendChild(metric);
-  });
-
-  return card;
-}
-
-function createDetailRow(label, value) {
-  const row = document.createElement('div');
-  row.className = 'student-profile__detail-row';
-
-  const dt = document.createElement('dt');
-  dt.className = 'student-profile__detail-label';
-  dt.textContent = label;
-
-  const dd = document.createElement('dd');
-  dd.className = 'student-profile__detail-value';
-  dd.textContent = value;
-
-  row.append(dt, dd);
-  return row;
 }
