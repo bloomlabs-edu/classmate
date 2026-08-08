@@ -61,7 +61,7 @@ export async function renderStudentPublicProfileView(container, { studentId, onB
 
   wrapper.appendChild(renderHeader(profile, onBack));
   wrapper.appendChild(renderRecognitionSection(profile));
-  wrapper.appendChild(createWeeklyNetPointsSection(profile.weeklyNetPoints));
+  wrapper.appendChild(createWeeklyNetPointsSection(profile.weeklyNetPoints, 'Points movement this week'));
   wrapper.appendChild(renderJourneySection(profile));
   wrapper.appendChild(renderPlaceholderSection('Learning Hub', 'Learning Hub progress will show up here once it\u2019s available.'));
   wrapper.appendChild(renderPlaceholderSection('Assessments', 'Assessment results aren\u2019t shown on public profiles yet.'));

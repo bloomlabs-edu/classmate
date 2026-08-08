@@ -145,7 +145,7 @@ export async function renderStudentProfileView(container, { onManageStudents, on
 
   wrapper.appendChild(header);
 
-  wrapper.appendChild(createWeeklyNetPointsSection(profile.weeklyNetPoints));
+  wrapper.appendChild(createWeeklyNetPointsSection(profile.weeklyNetPoints, 'How your points moved this week'));
 
   wrapper.appendChild(createRecentRecognitionSection(profile));
 

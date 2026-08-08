@@ -24,9 +24,19 @@
  * author meaning from that evidence. The only text on screen is the
  * heading, a one-line subtitle, each day's own single-letter initial,
  * and each point's own real, signed value — no legend, no streak.
+ *
+ * `subtitle` is an explicit parameter, not a hardcoded string — the
+ * default ("How your points moved this week") is only correct for a
+ * student viewing their own profile. Confirmed directly, the same
+ * mistake already fixed once for event copy
+ * (services/studentEventService.js's own getEventCopyForViewer()):
+ * this component now renders in three genuinely different viewer
+ * contexts, and "your points" is only true for one of them. The
+ * Teacher Portal and the public (peer) profile must each pass their
+ * own neutral wording explicitly.
  */
 
-export function createWeeklyNetPointsSection(weeklyNetPoints) {
+export function createWeeklyNetPointsSection(weeklyNetPoints, subtitle = 'How your points moved this week') {
   const section = document.createElement('div');
   section.className = 'student-journey__section';
 
@@ -35,10 +45,10 @@ export function createWeeklyNetPointsSection(weeklyNetPoints) {
   title.textContent = 'This Week';
   section.appendChild(title);
 
-  const subtitle = document.createElement('p');
-  subtitle.className = 'weekly-net-graph__subtitle';
-  subtitle.textContent = 'How your points moved this week';
-  section.appendChild(subtitle);
+  const subtitleEl = document.createElement('p');
+  subtitleEl.className = 'weekly-net-graph__subtitle';
+  subtitleEl.textContent = subtitle;
+  section.appendChild(subtitleEl);
 
   section.appendChild(createWeeklyNetGraphSvg(weeklyNetPoints));
 

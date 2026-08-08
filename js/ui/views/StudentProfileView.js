@@ -306,7 +306,7 @@ function renderOverviewTab(content, classroom, student, team, rerender) {
   statsSection.appendChild(statsGrid);
   content.appendChild(statsSection);
 
-  content.appendChild(createWeeklyNetPointsSection(studentProgressService.getWeeklyNetPoints(classroom, student.id)));
+  content.appendChild(createWeeklyNetPointsSection(studentProgressService.getWeeklyNetPoints(classroom, student.id), 'Points movement this week'));
 
   const groupSection = document.createElement('div');
   groupSection.className = 'profile-section';

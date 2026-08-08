@@ -200,7 +200,7 @@ export async function renderStudentJourneyView(container, { onSessionInvalid, on
 
   wrapper.appendChild(modules);
 
-  wrapper.appendChild(createWeeklyNetPointsSection(weeklyNetPoints));
+  wrapper.appendChild(createWeeklyNetPointsSection(weeklyNetPoints, 'How your points moved this week'));
 
   // Your Updates — the Student Event Feed (see
   // services/studentEventService.js, models/StudentEvent.js): a
