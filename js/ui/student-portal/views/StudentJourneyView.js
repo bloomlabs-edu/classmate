@@ -41,12 +41,11 @@ import { getHomeSummary, getEventFeed, loadCurrentStudentAndClassroom } from '..
 import * as studentDeviceService from '../../../services/studentDeviceService.js';
 import { createAvatarElement } from '../../components/AvatarDisplay.js';
 import { createEmptyStateElement } from '../../components/EmptyState.js';
-import { createTeamStandingsBoardElement } from '../../components/TeamStandingsBoard.js';
 import { formatDate } from '../../../utils/dateHelpers.js';
 import { getEventDetailRoute } from '../../../config/studentEventNavigation.js';
 import { getEventCopyForViewer } from '../../../services/studentEventService.js';
 
-export async function renderStudentJourneyView(container, { onSessionInvalid, onNavigateToEventDetail, onNavigateToGoals, onNavigateToStudentProfile, onNavigateToTeam } = {}) {
+export async function renderStudentJourneyView(container, { onSessionInvalid, onNavigateToEventDetail, onNavigateToGoals, onNavigateToStudentProfile, onNavigateToTeam, onNavigateToStandings } = {}) {
   container.innerHTML = '';
 
   const [summary, eventFeed, found] = await Promise.all([
@@ -84,27 +83,10 @@ export async function renderStudentJourneyView(container, { onSessionInvalid, on
 
   const hasAnyActivity = summary.starsThisWeek > 0 || summary.journeyStreak > 0 || summary.recognitionCount > 0 || eventFeed.length > 0;
 
-  // Classroom Standings — the very first thing a student sees, per
-  // explicit product decision: "the classroom competition is the
-  // heartbeat of the Student Portal... personal progress exists to
-  // improve those standings." The exact same shared component
-  // ui/views/DashboardView.js (teacher side) and
-  // StudentTeamView.js's own Team tab already render — never a copy;
-  // see ui/components/TeamStandingsBoard.js's own header comment
-  // for why there is only ever one implementation.
-  if (found) {
-    wrapper.appendChild(
-      createTeamStandingsBoardElement({
-        classroom: found.classroom,
-        onTap: (student) => onNavigateToStudentProfile?.(student.id),
-        onTapTeam: (teamId) => onNavigateToTeam?.(teamId),
-        // onSwipeLeft / onLongPress deliberately omitted — teacher-only
-        // gestures have no place in the Student Portal at all.
-      })
-    );
-  }
-
-  // Welcome
+  // Welcome — the first thing a student sees, per explicit product
+  // decision reversing the earlier "standings first" hierarchy: this
+  // screen is ME -> MY GOALS -> MY PROGRESS, with class/team
+  // comparison accessible on demand, not leading the page.
   const greetingRow = document.createElement('div');
   greetingRow.className = 'student-journey__greeting-row';
   greetingRow.appendChild(createAvatarElement({ studentId: summary.studentId, name: summary.studentName, size: 56, useDefaultIfMissing: true }));
@@ -115,20 +97,6 @@ export async function renderStudentJourneyView(container, { onSessionInvalid, on
     : `Welcome to ${summary.classroomName}! \ud83d\udc4b`;
   greetingRow.appendChild(greeting);
   wrapper.appendChild(greetingRow);
-
-  // Today's Goal — always shown, keeps Journey feeling active even
-  // before any stars/updates exist.
-  const goal = document.createElement('div');
-  goal.className = 'student-home__goal';
-  const goalTitle = document.createElement('h2');
-  goalTitle.className = 'student-home__goal-title';
-  goalTitle.textContent = "Today's Goal";
-  const goalBody = document.createElement('p');
-  goalBody.className = 'student-home__goal-body';
-  goalBody.textContent =
-    'Participate in class. Your teacher awards stars for effort, teamwork, curiosity, and responsibility.';
-  goal.append(goalTitle, goalBody);
-  wrapper.appendChild(goal);
 
   // "My Goals" — Goals Phase 1's own entry point into
   // StudentGoalTrackerView.js. Always shown (not conditional on a
@@ -142,6 +110,38 @@ export async function renderStudentJourneyView(container, { onSessionInvalid, on
     goalsLink.textContent = '\ud83c\udfaf My Goals \u2192';
     goalsLink.addEventListener('click', onNavigateToGoals);
     wrapper.appendChild(goalsLink);
+  }
+
+  // Class Standings — compact and collapsed by default, per explicit
+  // product decision: the classroom comparison is secondary to a
+  // student's own goals/progress, not the hero content of this
+  // screen. Navigates straight to the existing, real standings screen
+  // (ui/student-portal/views/StudentTeamView.js, the same one the
+  // "Team" nav tab already opens) — no standings logic duplicated or
+  // rebuilt here, just a doorway to it.
+  if (onNavigateToStandings) {
+    const standingsCard = document.createElement('button');
+    standingsCard.type = 'button';
+    standingsCard.className = 'student-home__standings-card';
+    standingsCard.addEventListener('click', onNavigateToStandings);
+
+    const standingsText = document.createElement('span');
+    standingsText.className = 'student-home__standings-text';
+    const standingsTitle = document.createElement('span');
+    standingsTitle.className = 'student-home__standings-title';
+    standingsTitle.textContent = '\ud83c\udfc6 Class Standings';
+    const standingsSubtitle = document.createElement('span');
+    standingsSubtitle.className = 'student-home__standings-subtitle';
+    standingsSubtitle.textContent = 'See how your team is doing';
+    standingsText.append(standingsTitle, standingsSubtitle);
+
+    const chevron = document.createElement('span');
+    chevron.className = 'student-home__standings-chevron';
+    chevron.textContent = '\u203a';
+    chevron.setAttribute('aria-hidden', 'true');
+
+    standingsCard.append(standingsText, chevron);
+    wrapper.appendChild(standingsCard);
   }
 
   // Compact Progress Summary — one line, not a re-statement of every

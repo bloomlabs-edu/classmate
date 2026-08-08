@@ -2286,16 +2286,8 @@ button.wizard-checklist__row:hover {
   margin: 0 0 1rem;
   text-align: center;
 }
-.profile-header__identity-row {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  text-align: left;
-}
-
 .profile-header__avatar {
-  margin: 0;
-  flex-shrink: 0;
+  margin: 0.5rem 0 0.75rem;
 }
 
 .profile-header__top-row {
@@ -2304,19 +2296,15 @@ button.wizard-checklist__row:hover {
   justify-content: space-between;
 }
 
-.profile-header__title-block {
-  margin: 0;
-  min-width: 0;
-}
-
 .profile-header__name {
   font-size: 1.4rem;
   font-weight: var(--font-weight-black);
-  margin: 0;
-  /* Plain dark ink text on the header's own neutral white background
-     — no inline color-matching needed here; the header stopped being
-     tinted by bucket color entirely (bucket now lives only in its own
-     chip, see createHeaderChip()'s own 'bucket' variant). */
+  margin: 0.75rem 0 0;
+  /* Inherits this header's own inline-set text color (see
+     renderProfileHeader()), matched to whichever of the four bucket
+     backgrounds is currently showing — never a hardcoded dark color,
+     since that would go illegible against the darker of these four
+     pastels. */
   color: inherit;
 }
 
@@ -2327,8 +2315,8 @@ button.wizard-checklist__row:hover {
   /* Secondary information gets lower visual emphasis than the
      student's own name above it — per explicit product decision, the
      primary entity should read as the strongest element on the page.
-     0.88 opacity of dark ink against the header's own plain white
-     background stays comfortably legible. */
+     0.88 opacity of dark ink against any of these four light pastel
+     backgrounds stays comfortably legible. */
   opacity: 0.88;
 }
 
@@ -4580,27 +4568,6 @@ button.wizard-checklist__row:hover {
   font-size: var(--text-sm);
   color: var(--color-muted);
   margin: 0;
-}
-.student-home__goal {
-  background-color: #fdeee0;
-  border-radius: 20px;
-  padding: 1.5rem;
-  text-align: center;
-  margin-top: 1.5rem;
-}
-.student-home__goal-title {
-  font-size: var(--text-sm);
-  font-weight: var(--font-weight-bold);
-  color: #b8631a;
-  margin: 0 0 0.4rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-.student-home__goal-body {
-  font-size: var(--text-sm);
-  color: var(--color-ink);
-  margin: 0;
-  line-height: 1.5;
 }
 
 .student-journey__greeting-row {
@@ -7439,6 +7406,45 @@ button.wizard-checklist__row:hover {
   color: var(--color-primary);
   box-shadow: 0 4px 16px rgba(184, 99, 26, 0.08);
   cursor: pointer;
+}
+
+/* Class Standings — compact, collapsed-by-default doorway to the
+   real standings screen. See
+   ui/student-portal/views/StudentJourneyView.js's own header comment
+   for why the classroom comparison is secondary here, not the hero
+   content it used to be. */
+.student-home__standings-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background-color: #ffffff;
+  border: none;
+  border-radius: 16px;
+  padding: 1rem 1.25rem;
+  margin-top: 0.75rem;
+  box-shadow: 0 4px 16px rgba(184, 99, 26, 0.08);
+  cursor: pointer;
+  text-align: left;
+}
+.student-home__standings-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.student-home__standings-title {
+  font-size: 1rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+}
+.student-home__standings-subtitle {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+.student-home__standings-chevron {
+  font-size: 1.3rem;
+  color: var(--color-muted);
+  flex-shrink: 0;
 }
 
 /* Student Goal Tracker — see

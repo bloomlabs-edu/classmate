@@ -288,6 +288,7 @@ function renderStudentPortalMain(route) {
           onNavigateToGoals: () => router.navigate('/student/goals'),
           onNavigateToStudentProfile: (studentId) => router.navigate(`/student/student-profile/${studentId}`),
           onNavigateToTeam: (teamId) => router.navigate(`/student/team/${teamId}`),
+          onNavigateToStandings: () => router.navigate('/student/team'),
         });
       }
     },
