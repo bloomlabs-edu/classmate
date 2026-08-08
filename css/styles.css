@@ -8291,3 +8291,8 @@ button.wizard-checklist__row:hover {
   fill: var(--color-muted);
   font-weight: bold;
 }
+.weekly-net-graph__value-label {
+  font-size: 9px;
+  font-weight: bold;
+  fill: var(--color-ink);
+}

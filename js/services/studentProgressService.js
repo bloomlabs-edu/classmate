@@ -85,6 +85,8 @@ import {
   getPreviousWeekRange,
   getMonthRange,
   isDateKeyInRange,
+  getMondayStartOfWeek,
+  shiftDateKey,
 } from '../utils/dateHelpers.js';
 import { getRecognitionCategoryById } from '../config/recognitionCategories.js';
 
@@ -267,6 +269,38 @@ export function getStarsInRange(classroom, studentId, { start, end }) {
     .filter((entry) => entry.kind === 'points')
     .filter((entry) => isDateKeyInRange(entry.recordedAt.slice(0, 10), { start, end }))
     .reduce((sum, entry) => sum + entry.delta, 0);
+}
+
+/**
+ * Five real {dayLabel, value} entries for the current school week
+ * (Monday–Friday) for a given student — each `value` is that single
+ * day's own NET point movement, never a running/cumulative total.
+ * Built on getStarsInRange() above — the same canonical, net-score
+ * function every ranking/leaderboard in this app already calls —
+ * called once per day, with a single-day {start, end} range.
+ *
+ * Deliberately takes `classroom`/`studentId` explicitly, rather than
+ * resolving the current device session itself, so this one function
+ * can be shared across every profile screen that shows this graph —
+ * the student's own Journey (their own session), the Teacher Portal's
+ * student profile (a specific student a teacher is looking at), and
+ * the Student Portal's public profile (a specific classmate) — none
+ * of which share the same "who is this about" resolution.
+ *
+ * Uses getMondayStartOfWeek()/shiftDateKey() (the same helpers
+ * getWeekRange() itself is built on) rather than getWeekRange()
+ * directly, since that returns a 7-day Monday–Sunday range and this
+ * needs exactly the 5 school-week days.
+ */
+export function getWeeklyNetPoints(classroom, studentId) {
+  const monday = getMondayStartOfWeek(getTodayDateKey());
+  const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+
+  return dayLabels.map((dayLabel, index) => {
+    const dayKey = shiftDateKey(monday, index);
+    const value = getStarsInRange(classroom, studentId, { start: dayKey, end: dayKey });
+    return { dayLabel, value };
+  });
 }
 
 /** Every student's star total within {start, end}, ranked (ties share a rank). The full list — see getRecognitionWinners() for "who actually won." */

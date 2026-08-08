@@ -26,6 +26,8 @@ import * as bucketService from '../../services/bucketService.js';
 import * as badgeService from '../../services/badgeService.js';
 import * as noteService from '../../services/noteService.js';
 import * as timelineService from '../../services/timelineService.js';
+import * as studentProgressService from '../../services/studentProgressService.js';
+import { createWeeklyNetPointsSection } from '../components/WeeklyNetPointsGraph.js';
 import * as learningActivityService from '../../services/learningActivityService.js';
 import * as workRequestService from '../../services/workRequestService.js';
 import * as notebookConfigService from '../../services/notebookConfigService.js';
@@ -303,6 +305,8 @@ function renderOverviewTab(content, classroom, student, team, rerender) {
   statsGrid.appendChild(createStatCard('Total Negative Points', timelineService.getTotalNegativePoints(student)));
   statsSection.appendChild(statsGrid);
   content.appendChild(statsSection);
+
+  content.appendChild(createWeeklyNetPointsSection(studentProgressService.getWeeklyNetPoints(classroom, student.id)));
 
   const groupSection = document.createElement('div');
   groupSection.className = 'profile-section';

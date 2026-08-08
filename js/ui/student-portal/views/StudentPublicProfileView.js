@@ -42,6 +42,7 @@ import { createBackButton } from '../../components/BackButton.js';
 import { createEmptyStateElement } from '../../components/EmptyState.js';
 import { getBucketRowStyle, getBucketLabel } from '../../../config/bucketConfig.js';
 import { renderEventCard } from './StudentJourneyView.js';
+import { createWeeklyNetPointsSection } from '../../components/WeeklyNetPointsGraph.js';
 
 export async function renderStudentPublicProfileView(container, { studentId, onBack }) {
   container.innerHTML = '';
@@ -60,6 +61,7 @@ export async function renderStudentPublicProfileView(container, { studentId, onB
 
   wrapper.appendChild(renderHeader(profile, onBack));
   wrapper.appendChild(renderRecognitionSection(profile));
+  wrapper.appendChild(createWeeklyNetPointsSection(profile.weeklyNetPoints));
   wrapper.appendChild(renderJourneySection(profile));
   wrapper.appendChild(renderPlaceholderSection('Learning Hub', 'Learning Hub progress will show up here once it\u2019s available.'));
   wrapper.appendChild(renderPlaceholderSection('Assessments', 'Assessment results aren\u2019t shown on public profiles yet.'));

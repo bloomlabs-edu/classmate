@@ -31,6 +31,7 @@ import { createAvatarElement } from '../../components/AvatarDisplay.js';
 import { getBucketRowStyle, getBucketLabel } from '../../../config/bucketConfig.js';
 import { getEventCopyForViewer } from '../../../services/studentEventService.js';
 import { formatDate } from '../../../utils/dateHelpers.js';
+import { createWeeklyNetPointsSection } from '../../components/WeeklyNetPointsGraph.js';
 
 export async function renderStudentProfileView(container, { onManageStudents, onCustomizeAvatar }) {
   container.innerHTML = '';
@@ -143,6 +144,8 @@ export async function renderStudentProfileView(container, { onManageStudents, on
   header.appendChild(stats);
 
   wrapper.appendChild(header);
+
+  wrapper.appendChild(createWeeklyNetPointsSection(profile.weeklyNetPoints));
 
   wrapper.appendChild(createRecentRecognitionSection(profile));
 

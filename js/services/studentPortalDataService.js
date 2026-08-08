@@ -35,7 +35,7 @@ import * as goalService from './goalService.js';
 import * as goalCompletionService from './goalCompletionService.js';
 import * as goalStatisticsService from './goalStatisticsService.js';
 import * as teamStatisticsService from './teamStatisticsService.js';
-import { getWeekRange, getMondayStartOfWeek, shiftDateKey, getTodayDateKey } from '../utils/dateHelpers.js';
+import { getWeekRange } from '../utils/dateHelpers.js';
 import { listRecognitionCategoriesForPeriod } from '../config/recognitionCategories.js';
 
 /**
@@ -159,6 +159,7 @@ export async function getCurrentStudentProfile() {
     currentStreak: studentProgressService.getBestActiveStreakAcrossNotebooks(classroom, student.id),
     biggestClimb: classEntry && classEntry.movement === 'up' ? classEntry.movementAmount : 0,
     recentEvents: studentEventService.getEventsForStudent(classroom, student.id).slice(0, 3),
+    weeklyNetPoints: studentProgressService.getWeeklyNetPoints(classroom, student.id),
   };
 }
 
@@ -200,38 +201,18 @@ export async function getHomeSummary() {
 }
 
 /**
- * Five real {dayLabel, value} entries for the current school week
- * (Monday–Friday) — each `value` is that single day's own NET point
- * movement (positive stars minus negative points recorded that day),
- * never a running/cumulative total. Reuses
- * services/studentProgressService.js's own getStarsInRange() — the
- * same canonical, net-score function every other ranking/leaderboard
- * in this app already calls — once per day, with a single-day
- * {start, end} range. No new calculation logic, no new data source:
- * this is a pure re-slicing of the exact same real student.history
- * entries getHomeSummary()'s own starsThisWeek already reads.
- *
- * Uses getMondayStartOfWeek()/shiftDateKey() (the same helpers
- * getWeekRange() itself is built on) rather than getWeekRange()
- * directly, since that returns a 7-day Monday–Sunday range and this
- * needs exactly the 5 school-week days.
- *
- * A day with zero recorded activity correctly returns 0 — this is a
- * real, true fact ("nothing happened"), not a placeholder.
+ * The current session's own weekly net points — see
+ * services/studentProgressService.js's own getWeeklyNetPoints() for
+ * the real, shared implementation every profile screen showing this
+ * graph uses. This wrapper's only job is resolving "who is the
+ * current student," matching every other session-scoped function in
+ * this file.
  */
 export async function getWeeklyNetPoints() {
   const found = await loadCurrentStudentAndClassroom();
   if (!found) return [];
 
-  const { classroom, student } = found;
-  const monday = getMondayStartOfWeek(getTodayDateKey());
-  const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-
-  return dayLabels.map((dayLabel, index) => {
-    const dayKey = shiftDateKey(monday, index);
-    const value = studentProgressService.getStarsInRange(classroom, student.id, { start: dayKey, end: dayKey });
-    return { dayLabel, value };
-  });
+  return studentProgressService.getWeeklyNetPoints(found.classroom, found.student.id);
 }
 
 export async function getAchievements() {
@@ -435,6 +416,7 @@ export async function getPublicProfileForStudent(studentId) {
     latestBadgeName: latestBadgeEntry ? latestBadgeEntry.label : null,
     events: studentEventService.getEventsForStudent(classroom, studentId),
     currentGoals,
+    weeklyNetPoints: studentProgressService.getWeeklyNetPoints(classroom, studentId),
   };
 }
 
