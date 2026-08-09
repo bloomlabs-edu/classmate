@@ -45,6 +45,7 @@ import { renderStudentJoinClassroomView } from './StudentJoinClassroomView.js';
 import { renderStudentRosterPickerView } from './StudentRosterPickerView.js';
 import { renderStudentEnrollmentCodeView } from './StudentEnrollmentCodeView.js';
 import { isStudentEnrolled } from '../../../services/enrollmentService.js';
+import * as enrollmentService from '../../../services/enrollmentService.js';
 
 /**
  * Resolves a profile that's already approved on this device — but a
@@ -65,6 +66,21 @@ async function resolveApprovedProfile(container, studentRef, onResolved) {
 
   const alreadyEnrolled = await isStudentEnrolled(studentRef.classroomId, studentRef.studentId);
   if (alreadyEnrolled) {
+    onResolved(studentRef);
+    return;
+  }
+
+  // Not yet linked. If this profile is genuinely alone on this device
+  // (e.g. approved before this enrollment step existed at all — the
+  // original reported gap), the same "classroom code + picking a
+  // name is sufficient" policy applies retroactively: auto-link
+  // directly, no code needed. Only when a SIBLING is already present
+  // on this device does the real, teacher-issued code apply — that
+  // profile already went through this same check once, successfully,
+  // when it was this device's own first student.
+  const isSoleProfileOnThisDevice = studentDeviceService.getApprovedProfiles().length === 1;
+  if (isSoleProfileOnThisDevice) {
+    await enrollmentService.linkFirstDeviceProfile(studentRef.classroomId, studentRef.studentId);
     onResolved(studentRef);
     return;
   }
@@ -98,12 +114,13 @@ function renderFreshJoinFlow(container, { onResolved, message }) {
           studentDeviceService.setActiveProfile(studentRef);
           await workspaceService.markStudentJoinedPortal(studentRef.classroomId, studentRef.studentId);
 
-          renderStudentEnrollmentCodeView(container, {
-            classroomId: studentRef.classroomId,
-            studentId: studentRef.studentId,
-            studentName: studentRef.studentName,
-            onEnrolled: () => onResolved(studentRef),
-          });
+          // A device's own first student: classroom code + picking a
+          // name is treated as sufficient — no teacher-issued code
+          // needed. See enrollmentService.js's own
+          // linkFirstDeviceProfile() for the explicitly-accepted
+          // security reasoning behind this.
+          await enrollmentService.linkFirstDeviceProfile(studentRef.classroomId, studentRef.studentId);
+          onResolved(studentRef);
         },
       });
     },

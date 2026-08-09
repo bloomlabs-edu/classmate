@@ -96,6 +96,33 @@ export async function redeemEnrollmentToken(token, { classroomId, studentId }) {
   }
 }
 
+/**
+ * Links a device's own FIRST student — classroom code + picking a
+ * name is treated as sufficient, no teacher-issued token needed. See
+ * firestoreEnrollmentRepository.js's own createStudentAuthLinkDirect()
+ * for the exact, explicitly-accepted security reasoning. Callers are
+ * responsible for only using this for a device's actual first/sole
+ * profile — see StudentDeviceFlow.js's own callers for the real
+ * policy (a second or later profile on an already-claimed device
+ * must go through redeemEnrollmentToken() instead).
+ */
+export async function linkFirstDeviceProfile(classroomId, studentId) {
+  const slotIndex = studentDeviceService.getSlotForStudent(studentId);
+  if (slotIndex === null) return false;
+
+  const db = studentAuthService.getFirestoreForSlot(slotIndex);
+  const uid = await studentAuthService.ensureAnonymousSignIn(slotIndex);
+
+  try {
+    await enrollmentRepository.createStudentAuthLinkDirect(db, classroomId, studentId, uid);
+    markEnrollmentConfirmed(studentId);
+    return true;
+  } catch (error) {
+    console.error('[enrollmentService] linkFirstDeviceProfile() failed:', error);
+    return false;
+  }
+}
+
 /** Whether this exact studentId already has a trusted link established, from this device's own point of view. Client-side convenience only — never used for authorization. */
 export async function isStudentEnrolled(classroomId, studentId) {
   const slotIndex = studentDeviceService.getSlotForStudent(studentId);

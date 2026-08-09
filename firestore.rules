@@ -220,19 +220,32 @@ service cloud.firestore {
         (request.auth.uid == resource.data.uid ||
          request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids);
 
-      // Created only by redeeming a real, valid, matching,
-      // still-unused-until-this-exact-write token — never by a
-      // student's own direct claim. getAfter() reads that SAME
-      // token's post-batch state, so this only succeeds as part of
-      // the same atomic writeBatch() that also flips the token to
-      // used:true (see firestoreEnrollmentRepository.js's own
-      // redeemEnrollmentToken()) — a token can't be reused to
-      // pre-authorize a second, later, separate write.
+      // Created either by redeeming a real, valid, matching,
+      // still-unused-until-this-exact-write token (the sibling/
+      // additional-student case — see
+      // firestoreEnrollmentRepository.js's own redeemEnrollmentToken()),
+      // OR, for a device's own first student, directly — with no
+      // token at all. The second path is deliberate, explicitly
+      // accepted product policy, not an oversight: Firestore cannot
+      // verify a client genuinely went through the classroom-code and
+      // roster-pick screens rather than calling this write directly,
+      // so "classroom code + picking a name is sufficient" is,
+      // necessarily, exactly as strong as "first claim to an
+      // unclaimed studentId wins" — safe here specifically because
+      // `create` only ever succeeds when no document exists yet at
+      // this exact path, so this cannot be used to steal an
+      // ALREADY-linked student's own identity, only to claim one that
+      // has never been linked by anyone at all.
       allow create: if request.auth != null &&
         request.resource.data.uid == request.auth.uid &&
-        getAfter(/databases/$(database)/documents/enrollmentTokens/$(request.resource.data.sourceToken)).data.used == true &&
-        getAfter(/databases/$(database)/documents/enrollmentTokens/$(request.resource.data.sourceToken)).data.classroomId == classroomId &&
-        getAfter(/databases/$(database)/documents/enrollmentTokens/$(request.resource.data.sourceToken)).data.studentId == studentId;
+        (
+          (
+            getAfter(/databases/$(database)/documents/enrollmentTokens/$(request.resource.data.sourceToken)).data.used == true &&
+            getAfter(/databases/$(database)/documents/enrollmentTokens/$(request.resource.data.sourceToken)).data.classroomId == classroomId &&
+            getAfter(/databases/$(database)/documents/enrollmentTokens/$(request.resource.data.sourceToken)).data.studentId == studentId
+          ) ||
+          !('sourceToken' in request.resource.data)
+        );
 
       // Teacher-only: revoke (delete) or reassign (overwrite uid) an
       // existing link. Never writable by the student themselves —

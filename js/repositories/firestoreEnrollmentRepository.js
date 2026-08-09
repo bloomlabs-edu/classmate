@@ -80,6 +80,26 @@ export async function redeemEnrollmentToken(db, token, { classroomId, studentId,
   await batch.commit();
 }
 
+/**
+ * Links a device's own FIRST student directly — no token, no batch.
+ * Deliberately omits the sourceToken field entirely (not merely
+ * setting it to null/empty) — firestore.rules's own create rule
+ * checks !('sourceToken' in request.resource.data) specifically to
+ * distinguish this path from the token-gated one above.
+ *
+ * Explicitly accepted product policy (see this file's own header
+ * comment, and firestore.rules's own comment on this exact rule):
+ * classroom code + picking a name is sufficient for a device's first
+ * student, matching the same trust level already accepted for
+ * approving that first profile locally with no PIN. Never used for a
+ * second or later profile on an already-claimed device — that case
+ * still requires a real, teacher-issued token (see
+ * StudentManageProfilesView.js's own enrollment-code step).
+ */
+export async function createStudentAuthLinkDirect(db, classroomId, studentId, uid) {
+  await setDoc(studentAuthLinkDoc(db, classroomId, studentId), { uid, linkedAt: new Date().toISOString() });
+}
+
 /** Called by firestoreStudentGoalsRepository.js's own rules-adjacent checks are server-side only — this is for the UI's own, client-side convenience read (e.g. confirming enrollment status), never for authorization. */
 export async function getStudentAuthLink(db, classroomId, studentId) {
   try {

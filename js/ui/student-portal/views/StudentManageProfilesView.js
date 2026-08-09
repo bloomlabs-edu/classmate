@@ -21,6 +21,7 @@ import * as studentDeviceService from '../../../services/studentDeviceService.js
 import * as workspaceService from '../../../services/workspaceService.js';
 import { renderStudentDevicePinPromptView } from '../onboarding/StudentDevicePinPromptView.js';
 import { renderStudentRosterPickerView } from '../onboarding/StudentRosterPickerView.js';
+import { renderStudentEnrollmentCodeView } from '../onboarding/StudentEnrollmentCodeView.js';
 import { createAvatarElement } from '../../components/AvatarDisplay.js';
 import { createBackButton } from '../../components/BackButton.js';
 
@@ -149,8 +150,25 @@ export function renderStudentManageProfilesView(container, { onBack, onProfilesC
               ? 'This device already has the maximum of 3 students.'
               : "This student isn't in the same classroom as the others on this device."
           );
+          renderStudentManageProfilesView(container, { onBack, onProfilesChanged });
+          return;
         }
-        renderStudentManageProfilesView(container, { onBack, onProfilesChanged });
+
+        // An ADDITIONAL student on an already-claimed device — the
+        // explicitly-accepted policy reserves the free,
+        // classroom-code-only path for a device's own first student;
+        // every student after that needs the real, teacher-issued
+        // code (see StudentDeviceFlow.js's own resolveApprovedProfile()
+        // for the matching, returning-profile side of this same rule).
+        renderStudentEnrollmentCodeView(container, {
+          classroomId: studentRef.classroomId,
+          studentId: studentRef.studentId,
+          studentName: studentRef.studentName,
+          onEnrolled: () => {
+            onProfilesChanged();
+            renderStudentManageProfilesView(container, { onBack, onProfilesChanged });
+          },
+        });
       },
     });
   }
