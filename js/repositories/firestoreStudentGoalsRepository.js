@@ -54,7 +54,7 @@ function goalDoc(db, classroomId, goalId) {
  * concern (see studentGoalsService.js).
  */
 export async function submitGoal(db, { classroomId, studentId, cycleId, categoryId, text, uid }) {
-  const existing = await findGoal(db, classroomId, { studentId, cycleId, categoryId });
+  const existing = await findGoal(db, classroomId, { studentId, cycleId, categoryId, uid });
   const goalId = existing?.id ?? generateId();
 
   await setDoc(goalDoc(db, classroomId, goalId), {
@@ -94,13 +94,24 @@ export async function submitGoal(db, { classroomId, studentId, cycleId, category
 }
 
 /** The one existing goal for this exact (studentId, categoryId, cycleId), or null — mirrors goalService.js's own getGoalForStudent() semantics for the old shape. */
-export async function findGoal(db, classroomId, { studentId, cycleId, categoryId }) {
+/**
+ * `uid` is required here for the same reason
+ * listGoalsForStudent() below needs it: this is a list query, and
+ * Firestore needs the query's own structural filters to guarantee
+ * every possible result satisfies firestore.rules's own studentGoals
+ * allow read (resource.data.uid == request.auth.uid) — without a
+ * uid clause here, Firestore cannot prove that and denies the whole
+ * query, which is exactly what was happening: this read runs first,
+ * inside submitGoal(), before setDoc() is ever reached.
+ */
+export async function findGoal(db, classroomId, { studentId, cycleId, categoryId, uid }) {
   const snapshot = await getDocs(
     query(
       goalsCollection(db, classroomId),
       where('studentId', '==', studentId),
       where('cycleId', '==', cycleId),
-      where('categoryId', '==', categoryId)
+      where('categoryId', '==', categoryId),
+      where('uid', '==', uid)
     )
   );
   if (snapshot.empty) return null;

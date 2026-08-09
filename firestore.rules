@@ -171,20 +171,13 @@ service cloud.firestore {
       }
     }
 
-    // KNOWN, ACCEPTED CONSEQUENCE of reverting the enrollment feature
-    // above (per explicit product decision — see project history):
-    // this rule's own create/update condition still cross-references
-    // classrooms/{classroomId}/studentAuthLinks/{studentId}, which no
-    // longer exists as a real collection at all now that
-    // enrollmentTokens/studentAuthLinks were removed. That get() call
-    // now correctly, safely resolves to "doesn't exist" (this file's
-    // own default-deny backstop applies to it), meaning student goal
-    // writes will fail here — the same permission-denied state LSRW
-    // goals were in before any of this identity work began. Left
-    // exactly as-is deliberately, not patched with a new workaround —
-    // restoring working student login took priority, and this rule
-    // was never solely an "enrollment" change (see project history)
-    // so it wasn't touched further than what this comment states.
+    // This rule's own create/update condition no longer
+    // cross-references classrooms/{classroomId}/studentAuthLinks —
+    // that collection, and the enrollment step that populated it,
+    // were rolled back (see project history). A student write is
+    // now authorized by a direct match between the document's own
+    // uid field and the caller's real request.auth.uid instead — see
+    // this rule's own comment below for the exact condition.
     match /classrooms/{classroomId}/studentGoals/{goalId} {
       // Readable by the goal's own linked student, or any teacher
       // member of this classroom.
@@ -210,18 +203,18 @@ service cloud.firestore {
         request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids
       );
 
-      // A student may create/edit ONLY their own goal (proven via the
-      // trusted studentAuthLinks mapping, never a client-supplied
-      // studentId taken at face value), and may only ever set its own
+      // A student may create/edit ONLY their own goal — proven via a
+      // direct match between the document's own uid field and the
+      // caller's real, authenticated request.auth.uid (not a
+      // client-supplied studentId taken at face value). Deliberately
+      // does not cross-reference a studentAuthLinks mapping — that
+      // collection, and the enrollment step that populated it, were
+      // rolled back (see project history); this is the minimum,
+      // direct check that keeps student goal writes working without
+      // it. May only ever set its own
       // status to 'pending_approval' — never 'approved'.
       allow create, update: if request.auth != null && (
         (
-          request.auth.uid == get(/databases/$(database)/documents/classrooms/$(classroomId)/studentAuthLinks/$(request.resource.data.studentId)).data.uid &&
-          // The client-supplied uid field must match the caller's own
-          // real, authenticated uid — this is what the read rule
-          // above now trusts directly (resource.data.uid), so it
-          // can't be allowed to diverge from what was actually
-          // verified against studentAuthLinks on this same write.
           request.resource.data.uid == request.auth.uid &&
           request.resource.data.status == 'pending_approval'
         ) ||
