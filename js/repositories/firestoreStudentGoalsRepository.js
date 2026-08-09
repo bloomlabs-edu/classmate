@@ -108,10 +108,24 @@ export async function findGoal(db, classroomId, { studentId, cycleId, categoryId
 }
 
 /** Every goal for one specific student within one cycle — called from either the student's own instance or the teacher's, depending on caller. */
-export async function listGoalsForStudent(db, classroomId, { studentId, cycleId }) {
-  const snapshot = await getDocs(
-    query(goalsCollection(db, classroomId), where('studentId', '==', studentId), where('cycleId', '==', cycleId))
-  );
+/**
+ * `uid` is optional — required only for a student's own read (see
+ * firestore.rules's own studentGoals allow read: for a list query,
+ * Firestore needs the query's own structural filters to guarantee
+ * every possible result satisfies resource.data.uid ==
+ * request.auth.uid; the rule alone can't prove that without it, and
+ * denies the whole list. The teacher-side caller (see
+ * studentGoalsService.js's own getGoalForStudent()) authorizes via
+ * memberUids instead, which doesn't depend on any per-document field
+ * at all — passing uid there would be meaningless, so it's omitted
+ * from that call site rather than passed as some other student's own
+ * uid.
+ */
+export async function listGoalsForStudent(db, classroomId, { studentId, cycleId, uid }) {
+  const clauses = [where('studentId', '==', studentId), where('cycleId', '==', cycleId)];
+  if (uid) clauses.push(where('uid', '==', uid));
+
+  const snapshot = await getDocs(query(goalsCollection(db, classroomId), ...clauses));
   return snapshot.docs.map((d) => d.data());
 }
 

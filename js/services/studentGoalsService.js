@@ -48,9 +48,11 @@ export async function getGoalCycleForCurrentStudent() {
   if (slotIndex === null) return null;
 
   const db = studentAuthService.getFirestoreForSlot(slotIndex);
+  const uid = await studentAuthService.ensureAnonymousSignIn(slotIndex);
   const goals = await goalsRepository.listGoalsForStudent(db, activeProfile.classroomId, {
     studentId: activeProfile.studentId,
     cycleId: cycle.id,
+    uid,
   });
 
   const categories = goalService.listCategories(cycle).map((category) => ({

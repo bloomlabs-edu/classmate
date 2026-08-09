@@ -36,8 +36,6 @@ import { renderStudentJourneyView } from './ui/student-portal/views/StudentJourn
 import { renderStudentAssessmentResultsView } from './ui/student-portal/views/StudentAssessmentResultsView.js';
 import { renderStudentGoalTrackerView } from './ui/student-portal/views/StudentGoalTrackerView.js';
 import * as studentAuthService from './services/studentAuthService.js';
-// TEMPORARY — Milestone 1A verification only, see its own header comment.
-import { renderStudentAuthSlotDiagnostic } from './ui/developer/StudentAuthSlotDiagnostic.js';
 import { renderStudentTeamView } from './ui/student-portal/views/StudentTeamView.js';
 import { renderStudentTeamDetailView } from './ui/student-portal/views/StudentTeamDetailView.js';
 import { renderStudentPublicProfileView } from './ui/student-portal/views/StudentPublicProfileView.js';
@@ -242,11 +240,6 @@ function renderStudentPortalMain(route) {
   studentAuthService.getAuthForActiveProfile().catch((error) => {
     console.error('[studentAuthService] Failed to sign in the active profile\u2019s own slot:', error);
   });
-
-  // TEMPORARY — Milestone 1A verification only. Delete this one call,
-  // and js/ui/developer/StudentAuthSlotDiagnostic.js, once confirmed
-  // working in a real browser.
-  renderStudentAuthSlotDiagnostic();
 
   renderStudentPortalShell(appContainer, {
     activeSection: route.section,

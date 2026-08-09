@@ -38,7 +38,6 @@ import {
   signInAnonymously,
   setPersistence,
   browserLocalPersistence,
-  onAuthStateChanged,
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 import { getFirestore } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 import { firebaseConfig } from '../config/firebaseConfig.js';
@@ -137,18 +136,4 @@ export async function getAuthForActiveProfile() {
 
   const uid = await ensureAnonymousSignIn(slotIndex);
   return { slotIndex, uid };
-}
-
-/**
- * Fires `callback({ slotIndex, uid, state })` whenever this specific
- * slot's own Auth state changes — for the developer diagnostic panel
- * only in this milestone; nothing in the real app depends on this
- * yet. `state` is 'signed-in' or 'signed-out', matching what the
- * panel needs to display plainly.
- */
-export function watchSlotAuthState(slotIndex, callback) {
-  const auth = getAuthForSlot(slotIndex);
-  return onAuthStateChanged(auth, (user) => {
-    callback({ slotIndex, uid: user?.uid ?? null, state: user ? 'signed-in' : 'signed-out' });
-  });
 }
