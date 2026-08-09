@@ -29,8 +29,54 @@ export async function getFeedForCurrentStudent() {
   if (slotIndex === null) return [];
 
   const db = studentAuthService.getFirestoreForSlot(slotIndex);
-  await studentAuthService.ensureAnonymousSignIn(slotIndex);
-  const posts = await feedRepository.listPosts(db, activeProfile.classroomId);
+  const authForSlot = studentAuthService.getAuthForSlot(slotIndex);
+
+  console.log('[FEED-AUTH-DIAG] before ensureAnonymousSignIn', {
+    slotIndex,
+    classroomId: activeProfile.classroomId,
+    appName: authForSlot.app?.name ?? null,
+    authCurrentUserExists: !!authForSlot.currentUser,
+    authCurrentUserUid: authForSlot.currentUser?.uid ?? null,
+  });
+
+  const uid = await studentAuthService.ensureAnonymousSignIn(slotIndex);
+
+  const authAfter = studentAuthService.getAuthForSlot(slotIndex);
+  console.log('[FEED-AUTH-DIAG] after ensureAnonymousSignIn', {
+    slotIndex,
+    returnedUid: uid,
+    authCurrentUserExists: !!authAfter.currentUser,
+    authCurrentUserUid: authAfter.currentUser?.uid ?? null,
+    uidMatchesAuthCurrentUser: uid === (authAfter.currentUser?.uid ?? null),
+  });
+
+  console.log('[FEED-AUTH-DIAG] firestore/app identity', {
+    slotIndex,
+    firestoreAppName: db.app?.name ?? null,
+    authAppName: authAfter.app?.name ?? null,
+    sameAppInstance: db.app === authAfter.app,
+    projectId: db.app?.options?.projectId ?? null,
+  });
+
+  console.log('[FEED-AUTH-DIAG] before listPosts', {
+    slotIndex,
+    classroomId: activeProfile.classroomId,
+    path: `classrooms/${activeProfile.classroomId}/feedPosts`,
+  });
+
+  let posts;
+  try {
+    posts = await feedRepository.listPosts(db, activeProfile.classroomId);
+  } catch (error) {
+    console.error('[FEED-AUTH-DIAG] listPosts failed', {
+      slotIndex,
+      classroomId: activeProfile.classroomId,
+      errorCode: error.code ?? null,
+      errorMessage: error.message ?? null,
+      authCurrentUserUidAtFailure: studentAuthService.getAuthForSlot(slotIndex).currentUser?.uid ?? null,
+    });
+    throw error;
+  }
 
   return posts.filter((post) => {
     if (post.removedByTeacher) return false;
