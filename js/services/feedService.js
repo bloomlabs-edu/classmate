@@ -29,6 +29,7 @@ export async function getFeedForCurrentStudent() {
   if (slotIndex === null) return [];
 
   const db = studentAuthService.getFirestoreForSlot(slotIndex);
+  await studentAuthService.ensureAnonymousSignIn(slotIndex);
   const posts = await feedRepository.listPosts(db, activeProfile.classroomId);
 
   return posts.filter((post) => {
