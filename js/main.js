@@ -36,7 +36,6 @@ import { renderStudentJourneyView } from './ui/student-portal/views/StudentJourn
 import { renderStudentAssessmentResultsView } from './ui/student-portal/views/StudentAssessmentResultsView.js';
 import { renderStudentGoalTrackerView } from './ui/student-portal/views/StudentGoalTrackerView.js';
 import * as studentAuthService from './services/studentAuthService.js';
-import * as enrollmentService from './services/enrollmentService.js';
 import { renderStudentTeamView } from './ui/student-portal/views/StudentTeamView.js';
 import { renderStudentTeamDetailView } from './ui/student-portal/views/StudentTeamDetailView.js';
 import { renderStudentPublicProfileView } from './ui/student-portal/views/StudentPublicProfileView.js';
@@ -339,23 +338,7 @@ function renderRoute(route, reason = 'unspecified') {
     // main portal render, which is the only thing that actually needs
     // to happen on every subsequent snapshot.
     const activeProfile = studentDeviceService.getActiveProfile();
-    // Requires enrollment to have been confirmed this session, not
-    // just an active subscription — a subscription being live says
-    // nothing about whether this specific student was ever actually
-    // enrolled (confirmed as a real gap: a profile approved before
-    // enrollment existed, or once a subscription was established at
-    // any earlier point in this tab's session, could otherwise skip
-    // onboarding resolution forever). Checked synchronously via
-    // enrollmentService.js's own in-memory cache — set the first time
-    // isStudentEnrolled()/redeemEnrollmentToken() confirms it for real
-    // — rather than awaiting a fresh Firestore read on every route
-    // render, since renderRoute() itself is synchronous and called
-    // from many places.
-    if (
-      activeProfile &&
-      studentPortalDataService.isClassroomSubscribed(activeProfile.classroomId) &&
-      enrollmentService.isEnrollmentConfirmedThisSession(activeProfile.studentId)
-    ) {
+    if (activeProfile && studentPortalDataService.isClassroomSubscribed(activeProfile.classroomId)) {
       renderStudentPortalMain(route);
       return;
     }

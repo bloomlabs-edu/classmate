@@ -36,6 +36,13 @@
  * Device Reset PIN. This file only ever adds a profile PIN-free in
  * the one case that's always safe: a device with nothing approved
  * yet (or nothing *validly* approved anymore).
+ *
+ * No enrollment-code step of any kind lives here — a classroom code
+ * plus picking a real name off the roster is, by explicit product
+ * decision, the complete and only requirement to enter the Student
+ * Portal. This is intentionally the pre-identity-layer behavior,
+ * restored deliberately after that layer's own onboarding gate
+ * disrupted existing, working student logins.
  */
 
 import * as studentDeviceService from '../../../services/studentDeviceService.js';
@@ -43,59 +50,6 @@ import * as workspaceService from '../../../services/workspaceService.js';
 import { loadCurrentStudentAndClassroom } from '../../../services/studentPortalDataService.js';
 import { renderStudentJoinClassroomView } from './StudentJoinClassroomView.js';
 import { renderStudentRosterPickerView } from './StudentRosterPickerView.js';
-import { renderStudentEnrollmentCodeView } from './StudentEnrollmentCodeView.js';
-import { isStudentEnrolled } from '../../../services/enrollmentService.js';
-import * as enrollmentService from '../../../services/enrollmentService.js';
-
-/**
- * Resolves a profile that's already approved on this device — but a
- * profile being approved (see studentDeviceService.js) has never
- * required it to also be individually linked (see
- * enrollmentService.js's own studentAuthLinks). A profile added
- * before enrollment existed, or added via the sibling-profile path in
- * StudentManageProfilesView.js (which also never prompts for a code),
- * would otherwise resume here forever without ever being linked —
- * confirmed as the actual cause of a real student profile having a
- * working anonymous identity but no studentAuthLinks document at all.
- * Every returning-profile path in this file goes through this one
- * function instead of calling onResolved() directly, so none of them
- * can bypass this check.
- */
-async function resolveApprovedProfile(container, studentRef, onResolved) {
-  studentDeviceService.setActiveProfile(studentRef);
-
-  const alreadyEnrolled = await isStudentEnrolled(studentRef.classroomId, studentRef.studentId);
-  if (alreadyEnrolled) {
-    onResolved(studentRef);
-    return;
-  }
-
-  // Not yet linked. If this profile is genuinely alone on this device
-  // (e.g. approved before this enrollment step existed at all — the
-  // original reported gap), the same "classroom code + picking a
-  // name is sufficient" policy applies retroactively: auto-link
-  // directly, no code needed. Only when a SIBLING is already present
-  // on this device does the real, teacher-issued code apply — that
-  // profile already went through this same check once, successfully,
-  // when it was this device's own first student.
-  const isSoleProfileOnThisDevice = studentDeviceService.getApprovedProfiles().length === 1;
-  if (isSoleProfileOnThisDevice) {
-    const linked = await enrollmentService.linkFirstDeviceProfile(studentRef.classroomId, studentRef.studentId);
-    if (!linked) {
-      window.alert('Something went wrong setting up this profile. Please try again.');
-      return;
-    }
-    onResolved(studentRef);
-    return;
-  }
-
-  renderStudentEnrollmentCodeView(container, {
-    classroomId: studentRef.classroomId,
-    studentId: studentRef.studentId,
-    studentName: studentRef.studentName,
-    onEnrolled: () => onResolved(studentRef),
-  });
-}
 
 /** The fresh-device join path — also reused for stale-session recovery, so a recovered device rejoins exactly the same way a brand-new one would, just with an explanatory message attached. */
 function renderFreshJoinFlow(container, { onResolved, message }) {
@@ -117,18 +71,6 @@ function renderFreshJoinFlow(container, { onResolved, message }) {
           studentDeviceService.addApprovedProfile(studentRef);
           studentDeviceService.setActiveProfile(studentRef);
           await workspaceService.markStudentJoinedPortal(studentRef.classroomId, studentRef.studentId);
-
-          // A device's own first student: classroom code + picking a
-          // name is treated as sufficient — no teacher-issued code
-          // needed. See enrollmentService.js's own
-          // linkFirstDeviceProfile() for the explicitly-accepted
-          // security reasoning behind this.
-          const linked = await enrollmentService.linkFirstDeviceProfile(studentRef.classroomId, studentRef.studentId);
-          if (!linked) {
-            window.alert('Something went wrong setting up this profile. Please try again.');
-            renderFreshJoinFlow(container, { onResolved, message: null });
-            return;
-          }
           onResolved(studentRef);
         },
       });
@@ -157,7 +99,8 @@ export async function renderStudentDeviceFlow(container, { onResolved }) {
   }
 
   if (approved.length === 1) {
-    await resolveApprovedProfile(container, approved[0], onResolved);
+    studentDeviceService.setActiveProfile(approved[0]);
+    onResolved(approved[0]);
     return;
   }
 
@@ -166,7 +109,8 @@ export async function renderStudentDeviceFlow(container, { onResolved }) {
       title: "Who's using ClassMate today?",
       students: approved,
       onSelect: (studentRef) => {
-        resolveApprovedProfile(container, studentRef, onResolved);
+        studentDeviceService.setActiveProfile(studentRef);
+        onResolved(studentRef);
       },
     });
     return;

@@ -171,90 +171,20 @@ service cloud.firestore {
       }
     }
 
-    // ---------------------------------------------------------------
-    // Student Identity Layer — Milestone 1B (LSRW goals only)
-    // ---------------------------------------------------------------
-    //
-    // PROPOSED — same caveat as the joinCodes rules above: this
-    // sandboxed environment has no real Firebase credentials, so this
-    // could not be tested end-to-end against an actual project. Review
-    // and test specifically before deploying.
-    //
-    // The problem: students are intentionally unauthenticated by
-    // product design (see "Student join codes" above), but a write
-    // needs SOME real, unforgeable identity behind it, or any student
-    // could submit a goal claiming to be any other student. The fix:
-    // Firebase Anonymous Auth (see services/studentAuthService.js) +
-    // a trusted, teacher-gated mapping from that anonymous uid to a
-    // specific studentId (studentAuthLinks below) — established only
-    // through a single-use, teacher-issued, per-student token
-    // (enrollmentTokens below), never through a client's own claim.
-
-    match /enrollmentTokens/{token} {
-      // Must be resolvable with no auth at all — the redeeming device
-      // has no identity yet at the moment it needs to read this,
-      // mirroring studentJoinCodes above. The token string itself
-      // (an unguessable, single-use code) is the real gate here, not
-      // authentication.
-      allow read: if true;
-
-      // Only a teacher member of the TARGET classroom can mint a
-      // token for one of their own students.
-      allow create: if request.auth != null &&
-        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(request.resource.data.classroomId)).data.memberUids;
-
-      // Single-use flip only: used must go false -> true, and nothing
-      // else on this document may change in the same write.
-      allow update: if request.auth != null &&
-        resource.data.used == false &&
-        request.resource.data.used == true &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used']);
-
-      allow delete: if false;
-    }
-
-    match /classrooms/{classroomId}/studentAuthLinks/{studentId} {
-      // Readable by the linked student themselves, or any teacher
-      // member of this classroom.
-      allow read: if request.auth != null &&
-        (request.auth.uid == resource.data.uid ||
-         request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids);
-
-      // Created either by redeeming a real, valid, matching,
-      // still-unused-until-this-exact-write token (the sibling/
-      // additional-student case — see
-      // firestoreEnrollmentRepository.js's own redeemEnrollmentToken()),
-      // OR, for a device's own first student, directly — with no
-      // token at all. The second path is deliberate, explicitly
-      // accepted product policy, not an oversight: Firestore cannot
-      // verify a client genuinely went through the classroom-code and
-      // roster-pick screens rather than calling this write directly,
-      // so "classroom code + picking a name is sufficient" is,
-      // necessarily, exactly as strong as "first claim to an
-      // unclaimed studentId wins" — safe here specifically because
-      // `create` only ever succeeds when no document exists yet at
-      // this exact path, so this cannot be used to steal an
-      // ALREADY-linked student's own identity, only to claim one that
-      // has never been linked by anyone at all.
-      allow create: if request.auth != null &&
-        request.resource.data.uid == request.auth.uid &&
-        (
-          !('sourceToken' in request.resource.data) ||
-          (
-            getAfter(/databases/$(database)/documents/enrollmentTokens/$(request.resource.data.sourceToken)).data.used == true &&
-            getAfter(/databases/$(database)/documents/enrollmentTokens/$(request.resource.data.sourceToken)).data.classroomId == classroomId &&
-            getAfter(/databases/$(database)/documents/enrollmentTokens/$(request.resource.data.sourceToken)).data.studentId == studentId
-          )
-        );
-
-      // Teacher-only: revoke (delete) or reassign (overwrite uid) an
-      // existing link. Never writable by the student themselves —
-      // there is no path here that checks request.auth.uid against
-      // anything a student could satisfy on their own.
-      allow update, delete: if request.auth != null &&
-        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
-    }
-
+    // KNOWN, ACCEPTED CONSEQUENCE of reverting the enrollment feature
+    // above (per explicit product decision — see project history):
+    // this rule's own create/update condition still cross-references
+    // classrooms/{classroomId}/studentAuthLinks/{studentId}, which no
+    // longer exists as a real collection at all now that
+    // enrollmentTokens/studentAuthLinks were removed. That get() call
+    // now correctly, safely resolves to "doesn't exist" (this file's
+    // own default-deny backstop applies to it), meaning student goal
+    // writes will fail here — the same permission-denied state LSRW
+    // goals were in before any of this identity work began. Left
+    // exactly as-is deliberately, not patched with a new workaround —
+    // restoring working student login took priority, and this rule
+    // was never solely an "enrollment" change (see project history)
+    // so it wasn't touched further than what this comment states.
     match /classrooms/{classroomId}/studentGoals/{goalId} {
       // Readable by the goal's own linked student, or any teacher
       // member of this classroom.
