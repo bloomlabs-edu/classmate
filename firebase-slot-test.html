@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<!--
+  firebase-slot-test.html — DISPOSABLE, one-question test.
+
+  "Can ClassMate maintain three independent anonymous Firebase Auth
+  identities simultaneously in one browser using three named Firebase
+  Apps?"
+
+  Touches nothing in js/, no Firestore rules, no enrollment tokens, no
+  Student Identity code, no LSRW code. Imports the real, existing
+  firebaseConfig.js directly (via ./js/config/firebaseConfig.js) so
+  this genuinely tests against the real project — no config values
+  duplicated or guessed here.
+-->
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Firebase Slot Test (disposable)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 700px; margin: 40px auto; padding: 0 20px; }
+    .slot { background: #f5f5f5; border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+    .slot h3 { margin: 0 0 8px; }
+    .uid { font-family: monospace; font-size: 14px; word-break: break-all; }
+    .verdict { font-size: 1.3em; font-weight: bold; padding: 12px; border-radius: 8px; margin: 20px 0; }
+    .yes { background: #d4edda; color: #155724; }
+    .no { background: #f8d7da; color: #721c24; }
+    button { font-size: 1em; padding: 10px 20px; margin: 10px 0; cursor: pointer; }
+    .instructions { background: #fff3cd; border: 1px solid #ffe69c; border-radius: 8px; padding: 16px; margin-top: 24px; }
+    #log { font-family: monospace; font-size: 12px; white-space: pre-wrap; background: #222; color: #0f0; padding: 12px; border-radius: 8px; max-height: 200px; overflow-y: auto; }
+  </style>
+</head>
+<body>
+  <h1>Firebase Slot Test <span style="color:#999; font-size:0.6em;">(disposable — delete after use)</span></h1>
+
+  <div id="results">Loading…</div>
+
+  <button id="refreshBtn">Refresh Test (re-read UIDs, no new sign-in)</button>
+
+  <div class="instructions">
+    <strong>Persistence Test:</strong> once the three UIDs above are showing and marked distinct,
+    fully close this browser (not just the tab — the whole browser app), then reopen it and
+    reload this same page. This page will automatically compare the new UIDs against the ones
+    from before you closed the browser, and tell you whether they're the same three or not.
+  </div>
+
+  <div id="log"></div>
+
+  <script type="module">
+    import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
+    import {
+      getAuth,
+      signInAnonymously,
+      setPersistence,
+      browserLocalPersistence,
+    } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
+    import { firebaseConfig } from './js/config/firebaseConfig.js';
+
+    const STORAGE_KEY = 'firebaseSlotTest_previousUids'; // test-only key, unrelated to any real app data
+
+    const logEl = document.getElementById('log');
+    function log(msg) {
+      console.log(msg);
+      logEl.textContent += msg + '\n';
+    }
+
+    const slotNames = ['studentSlot0', 'studentSlot1', 'studentSlot2'];
+
+    async function getUidForSlot(slotName) {
+      const existing = getApps().find((a) => a.name === slotName);
+      const app = existing || initializeApp(firebaseConfig, slotName);
+      log(existing ? `[${slotName}] reusing already-initialized app instance…` : `[${slotName}] initializing app…`);
+      const auth = getAuth(app);
+
+      log(`[${slotName}] setting browserLocalPersistence…`);
+      await setPersistence(auth, browserLocalPersistence);
+
+      if (auth.currentUser) {
+        log(`[${slotName}] already has a persisted user: ${auth.currentUser.uid}`);
+        return auth.currentUser.uid;
+      }
+
+      log(`[${slotName}] no persisted user — signing in anonymously…`);
+      const cred = await signInAnonymously(auth);
+      log(`[${slotName}] signed in: ${cred.user.uid}`);
+      return cred.user.uid;
+    }
+
+    async function runTest() {
+      const resultsEl = document.getElementById('results');
+      resultsEl.innerHTML = 'Running…';
+      log('=== Starting test ===');
+
+      let uids;
+      try {
+        uids = [];
+        for (const slotName of slotNames) {
+          uids.push(await getUidForSlot(slotName));
+        }
+      } catch (error) {
+        log('ERROR: ' + error.message);
+        resultsEl.innerHTML = `<div class="verdict no">ERROR — see log below.<br>${error.message}</div>`;
+        return;
+      }
+
+      const [uidA, uidB, uidC] = uids;
+      const allDistinct = new Set(uids).size === 3;
+
+      let html = '';
+      slotNames.forEach((name, i) => {
+        html += `<div class="slot"><h3>${name}</h3><div class="uid">${uids[i]}</div></div>`;
+      });
+      html += `<div class="verdict ${allDistinct ? 'yes' : 'no'}">Are all three UIDs distinct? ${allDistinct ? 'YES' : 'NO'}</div>`;
+
+      const previousRaw = localStorage.getItem(STORAGE_KEY);
+      if (previousRaw) {
+        const previous = JSON.parse(previousRaw);
+        const samePersisted = previous.length === 3 && previous.every((u, i) => u === uids[i]);
+        html += `<div class="verdict ${samePersisted ? 'yes' : 'no'}">
+          Same three UIDs as last time this page loaded? ${samePersisted ? 'YES — persistence held' : 'NO — persistence did not hold'}
+          <br><span style="font-size:0.7em; font-weight:normal;">Previous: ${previous.join(', ')}</span>
+        </div>`;
+      } else {
+        html += `<div class="slot" style="background:#e7f1ff;">No previous run recorded yet — this is the first load, or localStorage was cleared. Do the Persistence Test now: close the whole browser, reopen, reload this page.</div>`;
+      }
+
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(uids));
+      resultsEl.innerHTML = html;
+      log('=== Test complete ===');
+    }
+
+    document.getElementById('refreshBtn').addEventListener('click', () => {
+      logEl.textContent = '';
+      runTest();
+    });
+
+    runTest();
+  </script>
+</body>
+</html>

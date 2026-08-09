@@ -8,14 +8,24 @@
  * from here instead of each calling initializeApp() themselves.
  */
 
-import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
+import { initializeApp, getApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import { firebaseConfig } from '../config/firebaseConfig.js';
 
 let app = null;
 
 export function getFirebaseApp() {
   if (!app) {
-    app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+    // Not getApps().length > 0 — that returns EVERY initialized app,
+    // named or default, so it can't tell "the default app already
+    // exists" apart from "only a named app exists" (e.g. a student
+    // slot's own app, see studentAuthService.js). getApp() throws if
+    // the specific (default) app hasn't been created, which is
+    // exactly the real signal needed here.
+    try {
+      app = getApp();
+    } catch {
+      app = initializeApp(firebaseConfig);
+    }
   }
   return app;
 }

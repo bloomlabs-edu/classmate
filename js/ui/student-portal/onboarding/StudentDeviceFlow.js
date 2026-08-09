@@ -43,6 +43,7 @@ import * as workspaceService from '../../../services/workspaceService.js';
 import { loadCurrentStudentAndClassroom } from '../../../services/studentPortalDataService.js';
 import { renderStudentJoinClassroomView } from './StudentJoinClassroomView.js';
 import { renderStudentRosterPickerView } from './StudentRosterPickerView.js';
+import { renderStudentEnrollmentCodeView } from './StudentEnrollmentCodeView.js';
 
 /** The fresh-device join path — also reused for stale-session recovery, so a recovered device rejoins exactly the same way a brand-new one would, just with an explanatory message attached. */
 function renderFreshJoinFlow(container, { onResolved, message }) {
@@ -64,7 +65,13 @@ function renderFreshJoinFlow(container, { onResolved, message }) {
           studentDeviceService.addApprovedProfile(studentRef);
           studentDeviceService.setActiveProfile(studentRef);
           await workspaceService.markStudentJoinedPortal(studentRef.classroomId, studentRef.studentId);
-          onResolved(studentRef);
+
+          renderStudentEnrollmentCodeView(container, {
+            classroomId: studentRef.classroomId,
+            studentId: studentRef.studentId,
+            studentName: studentRef.studentName,
+            onEnrolled: () => onResolved(studentRef),
+          });
         },
       });
     },

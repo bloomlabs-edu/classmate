@@ -30,6 +30,8 @@ import * as studentProgressService from '../../services/studentProgressService.j
 import { createWeeklyNetPointsSection } from '../components/WeeklyNetPointsGraph.js';
 import * as learningActivityService from '../../services/learningActivityService.js';
 import * as goalService from '../../services/goalService.js';
+import * as studentGoalsService from '../../services/studentGoalsService.js';
+import * as enrollmentService from '../../services/enrollmentService.js';
 import * as workRequestService from '../../services/workRequestService.js';
 import * as notebookConfigService from '../../services/notebookConfigService.js';
 import { getStatusMeta } from './WorkRequestRosterView.js';
@@ -116,6 +118,19 @@ function renderProfileHeader(classroom, student, team, rerender, onBack) {
   // pairs already work (a Subject row leads to a page whose own menu
   // holds that Subject's actions, not the row that led there).
   const menuActions = [
+    {
+      label: 'Generate Enrollment Code',
+      onClick: async () => {
+        try {
+          const token = await enrollmentService.generateEnrollmentToken(classroom.id, student.id);
+          window.alert(
+            `Enrollment code for ${student.name}: ${token}\n\nExpires in 24 hours. Give this exact code to ${student.name} to enter on their own device.`
+          );
+        } catch (error) {
+          window.alert(`Could not generate a code: ${error.message}`);
+        }
+      },
+    },
     {
       label: 'Rename',
       onClick: () => {
@@ -560,17 +575,18 @@ function createGoalSummaryCard(category, goal) {
   return card;
 }
 
-function renderLearningTab(content, classroom, student) {
+async function renderLearningTab(content, classroom, student) {
   const section = document.createElement('div');
   section.className = 'profile-section';
 
-  // LSRW Goals — reads the exact same persisted source
-  // (services/goalService.js's own cycle.goals, via getGoalsForStudent())
-  // the student-facing Goal Tracker writes to and reads from. This is
-  // the fix for a real, confirmed gap: a teacher viewing this exact
-  // profile previously had no way to see this student's own goals at
-  // all, even though they were already correctly saved — the data was
-  // always there, this tab simply never asked for it.
+  // LSRW Goals — categories (Listening/Speaking/Reading/Writing
+  // themselves) still come from goalService.js/the classroom document
+  // directly, unchanged. Individual goal SUBMISSIONS now come from
+  // the dedicated studentGoals collection (see studentGoalsService.js
+  // and the accepted "student-owned data gets its own collection"
+  // architecture decision) — this is the fix for a real, confirmed
+  // gap: a teacher viewing this exact profile previously had no way
+  // to see this student's own goals at all.
   const goalsHeading = document.createElement('h2');
   goalsHeading.className = 'profile-section__heading';
   goalsHeading.textContent = 'Goals';
@@ -592,10 +608,10 @@ function renderLearningTab(content, classroom, student) {
     } else {
       const goalsList = document.createElement('div');
       goalsList.className = 'activity-list';
-      categories.forEach((category) => {
-        const goal = goalService.getGoalForStudent(activeCycle, category.id, student.id);
+      for (const category of categories) {
+        const goal = await studentGoalsService.getGoalForStudent(classroom.id, activeCycle.id, category.id, student.id);
         goalsList.appendChild(createGoalSummaryCard(category, goal));
-      });
+      }
       section.appendChild(goalsList);
     }
   }

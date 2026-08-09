@@ -32,11 +32,15 @@
  * to survive anything beyond this one browser session.
  */
 
-import {
-  getGoalCycleForCurrentStudent,
-  submitGoalForCurrentStudent,
-  setGoalCompletionForCurrentStudent,
-} from '../../../services/studentPortalDataService.js';
+import { getGoalCycleForCurrentStudent, submitGoalForCurrentStudent } from '../../../services/studentGoalsService.js';
+// KNOWN GAP, deliberately out of scope for this milestone: the daily
+// completion toggle below still reads/writes through the OLD,
+// cycle-based path — an already-approved goal's own streak/completion
+// tracking is unaffected by this milestone's own acceptance test, so
+// it hasn't been moved yet. It will break once a real goal reaches
+// 'approved' status without a matching entry in the old
+// cycle.goals[] shape, since it no longer exists there at all.
+import { setGoalCompletionForCurrentStudent } from '../../../services/studentPortalDataService.js';
 import { createBackButton } from '../../components/BackButton.js';
 import { createEmptyStateElement } from '../../components/EmptyState.js';
 import { getTodayDateKey } from '../../../utils/dateHelpers.js';

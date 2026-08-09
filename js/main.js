@@ -35,6 +35,9 @@ import * as studentPortalDataService from './services/studentPortalDataService.j
 import { renderStudentJourneyView } from './ui/student-portal/views/StudentJourneyView.js';
 import { renderStudentAssessmentResultsView } from './ui/student-portal/views/StudentAssessmentResultsView.js';
 import { renderStudentGoalTrackerView } from './ui/student-portal/views/StudentGoalTrackerView.js';
+import * as studentAuthService from './services/studentAuthService.js';
+// TEMPORARY — Milestone 1A verification only, see its own header comment.
+import { renderStudentAuthSlotDiagnostic } from './ui/developer/StudentAuthSlotDiagnostic.js';
 import { renderStudentTeamView } from './ui/student-portal/views/StudentTeamView.js';
 import { renderStudentTeamDetailView } from './ui/student-portal/views/StudentTeamDetailView.js';
 import { renderStudentPublicProfileView } from './ui/student-portal/views/StudentPublicProfileView.js';
@@ -228,6 +231,23 @@ function renderLoadingScreen(container) {
 }
 
 function renderStudentPortalMain(route) {
+  // The real Milestone 1A behavior: whenever the Student Portal
+  // renders (including right after a profile switch navigates
+  // somewhere), ensure the currently-active profile's own slot is
+  // signed in. Deliberately a call of its own, independent of the
+  // temporary diagnostic panel below — that panel's own refresh also
+  // happens to trigger sign-in as a side effect, but this call must
+  // survive the diagnostic panel's own eventual removal, since it's
+  // the actual product behavior, not verification scaffolding.
+  studentAuthService.getAuthForActiveProfile().catch((error) => {
+    console.error('[studentAuthService] Failed to sign in the active profile\u2019s own slot:', error);
+  });
+
+  // TEMPORARY — Milestone 1A verification only. Delete this one call,
+  // and js/ui/developer/StudentAuthSlotDiagnostic.js, once confirmed
+  // working in a real browser.
+  renderStudentAuthSlotDiagnostic();
+
   renderStudentPortalShell(appContainer, {
     activeSection: route.section,
     onNavigateSection: (section) => router.navigate(`/student/${section}`),

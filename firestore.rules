@@ -171,6 +171,106 @@ service cloud.firestore {
       }
     }
 
+    // ---------------------------------------------------------------
+    // Student Identity Layer — Milestone 1B (LSRW goals only)
+    // ---------------------------------------------------------------
+    //
+    // PROPOSED — same caveat as the joinCodes rules above: this
+    // sandboxed environment has no real Firebase credentials, so this
+    // could not be tested end-to-end against an actual project. Review
+    // and test specifically before deploying.
+    //
+    // The problem: students are intentionally unauthenticated by
+    // product design (see "Student join codes" above), but a write
+    // needs SOME real, unforgeable identity behind it, or any student
+    // could submit a goal claiming to be any other student. The fix:
+    // Firebase Anonymous Auth (see services/studentAuthService.js) +
+    // a trusted, teacher-gated mapping from that anonymous uid to a
+    // specific studentId (studentAuthLinks below) — established only
+    // through a single-use, teacher-issued, per-student token
+    // (enrollmentTokens below), never through a client's own claim.
+
+    match /enrollmentTokens/{token} {
+      // Must be resolvable with no auth at all — the redeeming device
+      // has no identity yet at the moment it needs to read this,
+      // mirroring studentJoinCodes above. The token string itself
+      // (an unguessable, single-use code) is the real gate here, not
+      // authentication.
+      allow read: if true;
+
+      // Only a teacher member of the TARGET classroom can mint a
+      // token for one of their own students.
+      allow create: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(request.resource.data.classroomId)).data.memberUids;
+
+      // Single-use flip only: used must go false -> true, and nothing
+      // else on this document may change in the same write.
+      allow update: if request.auth != null &&
+        resource.data.used == false &&
+        request.resource.data.used == true &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used']);
+
+      allow delete: if false;
+    }
+
+    match /classrooms/{classroomId}/studentAuthLinks/{studentId} {
+      // Readable by the linked student themselves, or any teacher
+      // member of this classroom.
+      allow read: if request.auth != null &&
+        (request.auth.uid == resource.data.uid ||
+         request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids);
+
+      // Created only by redeeming a real, valid, matching,
+      // still-unused-until-this-exact-write token — never by a
+      // student's own direct claim. getAfter() reads that SAME
+      // token's post-batch state, so this only succeeds as part of
+      // the same atomic writeBatch() that also flips the token to
+      // used:true (see firestoreEnrollmentRepository.js's own
+      // redeemEnrollmentToken()) — a token can't be reused to
+      // pre-authorize a second, later, separate write.
+      allow create: if request.auth != null &&
+        request.resource.data.uid == request.auth.uid &&
+        getAfter(/databases/$(database)/documents/enrollmentTokens/$(request.resource.data.sourceToken)).data.used == true &&
+        getAfter(/databases/$(database)/documents/enrollmentTokens/$(request.resource.data.sourceToken)).data.classroomId == classroomId &&
+        getAfter(/databases/$(database)/documents/enrollmentTokens/$(request.resource.data.sourceToken)).data.studentId == studentId;
+
+      // Teacher-only: revoke (delete) or reassign (overwrite uid) an
+      // existing link. Never writable by the student themselves —
+      // there is no path here that checks request.auth.uid against
+      // anything a student could satisfy on their own.
+      allow update, delete: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+    }
+
+    match /classrooms/{classroomId}/studentGoals/{goalId} {
+      // Readable by the goal's own linked student, or any teacher
+      // member of this classroom.
+      allow read: if request.auth != null && (
+        request.auth.uid == get(/databases/$(database)/documents/classrooms/$(classroomId)/studentAuthLinks/$(resource.data.studentId)).data.uid ||
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids
+      );
+
+      // A student may create/edit ONLY their own goal (proven via the
+      // trusted studentAuthLinks mapping, never a client-supplied
+      // studentId taken at face value), and may only ever set its own
+      // status to 'pending_approval' — never 'approved'.
+      allow create, update: if request.auth != null && (
+        (
+          request.auth.uid == get(/databases/$(database)/documents/classrooms/$(classroomId)/studentAuthLinks/$(request.resource.data.studentId)).data.uid &&
+          request.resource.data.status == 'pending_approval'
+        ) ||
+        // A teacher member may approve — but ONLY flip status to
+        // 'approved', touching no other field on this document.
+        (
+          request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+          request.resource.data.status == 'approved'
+        )
+      );
+
+      allow delete: if false;
+    }
+
     // Legacy, pre-sharing location — migration-only (see
     // services/workspaceService.js). Nothing new is ever written here.
     //

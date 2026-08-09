@@ -18,6 +18,7 @@
  */
 
 import * as goalService from '../../services/goalService.js';
+import * as studentGoalsService from '../../services/studentGoalsService.js';
 import * as goalStatisticsService from '../../services/goalStatisticsService.js';
 import * as workspaceService from '../../services/workspaceService.js';
 import { createBackButton } from '../components/BackButton.js';
@@ -27,9 +28,21 @@ import { renderGoalDashboardView } from './GoalDashboardView.js';
 export function renderGoalManagementView(container, { classroom, onBack }) {
   let mode = 'home';
   let reviewingGoalId = null;
+  let pendingGoals = [];
+  let allGoals = [];
+  let reviewingGoal = null;
 
-  function rerender() {
-    render(container, mode, { classroom, reviewingGoalId }, handlers);
+  async function rerender() {
+    const cycle = goalService.getActiveCycle(classroom);
+    if (cycle && mode === 'home') {
+      pendingGoals = await studentGoalsService.getPendingApprovalGoalsForClassroom(classroom.id, cycle.id);
+      allGoals = await studentGoalsService.getAllGoalsForClassroom(classroom.id, cycle.id);
+    }
+    if (cycle && mode === 'reviewGoal') {
+      const cycleGoals = await studentGoalsService.getPendingApprovalGoalsForClassroom(classroom.id, cycle.id);
+      reviewingGoal = cycleGoals.find((g) => g.id === reviewingGoalId) ?? null;
+    }
+    render(container, mode, { classroom, pendingGoals, allGoals, reviewingGoal }, handlers);
   }
 
   const handlers = {
@@ -56,9 +69,8 @@ export function renderGoalManagementView(container, { classroom, onBack }) {
       mode = 'reviewGoal';
       rerender();
     },
-    onApproveGoal: (cycle, goalId) => {
-      goalService.approveGoal(cycle, goalId);
-      workspaceService.save(classroom);
+    onApproveGoal: async (goalId) => {
+      await studentGoalsService.approveGoal(classroom.id, goalId);
       mode = 'home';
       reviewingGoalId = null;
       rerender();
@@ -98,16 +110,16 @@ function render(container, mode, state, handlers) {
   content.className = 'wizard-step-content';
 
   if (mode === 'reviewGoal') {
-    content.appendChild(renderReviewGoalStep(state.classroom, state.reviewingGoalId, handlers));
+    content.appendChild(renderReviewGoalStep(state.classroom, state.reviewingGoal, handlers));
   } else {
-    content.appendChild(renderHomeStep(state.classroom, handlers));
+    content.appendChild(renderHomeStep(state.classroom, state.pendingGoals, state.allGoals, handlers));
   }
 
   wrapper.appendChild(content);
   container.appendChild(wrapper);
 }
 
-function renderHomeStep(classroom, handlers) {
+function renderHomeStep(classroom, pendingGoals, allGoals, handlers) {
   const section = document.createElement('div');
   section.className = 'learning-management__section';
 
@@ -172,7 +184,7 @@ function renderHomeStep(classroom, handlers) {
   pendingHeading.textContent = 'Goals Awaiting Approval';
   section.appendChild(pendingHeading);
 
-  const pending = goalService.getPendingApprovalGoals(cycle);
+  const pending = pendingGoals;
   if (pending.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'settings-section__meta';
@@ -201,8 +213,14 @@ function renderHomeStep(classroom, handlers) {
     section.appendChild(pendingList);
   }
 
-  // Students who haven't submitted at all
-  const missing = goalService.getStudentsWithoutAllGoals(classroom, cycle);
+  // Students who haven't submitted at all — computed against the new
+  // studentGoals collection's own data (allGoals, any status), not
+  // goalService.js's own getStudentsWithoutAllGoals(), which still
+  // reads the old cycle.goals[] shape that nothing writes to anymore.
+  const categoryCount = goalService.listCategories(cycle).length;
+  const missing = goalService.getClassroomStudents(classroom).filter(
+    (student) => allGoals.filter((g) => g.studentId === student.id).length < categoryCount
+  );
   if (missing.length > 0) {
     const missingHeading = document.createElement('h3');
     missingHeading.className = 'settings-team-block__heading';
@@ -217,11 +235,10 @@ function renderHomeStep(classroom, handlers) {
   return section;
 }
 
-function renderReviewGoalStep(classroom, goalId, handlers) {
+function renderReviewGoalStep(classroom, goal, handlers) {
   const section = document.createElement('div');
   section.className = 'learning-management__section';
   const cycle = goalService.getActiveCycle(classroom);
-  const goal = cycle ? goalService.getGoalById(cycle, goalId) : null;
 
   if (!goal) {
     section.appendChild(createEmptyStateElement({ message: 'This goal is no longer available.' }));
@@ -229,7 +246,7 @@ function renderReviewGoalStep(classroom, goalId, handlers) {
   }
 
   const student = goalService.getClassroomStudents(classroom).find((s) => s.id === goal.studentId);
-  const category = cycle.categories.find((c) => c.id === goal.categoryId);
+  const category = cycle?.categories.find((c) => c.id === goal.categoryId);
 
   const heading = document.createElement('p');
   heading.className = 'learning-management__step-heading';
@@ -247,7 +264,7 @@ function renderReviewGoalStep(classroom, goalId, handlers) {
   approveButton.type = 'button';
   approveButton.className = 'btn btn--primary';
   approveButton.textContent = 'Approve';
-  approveButton.addEventListener('click', () => handlers.onApproveGoal(cycle, goal.id));
+  approveButton.addEventListener('click', () => handlers.onApproveGoal(goal.id));
   section.appendChild(approveButton);
 
   return section;

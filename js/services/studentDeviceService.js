@@ -84,6 +84,28 @@ export function isAtCapacity() {
  * if it already was — safe to call repeatedly), or
  * { success: false, reason: 'DIFFERENT_CLASSROOM' | 'AT_CAPACITY' }.
  */
+/**
+ * This profile's own stable slot number (0, 1, or 2).
+ *
+ * Self-healing for profiles approved before slotIndex existed: if one
+ * is missing it, this assigns and persists a real one now — the same
+ * "smallest unused slot" rule addApprovedProfile() uses — rather than
+ * requiring a separate migration step for devices already in use.
+ * Returns null if this studentId isn't an approved profile at all.
+ */
+export function getSlotForStudent(studentId) {
+  const approved = readApproved();
+  const profile = approved.find((p) => p.studentId === studentId);
+  if (!profile) return null;
+
+  if (typeof profile.slotIndex === 'number') return profile.slotIndex;
+
+  const usedSlots = new Set(approved.filter((p) => typeof p.slotIndex === 'number').map((p) => p.slotIndex));
+  const slotIndex = [0, 1, 2].find((slot) => !usedSlots.has(slot));
+  writeApproved(approved.map((p) => (p.studentId === studentId ? { ...p, slotIndex } : p)));
+  return slotIndex;
+}
+
 export function addApprovedProfile(studentRef) {
   const approved = readApproved();
 
@@ -99,7 +121,19 @@ export function addApprovedProfile(studentRef) {
     return { success: false, reason: 'AT_CAPACITY' };
   }
 
-  writeApproved([...approved, studentRef]);
+  // A stable, permanent slot number (0, 1, or 2) — the smallest one not
+  // currently occupied by another approved profile, not this profile's
+  // eventual array position. Array position shifts if a sibling ahead
+  // of it is later removed; this field never does, once assigned. See
+  // this file's own header comment on MAX_APPROVED_PROFILES for why
+  // that distinction now matters: each slot will soon carry its own,
+  // separate Firebase Auth identity (see studentAuthService.js) —
+  // silently reassigning a student's slot would silently move them
+  // onto a different identity too.
+  const usedSlots = new Set(approved.map((p) => p.slotIndex));
+  const slotIndex = [0, 1, 2].find((slot) => !usedSlots.has(slot));
+
+  writeApproved([...approved, { ...studentRef, slotIndex }]);
   return { success: true };
 }
 
