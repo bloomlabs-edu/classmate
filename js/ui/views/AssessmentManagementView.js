@@ -35,9 +35,13 @@ import * as workspaceService from '../../services/workspaceService.js';
 import { getCurrentIsoDate } from '../../utils/dateHelpers.js';
 import { getMarksColorClass } from '../../config/assessmentMarksColorConfig.js';
 
-export function renderAssessmentManagementView(container, { classroom, onBack }) {
-  let mode = 'home';
-  let selectedAssessment = null;
+export function renderAssessmentManagementView(container, { classroom, onBack, initialAssessmentId = null, initialView = null, onNavigate = null }) {
+  const initialAssessment = initialAssessmentId ? assessmentService.getAssessmentById(classroom, initialAssessmentId) : null;
+  // A stale/deleted assessmentId in the URL falls back to 'home',
+  // same as any other not-found route elsewhere in this app — never
+  // a broken or blank screen.
+  let mode = initialAssessment ? (initialView === 'details' ? 'assessment' : 'gradebook') : 'home';
+  let selectedAssessment = initialAssessment;
   let selectedAssessmentSubject = null;
   let sortBy = 'name'; // 'name' | 'rollNumber' | 'marks' | 'rank' — reset whenever a different Subject is opened
 
@@ -229,6 +233,7 @@ export function renderAssessmentManagementView(container, { classroom, onBack })
         isEditingAssessmentDetails = false;
         hasUnsavedAssessmentDetailsChanges = false;
         mode = 'gradebook';
+        if (onNavigate) onNavigate(`/classroom/${classroom.id}/assessments/${assessment.id}/gradebook`);
         rerender();
       });
     },
@@ -340,6 +345,13 @@ export function renderAssessmentManagementView(container, { classroom, onBack })
     onBackTo: (targetMode) => {
       navigateAwayGuard(() => {
         mode = targetMode;
+        if (onNavigate) {
+          if (targetMode === 'home') {
+            onNavigate(`/classroom/${classroom.id}/assessments`);
+          } else if (targetMode === 'gradebook' && selectedAssessment) {
+            onNavigate(`/classroom/${classroom.id}/assessments/${selectedAssessment.id}/gradebook`);
+          }
+        }
         rerender();
       });
     },

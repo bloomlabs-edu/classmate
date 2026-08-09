@@ -44,6 +44,8 @@ import { renderStudentProfileView as renderStudentPortalProfileView } from './ui
 import { renderHomeView } from './ui/views/HomeView.js';
 import { renderCurriculumManagementView } from './ui/views/CurriculumManagementView.js';
 import { renderLearningManagementView } from './ui/views/LearningManagementView.js';
+import { renderAssessmentManagementView } from './ui/views/AssessmentManagementView.js';
+import { renderGoalManagementView } from './ui/views/GoalManagementView.js';
 import { renderTrackerView } from './ui/views/TrackerView.js';
 import { renderTeacherDiagnosticsView } from './ui/views/TeacherDiagnosticsView.js'; // TEMPORARY — see that file's own header comment
 import { renderSettingsView } from './ui/views/SettingsView.js';
@@ -214,6 +216,9 @@ const CLASSROOM_ROUTE_NAMES = [
   'workRequestRoster',
   'notebookTracker',
   'workRequestCreate',
+  'assessments',
+  'goalManagement',
+  'learningManagement',
   'diagnostics', // TEMPORARY — see ui/views/TeacherDiagnosticsView.js's own header comment
 ];
 
@@ -437,6 +442,36 @@ function renderRoute(route, reason = 'unspecified') {
         },
         onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
         onNavigateOpenWork: (path) => router.navigate(path),
+      });
+    } else if (route.name === 'assessments') {
+      renderAssessmentManagementView(appContainer, {
+        classroom,
+        onBack: () => router.navigate(`/classroom/${classroom.id}`),
+        initialAssessmentId: route.assessmentId || null,
+        initialView: route.view || null,
+        onNavigate: (path) => router.navigate(path),
+      });
+    } else if (route.name === 'goalManagement') {
+      renderGoalManagementView(appContainer, {
+        classroom,
+        onBack: () => router.navigate(`/classroom/${classroom.id}`),
+      });
+    } else if (route.name === 'learningManagement') {
+      renderLearningManagementView(appContainer, {
+        classrooms: [classroom],
+        onBack: () => router.navigate(`/classroom/${classroom.id}`),
+        // Preserves the exact existing "return to the same subject"
+        // behavior (see LearningManagementView.js's own call sites,
+        // which pass { onBack: () => rerender() }) — only the
+        // *initial* entry into Learning Management is now routed;
+        // the Curriculum Hub itself is completely untouched, per
+        // explicit scope.
+        onOpenCurriculumManagement: ({ onBack: returnToLearningManagement }) => {
+          renderCurriculumManagementView(appContainer, {
+            onBack: returnToLearningManagement,
+            onOpenLearningManagement: () => router.navigate(`/classroom/${classroom.id}/learning`),
+          });
+        },
       });
     } else if (route.name === 'recognition') {
       renderRecognitionScreenView(appContainer, {

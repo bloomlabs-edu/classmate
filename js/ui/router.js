@@ -17,6 +17,9 @@
  *   #/classroom/{id}/student/{studentId}/{tab?} -> student profile
  *   #/classroom/{id}/activities               -> learning activities list
  *   #/classroom/{id}/activities/{activityId}  -> one activity's roster
+ *   #/classroom/{id}/assessments/{assessmentId?}/{view?} -> Assessment Management — no assessmentId = the list; an assessmentId with no view defaults to the Gradebook (see ui/views/AssessmentManagementView.js)
+ *   #/classroom/{id}/goals                     -> Goal Management
+ *   #/classroom/{id}/learning                  -> Learning Management
  *   #/classroom/{id}/notebooks                                       -> notebook tracker list (Subject × Notebook Type)
  *   #/classroom/{id}/work-requests/{requestId}                        -> WorkRequest checking + inline history, one page (see WorkRequestRosterView.js) — no separate Timeline route exists anymore
  *   #/classroom/{id}/notebooks/{subjectId}/{typeId}                  -> create a new WorkRequest (only reached when none is currently open for this Subject x Notebook Type)
@@ -102,6 +105,15 @@ function resolvePathParts(parts) {
       // (see ui/views/WorkRequestRosterView.js) — there is no longer
       // a route shape that needs a dateKey or yearMonth segment at all.
       return { name: 'workRequestCreate', classroomId: parts[1], subjectId, notebookTypeId };
+    }
+    if (parts[2] === 'assessments') {
+      return { name: 'assessments', classroomId: parts[1], assessmentId: parts[3] || null, view: parts[4] || null };
+    }
+    if (parts[2] === 'goals') {
+      return { name: 'goalManagement', classroomId: parts[1] };
+    }
+    if (parts[2] === 'learning') {
+      return { name: 'learningManagement', classroomId: parts[1] };
     }
     // TEMPORARY — see ui/views/TeacherDiagnosticsView.js's own header
     // comment for why this exists and when it should be removed.

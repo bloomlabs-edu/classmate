@@ -70,11 +70,9 @@ import { createSubjectsWidgetElement } from '../components/SubjectsWidget.js';
 import { createGroupsWidgetElement } from '../components/GroupsWidget.js';
 import { createTeachingSectionElement } from '../components/TeachingSection.js';
 import { createClassroomSectionElement } from '../components/ClassroomSection.js';
-import { renderLearningManagementView } from './LearningManagementView.js';
+import * as router from '../router.js';
 import { renderClassroomManagementView } from './ClassroomManagementView.js';
 import { renderCurriculumManagementView } from './CurriculumManagementView.js';
-import { renderAssessmentManagementView } from './AssessmentManagementView.js';
-import { renderGoalManagementView } from './GoalManagementView.js';
 import { logViewMounted } from '../../services/persistenceLogger.js';
 
 export function renderDashboardView(container, props) {
@@ -101,11 +99,7 @@ export function renderDashboardView(container, props) {
   container.innerHTML = '';
 
   function openLearningManagement() {
-    renderLearningManagementView(container, {
-      classrooms: [classroom],
-      onBack: () => renderDashboardView(container, props),
-      onOpenCurriculumManagement: openCurriculumManagement,
-    });
+    router.navigate(`/classroom/${classroom.id}/learning`);
   }
 
   /**
@@ -129,17 +123,11 @@ export function renderDashboardView(container, props) {
   }
 
   function openAssessmentManagement() {
-    renderAssessmentManagementView(container, {
-      classroom,
-      onBack: () => renderDashboardView(container, props),
-    });
+    router.navigate(`/classroom/${classroom.id}/assessments`);
   }
 
   function openGoalManagement() {
-    renderGoalManagementView(container, {
-      classroom,
-      onBack: () => renderDashboardView(container, props),
-    });
+    router.navigate(`/classroom/${classroom.id}/goals`);
   }
 
   function openClassroomManagement() {
