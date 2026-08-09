@@ -8313,66 +8313,200 @@ button.wizard-checklist__row:hover {
 }
 
 /* Assessment Gradebook — see ui/views/AssessmentManagementView.js's renderGradebookStep() */
-.assessment-gradebook__meta-row {
+
+.assessment-gradebook__section {
+  gap: 0.6rem;
+}
+
+/* --- Header: compact hierarchy (title / secondary metadata / summary) --- */
+.assessment-gradebook__header {
   display: flex;
-  align-items: center;
-  gap: 1.25rem;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
   flex-wrap: wrap;
-  margin-bottom: 1rem;
 }
-.assessment-gradebook__meta-item {
-  color: var(--color-ink);
-  font-size: 0.9rem;
+.assessment-gradebook__header-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
 }
+.assessment-gradebook__title {
+  font-size: 1.15rem;
+  font-weight: var(--font-weight-black);
+  margin: 0;
+}
+.assessment-gradebook__subtitle {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  margin: 0;
+}
+.assessment-gradebook__edit-link {
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+.assessment-gradebook__edit-link:hover {
+  opacity: 1;
+}
+.assessment-gradebook__summary {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  margin: 0 0 0.35rem;
+}
+
+/* --- Table shell --- */
 .assessment-gradebook__scroll {
   overflow-x: auto;
+  overflow-y: auto;
   max-width: 100%;
+  max-height: 70vh;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
 }
 .assessment-gradebook {
   border-collapse: collapse;
   min-width: 100%;
   white-space: nowrap;
+  font-size: 0.9rem;
 }
 .assessment-gradebook th,
 .assessment-gradebook td {
-  border: 1px solid var(--color-border);
-  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--color-border);
+  border-right: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+  padding: 0.35rem 0.55rem;
   text-align: center;
 }
 .assessment-gradebook thead th {
   background: var(--color-surface-muted, #f4f4f4);
   font-weight: 600;
+  font-size: 0.85rem;
   position: sticky;
   top: 0;
+  z-index: 2;
 }
+
+/* Compact rows + subtle alternating treatment — data density without clutter */
+.assessment-gradebook tbody tr {
+  height: 2.1rem;
+}
+.assessment-gradebook tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--color-surface-muted, #f4f4f4) 45%, transparent);
+}
+
+/* --- Sticky identity columns (Student, then Roll No. right beside it) --- */
+.assessment-gradebook__name-header,
 .assessment-gradebook__name-cell {
-  text-align: left;
-  font-weight: 500;
   position: sticky;
   left: 0;
+  z-index: 1;
+  text-align: left;
+  min-width: 150px;
   background: var(--color-surface, #fff);
 }
+.assessment-gradebook thead .assessment-gradebook__name-header {
+  z-index: 3; /* above both the sticky body column and the sticky header row */
+  background: var(--color-surface-muted, #f4f4f4);
+}
+.assessment-gradebook tbody tr:nth-child(even) .assessment-gradebook__name-cell {
+  background: color-mix(in srgb, var(--color-surface-muted, #f4f4f4) 45%, var(--color-surface, #fff));
+}
+.assessment-gradebook__name-cell {
+  font-weight: 500;
+}
+.assessment-gradebook__roll-header,
+.assessment-gradebook__roll-cell {
+  position: sticky;
+  left: 150px; /* directly after the name column's own min-width, so both stay visible together while scrolling */
+  z-index: 1;
+  background: var(--color-surface, #fff);
+}
+.assessment-gradebook thead .assessment-gradebook__roll-header {
+  z-index: 3;
+  background: var(--color-surface-muted, #f4f4f4);
+}
+.assessment-gradebook tbody tr:nth-child(even) .assessment-gradebook__roll-cell {
+  background: color-mix(in srgb, var(--color-surface-muted, #f4f4f4) 45%, var(--color-surface, #fff));
+}
+
+/* --- Subject headers: title + maximum marks --- */
+.assessment-gradebook__subject-header {
+  min-width: 88px;
+}
+.assessment-gradebook__subject-title {
+  display: block;
+}
+.assessment-gradebook__subject-max {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+/* --- Cell inputs: compact, comfortable, strong focus state --- */
 .assessment-gradebook__cell-input {
-  width: 64px;
-  padding: 0.3rem 0.4rem;
-  border: 1px solid var(--color-border);
+  width: 56px;
+  padding: 0.3rem 0.35rem;
+  border: 1px solid transparent;
   border-radius: var(--radius-control);
   text-align: center;
+  background: transparent;
+  font-size: 0.9rem;
+  min-height: 30px; /* keeps touch targets usable on smaller screens without growing the row itself */
+}
+.assessment-gradebook__cell-input:hover {
+  border-color: var(--color-border);
 }
 .assessment-gradebook__cell-input:focus {
   outline: 2px solid var(--color-primary);
   outline-offset: 1px;
+  border-color: var(--color-primary);
+  background: var(--color-surface, #fff);
 }
+
+/* --- Performance colour: a restrained left accent, not a filled cell.
+   The threshold logic/config itself (config/assessmentMarksColorConfig.js)
+   is completely unchanged — only how these three classes are painted. --- */
+.gradebook-cell--high {
+  border-left: 3px solid var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 6%, transparent);
+}
+.gradebook-cell--mid {
+  border-left: 3px solid var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 7%, transparent);
+}
+.gradebook-cell--low {
+  border-left: 3px solid var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 5%, transparent);
+}
+
+/* --- Total / percentage: percentage carries the main performance signal --- */
+.assessment-gradebook__total-cell {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+.assessment-gradebook__percent-cell {
+  font-weight: 700;
+}
+
+/* --- Footer: compact, visually subordinate to the data-entry grid --- */
 .assessment-gradebook tfoot td {
   font-weight: 600;
   background: var(--color-surface-muted, #f4f4f4);
+  font-size: 0.85rem;
 }
-.gradebook-cell--high {
-  background: color-mix(in srgb, var(--color-success) 18%, transparent);
+.assessment-gradebook__footer-label {
+  text-align: left;
+  font-weight: 500;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.03em;
 }
-.gradebook-cell--mid {
-  background: color-mix(in srgb, var(--color-warning) 20%, transparent);
+
+@media (max-width: 640px) {
+  .assessment-gradebook__cell-input {
+    min-height: 34px; /* larger touch target once hover-precision no longer applies */
+  }
 }
-.gradebook-cell--low {
-  background: color-mix(in srgb, var(--color-danger) 14%, transparent);
-}
+

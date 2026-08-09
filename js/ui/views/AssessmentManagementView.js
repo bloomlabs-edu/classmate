@@ -32,7 +32,7 @@ import { openUnsavedChangesModal } from '../components/UnsavedChangesModal.js';
 import * as assessmentService from '../../services/assessmentService.js';
 import * as assessmentImportService from '../../services/assessmentImportService.js';
 import * as workspaceService from '../../services/workspaceService.js';
-import { getCurrentIsoDate } from '../../utils/dateHelpers.js';
+import { getCurrentIsoDate, formatDate } from '../../utils/dateHelpers.js';
 import { getMarksColorClass } from '../../config/assessmentMarksColorConfig.js';
 
 export function renderAssessmentManagementView(container, { classroom, onBack, initialAssessmentId = null, initialView = null, onNavigate = null }) {
@@ -893,40 +893,50 @@ function createLabeledSelect(labelText, options) {
  */
 function renderGradebookStep(classroom, assessment, handlers) {
   const section = document.createElement('div');
-  section.className = 'learning-management__section';
-
-  const heading = document.createElement('p');
-  heading.className = 'learning-management__step-heading';
-  heading.textContent = assessment.title;
-  section.appendChild(heading);
-
-  // Assessment metadata, read-only, at the top — per explicit
-  // requirement to keep it visible without forcing navigation into a
-  // separate screen just to see it. Editing still happens on the
-  // existing Assessment Details screen (mode: 'assessment'),
-  // reachable via this one link — deliberately not duplicating the
-  // edit form itself here.
-  const metaRow = document.createElement('div');
-  metaRow.className = 'assessment-gradebook__meta-row';
-  [
-    ['Type', assessment.type],
-    ['Academic Year', assessment.academicYear],
-    ['Date', assessment.date],
-  ].forEach(([label, value]) => {
-    const item = document.createElement('span');
-    item.className = 'assessment-gradebook__meta-item';
-    item.textContent = `${label}: ${value || '\u2014'}`;
-    metaRow.appendChild(item);
-  });
-  const editDetailsLink = document.createElement('button');
-  editDetailsLink.type = 'button';
-  editDetailsLink.className = 'btn btn--text';
-  editDetailsLink.textContent = 'Edit Details';
-  editDetailsLink.addEventListener('click', handlers.onGoToEditAssessmentDetails);
-  metaRow.appendChild(editDetailsLink);
-  section.appendChild(metaRow);
+  section.className = 'learning-management__section assessment-gradebook__section';
 
   const assessmentSubjects = assessment.assessmentSubjects;
+  const students = [...assessmentService.getClassroomStudents(classroom)].sort((a, b) => a.name.localeCompare(b.name));
+
+  const header = document.createElement('div');
+  header.className = 'assessment-gradebook__header';
+
+  const headerMain = document.createElement('div');
+  headerMain.className = 'assessment-gradebook__header-main';
+
+  const title = document.createElement('h2');
+  title.className = 'assessment-gradebook__title';
+  title.textContent = assessment.title;
+  headerMain.appendChild(title);
+
+  const subtitle = document.createElement('p');
+  subtitle.className = 'assessment-gradebook__subtitle';
+  subtitle.textContent = [assessment.type, formatDate(assessment.date) || assessment.date, assessment.academicYear].filter(Boolean).join(' \u00b7 ');
+  headerMain.appendChild(subtitle);
+
+  header.appendChild(headerMain);
+
+  const editDetailsLink = document.createElement('button');
+  editDetailsLink.type = 'button';
+  editDetailsLink.className = 'btn btn--text assessment-gradebook__edit-link';
+  editDetailsLink.textContent = 'Edit Details';
+  editDetailsLink.addEventListener('click', handlers.onGoToEditAssessmentDetails);
+  header.appendChild(editDetailsLink);
+
+  section.appendChild(header);
+
+  if (assessmentSubjects.length > 0 && students.length > 0) {
+    const totalPossibleEntries = students.length * assessmentSubjects.length;
+    const totalEnteredEntries = assessmentSubjects.reduce(
+      (sum, s) => sum + s.studentResults.filter((r) => r.marks !== null).length,
+      0
+    );
+    const summary = document.createElement('p');
+    summary.className = 'assessment-gradebook__summary';
+    summary.textContent = `${students.length} Student${students.length === 1 ? '' : 's'} \u00b7 ${assessmentSubjects.length} Subject${assessmentSubjects.length === 1 ? '' : 's'} \u00b7 ${totalEnteredEntries}/${totalPossibleEntries} Marks Entered`;
+    section.appendChild(summary);
+  }
+
   if (assessmentSubjects.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'learning-management__intro';
@@ -943,8 +953,6 @@ function renderGradebookStep(classroom, assessment, handlers) {
     return section;
   }
 
-  const students = [...assessmentService.getClassroomStudents(classroom)].sort((a, b) => a.name.localeCompare(b.name));
-
   const tableWrapper = document.createElement('div');
   tableWrapper.className = 'assessment-gradebook__scroll';
   const table = document.createElement('table');
@@ -952,15 +960,25 @@ function renderGradebookStep(classroom, assessment, handlers) {
 
   const thead = document.createElement('thead');
   const headerRow = document.createElement('tr');
-  ['Student', 'Roll No.'].forEach((label) => {
-    const th = document.createElement('th');
-    th.textContent = label;
-    headerRow.appendChild(th);
-  });
+  const studentTh = document.createElement('th');
+  studentTh.className = 'assessment-gradebook__name-header';
+  studentTh.textContent = 'Student';
+  headerRow.appendChild(studentTh);
+  const rollTh = document.createElement('th');
+  rollTh.className = 'assessment-gradebook__roll-header';
+  rollTh.textContent = 'Roll No.';
+  headerRow.appendChild(rollTh);
   assessmentSubjects.forEach((assessmentSubject) => {
     const th = document.createElement('th');
+    th.className = 'assessment-gradebook__subject-header';
     const title = assessmentService.getSubjectTitle(classroom, assessmentSubject.subjectId);
-    th.textContent = title || '(Subject removed)';
+    const titleEl = document.createElement('span');
+    titleEl.className = 'assessment-gradebook__subject-title';
+    titleEl.textContent = title || '(Subject removed)';
+    const maxEl = document.createElement('span');
+    maxEl.className = 'assessment-gradebook__subject-max';
+    maxEl.textContent = `/${assessmentSubject.maximumMarks}`;
+    th.append(titleEl, maxEl);
     headerRow.appendChild(th);
   });
   ['Total', '%'].forEach((label) => {
@@ -981,6 +999,7 @@ function renderGradebookStep(classroom, assessment, handlers) {
     row.appendChild(nameCell);
 
     const rollCell = document.createElement('td');
+    rollCell.className = 'assessment-gradebook__roll-cell';
     rollCell.textContent = student.rollNumber || '\u2014';
     row.appendChild(rollCell);
 
@@ -1028,11 +1047,20 @@ function renderGradebookStep(classroom, assessment, handlers) {
     });
 
     const totalCell = document.createElement('td');
+    totalCell.className = 'assessment-gradebook__total-cell';
     totalCell.textContent = totalMaximum > 0 ? `${totalMarks} / ${totalMaximum}` : '\u2014';
     row.appendChild(totalCell);
 
     const percentCell = document.createElement('td');
-    percentCell.textContent = totalMaximum > 0 ? `${Math.round((totalMarks / totalMaximum) * 100)}%` : '\u2014';
+    percentCell.className = 'assessment-gradebook__percent-cell';
+    if (totalMaximum > 0) {
+      const percent = Math.round((totalMarks / totalMaximum) * 100);
+      percentCell.textContent = `${percent}%`;
+      const percentColorClass = getMarksColorClass(percent, 100);
+      if (percentColorClass) percentCell.classList.add(percentColorClass);
+    } else {
+      percentCell.textContent = '\u2014';
+    }
     row.appendChild(percentCell);
 
     tbody.appendChild(row);
@@ -1043,6 +1071,7 @@ function renderGradebookStep(classroom, assessment, handlers) {
 
   const averageRow = document.createElement('tr');
   const averageLabel = document.createElement('td');
+  averageLabel.className = 'assessment-gradebook__footer-label';
   averageLabel.colSpan = 2;
   averageLabel.textContent = 'Class Average';
   averageRow.appendChild(averageLabel);
@@ -1057,6 +1086,7 @@ function renderGradebookStep(classroom, assessment, handlers) {
 
   const enteredRow = document.createElement('tr');
   const enteredLabel = document.createElement('td');
+  enteredLabel.className = 'assessment-gradebook__footer-label';
   enteredLabel.colSpan = 2;
   enteredLabel.textContent = 'Marks Entered';
   enteredRow.appendChild(enteredLabel);
