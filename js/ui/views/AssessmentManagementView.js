@@ -32,6 +32,8 @@ import { openUnsavedChangesModal } from '../components/UnsavedChangesModal.js';
 import * as assessmentService from '../../services/assessmentService.js';
 import * as assessmentImportService from '../../services/assessmentImportService.js';
 import * as workspaceService from '../../services/workspaceService.js';
+import { getCurrentIsoDate } from '../../utils/dateHelpers.js';
+import { getMarksColorClass } from '../../config/assessmentMarksColorConfig.js';
 
 export function renderAssessmentManagementView(container, { classroom, onBack }) {
   let mode = 'home';
@@ -59,6 +61,21 @@ export function renderAssessmentManagementView(container, { classroom, onBack })
   let isEditingAssessmentDetails = false;
   let assessmentDetailsDraft = null;
   let hasUnsavedAssessmentDetailsChanges = false;
+
+  // The Gradebook (see renderGradebookStep() below) autosaves rather
+  // than using the marksDraft/Save-button pattern above — each edit
+  // updates `classroom` in memory immediately (so the grid always
+  // reflects the latest value), but the actual Firestore write is
+  // debounced, per the explicit "avoid one write per keystroke"
+  // requirement. One shared debounce handle for the whole grid (not
+  // per-cell) — simpler, and a teacher entering many marks in a row
+  // already naturally batches into one write shortly after they
+  // pause. dirtySubjectsSinceLastSave tracks every AssessmentSubject
+  // touched since the last flush, since edits can span more than one
+  // subject column within a single debounce window.
+  let gradebookSaveTimeoutId = null;
+  const dirtySubjectsSinceLastSave = new Set();
+  const GRADEBOOK_SAVE_DEBOUNCE_MS = 800;
 
   // Assessment Import — Phase 1 (see services/assessmentImportService.js's
   // own header comment for the full architecture). Everything here is
@@ -118,6 +135,11 @@ export function renderAssessmentManagementView(container, { classroom, onBack })
    * or Student Marks that's unsaved.
    */
   function navigateAwayGuard(proceed) {
+    if (mode === 'gradebook') {
+      flushGradebookSave();
+      proceed();
+      return;
+    }
     if (mode === 'subject' && hasUnsavedMarksChanges) {
       openUnsavedChangesModal({
         onSave: () => {
@@ -151,7 +173,49 @@ export function renderAssessmentManagementView(container, { classroom, onBack })
     proceed();
   }
 
+  /** Flushes any pending debounced Gradebook save immediately — called before navigating away, so nothing is ever silently lost to an in-flight debounce. */
+  function flushGradebookSave() {
+    if (gradebookSaveTimeoutId === null) return;
+    clearTimeout(gradebookSaveTimeoutId);
+    gradebookSaveTimeoutId = null;
+    const now = getCurrentIsoDate();
+    dirtySubjectsSinceLastSave.forEach((assessmentSubject) => {
+      assessmentSubject.lastSavedAt = now;
+    });
+    dirtySubjectsSinceLastSave.clear();
+    workspaceService.save(classroom);
+  }
+
+  function scheduleGradebookSave(assessmentSubject) {
+    dirtySubjectsSinceLastSave.add(assessmentSubject);
+    if (gradebookSaveTimeoutId !== null) clearTimeout(gradebookSaveTimeoutId);
+    gradebookSaveTimeoutId = setTimeout(() => {
+      gradebookSaveTimeoutId = null;
+      const now = getCurrentIsoDate();
+      dirtySubjectsSinceLastSave.forEach((subject) => {
+        subject.lastSavedAt = now;
+      });
+      dirtySubjectsSinceLastSave.clear();
+      workspaceService.save(classroom);
+    }, GRADEBOOK_SAVE_DEBOUNCE_MS);
+  }
+
+  /**
+   * The one place a Gradebook cell edit is applied — updates
+   * `classroom` in memory immediately via the same, already-existing
+   * recordStudentMarks() every other marks-entry path in this file
+   * uses, then debounces the actual Firestore write. `marks` is
+   * either a finite number or null (blank) — never coerced to 0, per
+   * the same convention renderEditableStudentRow() above already
+   * uses for the per-subject marks-entry screen.
+   */
+  function applyGradebookMarksEdit(assessmentSubject, studentId, marks) {
+    assessmentService.recordStudentMarks(assessmentSubject, studentId, { marks });
+    scheduleGradebookSave(assessmentSubject);
+  }
+
   const handlers = {
+    onGradebookMarksEdit: applyGradebookMarksEdit,
     onBack,
     onGoToCreateAssessment: () => {
       openCreateAssessmentModal({
@@ -164,7 +228,7 @@ export function renderAssessmentManagementView(container, { classroom, onBack })
         selectedAssessment = assessment;
         isEditingAssessmentDetails = false;
         hasUnsavedAssessmentDetailsChanges = false;
-        mode = 'assessment';
+        mode = 'gradebook';
         rerender();
       });
     },
@@ -322,6 +386,7 @@ export function renderAssessmentManagementView(container, { classroom, onBack })
       isEditingAssessmentDetails = true;
       assessmentDetailsDraft = buildAssessmentDetailsDraftFrom(selectedAssessment);
       hasUnsavedAssessmentDetailsChanges = false;
+      mode = 'assessment';
       rerender();
     },
     onDraftAssessmentDetailsChange: (updates) => {
@@ -361,7 +426,7 @@ function renderView(container, mode, state, handlers) {
   const backButton = createBackButton(() => {
     if (isEntryStep) return handlers.onBack();
     if (mode === 'import-review') return handlers.onCancelImport();
-    const previous = { assessment: 'home', subject: 'assessment' }[mode];
+    const previous = { assessment: 'gradebook', subject: 'assessment', gradebook: 'home' }[mode];
     handlers.onBackTo(previous);
   });
   header.appendChild(backButton);
@@ -375,6 +440,8 @@ function renderView(container, mode, state, handlers) {
 
   if (mode === 'assessment') {
     wrapper.appendChild(renderAssessmentStep(state.classroom, state.selectedAssessment, state.isEditingAssessmentDetails, state.assessmentDetailsDraft, handlers));
+  } else if (mode === 'gradebook') {
+    wrapper.appendChild(renderGradebookStep(state.classroom, state.selectedAssessment, handlers));
   } else if (mode === 'subject') {
     wrapper.appendChild(
       renderSubjectStep(state.classroom, state.selectedAssessment, state.selectedAssessmentSubject, state.sortBy, state.isEditingMarks, state.marksDraft, handlers)
@@ -788,6 +855,300 @@ function createLabeledSelect(labelText, options) {
  * form": nothing elsewhere on this screen reacts to an edit that
  * hasn't been saved yet.
  */
+/**
+ * The Gradebook — the new primary screen shown when an Assessment is
+ * opened, per explicit product decision: a single grid of every
+ * student x every subject, rather than navigating into one subject
+ * at a time (see renderSubjectStep() below, kept intact and still
+ * reachable, but no longer the default path).
+ *
+ * Reuses the exact same data primitives every other screen in this
+ * file already uses — assessmentService.getClassroomStudents(),
+ * getSubjectTitle(), getStudentResult(), recordStudentMarks() (via
+ * applyGradebookMarksEdit() above) — no new data-model concept at
+ * all, only a new way of rendering and editing the same data.
+ *
+ * Autosaves (debounced — see scheduleGradebookSave() above) rather
+ * than using the View/Edit + Save button pattern the rest of this
+ * file uses, per the explicit "avoid a separate Save click for every
+ * mark" requirement.
+ *
+ * A plain HTML <table> is deliberate, not just a styling choice: it
+ * gives correct, native row-major Tab order for free (each row's
+ * cells in subject order, rows in student order) — "Tab moves right"
+ * falls out of the browser's own default behavior, with no custom JS
+ * needed for that specific requirement.
+ */
+function renderGradebookStep(classroom, assessment, handlers) {
+  const section = document.createElement('div');
+  section.className = 'learning-management__section';
+
+  const heading = document.createElement('p');
+  heading.className = 'learning-management__step-heading';
+  heading.textContent = assessment.title;
+  section.appendChild(heading);
+
+  // Assessment metadata, read-only, at the top — per explicit
+  // requirement to keep it visible without forcing navigation into a
+  // separate screen just to see it. Editing still happens on the
+  // existing Assessment Details screen (mode: 'assessment'),
+  // reachable via this one link — deliberately not duplicating the
+  // edit form itself here.
+  const metaRow = document.createElement('div');
+  metaRow.className = 'assessment-gradebook__meta-row';
+  [
+    ['Type', assessment.type],
+    ['Academic Year', assessment.academicYear],
+    ['Date', assessment.date],
+  ].forEach(([label, value]) => {
+    const item = document.createElement('span');
+    item.className = 'assessment-gradebook__meta-item';
+    item.textContent = `${label}: ${value || '\u2014'}`;
+    metaRow.appendChild(item);
+  });
+  const editDetailsLink = document.createElement('button');
+  editDetailsLink.type = 'button';
+  editDetailsLink.className = 'btn btn--text';
+  editDetailsLink.textContent = 'Edit Details';
+  editDetailsLink.addEventListener('click', handlers.onGoToEditAssessmentDetails);
+  metaRow.appendChild(editDetailsLink);
+  section.appendChild(metaRow);
+
+  const assessmentSubjects = assessment.assessmentSubjects;
+  if (assessmentSubjects.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'learning-management__intro';
+    empty.textContent = 'No subjects yet — add one to start entering marks.';
+    section.appendChild(empty);
+
+    const addButton = document.createElement('button');
+    addButton.type = 'button';
+    addButton.className = 'btn btn--primary';
+    addButton.textContent = '+ Add Subject';
+    addButton.addEventListener('click', handlers.onGoToAddSubject);
+    section.appendChild(addButton);
+
+    return section;
+  }
+
+  const students = [...assessmentService.getClassroomStudents(classroom)].sort((a, b) => a.name.localeCompare(b.name));
+
+  const tableWrapper = document.createElement('div');
+  tableWrapper.className = 'assessment-gradebook__scroll';
+  const table = document.createElement('table');
+  table.className = 'assessment-gradebook';
+
+  const thead = document.createElement('thead');
+  const headerRow = document.createElement('tr');
+  ['Student', 'Roll No.'].forEach((label) => {
+    const th = document.createElement('th');
+    th.textContent = label;
+    headerRow.appendChild(th);
+  });
+  assessmentSubjects.forEach((assessmentSubject) => {
+    const th = document.createElement('th');
+    const title = assessmentService.getSubjectTitle(classroom, assessmentSubject.subjectId);
+    th.textContent = title || '(Subject removed)';
+    headerRow.appendChild(th);
+  });
+  ['Total', '%'].forEach((label) => {
+    const th = document.createElement('th');
+    th.textContent = label;
+    headerRow.appendChild(th);
+  });
+  thead.appendChild(headerRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  students.forEach((student, rowIndex) => {
+    const row = document.createElement('tr');
+
+    const nameCell = document.createElement('td');
+    nameCell.className = 'assessment-gradebook__name-cell';
+    nameCell.textContent = student.name;
+    row.appendChild(nameCell);
+
+    const rollCell = document.createElement('td');
+    rollCell.textContent = student.rollNumber || '\u2014';
+    row.appendChild(rollCell);
+
+    let totalMarks = 0;
+    let totalMaximum = 0;
+
+    assessmentSubjects.forEach((assessmentSubject, colIndex) => {
+      const cell = document.createElement('td');
+      const existingResult = assessmentService.getStudentResult(assessmentSubject, student.id);
+      const marks = existingResult ? existingResult.marks : null;
+
+      if (marks !== null) {
+        totalMarks += marks;
+        totalMaximum += assessmentSubject.maximumMarks;
+      }
+
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.className = 'assessment-gradebook__cell-input';
+      input.value = marks !== null ? marks : '';
+      input.dataset.row = String(rowIndex);
+      input.dataset.col = String(colIndex);
+
+      const colorClass = getMarksColorClass(marks, assessmentSubject.maximumMarks);
+      if (colorClass) cell.classList.add(colorClass);
+
+      input.addEventListener('change', () => {
+        const value = input.value === '' ? null : Number(input.value);
+        handlers.onGradebookMarksEdit(assessmentSubject, student.id, value);
+        cell.classList.remove('gradebook-cell--high', 'gradebook-cell--mid', 'gradebook-cell--low');
+        const newColorClass = getMarksColorClass(value, assessmentSubject.maximumMarks);
+        if (newColorClass) cell.classList.add(newColorClass);
+      });
+
+      input.addEventListener('keydown', (event) => {
+        handleGradebookCellKeydown(event, tbody, rowIndex, colIndex, students.length, assessmentSubjects.length);
+      });
+
+      input.addEventListener('paste', (event) => {
+        handleGradebookPaste(event, tbody, rowIndex, colIndex, students, assessmentSubjects, handlers.onGradebookMarksEdit);
+      });
+
+      cell.appendChild(input);
+      row.appendChild(cell);
+    });
+
+    const totalCell = document.createElement('td');
+    totalCell.textContent = totalMaximum > 0 ? `${totalMarks} / ${totalMaximum}` : '\u2014';
+    row.appendChild(totalCell);
+
+    const percentCell = document.createElement('td');
+    percentCell.textContent = totalMaximum > 0 ? `${Math.round((totalMarks / totalMaximum) * 100)}%` : '\u2014';
+    row.appendChild(percentCell);
+
+    tbody.appendChild(row);
+  });
+  table.appendChild(tbody);
+
+  const tfoot = document.createElement('tfoot');
+
+  const averageRow = document.createElement('tr');
+  const averageLabel = document.createElement('td');
+  averageLabel.colSpan = 2;
+  averageLabel.textContent = 'Class Average';
+  averageRow.appendChild(averageLabel);
+  assessmentSubjects.forEach((assessmentSubject) => {
+    const enteredMarks = assessmentSubject.studentResults.filter((r) => r.marks !== null).map((r) => r.marks);
+    const cell = document.createElement('td');
+    cell.textContent = enteredMarks.length > 0 ? (enteredMarks.reduce((a, b) => a + b, 0) / enteredMarks.length).toFixed(1) : '\u2014';
+    averageRow.appendChild(cell);
+  });
+  averageRow.append(document.createElement('td'), document.createElement('td'));
+  tfoot.appendChild(averageRow);
+
+  const enteredRow = document.createElement('tr');
+  const enteredLabel = document.createElement('td');
+  enteredLabel.colSpan = 2;
+  enteredLabel.textContent = 'Marks Entered';
+  enteredRow.appendChild(enteredLabel);
+  assessmentSubjects.forEach((assessmentSubject) => {
+    const enteredCount = assessmentSubject.studentResults.filter((r) => r.marks !== null).length;
+    const cell = document.createElement('td');
+    cell.textContent = `${enteredCount} / ${students.length}`;
+    enteredRow.appendChild(cell);
+  });
+  enteredRow.append(document.createElement('td'), document.createElement('td'));
+  tfoot.appendChild(enteredRow);
+
+  table.appendChild(tfoot);
+  tableWrapper.appendChild(table);
+  section.appendChild(tableWrapper);
+
+  return section;
+}
+
+/**
+ * Enter commits (already done via the input's own 'change' event,
+ * which fires on blur — moving focus away triggers it naturally) and
+ * moves DOWN to the same subject column, next student. Tab's own
+ * "move right" is native browser behavior, needing no handling here
+ * at all — only Enter and the arrow keys need custom handling, since
+ * their native behavior (form submission attempt / number spinner
+ * increment) isn't what a spreadsheet-like grid needs.
+ */
+function handleGradebookCellKeydown(event, tbody, rowIndex, colIndex, totalRows, totalCols) {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    focusGradebookCell(tbody, rowIndex + 1, colIndex);
+  } else if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    focusGradebookCell(tbody, rowIndex + 1, colIndex);
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    focusGradebookCell(tbody, rowIndex - 1, colIndex);
+  } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+    // type="number" inputs don't support selectionStart/selectionEnd
+    // at all (per the HTML spec — only text/search/url/tel/password
+    // do) and throw if accessed directly; caret-position awareness
+    // is nice-to-have, not required, so this falls back to always
+    // moving focus rather than letting that throw uncaught.
+    let atBoundary = true;
+    try {
+      atBoundary =
+        event.key === 'ArrowLeft' ? event.target.selectionStart === 0 : event.target.selectionStart === event.target.value.length;
+    } catch {
+      atBoundary = true;
+    }
+    if (atBoundary) {
+      focusGradebookCell(tbody, rowIndex, colIndex + (event.key === 'ArrowRight' ? 1 : -1));
+    }
+  }
+}
+
+function focusGradebookCell(tbody, rowIndex, colIndex) {
+  const input = tbody.querySelector(`input[data-row="${rowIndex}"][data-col="${colIndex}"]`);
+  if (input) input.focus();
+}
+
+/**
+ * Vertical column paste (the minimum required) and rectangular range
+ * paste (supported the same way, since a single row of pasted text
+ * is simply a 1-row rectangle) — split first by newline (rows), then
+ * by tab (columns), and apply positionally starting from the focused
+ * cell, clamped to the grid's own real bounds. Deliberately does not
+ * reuse services/assessmentImportService.js — that module solves a
+ * different problem (fuzzy-matching unordered, externally-named rows
+ * to students for a file upload); a paste into an already-visible,
+ * already-ordered grid needs no matching at all, only positional
+ * mapping.
+ */
+function handleGradebookPaste(event, tbody, startRow, startCol, students, assessmentSubjects, applyEdit) {
+  const text = event.clipboardData?.getData('text');
+  if (!text) return;
+  event.preventDefault();
+
+  const rows = text.replace(/\r/g, '').split('\n').filter((line, i, arr) => !(i === arr.length - 1 && line === ''));
+
+  rows.forEach((line, rowOffset) => {
+    const targetRow = startRow + rowOffset;
+    if (targetRow >= students.length) return;
+    const student = students[targetRow];
+
+    const cells = line.split('\t');
+    cells.forEach((rawValue, colOffset) => {
+      const targetCol = startCol + colOffset;
+      if (targetCol >= assessmentSubjects.length) return;
+      const assessmentSubject = assessmentSubjects[targetCol];
+
+      const trimmed = rawValue.trim();
+      const value = trimmed === '' ? null : Number(trimmed);
+      if (value !== null && !Number.isFinite(value)) return; // skip non-numeric cells rather than writing garbage
+
+      applyEdit(assessmentSubject, student.id, value);
+
+      const input = tbody.querySelector(`input[data-row="${targetRow}"][data-col="${targetCol}"]`);
+      if (input) input.value = value !== null ? value : '';
+    });
+  });
+}
+
 function renderSubjectStep(classroom, assessment, assessmentSubject, sortBy, isEditing, draft, handlers) {
   const section = document.createElement('div');
   section.className = 'learning-management__section';

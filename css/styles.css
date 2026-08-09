@@ -8311,3 +8311,68 @@ button.wizard-checklist__row:hover {
   font-weight: bold;
   fill: var(--color-ink);
 }
+
+/* Assessment Gradebook — see ui/views/AssessmentManagementView.js's renderGradebookStep() */
+.assessment-gradebook__meta-row {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.assessment-gradebook__meta-item {
+  color: var(--color-ink);
+  font-size: 0.9rem;
+}
+.assessment-gradebook__scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.assessment-gradebook {
+  border-collapse: collapse;
+  min-width: 100%;
+  white-space: nowrap;
+}
+.assessment-gradebook th,
+.assessment-gradebook td {
+  border: 1px solid var(--color-border);
+  padding: 0.4rem 0.6rem;
+  text-align: center;
+}
+.assessment-gradebook thead th {
+  background: var(--color-surface-muted, #f4f4f4);
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+}
+.assessment-gradebook__name-cell {
+  text-align: left;
+  font-weight: 500;
+  position: sticky;
+  left: 0;
+  background: var(--color-surface, #fff);
+}
+.assessment-gradebook__cell-input {
+  width: 64px;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  text-align: center;
+}
+.assessment-gradebook__cell-input:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+.assessment-gradebook tfoot td {
+  font-weight: 600;
+  background: var(--color-surface-muted, #f4f4f4);
+}
+.gradebook-cell--high {
+  background: color-mix(in srgb, var(--color-success) 18%, transparent);
+}
+.gradebook-cell--mid {
+  background: color-mix(in srgb, var(--color-warning) 20%, transparent);
+}
+.gradebook-cell--low {
+  background: color-mix(in srgb, var(--color-danger) 14%, transparent);
+}
