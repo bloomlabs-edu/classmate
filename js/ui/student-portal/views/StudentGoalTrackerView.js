@@ -45,6 +45,7 @@ import { createBackButton } from '../../components/BackButton.js';
 import { createEmptyStateElement } from '../../components/EmptyState.js';
 import { getTodayDateKey } from '../../../utils/dateHelpers.js';
 import { getActiveProfile } from '../../../services/studentDeviceService.js';
+import { createPostAsCurrentStudent } from '../../../services/feedService.js';
 
 // Module-level, not closure-scoped inside renderStudentGoalTrackerView()
 // below — confirmed, this screen is re-invoked from scratch (a fresh
@@ -156,6 +157,14 @@ export async function renderStudentGoalTrackerView(container, { onBack }) {
       },
       onToggleCompletion: async (goalId, completed) => {
         await setGoalCompletionForCurrentStudent(goalId, getTodayDateKey(), completed);
+        await rerender();
+      },
+      onShareGoal: async (category) => {
+        const postId = await createPostAsCurrentStudent({
+          text: `\ud83c\udfaf Completed my ${category.categoryName} goal!\n\u201C${category.goal.text}\u201D`,
+          source: { type: 'goal_completed', payload: { goalId: category.goal.id } },
+        });
+        window.alert(postId ? 'Shared with your class! \ud83c\udf89' : 'Something went wrong sharing this. Please try again.');
         await rerender();
       },
     };
@@ -390,6 +399,13 @@ function renderCategoryCard(category, handlers) {
     createStatChip('Completion', `${category.goal.overallCompletionPercent}%`)
   );
   card.appendChild(stats);
+
+  const shareButton = document.createElement('button');
+  shareButton.type = 'button';
+  shareButton.className = 'btn btn--text student-goal-card__share';
+  shareButton.textContent = 'Share with my class \u2192';
+  shareButton.addEventListener('click', () => handlers.onShareGoal(category));
+  card.appendChild(shareButton);
 
   return card;
 }

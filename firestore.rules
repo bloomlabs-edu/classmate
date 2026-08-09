@@ -230,6 +230,70 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ---------------------------------------------------------------
+    // Class Feed
+    // ---------------------------------------------------------------
+    //
+    // Mirrors studentGoals' own, already-proven pattern exactly: a
+    // student writes only as themselves (request.resource.data.uid ==
+    // request.auth.uid), never a client-supplied studentId taken at
+    // face value.
+    //
+    // HONEST NOTE, not a new weakening: `allow read` here is
+    // deliberately broader than studentGoals' own read rule — any
+    // classmate genuinely needs to see every post in a shared feed,
+    // which studentGoals never required. This is real, and worth its
+    // own explicit acknowledgment: without a studentAuthLinks-style
+    // mapping (removed earlier in this project's history), no rule
+    // anywhere in this file — including studentGoals' own existing
+    // create rule — can cryptographically prove a given anonymous uid
+    // genuinely belongs to a real student in THIS classroom, as
+    // opposed to some other classroom's own anonymous device. Feed
+    // posts inherit exactly the same trust level every other
+    // student-authored collection in this file already has today;
+    // this is not a new gap introduced for this feature.
+    match /classrooms/{classroomId}/feedPosts/{postId} {
+      allow read: if request.auth != null;
+
+      allow create: if request.auth != null &&
+        request.resource.data.uid == request.auth.uid;
+
+      // Any authenticated classmate may touch reactorUids/commentCount
+      // on ANY post — reacting to or commenting on someone else's
+      // post is the entire point, so this is deliberately not
+      // author-restricted. Firestore rules can't cheaply verify a
+      // student only adds/removes their own uid from the array
+      // without significantly more complex logic; accepted as a
+      // low-stakes, explicit MVP trade-off — the worst case is a
+      // cosmetic miscount, not a privacy or security issue. A
+      // teacher member may additionally flip removedByTeacher and/or
+      // media, and ONLY those fields.
+      allow update: if request.auth != null && (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactorUids', 'commentCount']) ||
+        (
+          request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['removedByTeacher', 'media'])
+        )
+      );
+
+      allow delete: if request.auth != null &&
+        (resource.data.uid == request.auth.uid ||
+         request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids);
+
+      match /comments/{commentId} {
+        allow read: if request.auth != null;
+
+        allow create: if request.auth != null &&
+          request.resource.data.uid == request.auth.uid;
+
+        allow delete: if request.auth != null &&
+          (resource.data.uid == request.auth.uid ||
+           request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids);
+
+        allow update: if false;
+      }
+    }
+
     // Legacy, pre-sharing location — migration-only (see
     // services/workspaceService.js). Nothing new is ever written here.
     //

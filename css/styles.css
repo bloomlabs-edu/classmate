@@ -8510,3 +8510,183 @@ button.wizard-checklist__row:hover {
   }
 }
 
+/* Class Feed — Student (see ui/student-portal/views/StudentFeedView.js) and
+   Teacher (see ui/views/FeedModerationView.js). Deliberately calm and
+   plain — no gradients, no heavy shadows, no engagement-counter chrome. */
+.student-feed__header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.student-feed__share-button {
+  width: 100%;
+  margin-bottom: 1rem;
+}
+.student-feed__composer {
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+.student-feed__composer-input {
+  width: 100%;
+  min-height: 70px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: 0.6rem;
+  font-family: inherit;
+  font-size: 0.95rem;
+  resize: vertical;
+}
+.student-feed__composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+.student-feed__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.student-feed__card {
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  padding: 1rem;
+}
+.student-feed__card-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+.student-feed__author {
+  font-weight: var(--font-weight-bold);
+}
+.student-feed__time {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+.student-feed__text {
+  margin: 0 0 0.5rem;
+  white-space: pre-wrap;
+  line-height: 1.4;
+}
+.student-feed__media-state {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  font-style: italic;
+  margin: 0 0 0.5rem;
+}
+.student-feed__source-link {
+  display: inline-block;
+  margin-bottom: 0.5rem;
+  padding: 0;
+}
+.student-feed__actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.4rem;
+}
+.student-feed__reaction,
+.student-feed__comment-toggle {
+  background: none;
+  border: none;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+  border-radius: var(--radius-control);
+  color: var(--color-ink);
+}
+.student-feed__reaction--active {
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+}
+.student-feed__delete {
+  margin-left: auto;
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+.student-feed__comments {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.student-feed__comment {
+  display: flex;
+  gap: 0.4rem;
+  font-size: 0.88rem;
+  align-items: baseline;
+}
+.student-feed__comment-author {
+  font-weight: var(--font-weight-bold);
+}
+.student-feed__comment-delete {
+  margin-left: auto;
+  font-size: 0.75rem;
+  opacity: 0.7;
+  padding: 0;
+}
+.student-feed__comment-composer {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+}
+.student-feed__comment-composer input {
+  flex: 1;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: 0.4rem 0.6rem;
+  font-size: 0.88rem;
+}
+
+/* Teacher-side */
+.feed-moderation__banner {
+  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-control);
+  padding: 0.6rem 0.9rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+.feed-moderation__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.feed-moderation__card {
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 0.9rem;
+}
+.feed-moderation__card--pending {
+  border-left: 3px solid var(--color-warning);
+}
+.feed-moderation__author {
+  font-weight: var(--font-weight-bold);
+}
+.feed-moderation__text {
+  margin: 0.4rem 0;
+  white-space: pre-wrap;
+}
+.feed-moderation__media-line {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  margin: 0 0 0.5rem;
+}
+.feed-moderation__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.feed-moderation__footer-actions {
+  display: flex;
+  justify-content: flex-end;
+}

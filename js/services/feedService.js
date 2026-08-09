@@ -1,0 +1,196 @@
+/**
+ * services/feedService.js
+ *
+ * The single service both StudentFeedView.js (student) and
+ * FeedModerationView.js (teacher) call for everything Class Feed —
+ * mirrors studentGoalsService.js's own exact split: student writes go
+ * through their own per-slot Firestore instance (so request.auth.uid
+ * on the wire is genuinely their own linked identity), teacher
+ * actions go through the teacher's own default-app instance, already
+ * trusted via memberUids like every other classroom-scoped write.
+ */
+
+import * as studentAuthService from './studentAuthService.js';
+import * as studentDeviceService from './studentDeviceService.js';
+import * as feedRepository from '../repositories/firestoreFeedRepository.js';
+
+/**
+ * Every post for the current student's own classroom, newest-first,
+ * with teacher-removed posts and other students' still-pending media
+ * filtered out — a student sees their OWN pending media (with a
+ * clear "awaiting approval" state, handled by the view), never
+ * anyone else's.
+ */
+export async function getFeedForCurrentStudent() {
+  const activeProfile = studentDeviceService.getActiveProfile();
+  if (!activeProfile) return [];
+
+  const slotIndex = studentDeviceService.getSlotForStudent(activeProfile.studentId);
+  if (slotIndex === null) return [];
+
+  const db = studentAuthService.getFirestoreForSlot(slotIndex);
+  const posts = await feedRepository.listPosts(db, activeProfile.classroomId);
+
+  return posts.filter((post) => {
+    if (post.removedByTeacher) return false;
+    if (post.media && post.media.status === 'pending' && post.studentId !== activeProfile.studentId) return false;
+    if (post.media && post.media.status === 'rejected' && post.studentId !== activeProfile.studentId) return false;
+    return true;
+  });
+}
+
+/**
+ * Creates a free-form or ClassMate-generated post as the current
+ * student. `source`, when present, is shaped exactly like a
+ * StudentEvent's own { type, payload } (see
+ * config/studentEventNavigation.js) — reused, not reinvented.
+ *
+ * Returns the new postId on success, or null on a genuine failure
+ * (caller should treat null as "did not persist," matching the same
+ * explicit convention submitGoalForCurrentStudent() already uses).
+ */
+export async function createPostAsCurrentStudent({ text, source = null }) {
+  const activeProfile = studentDeviceService.getActiveProfile();
+  if (!activeProfile) return null;
+
+  const slotIndex = studentDeviceService.getSlotForStudent(activeProfile.studentId);
+  if (slotIndex === null) return null;
+
+  const db = studentAuthService.getFirestoreForSlot(slotIndex);
+  const uid = await studentAuthService.ensureAnonymousSignIn(slotIndex);
+
+  try {
+    return await feedRepository.createPost(db, {
+      classroomId: activeProfile.classroomId,
+      studentId: activeProfile.studentId,
+      uid,
+      authorName: activeProfile.studentName,
+      text,
+      source,
+    });
+  } catch (error) {
+    console.error('[feedService] createPostAsCurrentStudent() failed \u2014 the write was rejected:', error);
+    return null;
+  }
+}
+
+export async function toggleReactionAsCurrentStudent(postId, isReacting) {
+  const activeProfile = studentDeviceService.getActiveProfile();
+  if (!activeProfile) return false;
+
+  const slotIndex = studentDeviceService.getSlotForStudent(activeProfile.studentId);
+  if (slotIndex === null) return false;
+
+  const db = studentAuthService.getFirestoreForSlot(slotIndex);
+  const uid = await studentAuthService.ensureAnonymousSignIn(slotIndex);
+
+  try {
+    await feedRepository.toggleReaction(db, activeProfile.classroomId, postId, uid, isReacting);
+    return true;
+  } catch (error) {
+    console.error('[feedService] toggleReactionAsCurrentStudent() failed:', error);
+    return false;
+  }
+}
+
+/** Only the post's own author can succeed here — firestore.rules enforces this, not this function. */
+export async function deleteOwnPost(postId) {
+  const activeProfile = studentDeviceService.getActiveProfile();
+  if (!activeProfile) return false;
+
+  const slotIndex = studentDeviceService.getSlotForStudent(activeProfile.studentId);
+  if (slotIndex === null) return false;
+
+  const db = studentAuthService.getFirestoreForSlot(slotIndex);
+
+  try {
+    await feedRepository.deletePost(db, activeProfile.classroomId, postId);
+    return true;
+  } catch (error) {
+    console.error('[feedService] deleteOwnPost() failed:', error);
+    return false;
+  }
+}
+
+export async function addCommentAsCurrentStudent(postId, text) {
+  const activeProfile = studentDeviceService.getActiveProfile();
+  if (!activeProfile) return null;
+
+  const slotIndex = studentDeviceService.getSlotForStudent(activeProfile.studentId);
+  if (slotIndex === null) return null;
+
+  const db = studentAuthService.getFirestoreForSlot(slotIndex);
+  const uid = await studentAuthService.ensureAnonymousSignIn(slotIndex);
+
+  try {
+    return await feedRepository.addComment(db, activeProfile.classroomId, postId, {
+      studentId: activeProfile.studentId,
+      uid,
+      authorName: activeProfile.studentName,
+      text,
+    });
+  } catch (error) {
+    console.error('[feedService] addCommentAsCurrentStudent() failed:', error);
+    return null;
+  }
+}
+
+export async function listCommentsForCurrentStudent(postId) {
+  const activeProfile = studentDeviceService.getActiveProfile();
+  if (!activeProfile) return [];
+
+  const slotIndex = studentDeviceService.getSlotForStudent(activeProfile.studentId);
+  if (slotIndex === null) return [];
+
+  const db = studentAuthService.getFirestoreForSlot(slotIndex);
+  return feedRepository.listComments(db, activeProfile.classroomId, postId);
+}
+
+export async function deleteOwnComment(postId, commentId) {
+  const activeProfile = studentDeviceService.getActiveProfile();
+  if (!activeProfile) return false;
+
+  const slotIndex = studentDeviceService.getSlotForStudent(activeProfile.studentId);
+  if (slotIndex === null) return false;
+
+  const db = studentAuthService.getFirestoreForSlot(slotIndex);
+
+  try {
+    await feedRepository.deleteComment(db, activeProfile.classroomId, postId, commentId);
+    return true;
+  } catch (error) {
+    console.error('[feedService] deleteOwnComment() failed:', error);
+    return false;
+  }
+}
+
+// --- Teacher-side, all via the teacher's own default-app instance ---
+
+export async function getFeedForClassroom(classroomId) {
+  const posts = await feedRepository.listPosts(feedRepository.teacherFirestore(), classroomId);
+  return posts.filter((post) => !post.removedByTeacher);
+}
+
+export function getPendingMediaPosts(posts) {
+  return posts.filter((post) => post.media && post.media.status === 'pending');
+}
+
+export async function approveMedia(classroomId, postId) {
+  await feedRepository.setMediaStatus(classroomId, postId, 'approved');
+}
+
+export async function rejectMedia(classroomId, postId) {
+  await feedRepository.setMediaStatus(classroomId, postId, 'rejected');
+}
+
+export async function removePostAsTeacher(classroomId, postId) {
+  await feedRepository.removePostAsTeacher(classroomId, postId);
+}
+
+export async function listCommentsForTeacher(classroomId, postId) {
+  return feedRepository.listComments(feedRepository.teacherFirestore(), classroomId, postId);
+}
+
+export async function removeCommentAsTeacher(classroomId, postId, commentId) {
+  await feedRepository.deleteComment(feedRepository.teacherFirestore(), classroomId, postId, commentId);
+}

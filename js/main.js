@@ -35,6 +35,7 @@ import * as studentPortalDataService from './services/studentPortalDataService.j
 import { renderStudentJourneyView } from './ui/student-portal/views/StudentJourneyView.js';
 import { renderStudentAssessmentResultsView } from './ui/student-portal/views/StudentAssessmentResultsView.js';
 import { renderStudentGoalTrackerView } from './ui/student-portal/views/StudentGoalTrackerView.js';
+import { renderStudentFeedView } from './ui/student-portal/views/StudentFeedView.js';
 import * as studentAuthService from './services/studentAuthService.js';
 import { renderStudentTeamView } from './ui/student-portal/views/StudentTeamView.js';
 import { renderStudentTeamDetailView } from './ui/student-portal/views/StudentTeamDetailView.js';
@@ -46,6 +47,7 @@ import { renderCurriculumManagementView } from './ui/views/CurriculumManagementV
 import { renderLearningManagementView } from './ui/views/LearningManagementView.js';
 import { renderAssessmentManagementView } from './ui/views/AssessmentManagementView.js';
 import { renderGoalManagementView } from './ui/views/GoalManagementView.js';
+import { renderFeedModerationView } from './ui/views/FeedModerationView.js';
 import { renderTrackerView } from './ui/views/TrackerView.js';
 import { renderTeacherDiagnosticsView } from './ui/views/TeacherDiagnosticsView.js'; // TEMPORARY — see that file's own header comment
 import { renderSettingsView } from './ui/views/SettingsView.js';
@@ -219,6 +221,7 @@ const CLASSROOM_ROUTE_NAMES = [
   'assessments',
   'goalManagement',
   'learningManagement',
+  'feed',
   'diagnostics', // TEMPORARY — see ui/views/TeacherDiagnosticsView.js's own header comment
 ];
 
@@ -294,6 +297,11 @@ function renderStudentPortalMain(route) {
         renderStudentGoalTrackerView(content, {
           onBack: () => router.navigate('/student'),
         });
+      } else if (route.section === 'feed') {
+        renderStudentFeedView(content, {
+          onBack: () => router.navigate('/student'),
+          onNavigateToPath: (path) => router.navigate(path),
+        });
       } else {
         renderStudentJourneyView(content, {
           onSessionInvalid: () => router.navigate('/student'),
@@ -304,6 +312,7 @@ function renderStudentPortalMain(route) {
           // (onBack, onSelectStudent, etc.).
           onNavigateToEventDetail: (path) => router.navigate(path),
           onNavigateToGoals: () => router.navigate('/student/goals'),
+          onNavigateToFeed: () => router.navigate('/student/feed'),
           onNavigateToStudentProfile: (studentId) => router.navigate(`/student/student-profile/${studentId}`),
           onNavigateToTeam: (teamId) => router.navigate(`/student/team/${teamId}`),
           onNavigateToStandings: () => router.navigate('/student/team'),
@@ -472,6 +481,11 @@ function renderRoute(route, reason = 'unspecified') {
             onOpenLearningManagement: () => router.navigate(`/classroom/${classroom.id}/learning`),
           });
         },
+      });
+    } else if (route.name === 'feed') {
+      renderFeedModerationView(appContainer, {
+        classroom,
+        onBack: () => router.navigate(`/classroom/${classroom.id}`),
       });
     } else if (route.name === 'recognition') {
       renderRecognitionScreenView(appContainer, {

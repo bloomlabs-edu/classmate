@@ -6,7 +6,7 @@
  *   #/                                        -> Bloom Labs landing page (product picker)
  *   #/teacher                                 -> Classroom Tracker home (or welcome, decided by main.js) — the
  *                                                 existing teacher app's own entry point, unchanged in behavior
- *   #/student/{section?}/{param?}              -> Student Portal (journey/team/profile; journey if omitted).
+ *   #/student/{section?}/{param?}              -> Student Portal (journey/team/profile/goals/feed; journey if omitted).
  *                                                 {param} is generic — a detail screen reachable from a clickable
  *                                                 event card (see config/studentEventNavigation.js), e.g.
  *                                                 #/student/assessment-results/{assessmentId}
@@ -20,6 +20,7 @@
  *   #/classroom/{id}/assessments/{assessmentId?}/{view?} -> Assessment Management — no assessmentId = the list; an assessmentId with no view defaults to the Gradebook (see ui/views/AssessmentManagementView.js)
  *   #/classroom/{id}/goals                     -> Goal Management
  *   #/classroom/{id}/learning                  -> Learning Management
+ *   #/classroom/{id}/feed                      -> Class Feed (teacher view)
  *   #/classroom/{id}/notebooks                                       -> notebook tracker list (Subject × Notebook Type)
  *   #/classroom/{id}/work-requests/{requestId}                        -> WorkRequest checking + inline history, one page (see WorkRequestRosterView.js) — no separate Timeline route exists anymore
  *   #/classroom/{id}/notebooks/{subjectId}/{typeId}                  -> create a new WorkRequest (only reached when none is currently open for this Subject x Notebook Type)
@@ -114,6 +115,9 @@ function resolvePathParts(parts) {
     }
     if (parts[2] === 'learning') {
       return { name: 'learningManagement', classroomId: parts[1] };
+    }
+    if (parts[2] === 'feed') {
+      return { name: 'feed', classroomId: parts[1] };
     }
     // TEMPORARY — see ui/views/TeacherDiagnosticsView.js's own header
     // comment for why this exists and when it should be removed.

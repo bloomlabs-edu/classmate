@@ -46,7 +46,7 @@ import { formatDate } from '../../../utils/dateHelpers.js';
 import { getEventDetailRoute } from '../../../config/studentEventNavigation.js';
 import { getEventCopyForViewer } from '../../../services/studentEventService.js';
 
-export async function renderStudentJourneyView(container, { onSessionInvalid, onNavigateToEventDetail, onNavigateToGoals, onNavigateToStudentProfile, onNavigateToTeam, onNavigateToStandings } = {}) {
+export async function renderStudentJourneyView(container, { onSessionInvalid, onNavigateToEventDetail, onNavigateToGoals, onNavigateToFeed, onNavigateToStudentProfile, onNavigateToTeam, onNavigateToStandings } = {}) {
   container.innerHTML = '';
 
   const [summary, eventFeed, found, weeklyNetPoints] = await Promise.all([
@@ -112,6 +112,17 @@ export async function renderStudentJourneyView(container, { onSessionInvalid, on
     goalsLink.textContent = '\ud83c\udfaf My Goals \u2192';
     goalsLink.addEventListener('click', onNavigateToGoals);
     wrapper.appendChild(goalsLink);
+  }
+
+  // Class Feed — same "always shown, view handles its own empty
+  // state" convention as My Goals above.
+  if (onNavigateToFeed) {
+    const feedLink = document.createElement('button');
+    feedLink.type = 'button';
+    feedLink.className = 'student-home__goals-link';
+    feedLink.textContent = '\ud83d\udcac Class Feed \u2192';
+    feedLink.addEventListener('click', onNavigateToFeed);
+    wrapper.appendChild(feedLink);
   }
 
   // Class Standings — compact and collapsed by default, per explicit

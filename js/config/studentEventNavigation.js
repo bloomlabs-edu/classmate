@@ -40,6 +40,15 @@ export const STUDENT_EVENT_DETAIL_ROUTES = {
     buildRoute: (payload) => `/student/assessment-results/${payload.assessmentId}`,
     ctaLabel: 'View Results',
   },
+  // Added for the Class Feed's own "Share with my class" -> "View
+  // Goal" link (see StudentGoalTrackerView.js's own onShareGoal()) —
+  // there's no per-goal detail screen, so this correctly points back
+  // to the Goals list itself, the same granularity this feature
+  // already has everywhere else.
+  goal_completed: {
+    buildRoute: () => '/student/goals',
+    ctaLabel: 'View Goal',
+  },
 };
 
 /** Returns { path, ctaLabel } for this event's own detail screen, or null if this event type has no dedicated screen (see this file's own header comment). */
