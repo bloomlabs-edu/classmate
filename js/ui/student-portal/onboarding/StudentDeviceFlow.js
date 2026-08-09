@@ -80,7 +80,11 @@ async function resolveApprovedProfile(container, studentRef, onResolved) {
   // when it was this device's own first student.
   const isSoleProfileOnThisDevice = studentDeviceService.getApprovedProfiles().length === 1;
   if (isSoleProfileOnThisDevice) {
-    await enrollmentService.linkFirstDeviceProfile(studentRef.classroomId, studentRef.studentId);
+    const linked = await enrollmentService.linkFirstDeviceProfile(studentRef.classroomId, studentRef.studentId);
+    if (!linked) {
+      window.alert('Something went wrong setting up this profile. Please try again.');
+      return;
+    }
     onResolved(studentRef);
     return;
   }
@@ -119,7 +123,12 @@ function renderFreshJoinFlow(container, { onResolved, message }) {
           // needed. See enrollmentService.js's own
           // linkFirstDeviceProfile() for the explicitly-accepted
           // security reasoning behind this.
-          await enrollmentService.linkFirstDeviceProfile(studentRef.classroomId, studentRef.studentId);
+          const linked = await enrollmentService.linkFirstDeviceProfile(studentRef.classroomId, studentRef.studentId);
+          if (!linked) {
+            window.alert('Something went wrong setting up this profile. Please try again.');
+            renderFreshJoinFlow(container, { onResolved, message: null });
+            return;
+          }
           onResolved(studentRef);
         },
       });

@@ -239,12 +239,12 @@ service cloud.firestore {
       allow create: if request.auth != null &&
         request.resource.data.uid == request.auth.uid &&
         (
+          !('sourceToken' in request.resource.data) ||
           (
             getAfter(/databases/$(database)/documents/enrollmentTokens/$(request.resource.data.sourceToken)).data.used == true &&
             getAfter(/databases/$(database)/documents/enrollmentTokens/$(request.resource.data.sourceToken)).data.classroomId == classroomId &&
             getAfter(/databases/$(database)/documents/enrollmentTokens/$(request.resource.data.sourceToken)).data.studentId == studentId
-          ) ||
-          !('sourceToken' in request.resource.data)
+          )
         );
 
       // Teacher-only: revoke (delete) or reassign (overwrite uid) an
