@@ -53,7 +53,7 @@ function goalDoc(db, classroomId, goalId) {
  * resolved here, since which slot's instance to use is a caller
  * concern (see studentGoalsService.js).
  */
-export async function submitGoal(db, { classroomId, studentId, cycleId, categoryId, text }) {
+export async function submitGoal(db, { classroomId, studentId, cycleId, categoryId, text, uid }) {
   const existing = await findGoal(db, classroomId, { studentId, cycleId, categoryId });
   const goalId = existing?.id ?? generateId();
 
@@ -61,6 +61,16 @@ export async function submitGoal(db, { classroomId, studentId, cycleId, category
     id: goalId,
     classroomId,
     studentId,
+    // Denormalized from studentAuthLinks at write time (where a
+    // single-document get() against it is always safe) so the READ
+    // rule never needs a cross-document get() keyed by resource.data
+    // — Firestore cannot prove a list query satisfies a rule that
+    // depends on another document's own fields resolved per-result,
+    // and denies the whole query rather than risk it. Storing the
+    // already-verified uid directly here removes that dependency
+    // entirely for reads; the create/update rule still verifies this
+    // uid against studentAuthLinks at write time.
+    uid,
     cycleId,
     categoryId,
     text,

@@ -245,8 +245,25 @@ service cloud.firestore {
     match /classrooms/{classroomId}/studentGoals/{goalId} {
       // Readable by the goal's own linked student, or any teacher
       // member of this classroom.
+      //
+      // Checks resource.data.uid directly, NOT a studentAuthLinks
+      // get() keyed by resource.data.studentId (an earlier version
+      // of this rule did, and Firestore denied every list query
+      // against this collection outright as a result — confirmed
+      // directly: Firestore cannot prove a list operation satisfies a
+      // rule that depends on another document's own fields, resolved
+      // per potential result, and refuses the whole query rather than
+      // risk it. uid is denormalized onto each document at write time
+      // instead (see firestoreStudentGoalsRepository.js's own
+      // submitGoal()), where a single-document get() against
+      // studentAuthLinks is always safe — removing the dependency
+      // from the read path entirely. The teacher-check get() below,
+      // against classrooms/$(classroomId), is unaffected: classroomId
+      // is this rule's own static path variable, not a per-document
+      // field, so Firestore can prove it holds for every possible
+      // result of the query.
       allow read: if request.auth != null && (
-        request.auth.uid == get(/databases/$(database)/documents/classrooms/$(classroomId)/studentAuthLinks/$(resource.data.studentId)).data.uid ||
+        request.auth.uid == resource.data.uid ||
         request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids
       );
 
@@ -257,6 +274,12 @@ service cloud.firestore {
       allow create, update: if request.auth != null && (
         (
           request.auth.uid == get(/databases/$(database)/documents/classrooms/$(classroomId)/studentAuthLinks/$(request.resource.data.studentId)).data.uid &&
+          // The client-supplied uid field must match the caller's own
+          // real, authenticated uid — this is what the read rule
+          // above now trusts directly (resource.data.uid), so it
+          // can't be allowed to diverge from what was actually
+          // verified against studentAuthLinks on this same write.
+          request.resource.data.uid == request.auth.uid &&
           request.resource.data.status == 'pending_approval'
         ) ||
         // A teacher member may approve — but ONLY flip status to

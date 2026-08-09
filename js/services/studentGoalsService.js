@@ -86,6 +86,7 @@ export async function submitGoalForCurrentStudent(categoryId, text) {
   if (slotIndex === null) return false;
 
   const db = studentAuthService.getFirestoreForSlot(slotIndex);
+  const uid = await studentAuthService.ensureAnonymousSignIn(slotIndex);
 
   try {
     await goalsRepository.submitGoal(db, {
@@ -94,6 +95,7 @@ export async function submitGoalForCurrentStudent(categoryId, text) {
       cycleId: cycle.id,
       categoryId,
       text,
+      uid,
     });
     return true;
   } catch (error) {
