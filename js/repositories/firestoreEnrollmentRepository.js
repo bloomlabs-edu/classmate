@@ -82,6 +82,24 @@ export async function redeemEnrollmentToken(db, token, { classroomId, studentId,
 
 /** Called by firestoreStudentGoalsRepository.js's own rules-adjacent checks are server-side only — this is for the UI's own, client-side convenience read (e.g. confirming enrollment status), never for authorization. */
 export async function getStudentAuthLink(db, classroomId, studentId) {
-  const snapshot = await getDoc(studentAuthLinkDoc(db, classroomId, studentId));
-  return snapshot.exists() ? snapshot.data() : null;
+  try {
+    const snapshot = await getDoc(studentAuthLinkDoc(db, classroomId, studentId));
+    return snapshot.exists() ? snapshot.data() : null;
+  } catch (error) {
+    // The read rule's own "student themselves" branch reads
+    // resource.data.uid — which only evaluates if the document
+    // already exists. For an un-enrolled student (exactly what this
+    // function exists to check), it doesn't yet, so the rule fails to
+    // evaluate rather than gracefully returning "not found" —
+    // Firestore surfaces that as a permission-denied error,
+    // indistinguishable on the client from a genuine rejection. Given
+    // this call already has a real, valid auth context (confirmed
+    // separately — see enrollmentService.js's own callers, which
+    // always await ensureAnonymousSignIn() first), the only way this
+    // specific read can fail is the document not existing yet, not an
+    // actual security violation. Treated the same as the graceful
+    // !snapshot.exists() case above.
+    if (error.code?.includes('permission-denied')) return null;
+    throw error;
+  }
 }
