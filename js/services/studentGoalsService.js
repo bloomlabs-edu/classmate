@@ -48,7 +48,26 @@ export async function getGoalCycleForCurrentStudent() {
   if (slotIndex === null) return null;
 
   const db = studentAuthService.getFirestoreForSlot(slotIndex);
-  const uid = await studentAuthService.ensureAnonymousSignIn(slotIndex);
+
+  let uid;
+  try {
+    uid = await studentAuthService.ensureAnonymousSignIn(slotIndex);
+    console.log('[LSRW-AUTH-TRACE] ensureAnonymousSignIn() SUCCEEDED', { studentId: activeProfile.studentId, slotIndex, uid });
+  } catch (error) {
+    console.error('[LSRW-AUTH-TRACE] ensureAnonymousSignIn() THREW \u2014 the real Firebase error:', error.code, error.message, error);
+    throw error;
+  }
+
+  const authForSlot = studentAuthService.getAuthForSlot(slotIndex);
+  console.log('[LSRW-AUTH-TRACE] Immediately before listGoalsForStudent()', {
+    activeStudentId: activeProfile.studentId,
+    slotIndex,
+    firebaseAppName: authForSlot.app?.name,
+    authCurrentUserUid: authForSlot.currentUser?.uid ?? null,
+    firestoreAppName: db.app?.name,
+    uidPassedToQuery: uid,
+  });
+
   const goals = await goalsRepository.listGoalsForStudent(db, activeProfile.classroomId, {
     studentId: activeProfile.studentId,
     cycleId: cycle.id,
