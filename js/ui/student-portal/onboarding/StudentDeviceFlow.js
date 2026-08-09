@@ -44,6 +44,38 @@ import { loadCurrentStudentAndClassroom } from '../../../services/studentPortalD
 import { renderStudentJoinClassroomView } from './StudentJoinClassroomView.js';
 import { renderStudentRosterPickerView } from './StudentRosterPickerView.js';
 import { renderStudentEnrollmentCodeView } from './StudentEnrollmentCodeView.js';
+import { isStudentEnrolled } from '../../../services/enrollmentService.js';
+
+/**
+ * Resolves a profile that's already approved on this device — but a
+ * profile being approved (see studentDeviceService.js) has never
+ * required it to also be individually linked (see
+ * enrollmentService.js's own studentAuthLinks). A profile added
+ * before enrollment existed, or added via the sibling-profile path in
+ * StudentManageProfilesView.js (which also never prompts for a code),
+ * would otherwise resume here forever without ever being linked —
+ * confirmed as the actual cause of a real student profile having a
+ * working anonymous identity but no studentAuthLinks document at all.
+ * Every returning-profile path in this file goes through this one
+ * function instead of calling onResolved() directly, so none of them
+ * can bypass this check.
+ */
+async function resolveApprovedProfile(container, studentRef, onResolved) {
+  studentDeviceService.setActiveProfile(studentRef);
+
+  const alreadyEnrolled = await isStudentEnrolled(studentRef.classroomId, studentRef.studentId);
+  if (alreadyEnrolled) {
+    onResolved(studentRef);
+    return;
+  }
+
+  renderStudentEnrollmentCodeView(container, {
+    classroomId: studentRef.classroomId,
+    studentId: studentRef.studentId,
+    studentName: studentRef.studentName,
+    onEnrolled: () => onResolved(studentRef),
+  });
+}
 
 /** The fresh-device join path — also reused for stale-session recovery, so a recovered device rejoins exactly the same way a brand-new one would, just with an explanatory message attached. */
 function renderFreshJoinFlow(container, { onResolved, message }) {
@@ -99,8 +131,7 @@ export async function renderStudentDeviceFlow(container, { onResolved }) {
   }
 
   if (approved.length === 1) {
-    studentDeviceService.setActiveProfile(approved[0]);
-    onResolved(approved[0]);
+    await resolveApprovedProfile(container, approved[0], onResolved);
     return;
   }
 
@@ -109,8 +140,7 @@ export async function renderStudentDeviceFlow(container, { onResolved }) {
       title: "Who's using ClassMate today?",
       students: approved,
       onSelect: (studentRef) => {
-        studentDeviceService.setActiveProfile(studentRef);
-        onResolved(studentRef);
+        resolveApprovedProfile(container, studentRef, onResolved);
       },
     });
     return;

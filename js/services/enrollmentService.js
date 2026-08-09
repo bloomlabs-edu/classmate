@@ -14,6 +14,32 @@ import * as studentDeviceService from './studentDeviceService.js';
 
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours — long enough for a teacher to hand a code to one student today, short enough that a stale, unused code doesn't linger indefinitely
 
+/**
+ * Which studentIds have already had their own enrollment confirmed
+ * during THIS browser tab's session — in-memory only, never persisted,
+ * same scope as studentPortalDataService.js's own
+ * subscribedClassroomId/isClassroomSubscribed().
+ *
+ * Exists so main.js's own synchronous "classroom already subscribed,
+ * skip onboarding resolution entirely" guard can also require
+ * enrollment, without needing to make that guard (or renderRoute()
+ * itself, called from many places) async just to await
+ * isStudentEnrolled()'s own real Firestore read on every route
+ * render. Set once, the first time enrollment is genuinely confirmed
+ * for a student this session (see StudentDeviceFlow.js's own
+ * resolveApprovedProfile()) — after that, this synchronous check is
+ * enough; the underlying link itself doesn't change mid-session.
+ */
+const enrollmentConfirmedThisSession = new Set();
+
+export function markEnrollmentConfirmed(studentId) {
+  enrollmentConfirmedThisSession.add(studentId);
+}
+
+export function isEnrollmentConfirmedThisSession(studentId) {
+  return enrollmentConfirmedThisSession.has(studentId);
+}
+
 /** Called from the Teacher Portal. Returns the real, human-shareable code. */
 export async function generateEnrollmentToken(classroomId, studentId) {
   const token = generateJoinCode(); // same shape as the existing classroom/student join codes — 6 chars, no ambiguous characters
@@ -63,6 +89,7 @@ export async function redeemEnrollmentToken(token, { classroomId, studentId }) {
 
   try {
     await enrollmentRepository.redeemEnrollmentToken(db, token, { classroomId, studentId, uid });
+    markEnrollmentConfirmed(studentId);
     return { success: true };
   } catch (error) {
     return { success: false, reason: error.message };
@@ -74,6 +101,9 @@ export async function isStudentEnrolled(classroomId, studentId) {
   const slotIndex = studentDeviceService.getSlotForStudent(studentId);
   if (slotIndex === null) return false;
   const db = studentAuthService.getFirestoreForSlot(slotIndex);
+  await studentAuthService.ensureAnonymousSignIn(slotIndex);
   const link = await enrollmentRepository.getStudentAuthLink(db, classroomId, studentId);
-  return !!link;
+  const enrolled = !!link;
+  if (enrolled) markEnrollmentConfirmed(studentId);
+  return enrolled;
 }
