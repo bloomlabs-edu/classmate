@@ -289,6 +289,20 @@ function renderEmptyCheckpointsGrid(students, handlers) {
   return scroll;
 }
 
+/** One compact "2/21 · Submitted" stat box for a checkpoint column header — the number is the visually prominent part, the label is smaller and muted, per the explicit visual hierarchy. */
+function createColumnStatBox(count, total, label) {
+  const box = document.createElement('div');
+  box.className = 'notebook-checkpoints__column-stat-box';
+  const number = document.createElement('span');
+  number.className = 'notebook-checkpoints__column-stat-number';
+  number.textContent = `${count}/${total}`;
+  const labelEl = document.createElement('span');
+  labelEl.className = 'notebook-checkpoints__column-stat-label';
+  labelEl.textContent = label;
+  box.append(number, labelEl);
+  return box;
+}
+
 function renderGrid(classroom, checkpoints, students, handlers) {
   const scroll = document.createElement('div');
   scroll.className = 'assessment-gradebook__scroll';
@@ -329,23 +343,20 @@ function renderGrid(classroom, checkpoints, students, handlers) {
     metaLine.textContent = checkpoint.dueDate ? `Due ${formatDate(checkpoint.dueDate)}` : `Given ${formatDate(checkpoint.givenDate)}`;
     th.appendChild(metaLine);
 
-    // Per-column summary — reuses the exact same getCheckpointSummary()
-    // calculation the old, separate top summary block used; this is a
-    // presentation move only, never a second calculation. Wrapped as
-    // three short lines (rather than one long one) specifically so a
-    // narrow checkpoint column never forces horizontal overflow beyond
-    // the existing tracker scroll mechanism.
+    // Per-column stat boxes — Submitted/Complete only, per explicit
+    // design decision to make the header easier to scan. Reuses the
+    // exact same getCheckpointSummary() call and full return shape
+    // unchanged (still computes incompleteCount/notSubmittedCount/
+    // lateCount internally, since other things — e.g. cell status,
+    // isLate() — still need them); this is purely a change to which
+    // already-computed fields the header displays, not a change to
+    // the underlying calculation or data model at all.
     const summary = checkpointService.getCheckpointSummary(checkpoint, students);
-    const summaryEl = document.createElement('div');
-    summaryEl.className = 'notebook-checkpoints__column-summary';
-    const summaryLine1 = document.createElement('span');
-    summaryLine1.textContent = `${summary.submittedCount} submitted \u00b7 ${summary.completeCount} complete`;
-    const summaryLine2 = document.createElement('span');
-    summaryLine2.textContent = `${summary.incompleteCount} incomplete \u00b7 ${summary.notSubmittedCount} not submitted`;
-    const summaryLine3 = document.createElement('span');
-    summaryLine3.textContent = `${summary.lateCount} late`;
-    summaryEl.append(summaryLine1, summaryLine2, summaryLine3);
-    th.appendChild(summaryEl);
+    const statsEl = document.createElement('div');
+    statsEl.className = 'notebook-checkpoints__column-stats';
+    statsEl.appendChild(createColumnStatBox(summary.submittedCount, students.length, 'Submitted'));
+    statsEl.appendChild(createColumnStatBox(summary.completeCount, students.length, 'Complete'));
+    th.appendChild(statsEl);
 
     const actionsRow = document.createElement('div');
     actionsRow.className = 'notebook-checkpoints__column-actions';

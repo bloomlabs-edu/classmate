@@ -8928,15 +8928,38 @@ button.wizard-checklist__row:hover {
   color: var(--color-muted);
   margin-top: 0.15rem;
 }
-.notebook-checkpoints__column-summary {
+.notebook-checkpoints__column-stats {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+  flex-wrap: wrap;
+}
+.notebook-checkpoints__column-stat-box {
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
-  margin-top: 0.35rem;
-  font-size: 0.72rem;
-  font-weight: 400;
+  align-items: center;
+  gap: 0.05rem;
+  background: rgba(46, 125, 158, 0.06);
+  border: 1px solid rgba(46, 125, 158, 0.2);
+  border-radius: 8px;
+  padding: 0.25rem 0.5rem;
+  min-width: 0;
+  flex: 1 1 0;
+}
+.notebook-checkpoints__column-stat-number {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #2e7d9e;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+.notebook-checkpoints__column-stat-label {
+  font-size: 0.62rem;
+  font-weight: 500;
   color: var(--color-muted);
-  white-space: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 .notebook-checkpoints__column-actions {
   display: flex;
