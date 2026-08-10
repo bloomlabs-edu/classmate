@@ -8690,3 +8690,106 @@ button.wizard-checklist__row:hover {
   display: flex;
   justify-content: flex-end;
 }
+
+/* Notebook Tracker — teacher-side "Needs Attention" section (see ui/views/NotebookTrackerView.js) */
+.notebook-tracker__attention {
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid rgba(224, 123, 19, 0.5);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+}
+.notebook-tracker__attention-heading {
+  font-weight: var(--font-weight-bold);
+  margin: 0 0 0.5rem;
+}
+.notebook-tracker__attention-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.notebook-tracker__attention-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius-control);
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.92rem;
+}
+.notebook-tracker__attention-row:hover {
+  background: rgba(224, 123, 19, 0.06);
+}
+.notebook-tracker__attention-badge {
+  font-size: 0.78rem;
+  font-weight: var(--font-weight-bold);
+  color: #b8630f;
+  background: rgba(224, 123, 19, 0.1);
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+}
+
+/* Student Notebooks view — read-only obligations list (see ui/student-portal/views/StudentNotebooksView.js) */
+.student-notebooks__header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.student-notebooks__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.student-notebooks__card {
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+}
+.student-notebooks__subject {
+  font-weight: var(--font-weight-bold);
+  margin: 0 0 0.3rem;
+}
+.student-notebooks__due {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  margin: 0 0 0.3rem;
+}
+.student-notebooks__status {
+  display: inline-block;
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-bold);
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  margin: 0;
+}
+.student-notebooks__status--amber {
+  background-color: rgba(183, 121, 31, 0.08);
+  color: #92660a;
+}
+.student-notebooks__status--purple {
+  background-color: rgba(124, 92, 214, 0.08);
+  color: #6448b8;
+}
+.student-notebooks__status--red {
+  background-color: rgba(229, 57, 53, 0.08);
+  color: #c62828;
+}
+.student-notebooks__status--green {
+  background-color: rgba(46, 158, 91, 0.08);
+  color: #227a46;
+}
+.student-notebooks__status--orange {
+  background-color: rgba(224, 123, 19, 0.08);
+  color: #b8630f;
+}
+.student-notebooks__status--gray {
+  background-color: rgba(120, 144, 156, 0.08);
+  color: #5c7480;
+}

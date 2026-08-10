@@ -46,7 +46,7 @@ import { formatDate } from '../../../utils/dateHelpers.js';
 import { getEventDetailRoute } from '../../../config/studentEventNavigation.js';
 import { getEventCopyForViewer } from '../../../services/studentEventService.js';
 
-export async function renderStudentJourneyView(container, { onSessionInvalid, onNavigateToEventDetail, onNavigateToGoals, onNavigateToFeed, onNavigateToStudentProfile, onNavigateToTeam, onNavigateToStandings } = {}) {
+export async function renderStudentJourneyView(container, { onSessionInvalid, onNavigateToEventDetail, onNavigateToGoals, onNavigateToFeed, onNavigateToNotebooks, onNavigateToStudentProfile, onNavigateToTeam, onNavigateToStandings } = {}) {
   container.innerHTML = '';
 
   const [summary, eventFeed, found, weeklyNetPoints] = await Promise.all([
@@ -123,6 +123,19 @@ export async function renderStudentJourneyView(container, { onSessionInvalid, on
     feedLink.textContent = '\ud83d\udcac Class Feed \u2192';
     feedLink.addEventListener('click', onNavigateToFeed);
     wrapper.appendChild(feedLink);
+  }
+
+  // Notebooks — same convention again. Deliberately does not say
+  // "Journal" or "Portfolio" anywhere: this links to the existing
+  // Notebook Tracker's own data (what's due, has it been submitted),
+  // not a new digital-notebook concept.
+  if (onNavigateToNotebooks) {
+    const notebooksLink = document.createElement('button');
+    notebooksLink.type = 'button';
+    notebooksLink.className = 'student-home__goals-link';
+    notebooksLink.textContent = '\ud83d\udcd3 Notebooks \u2192';
+    notebooksLink.addEventListener('click', onNavigateToNotebooks);
+    wrapper.appendChild(notebooksLink);
   }
 
   // Class Standings — compact and collapsed by default, per explicit

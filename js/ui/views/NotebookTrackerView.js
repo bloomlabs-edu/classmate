@@ -38,6 +38,8 @@
  */
 
 import { NotebookWorkType } from '../../services/workTypes/NotebookWorkType.js';
+import * as workRequestService from '../../services/workRequestService.js';
+import { getClassroomStudents } from '../../services/assessmentService.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createOperationalWorkCard } from '../components/OperationalWorkCard.js';
@@ -59,6 +61,11 @@ export function renderNotebookTrackerView(container, { classroom, onBack, onNavi
 
   const content = document.createElement('div');
   content.className = 'wizard-step-content notebook-tracker__content';
+
+  const needsAttention = workRequestService.getStudentsNeedingAttention(classroom);
+  if (needsAttention.length > 0) {
+    content.appendChild(renderNeedsAttentionSection(needsAttention, classroom, onNavigate));
+  }
 
   const activeWork = NotebookWorkType.getActiveWork(classroom);
   const startActions = NotebookWorkType.getStartActions(classroom);
@@ -83,6 +90,50 @@ export function renderNotebookTrackerView(container, { classroom, onBack, onNavi
 
   wrapper.appendChild(content);
   container.appendChild(wrapper);
+}
+
+/**
+ * Classroom-wide "who needs attention" — the one genuine teacher-side
+ * gap identified before implementing anything else: per-student
+ * history already existed (workRequestService.getStudentSummary()),
+ * but only ever visible one student at a time via their own profile.
+ * This surfaces the pattern directly, without a teacher needing to
+ * already suspect a specific student. Each row links straight to
+ * that exact, already-existing drill-down (StudentProfileView's own
+ * 'notebooks' tab) — no new destination invented.
+ */
+function renderNeedsAttentionSection(needsAttention, classroom, onNavigate) {
+  const section = document.createElement('div');
+  section.className = 'notebook-tracker__attention';
+
+  const heading = document.createElement('p');
+  heading.className = 'notebook-tracker__attention-heading';
+  heading.textContent = '\u26a0\ufe0f Needs Attention';
+  section.appendChild(heading);
+
+  const students = getClassroomStudents(classroom);
+  const list = document.createElement('div');
+  list.className = 'notebook-tracker__attention-list';
+
+  needsAttention.forEach(({ studentId, count }) => {
+    const student = students.find((s) => s.id === studentId);
+    if (!student) return; // a student who has since left the roster — nothing meaningful to show
+
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'notebook-tracker__attention-row';
+    const name = document.createElement('span');
+    name.textContent = student.name;
+    const badge = document.createElement('span');
+    badge.className = 'notebook-tracker__attention-badge';
+    badge.textContent = `${count} issue${count === 1 ? '' : 's'}`;
+    row.append(name, badge);
+    row.addEventListener('click', () => onNavigate(`/classroom/${classroom.id}/student/${studentId}/notebooks`));
+    list.appendChild(row);
+  });
+
+  section.appendChild(list);
+  return section;
 }
 
 /**

@@ -397,3 +397,81 @@ export function getRecentActivityForStudent(classroom, studentId, limit = 10) {
       updatedAt: entry.updatedAt,
     }));
 }
+
+/**
+ * Classroom-wide "who needs attention" — answers a question
+ * getStudentSummary() above never could on its own: that function is
+ * already correct and already used (see ui/views/StudentProfileView.js's
+ * own Notebook tab), but only ever shows ONE student's own counts,
+ * requiring a teacher to already suspect a specific student before
+ * opening their profile. This aggregates the same three "problem"
+ * signals — a request that closed while the student was still
+ * 'assigned' (never submitted at all, and the chance to is now gone),
+ * a currently-unresolved 'needs_correction', or a 'reviewed' entry
+ * whose own outcome was 'incomplete' — across every student at once,
+ * so the pattern is visible without already knowing who to check.
+ *
+ * `threshold` (default 2) is the minimum problem-entry count to
+ * surface a student at all — a single missed/incomplete entry is
+ * normal classroom noise, not a pattern worth flagging.
+ */
+export function getStudentsNeedingAttention(classroom, { threshold = 2 } = {}) {
+  const counts = {}; // studentId -> count
+
+  listWorkRequests(classroom).forEach((request) => {
+    const requestIsClosed = isClosed(request);
+    request.entries.forEach((entry) => {
+      const isMissed = requestIsClosed && entry.status === 'assigned';
+      const isUnresolvedCorrection = entry.status === 'needs_correction';
+      const isIncomplete = entry.status === 'reviewed' && entry.reviewOutcome === 'incomplete';
+      if (isMissed || isUnresolvedCorrection || isIncomplete) {
+        counts[entry.studentId] = (counts[entry.studentId] || 0) + 1;
+      }
+    });
+  });
+
+  return Object.entries(counts)
+    .filter(([, count]) => count >= threshold)
+    .map(([studentId, count]) => ({ studentId, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
+/**
+ * The student-facing equivalent of everything above — one student's
+ * own obligations, across every notebook WorkRequest that exists for
+ * them, most relevant first (still awaiting action, then most
+ * recently resolved). This is the one new read the student-side
+ * Notebook view needs; it reuses notebookConfigService purely for
+ * display names (Subject/Notebook Type), never re-deriving anything
+ * workRequestService itself already owns.
+ */
+export function getNotebookObligationsForStudent(classroom, studentId) {
+  return listWorkRequests(classroom)
+    .filter((request) => request.type === 'notebook')
+    .map((request) => {
+      const entry = getEntryForStudent(request, studentId);
+      if (!entry) return null;
+      return {
+        requestId: request.id,
+        title: request.title,
+        subjectId: request.subjectId,
+        notebookTypeId: request.notebookTypeId,
+        dueDate: request.dueDate || null,
+        status: entry.status,
+        reviewOutcome: entry.reviewOutcome,
+        isOpen: isOpen(request),
+        updatedAt: entry.updatedAt,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => {
+      // Still-actionable obligations first (open, not yet reviewed),
+      // then most recently updated — matches how a student actually
+      // wants to scan this: "what do I still need to do" before
+      // "what did I already finish."
+      const aPending = a.isOpen && a.status !== 'reviewed';
+      const bPending = b.isOpen && b.status !== 'reviewed';
+      if (aPending !== bPending) return aPending ? -1 : 1;
+      return (b.updatedAt || '').localeCompare(a.updatedAt || '');
+    });
+}
