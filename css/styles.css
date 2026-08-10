@@ -8928,6 +8928,16 @@ button.wizard-checklist__row:hover {
   color: var(--color-muted);
   margin-top: 0.15rem;
 }
+.notebook-checkpoints__column-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: var(--color-muted);
+  white-space: normal;
+}
 .notebook-checkpoints__column-actions {
   display: flex;
   gap: 0.2rem;
@@ -9123,25 +9133,6 @@ button.wizard-checklist__row:hover {
   .notebook-checkpoints__column-header {
     min-width: 130px;
   }
-}
-
-/* Checkpoint per-checkpoint summaries and class-level Needs Attention (see ui/views/NotebookCheckpointsView.js) */
-.notebook-checkpoints__summaries {
-  background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  padding: 0.7rem 0.9rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-.notebook-checkpoints__summary-line {
-  font-size: 0.85rem;
-  margin: 0;
-  color: var(--color-ink);
-}
-.notebook-checkpoints__summary-line span {
-  color: var(--color-muted);
 }
 
 /* Student-facing Checkpoints section (see ui/student-portal/views/StudentNotebooksView.js) */

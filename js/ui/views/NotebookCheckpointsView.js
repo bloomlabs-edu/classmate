@@ -62,32 +62,6 @@ export function getCellMeta(checkpoint, record) {
     : { label: 'Submitted \u00b7 Not reviewed', chipClass: 'purple', icon: '\ud83d\udcc4' };
 }
 
-/**
- * One compact line per checkpoint, always derived fresh from real
- * records, never persisted — exactly the spec's own example format.
- * `roster` is required here (unlike getCheckpointSummary()'s own
- * backward-compatible default) since notSubmittedCount genuinely
- * needs it.
- */
-function renderCheckpointSummaries(checkpoints, roster) {
-  const section = document.createElement('div');
-  section.className = 'notebook-checkpoints__summaries';
-
-  checkpoints.forEach((checkpoint) => {
-    const summary = checkpointService.getCheckpointSummary(checkpoint, roster);
-    const line = document.createElement('p');
-    line.className = 'notebook-checkpoints__summary-line';
-    const titleEl = document.createElement('strong');
-    titleEl.textContent = checkpoint.title;
-    const countsEl = document.createElement('span');
-    countsEl.textContent = ` \u2014 ${summary.submittedCount} submitted \u00b7 ${summary.completeCount} complete \u00b7 ${summary.incompleteCount} incomplete \u00b7 ${summary.notSubmittedCount} not submitted \u00b7 ${summary.lateCount} late`;
-    line.append(titleEl, countsEl);
-    section.appendChild(line);
-  });
-
-  return section;
-}
-
 export function renderNotebookCheckpointsView(container, { classroom, subjectId, notebookTypeId, onBack }) {
   let editingCheckpointId = null; // null | 'new' | an existing checkpoint's own id — the header create/edit form
   let openCellFor = null; // null | { checkpointId, studentId } — the one open cell editor at a time
@@ -193,10 +167,6 @@ function render(container, classroom, subjectId, notebookTypeId, editingCheckpoi
 
   const checkpoints = checkpointService.listCheckpointsForNotebook(classroom, subjectId, notebookTypeId);
   const students = [...getClassroomStudents(classroom)].sort((a, b) => a.name.localeCompare(b.name));
-
-  if (checkpoints.length > 0 && students.length > 0) {
-    content.appendChild(renderCheckpointSummaries(checkpoints, students));
-  }
 
   const addButton = document.createElement('button');
   addButton.type = 'button';
@@ -358,6 +328,24 @@ function renderGrid(classroom, checkpoints, students, handlers) {
     metaLine.className = 'notebook-checkpoints__column-meta';
     metaLine.textContent = checkpoint.dueDate ? `Due ${formatDate(checkpoint.dueDate)}` : `Given ${formatDate(checkpoint.givenDate)}`;
     th.appendChild(metaLine);
+
+    // Per-column summary — reuses the exact same getCheckpointSummary()
+    // calculation the old, separate top summary block used; this is a
+    // presentation move only, never a second calculation. Wrapped as
+    // three short lines (rather than one long one) specifically so a
+    // narrow checkpoint column never forces horizontal overflow beyond
+    // the existing tracker scroll mechanism.
+    const summary = checkpointService.getCheckpointSummary(checkpoint, students);
+    const summaryEl = document.createElement('div');
+    summaryEl.className = 'notebook-checkpoints__column-summary';
+    const summaryLine1 = document.createElement('span');
+    summaryLine1.textContent = `${summary.submittedCount} submitted \u00b7 ${summary.completeCount} complete`;
+    const summaryLine2 = document.createElement('span');
+    summaryLine2.textContent = `${summary.incompleteCount} incomplete \u00b7 ${summary.notSubmittedCount} not submitted`;
+    const summaryLine3 = document.createElement('span');
+    summaryLine3.textContent = `${summary.lateCount} late`;
+    summaryEl.append(summaryLine1, summaryLine2, summaryLine3);
+    th.appendChild(summaryEl);
 
     const actionsRow = document.createElement('div');
     actionsRow.className = 'notebook-checkpoints__column-actions';
