@@ -62,23 +62,6 @@ export function getCellMeta(checkpoint, record) {
     : { label: 'Submitted \u00b7 Not reviewed', chipClass: 'purple', icon: '\ud83d\udcc4' };
 }
 
-/** Whether one specific cell matches the currently-active attention filter — used by renderGrid() to highlight/dim cells. Mirrors getNeedsAttentionForNotebook()'s own per-item classification exactly, so a filter clicked from the attention section highlights precisely the cells that contributed to it. */
-function cellMatchesAttentionFilter(checkpoint, student, record, filter) {
-  if (filter.studentId && filter.studentId !== student.id) return false;
-  if (filter.checkpointId && filter.checkpointId !== checkpoint.id) return false;
-  if (!filter.kind) return true;
-
-  const isNotSubmitted = !record || record.submissionStatus === 'not_submitted';
-  if (filter.kind === 'not_submitted') return isNotSubmitted;
-  if (isNotSubmitted) return false;
-
-  const late = checkpointService.isLate(checkpoint, record);
-  if (filter.kind === 'needs_review') return record.reviewStatus === 'not_reviewed';
-  if (filter.kind === 'incomplete') return record.reviewStatus === 'incomplete';
-  if (filter.kind === 'late') return late;
-  return false;
-}
-
 /**
  * One compact line per checkpoint, always derived fresh from real
  * records, never persisted — exactly the spec's own example format.
@@ -105,94 +88,12 @@ function renderCheckpointSummaries(checkpoints, roster) {
   return section;
 }
 
-/**
- * The class-level "Needs Attention" section — each count is a real
- * button, clicking it sets/toggles the grid's own highlight filter
- * (see cellMatchesAttentionFilter()/renderGrid() above), never
- * opening a separate page or a second data-management surface, per
- * explicit product decision. Below the top-level counts, one
- * compact row per student who has at least one outstanding item —
- * deliberately one row per student, not one row per item, so a
- * student with three separate issues appears once, not three times.
- */
-function renderNeedsAttentionSection(needsAttention, activeAttentionFilter, handlers) {
-  const section = document.createElement('div');
-  section.className = 'notebook-checkpoints__attention';
-
-  const heading = document.createElement('p');
-  heading.className = 'notebook-checkpoints__attention-heading';
-  heading.textContent = 'NEEDS ATTENTION';
-  section.appendChild(heading);
-
-  const { counts } = needsAttention;
-  const countsList = document.createElement('div');
-  countsList.className = 'notebook-checkpoints__attention-counts';
-
-  function isActive(kind) {
-    return activeAttentionFilter?.kind === kind && !activeAttentionFilter.studentId && !activeAttentionFilter.checkpointId;
-  }
-
-  function addCountButton(kind, icon, count, noun) {
-    if (count === 0) return;
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'notebook-checkpoints__attention-count-button';
-    if (isActive(kind)) button.classList.add('notebook-checkpoints__attention-count-button--active');
-    button.textContent = `${icon} ${count} ${noun}`;
-    button.addEventListener('click', () => handlers.onSetAttentionFilter({ kind }));
-    countsList.appendChild(button);
-  }
-
-  addCountButton('not_submitted', '\ud83d\udd34', counts.notSubmittedStudentCount, `student${counts.notSubmittedStudentCount === 1 ? '' : 's'} haven\u2019t submitted`);
-  addCountButton('needs_review', '\ud83d\udfe0', counts.needsReviewCount, `submission${counts.needsReviewCount === 1 ? '' : 's'} need${counts.needsReviewCount === 1 ? 's' : ''} review`);
-  addCountButton('incomplete', '\ud83d\udd34', counts.incompleteCount, `submission${counts.incompleteCount === 1 ? '' : 's'} incomplete`);
-  addCountButton('late', '\ud83d\udfe1', counts.lateCount, `submission${counts.lateCount === 1 ? '' : 's'} late`);
-
-  section.appendChild(countsList);
-
-  const studentList = document.createElement('div');
-  studentList.className = 'notebook-checkpoints__attention-students';
-
-  const ITEM_LABELS = {
-    not_submitted: 'Not submitted',
-    needs_review: 'Needs review',
-    incomplete: 'Incomplete',
-    late: 'Late',
-  };
-
-  needsAttention.perStudent.forEach(({ student, items }) => {
-    const row = document.createElement('button');
-    row.type = 'button';
-    row.className = 'notebook-checkpoints__attention-student-row';
-    if (activeAttentionFilter?.studentId === student.id) row.classList.add('notebook-checkpoints__attention-student-row--active');
-
-    const nameEl = document.createElement('span');
-    nameEl.className = 'notebook-checkpoints__attention-student-name';
-    nameEl.textContent = student.name;
-    row.appendChild(nameEl);
-
-    const itemsEl = document.createElement('span');
-    itemsEl.className = 'notebook-checkpoints__attention-student-items';
-    itemsEl.textContent = items
-      .map((item) => `${item.checkpointTitle} \u2014 ${ITEM_LABELS[item.kind]}${item.late && item.kind !== 'late' ? ' (late)' : ''}`)
-      .join('; ');
-    row.appendChild(itemsEl);
-
-    row.addEventListener('click', () => handlers.onSetAttentionFilter({ studentId: student.id }));
-    studentList.appendChild(row);
-  });
-
-  section.appendChild(studentList);
-  return section;
-}
-
 export function renderNotebookCheckpointsView(container, { classroom, subjectId, notebookTypeId, onBack }) {
   let editingCheckpointId = null; // null | 'new' | an existing checkpoint's own id — the header create/edit form
   let openCellFor = null; // null | { checkpointId, studentId } — the one open cell editor at a time
-  let activeAttentionFilter = null; // null | { studentId?, checkpointId?, kind? } — highlights matching cells in the grid; never hides rows, per explicit "grid remains the source of interaction" instruction
 
   function rerender() {
-    render(container, classroom, subjectId, notebookTypeId, editingCheckpointId, openCellFor, activeAttentionFilter, {
+    render(container, classroom, subjectId, notebookTypeId, editingCheckpointId, openCellFor, {
       onBack,
       onStartCreate: () => {
         editingCheckpointId = 'new';
@@ -246,11 +147,6 @@ export function renderNotebookCheckpointsView(container, { classroom, subjectId,
         checkpointService.setReview(checkpoint, studentId, { status, reviewedDate: getTodayDateKey() });
         persistAndRerender();
       },
-      onSetAttentionFilter: (filter) => {
-        const isSameFilter = activeAttentionFilter && JSON.stringify(activeAttentionFilter) === JSON.stringify(filter);
-        activeAttentionFilter = isSameFilter ? null : filter;
-        rerender();
-      },
       onCloseCell: () => {
         openCellFor = null;
         rerender();
@@ -274,7 +170,7 @@ export function renderNotebookCheckpointsView(container, { classroom, subjectId,
   rerender();
 }
 
-function render(container, classroom, subjectId, notebookTypeId, editingCheckpointId, openCellFor, activeAttentionFilter, handlers) {
+function render(container, classroom, subjectId, notebookTypeId, editingCheckpointId, openCellFor, handlers) {
   container.innerHTML = '';
 
   const subject = notebookConfigService.getSubjectById(classroom, subjectId);
@@ -300,10 +196,6 @@ function render(container, classroom, subjectId, notebookTypeId, editingCheckpoi
 
   if (checkpoints.length > 0 && students.length > 0) {
     content.appendChild(renderCheckpointSummaries(checkpoints, students));
-    const needsAttention = checkpointService.getNeedsAttentionForNotebook(checkpoints, students);
-    if (needsAttention.perStudent.length > 0) {
-      content.appendChild(renderNeedsAttentionSection(needsAttention, activeAttentionFilter, handlers));
-    }
   }
 
   const addButton = document.createElement('button');
@@ -324,7 +216,7 @@ function render(container, classroom, subjectId, notebookTypeId, editingCheckpoi
     content.appendChild(renderEmptyCheckpointsInstructionalCue());
     content.appendChild(renderEmptyCheckpointsGrid(students, handlers));
   } else {
-    content.appendChild(renderGrid(classroom, checkpoints, students, activeAttentionFilter, handlers));
+    content.appendChild(renderGrid(classroom, checkpoints, students, handlers));
   }
 
   if (openCellFor) {
@@ -427,7 +319,7 @@ function renderEmptyCheckpointsGrid(students, handlers) {
   return scroll;
 }
 
-function renderGrid(classroom, checkpoints, students, activeAttentionFilter, handlers) {
+function renderGrid(classroom, checkpoints, students, handlers) {
   const scroll = document.createElement('div');
   scroll.className = 'assessment-gradebook__scroll';
 
@@ -517,10 +409,6 @@ function renderGrid(classroom, checkpoints, students, activeAttentionFilter, han
 
       const cell = document.createElement('td');
       cell.className = `notebook-checkpoints__cell notebook-checkpoints__cell--${meta.chipClass}`;
-      if (activeAttentionFilter) {
-        const matches = cellMatchesAttentionFilter(checkpoint, student, record, activeAttentionFilter);
-        cell.classList.add(matches ? 'notebook-checkpoints__cell--highlighted' : 'notebook-checkpoints__cell--dimmed');
-      }
 
       const button = document.createElement('button');
       button.type = 'button';
