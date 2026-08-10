@@ -509,7 +509,19 @@ export async function setGoalCompletionForCurrentStudent(goalId, dateKey, comple
   if (!cycle) return false;
 
   goalCompletionService.setCompletion(cycle, goalId, dateKey, completed);
-  workspaceService.save(found.classroom);
+
+  try {
+    await workspaceService.saveExplicitly(found.classroom);
+  } catch (error) {
+    // Surfaced, not silently swallowed — saveExplicitly() already logs
+    // the full error itself; this just makes sure the caller (and, in
+    // turn, the student) genuinely learns the write didn't reach the
+    // server, rather than the checkbox appearing to work and then
+    // silently reverting on the next fresh read.
+    console.error('[studentPortalDataService] setGoalCompletionForCurrentStudent() — the write did not reach the server:', error);
+    return false;
+  }
+
   return true;
 }
 

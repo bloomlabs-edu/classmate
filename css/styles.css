@@ -8469,15 +8469,15 @@ button.wizard-checklist__row:hover {
    is completely unchanged — only how these three classes are painted. --- */
 .gradebook-cell--high {
   border-left: 3px solid var(--color-success);
-  background: color-mix(in srgb, var(--color-success) 6%, transparent);
+  background: color-mix(in srgb, var(--color-success) 20%, transparent);
 }
 .gradebook-cell--mid {
   border-left: 3px solid var(--color-warning);
-  background: color-mix(in srgb, var(--color-warning) 7%, transparent);
+  background: color-mix(in srgb, var(--color-warning) 22%, transparent);
 }
 .gradebook-cell--low {
   border-left: 3px solid var(--color-danger);
-  background: color-mix(in srgb, var(--color-danger) 5%, transparent);
+  background: color-mix(in srgb, var(--color-danger) 18%, transparent);
 }
 
 /* --- Total / percentage: percentage carries the main performance signal --- */
@@ -8507,6 +8507,78 @@ button.wizard-checklist__row:hover {
 @media (max-width: 640px) {
   .assessment-gradebook__cell-input {
     min-height: 34px; /* larger touch target once hover-precision no longer applies */
+  }
+}
+
+/* --- Legend: bucket meaning + pass mark, always visible above the table --- */
+.assessment-gradebook__legend {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+  color: var(--color-ink);
+  margin-bottom: 0.6rem;
+}
+.assessment-gradebook__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.assessment-gradebook__legend-swatch {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 3px;
+}
+.assessment-gradebook__legend-passmark {
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+/* --- Filter/sort/search controls bar --- */
+.assessment-gradebook__controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.85rem;
+}
+.assessment-gradebook__control-select,
+.assessment-gradebook__control-search {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+  background: var(--color-surface, #fff);
+  color: var(--color-ink);
+}
+.assessment-gradebook__control-search {
+  min-width: 160px;
+  flex: 1 1 160px;
+  max-width: 240px;
+}
+.assessment-gradebook__clear-filters {
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+/* --- Clickable sortable headers (Student / %) --- */
+.assessment-gradebook__sortable-header {
+  cursor: pointer;
+  user-select: none;
+}
+.assessment-gradebook__sortable-header:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 640px) {
+  .assessment-gradebook__controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .assessment-gradebook__control-search {
+    max-width: none;
   }
 }
 

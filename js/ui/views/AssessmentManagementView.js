@@ -33,7 +33,7 @@ import * as assessmentService from '../../services/assessmentService.js';
 import * as assessmentImportService from '../../services/assessmentImportService.js';
 import * as workspaceService from '../../services/workspaceService.js';
 import { getCurrentIsoDate, formatDate } from '../../utils/dateHelpers.js';
-import { getMarksColorClass } from '../../config/assessmentMarksColorConfig.js';
+import { getMarksColorClass, getMarksBucketKey, getPassMarkForSubject, PASS_MARK_PERCENT } from '../../config/assessmentMarksColorConfig.js';
 
 export function renderAssessmentManagementView(container, { classroom, onBack, initialAssessmentId = null, initialView = null, onNavigate = null }) {
   const initialAssessment = initialAssessmentId ? assessmentService.getAssessmentById(classroom, initialAssessmentId) : null;
@@ -44,6 +44,18 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
   let selectedAssessment = initialAssessment;
   let selectedAssessmentSubject = null;
   let sortBy = 'name'; // 'name' | 'rollNumber' | 'marks' | 'rank' — reset whenever a different Subject is opened
+
+  // Gradebook-only filter/sort state — deliberately separate from
+  // `sortBy` above, which belongs to the older per-subject screen and
+  // has entirely different options/semantics. Persists across
+  // rerender() within the same visit (e.g. while editing a mark),
+  // matching how every other piece of this screen's own state
+  // already behaves; resets on a genuine re-navigation since
+  // main.js calls this function fresh each time.
+  let gradebookSubjectFilter = 'all'; // 'all' | an assessmentSubject.id
+  let gradebookBucketFilter = 'all'; // 'all' | 'red' | 'yellow' | 'green'
+  let gradebookSearchQuery = '';
+  let gradebookSort = { field: 'name', direction: 'asc' }; // field: 'name' | 'percent' | an assessmentSubject.id
 
   // The document-editor state for marks entry (see renderSubjectStep()
   // below). `isEditingMarks` is an explicit override once something
@@ -104,6 +116,10 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
         assessmentDetailsDraft,
         importReview,
         importError,
+        gradebookSubjectFilter,
+        gradebookBucketFilter,
+        gradebookSearchQuery,
+        gradebookSort,
       },
       handlers
     );
@@ -220,6 +236,28 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
 
   const handlers = {
     onGradebookMarksEdit: applyGradebookMarksEdit,
+    onGradebookSubjectFilterChange: (value) => {
+      gradebookSubjectFilter = value;
+      rerender();
+    },
+    onGradebookBucketFilterChange: (value) => {
+      gradebookBucketFilter = value;
+      rerender();
+    },
+    onGradebookSearchChange: (value) => {
+      gradebookSearchQuery = value;
+      rerender();
+    },
+    onGradebookSortChange: (field, direction) => {
+      gradebookSort = { field, direction };
+      rerender();
+    },
+    onGradebookClearFilters: () => {
+      gradebookSubjectFilter = 'all';
+      gradebookBucketFilter = 'all';
+      gradebookSearchQuery = '';
+      rerender();
+    },
     onBack,
     onGoToCreateAssessment: () => {
       openCreateAssessmentModal({
@@ -453,7 +491,7 @@ function renderView(container, mode, state, handlers) {
   if (mode === 'assessment') {
     wrapper.appendChild(renderAssessmentStep(state.classroom, state.selectedAssessment, state.isEditingAssessmentDetails, state.assessmentDetailsDraft, handlers));
   } else if (mode === 'gradebook') {
-    wrapper.appendChild(renderGradebookStep(state.classroom, state.selectedAssessment, handlers));
+    wrapper.appendChild(renderGradebookStep(state.classroom, state.selectedAssessment, state, handlers));
   } else if (mode === 'subject') {
     wrapper.appendChild(
       renderSubjectStep(state.classroom, state.selectedAssessment, state.selectedAssessmentSubject, state.sortBy, state.isEditingMarks, state.marksDraft, handlers)
@@ -891,12 +929,249 @@ function createLabeledSelect(labelText, options) {
  * falls out of the browser's own default behavior, with no custom JS
  * needed for that specific requirement.
  */
-function renderGradebookStep(classroom, assessment, handlers) {
+/**
+ * The full filter + sort pipeline for the Gradebook's own visible
+ * student list — always returns a new array, never mutates
+ * `allStudents` or anything inside it, matching this file's own
+ * existing sortStudents() convention for the older per-subject
+ * screen. Bucketing here reuses getMarksBucketKey() from
+ * config/assessmentMarksColorConfig.js directly — no second,
+ * duplicate threshold definition.
+ */
+function getVisibleGradebookStudents(allStudents, assessmentSubjects, subjectFilter, bucketFilter, searchQuery, sort) {
+  const trimmedQuery = searchQuery.trim().toLowerCase();
+
+  const filtered = allStudents.filter((student) => {
+    if (trimmedQuery && !student.name.toLowerCase().includes(trimmedQuery)) return false;
+
+    if (bucketFilter === 'all') return true;
+
+    if (subjectFilter !== 'all') {
+      // A specific subject is selected — the bucket filter applies to
+      // that exact subject's own mark, matching the explicit example
+      // in this feature's own product spec ("Subject = Science,
+      // Bucket = Red -> only students whose Science mark is Red").
+      const assessmentSubject = assessmentSubjects.find((s) => s.id === subjectFilter);
+      if (!assessmentSubject) return true;
+      const result = assessmentService.getStudentResult(assessmentSubject, student.id);
+      const bucket = result ? getMarksBucketKey(result.marks, assessmentSubject.maximumMarks) : null;
+      return bucket === bucketFilter;
+    }
+
+    // No specific subject selected — matches if the student has AT
+    // LEAST ONE subject in the selected bucket. Not explicitly
+    // specified in the product spec for this exact combination; this
+    // is the most intuitive reading given no other rule was stated,
+    // and is stated plainly here rather than silently assumed.
+    return assessmentSubjects.some((assessmentSubject) => {
+      const result = assessmentService.getStudentResult(assessmentSubject, student.id);
+      const bucket = result ? getMarksBucketKey(result.marks, assessmentSubject.maximumMarks) : null;
+      return bucket === bucketFilter;
+    });
+  });
+
+  const getMarksForSort = (student, assessmentSubjectId) => {
+    const assessmentSubject = assessmentSubjects.find((s) => s.id === assessmentSubjectId);
+    if (!assessmentSubject) return null;
+    const result = assessmentService.getStudentResult(assessmentSubject, student.id);
+    return result ? result.marks : null;
+  };
+
+  const getPercentForSort = (student) => {
+    let totalMarks = 0;
+    let totalMaximum = 0;
+    assessmentSubjects.forEach((assessmentSubject) => {
+      const result = assessmentService.getStudentResult(assessmentSubject, student.id);
+      if (result && result.marks !== null) {
+        totalMarks += result.marks;
+        totalMaximum += assessmentSubject.maximumMarks;
+      }
+    });
+    return totalMaximum > 0 ? (totalMarks / totalMaximum) * 100 : null;
+  };
+
+  const sorted = [...filtered];
+  const direction = sort.direction === 'desc' ? -1 : 1;
+
+  if (sort.field === 'name') {
+    sorted.sort((a, b) => direction * a.name.localeCompare(b.name));
+  } else {
+    const getValue = sort.field === 'percent' ? getPercentForSort : (student) => getMarksForSort(student, sort.field);
+    sorted.sort((a, b) => {
+      const valueA = getValue(a);
+      const valueB = getValue(b);
+      // Blank/unentered marks always sort last, regardless of
+      // direction — a teacher sorting "highest to lowest" almost
+      // certainly wants to see actual scores first, not be met with
+      // a wall of ungraded students at the top.
+      if (valueA === null && valueB === null) return a.name.localeCompare(b.name);
+      if (valueA === null) return 1;
+      if (valueB === null) return -1;
+      return direction * (valueA - valueB);
+    });
+  }
+
+  return sorted;
+}
+
+function renderBucketLegend() {
+  const legend = document.createElement('div');
+  legend.className = 'assessment-gradebook__legend';
+
+  const items = [
+    { className: 'gradebook-cell--low', label: `0\u201317.99 \u2014 Red Bucket (Needs Help)` },
+    { className: 'gradebook-cell--mid', label: `18\u201334.99 \u2014 Yellow Bucket (Developing)` },
+    { className: 'gradebook-cell--high', label: `35\u201350 \u2014 Green Bucket (Strong)` },
+  ];
+  items.forEach(({ className, label }) => {
+    const item = document.createElement('span');
+    item.className = 'assessment-gradebook__legend-item';
+    const swatch = document.createElement('span');
+    swatch.className = `assessment-gradebook__legend-swatch ${className}`;
+    item.appendChild(swatch);
+    item.append(label);
+    legend.appendChild(item);
+  });
+
+  const passMarkItem = document.createElement('span');
+  passMarkItem.className = 'assessment-gradebook__legend-item assessment-gradebook__legend-passmark';
+  passMarkItem.textContent = `Pass Mark: ${PASS_MARK_PERCENT}%`;
+  legend.appendChild(passMarkItem);
+
+  return legend;
+}
+
+const SORT_OPTIONS_STATIC = [
+  { field: 'name', direction: 'asc', label: 'Student Name (A \u2192 Z)' },
+  { field: 'name', direction: 'desc', label: 'Student Name (Z \u2192 A)' },
+  { field: 'percent', direction: 'desc', label: 'Overall % (High \u2192 Low)' },
+  { field: 'percent', direction: 'asc', label: 'Overall % (Low \u2192 High)' },
+];
+
+function renderGradebookControls(classroom, assessmentSubjects, gradebookState, handlers) {
+  const { gradebookSubjectFilter, gradebookBucketFilter, gradebookSearchQuery, gradebookSort } = gradebookState;
+  const bar = document.createElement('div');
+  bar.className = 'assessment-gradebook__controls';
+
+  // --- Subject filter ---
+  const subjectSelect = document.createElement('select');
+  subjectSelect.className = 'assessment-gradebook__control-select';
+  const allSubjectsOption = document.createElement('option');
+  allSubjectsOption.value = 'all';
+  allSubjectsOption.textContent = 'All Subjects';
+  subjectSelect.appendChild(allSubjectsOption);
+  assessmentSubjects.forEach((assessmentSubject) => {
+    const option = document.createElement('option');
+    option.value = assessmentSubject.id;
+    option.textContent = assessmentService.getSubjectTitle(classroom, assessmentSubject.subjectId) || '(Subject removed)';
+    if (assessmentSubject.id === gradebookSubjectFilter) option.selected = true;
+    subjectSelect.appendChild(option);
+  });
+  subjectSelect.addEventListener('change', () => handlers.onGradebookSubjectFilterChange(subjectSelect.value));
+  bar.appendChild(subjectSelect);
+
+  // --- Bucket filter ---
+  const bucketSelect = document.createElement('select');
+  bucketSelect.className = 'assessment-gradebook__control-select';
+  [
+    ['all', 'All Buckets'],
+    ['red', '\ud83d\udd34 Red Bucket'],
+    ['yellow', '\ud83d\udfe1 Yellow Bucket'],
+    ['green', '\ud83d\udfe2 Green Bucket'],
+  ].forEach(([value, label]) => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    if (value === gradebookBucketFilter) option.selected = true;
+    bucketSelect.appendChild(option);
+  });
+  bucketSelect.addEventListener('change', () => handlers.onGradebookBucketFilterChange(bucketSelect.value));
+  bar.appendChild(bucketSelect);
+
+  // --- Sort ---
+  const sortSelect = document.createElement('select');
+  sortSelect.className = 'assessment-gradebook__control-select';
+  const sortOptions = [
+    ...SORT_OPTIONS_STATIC,
+    ...assessmentSubjects.flatMap((assessmentSubject) => {
+      const title = assessmentService.getSubjectTitle(classroom, assessmentSubject.subjectId) || '(Subject removed)';
+      return [
+        { field: assessmentSubject.id, direction: 'desc', label: `${title} (High \u2192 Low)` },
+        { field: assessmentSubject.id, direction: 'asc', label: `${title} (Low \u2192 High)` },
+      ];
+    }),
+  ];
+  sortOptions.forEach(({ field, direction, label }) => {
+    const option = document.createElement('option');
+    option.value = `${field}:${direction}`;
+    option.textContent = label;
+    if (field === gradebookSort.field && direction === gradebookSort.direction) option.selected = true;
+    sortSelect.appendChild(option);
+  });
+  sortSelect.addEventListener('change', () => {
+    const [field, direction] = sortSelect.value.split(':');
+    handlers.onGradebookSortChange(field, direction);
+  });
+  bar.appendChild(sortSelect);
+
+  // --- Student search ---
+  const searchInput = document.createElement('input');
+  searchInput.type = 'text';
+  searchInput.className = 'assessment-gradebook__control-search';
+  searchInput.placeholder = 'Search student\u2026';
+  searchInput.value = gradebookSearchQuery;
+  searchInput.addEventListener('input', () => {
+    // rerender() rebuilds this entire control bar from scratch,
+    // including this exact input — without explicitly restoring
+    // focus and cursor position afterward, every keystroke would
+    // visibly kick focus out of the search box. Cursor position is
+    // captured before the value that triggers it is even applied.
+    const cursorPosition = searchInput.selectionStart;
+    const query = searchInput.value;
+    handlers.onGradebookSearchChange(query);
+    requestGradebookSearchRefocus(cursorPosition);
+  });
+  bar.appendChild(searchInput);
+
+  const hasActiveFilters = gradebookSubjectFilter !== 'all' || gradebookBucketFilter !== 'all' || gradebookSearchQuery.trim() !== '';
+  if (hasActiveFilters) {
+    const clearButton = document.createElement('button');
+    clearButton.type = 'button';
+    clearButton.className = 'btn btn--text assessment-gradebook__clear-filters';
+    clearButton.textContent = 'Clear Filters';
+    clearButton.addEventListener('click', handlers.onGradebookClearFilters);
+    bar.appendChild(clearButton);
+  }
+
+  return bar;
+}
+
+/**
+ * Restores focus + cursor position to the search input after the
+ * full rerender() this same keystroke triggered — queued as a
+ * microtask so it runs after the freshly-rebuilt DOM this same
+ * change produced is actually in place, not the stale one that
+ * existed the instant this function was called.
+ */
+function requestGradebookSearchRefocus(cursorPosition) {
+  queueMicrotask(() => {
+    const input = document.querySelector('.assessment-gradebook__control-search');
+    if (!input) return;
+    input.focus();
+    if (typeof input.setSelectionRange === 'function') {
+      input.setSelectionRange(cursorPosition, cursorPosition);
+    }
+  });
+}
+
+function renderGradebookStep(classroom, assessment, gradebookState, handlers) {
+  const { gradebookSubjectFilter, gradebookBucketFilter, gradebookSearchQuery, gradebookSort } = gradebookState;
   const section = document.createElement('div');
   section.className = 'learning-management__section assessment-gradebook__section';
 
   const assessmentSubjects = assessment.assessmentSubjects;
-  const students = [...assessmentService.getClassroomStudents(classroom)].sort((a, b) => a.name.localeCompare(b.name));
+  const allStudents = assessmentService.getClassroomStudents(classroom);
+  const students = getVisibleGradebookStudents(allStudents, assessmentSubjects, gradebookSubjectFilter, gradebookBucketFilter, gradebookSearchQuery, gradebookSort);
 
   const header = document.createElement('div');
   header.className = 'assessment-gradebook__header';
@@ -925,16 +1200,21 @@ function renderGradebookStep(classroom, assessment, handlers) {
 
   section.appendChild(header);
 
-  if (assessmentSubjects.length > 0 && students.length > 0) {
-    const totalPossibleEntries = students.length * assessmentSubjects.length;
+  if (assessmentSubjects.length > 0 && allStudents.length > 0) {
+    const totalPossibleEntries = allStudents.length * assessmentSubjects.length;
     const totalEnteredEntries = assessmentSubjects.reduce(
       (sum, s) => sum + s.studentResults.filter((r) => r.marks !== null).length,
       0
     );
     const summary = document.createElement('p');
     summary.className = 'assessment-gradebook__summary';
-    summary.textContent = `${students.length} Student${students.length === 1 ? '' : 's'} \u00b7 ${assessmentSubjects.length} Subject${assessmentSubjects.length === 1 ? '' : 's'} \u00b7 ${totalEnteredEntries}/${totalPossibleEntries} Marks Entered`;
+    summary.textContent = `${allStudents.length} Student${allStudents.length === 1 ? '' : 's'} \u00b7 ${assessmentSubjects.length} Subject${assessmentSubjects.length === 1 ? '' : 's'} \u00b7 ${totalEnteredEntries}/${totalPossibleEntries} Marks Entered`;
     section.appendChild(summary);
+  }
+
+  if (assessmentSubjects.length > 0 && allStudents.length > 0) {
+    section.appendChild(renderBucketLegend());
+    section.appendChild(renderGradebookControls(classroom, assessmentSubjects, gradebookState, handlers));
   }
 
   if (assessmentSubjects.length === 0) {
@@ -961,8 +1241,12 @@ function renderGradebookStep(classroom, assessment, handlers) {
   const thead = document.createElement('thead');
   const headerRow = document.createElement('tr');
   const studentTh = document.createElement('th');
-  studentTh.className = 'assessment-gradebook__name-header';
+  studentTh.className = 'assessment-gradebook__name-header assessment-gradebook__sortable-header';
   studentTh.textContent = 'Student';
+  studentTh.addEventListener('click', () => {
+    const nextDirection = gradebookSort.field === 'name' && gradebookSort.direction === 'asc' ? 'desc' : 'asc';
+    handlers.onGradebookSortChange('name', nextDirection);
+  });
   headerRow.appendChild(studentTh);
   const rollTh = document.createElement('th');
   rollTh.className = 'assessment-gradebook__roll-header';
@@ -977,13 +1261,21 @@ function renderGradebookStep(classroom, assessment, handlers) {
     titleEl.textContent = title || '(Subject removed)';
     const maxEl = document.createElement('span');
     maxEl.className = 'assessment-gradebook__subject-max';
-    maxEl.textContent = `/${assessmentSubject.maximumMarks}`;
+    const passMark = getPassMarkForSubject(assessmentSubject.maximumMarks);
+    maxEl.textContent = passMark !== null ? `/${assessmentSubject.maximumMarks} \u00b7 Pass ${passMark}` : `/${assessmentSubject.maximumMarks}`;
     th.append(titleEl, maxEl);
     headerRow.appendChild(th);
   });
   ['Total', '%'].forEach((label) => {
     const th = document.createElement('th');
     th.textContent = label;
+    if (label === '%') {
+      th.className = 'assessment-gradebook__sortable-header';
+      th.addEventListener('click', () => {
+        const nextDirection = gradebookSort.field === 'percent' && gradebookSort.direction === 'desc' ? 'asc' : 'desc';
+        handlers.onGradebookSortChange('percent', nextDirection);
+      });
+    }
     headerRow.appendChild(th);
   });
   thead.appendChild(headerRow);

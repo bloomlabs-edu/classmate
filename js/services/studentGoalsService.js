@@ -19,6 +19,7 @@
 import { getFirestore } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 import { getFirebaseApp } from './firebaseApp.js';
 import * as goalService from './goalService.js';
+import * as goalStatisticsService from './goalStatisticsService.js';
 import * as studentAuthService from './studentAuthService.js';
 import * as studentDeviceService from './studentDeviceService.js';
 import * as workspaceService from './workspaceService.js';
@@ -74,11 +75,17 @@ export async function getGoalCycleForCurrentStudent() {
     uid,
   });
 
-  const categories = goalService.listCategories(cycle).map((category) => ({
-    categoryId: category.id,
-    categoryName: category.name,
-    goal: goals.find((g) => g.categoryId === category.id) ?? null,
-  }));
+  const categories = goalService.listCategories(cycle).map((category) => {
+    const goal = goals.find((g) => g.categoryId === category.id) ?? null;
+    if (goal && goal.status === 'approved') {
+      goal.completedToday = goalStatisticsService.isCompletedToday(cycle, goal.id);
+      goal.currentStreak = goalStatisticsService.getCurrentStreak(cycle, goal.id);
+      goal.longestStreak = goalStatisticsService.getLongestStreak(cycle, goal.id);
+      goal.weeklyCompletionPercent = goalStatisticsService.getWeeklyCompletionPercent(cycle, goal.id);
+      goal.overallCompletionPercent = goalStatisticsService.getOverallCompletionPercent(cycle, goal.id);
+    }
+    return { categoryId: category.id, categoryName: category.name, goal };
+  });
 
   return { cycleId: cycle.id, cycleTitle: cycle.title, startDate: cycle.startDate, endDate: cycle.endDate, categories };
 }

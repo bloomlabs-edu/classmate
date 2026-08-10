@@ -156,7 +156,10 @@ export async function renderStudentGoalTrackerView(container, { onBack }) {
         renderNow();
       },
       onToggleCompletion: async (goalId, completed) => {
-        await setGoalCompletionForCurrentStudent(goalId, getTodayDateKey(), completed);
+        const succeeded = await setGoalCompletionForCurrentStudent(goalId, getTodayDateKey(), completed);
+        if (!succeeded) {
+          window.alert('Something went wrong saving that. Please try again.');
+        }
         await rerender();
       },
       onShareGoal: async (category) => {

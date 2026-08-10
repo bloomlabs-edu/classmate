@@ -130,6 +130,10 @@ export function renderDashboardView(container, props) {
     router.navigate(`/classroom/${classroom.id}/goals`);
   }
 
+  function openFeed() {
+    router.navigate(`/classroom/${classroom.id}/feed`);
+  }
+
   function openClassroomManagement() {
     renderClassroomManagementView(container, {
       classroom,
@@ -221,6 +225,8 @@ export function renderDashboardView(container, props) {
       onOpenLearningManagement: openLearningManagement,
       onOpenAssessmentManagement: openAssessmentManagement,
       onOpenGoalManagement: openGoalManagement,
+      onOpenNotebookTracker,
+      onOpenFeed: openFeed,
     })
   );
 
@@ -365,9 +371,25 @@ const DASHBOARD_MODULES = [
     tier: 'daily',
     accentColor: '#A8541A', // warm terracotta/amber, verified at 5.32:1 against white — distinct from Classroom (teal)/Learning (purple)/Assessments (slate-indigo), fitting for a growth/progress-themed module
   },
+  {
+    id: 'notebooks',
+    title: 'Notebooks',
+    icon: 'notebook-text',
+    description: 'Track notebook submissions',
+    tier: 'daily',
+    accentColor: '#B8630F', // warm amber-orange, distinct from every other card's own color; this screen's existing Notebook Tracker, unchanged, is the destination
+  },
+  {
+    id: 'feed',
+    title: 'Class Feed',
+    icon: 'file-text',
+    description: 'See what students are sharing',
+    tier: 'daily',
+    accentColor: '#2E7D9E', // a restrained blue, distinct from every other card's own color; this screen's existing Class Feed, unchanged, is the destination
+  },
 ];
 
-function renderPrimaryModulesSection({ onStartClassMode, onOpenClassroomManagement, onOpenLearningManagement, onOpenAssessmentManagement, onOpenGoalManagement }) {
+function renderPrimaryModulesSection({ onStartClassMode, onOpenClassroomManagement, onOpenLearningManagement, onOpenAssessmentManagement, onOpenGoalManagement, onOpenNotebookTracker, onOpenFeed }) {
   const section = document.createElement('div');
   section.className = 'primary-modules';
 
@@ -379,6 +401,8 @@ function renderPrimaryModulesSection({ onStartClassMode, onOpenClassroomManageme
     learning: onOpenLearningManagement,
     assessments: onOpenAssessmentManagement,
     goals: onOpenGoalManagement,
+    notebooks: onOpenNotebookTracker,
+    feed: onOpenFeed,
   };
 
   DASHBOARD_MODULES.forEach((module) => {
