@@ -9329,3 +9329,24 @@ button.wizard-checklist__row:hover {
   justify-content: flex-end;
   gap: 0.5rem;
 }
+
+/* Classroom landing — the merged Class Mode + Classroom destination (see ui/views/ClassroomLandingView.js) */
+.classroom-landing__run-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  margin-bottom: 1.5rem;
+  padding: 0.85rem 1.5rem;
+  font-size: 1.05rem;
+}
+.classroom-landing__manage-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.classroom-landing__manage-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}

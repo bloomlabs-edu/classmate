@@ -4,16 +4,23 @@
  * The Classroom Dashboard — the default landing page for a classroom.
  *
  * Information Architecture: the Dashboard now emphasizes daily
- * teaching only, as two equally-weighted primary cards, plus two
- * lower-tier "setup" cards — replacing every previous Dashboard entry
- * point (the header used to carry "Start Class Mode" as its Primary
- * Action and, across earlier milestones, "📚 Manage Lessons,"
- * "✏️ Create Lesson," a "Continue Working" card, and later a
- * standalone "⚙️ Curriculum Management" card as its own peer
- * destination — all of that collapses into this shape now):
+ * teaching only, as one primary card plus lower-tier "daily"/"setup"
+ * cards — replacing every previous Dashboard entry point (the header
+ * used to carry "Start Class Mode" as its Primary Action and, across
+ * earlier milestones, "📚 Manage Lessons," "✏️ Create Lesson," a
+ * "Continue Working" card, and later a standalone "⚙️ Curriculum
+ * Management" card as its own peer destination — all of that
+ * collapses into this shape now):
  *
- *   ▶ Class Mode             — running today's class (onStartClassMode).
- *   👥 Classroom Management  — students, groups, daily operations.
+ *   ▶ Classroom              — merges the former separate "Class
+ *     Mode" and "Classroom" cards into one destination, per explicit
+ *     product decision: a teacher shouldn't need to understand the
+ *     difference between those two names to know where to go. Opens
+ *     ui/views/ClassroomLandingView.js, which offers "Run Today's
+ *     Class" (the exact same, unmodified Class Mode experience —
+ *     onStartClassMode, still the exact same route) and "Manage
+ *     Classroom" (Students / Teams & Groups, both reaching the exact
+ *     same, unmodified ClassroomManagementView.js).
  *   📚 Learning Management   — preparing learning materials and
  *     supporting students. See ui/views/LearningManagementView.js.
  *   📋 Assessment Management — recording exam/test marks.
@@ -72,6 +79,7 @@ import { createTeachingSectionElement } from '../components/TeachingSection.js';
 import { createClassroomSectionElement } from '../components/ClassroomSection.js';
 import * as router from '../router.js';
 import { renderClassroomManagementView } from './ClassroomManagementView.js';
+import { renderClassroomLandingView } from './ClassroomLandingView.js';
 import { renderCurriculumManagementView } from './CurriculumManagementView.js';
 import { logViewMounted } from '../../services/persistenceLogger.js';
 
@@ -139,6 +147,14 @@ export function renderDashboardView(container, props) {
       classroom,
       onBack: () => renderDashboardView(container, props),
       onSelectStudent,
+    });
+  }
+
+  function openClassroomLanding() {
+    renderClassroomLandingView(container, {
+      onBack: () => renderDashboardView(container, props),
+      onStartClassMode,
+      onOpenClassroomManagement: openClassroomManagement,
     });
   }
 
@@ -220,8 +236,7 @@ export function renderDashboardView(container, props) {
 
   wrapper.appendChild(
     renderPrimaryModulesSection({
-      onStartClassMode,
-      onOpenClassroomManagement: openClassroomManagement,
+      onOpenClassroomLanding: openClassroomLanding,
       onOpenLearningManagement: openLearningManagement,
       onOpenAssessmentManagement: openAssessmentManagement,
       onOpenGoalManagement: openGoalManagement,
@@ -331,21 +346,16 @@ export function renderDashboardView(container, props) {
  */
 const DASHBOARD_MODULES = [
   {
-    id: 'classMode',
-    title: 'Class Mode',
-    icon: 'play',
-    description: 'Run today\u2019s class',
-    tier: 'primary',
-    // No accentColor: this card fills with the teacher's own chosen
-    // brand accent (--color-primary-deep), not a fixed module color.
-  },
-  {
     id: 'classroom',
     title: 'Classroom',
     icon: 'users',
-    description: 'Students, groups, and daily operations',
-    tier: 'daily',
-    accentColor: '#0F9E8E', // reuses ICON_CATEGORIES.groups (Icon.js) — Classroom owns Students and Groups, the exact same "groups" concept that color already represents elsewhere in the app
+    description: 'Run your class, manage students, and organize teams',
+    tier: 'primary',
+    // No accentColor: this card fills with the teacher's own chosen
+    // brand accent (--color-primary-deep), not a fixed module color —
+    // inherited from the old Class Mode card's own treatment, since
+    // "Run Today's Class" remains the single most time-critical
+    // action reachable from this merged destination.
   },
   {
     id: 'learning',
@@ -389,15 +399,14 @@ const DASHBOARD_MODULES = [
   },
 ];
 
-function renderPrimaryModulesSection({ onStartClassMode, onOpenClassroomManagement, onOpenLearningManagement, onOpenAssessmentManagement, onOpenGoalManagement, onOpenNotebookTracker, onOpenFeed }) {
+function renderPrimaryModulesSection({ onOpenClassroomLanding, onOpenLearningManagement, onOpenAssessmentManagement, onOpenGoalManagement, onOpenNotebookTracker, onOpenFeed }) {
   const section = document.createElement('div');
   section.className = 'primary-modules';
 
   // The one place runtime behavior meets static metadata — a plain
   // id -> handler lookup, not a chain of per-module conditionals.
   const handlersById = {
-    classMode: onStartClassMode,
-    classroom: onOpenClassroomManagement,
+    classroom: onOpenClassroomLanding,
     learning: onOpenLearningManagement,
     assessments: onOpenAssessmentManagement,
     goals: onOpenGoalManagement,
