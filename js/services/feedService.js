@@ -234,6 +234,35 @@ export async function removePostAsTeacher(classroomId, postId) {
   await feedRepository.removePostAsTeacher(classroomId, postId);
 }
 
+/**
+ * Creates a teacher-authored post — reuses the exact same
+ * feedRepository.createPost() write path
+ * createPostAsCurrentStudent() already uses, and the exact same
+ * teacherFirestore() instance every other teacher-side write in this
+ * file already uses. `studentId` is null (a teacher-authored post
+ * has no associated student); `uid` must be the teacher's own real,
+ * authenticated uid — the existing Firestore rule
+ * (`request.resource.data.uid == request.auth.uid`) requires it, so
+ * this is not a value this function can invent.
+ *
+ * Returns the new postId on success, or null on a genuine failure —
+ * matching createPostAsCurrentStudent()'s own explicit convention.
+ */
+export async function createPostAsTeacher({ classroomId, uid, authorName, text }) {
+  try {
+    return await feedRepository.createPost(feedRepository.teacherFirestore(), {
+      classroomId,
+      studentId: null,
+      uid,
+      authorName,
+      text,
+    });
+  } catch (error) {
+    console.error('[feedService] createPostAsTeacher() failed \u2014 the write was rejected:', error);
+    return null;
+  }
+}
+
 export async function listCommentsForTeacher(classroomId, postId) {
   return feedRepository.listComments(feedRepository.teacherFirestore(), classroomId, postId);
 }

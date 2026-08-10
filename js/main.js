@@ -493,6 +493,7 @@ function renderRoute(route, reason = 'unspecified') {
     } else if (route.name === 'feed') {
       renderFeedModerationView(appContainer, {
         classroom,
+        currentUser,
         onBack: () => router.navigate(`/classroom/${classroom.id}`),
       });
     } else if (route.name === 'recognition') {
