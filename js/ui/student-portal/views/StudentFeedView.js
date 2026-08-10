@@ -19,22 +19,10 @@
 
 import { createBackButton } from '../../components/BackButton.js';
 import { createEmptyStateElement } from '../../components/EmptyState.js';
-import { getEventDetailRoute } from '../../../config/studentEventNavigation.js';
 import { getActiveProfile, getSlotForStudent } from '../../../services/studentDeviceService.js';
 import { ensureAnonymousSignIn } from '../../../services/studentAuthService.js';
 import * as feedService from '../../../services/feedService.js';
-
-function formatRelativeTime(isoString) {
-  const then = new Date(isoString).getTime();
-  const diffMs = Date.now() - then;
-  const minutes = Math.floor(diffMs / 60000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
-  const days = Math.floor(hours / 24);
-  return `${days} day${days === 1 ? '' : 's'} ago`;
-}
+import { renderFeedPostCard } from '../../components/FeedPostCard.js';
 
 export async function renderStudentFeedView(container, { onBack, onNavigateToPath }) {
   container.innerHTML = '';
@@ -133,157 +121,23 @@ export async function renderStudentFeedView(container, { onBack, onNavigateToPat
     }
 
     for (const post of posts) {
-      feedList.appendChild(await renderPostCard(post, activeProfile, currentUid, onNavigateToPath, refresh));
+      feedList.appendChild(
+        await renderFeedPostCard(post, {
+          currentUid,
+          onNavigateToPath,
+          isOwnPost: (p) => p.studentId === activeProfile?.studentId,
+          onReact: (postId, isReacting) => feedService.toggleReactionAsCurrentStudent(postId, isReacting),
+          onListComments: (postId) => feedService.listCommentsForCurrentStudent(postId),
+          onAddComment: (postId, text) => feedService.addCommentAsCurrentStudent(postId, text),
+          canDeleteComment: (comment) => !!activeProfile && comment.studentId === activeProfile.studentId,
+          onDeleteComment: (postId, commentId) => feedService.deleteOwnComment(postId, commentId),
+          canDeletePost: (p) => !!activeProfile && p.studentId === activeProfile.studentId,
+          onDeletePost: (postId) => feedService.deleteOwnPost(postId),
+          onRefresh: refresh,
+        })
+      );
     }
   }
 
   await refresh();
-}
-
-async function renderPostCard(post, activeProfile, currentUid, onNavigateToPath, refresh) {
-  const card = document.createElement('div');
-  card.className = 'student-feed__card';
-
-  const cardHeader = document.createElement('div');
-  cardHeader.className = 'student-feed__card-header';
-  const author = document.createElement('span');
-  author.className = 'student-feed__author';
-  author.textContent = post.authorName;
-  const time = document.createElement('span');
-  time.className = 'student-feed__time';
-  time.textContent = formatRelativeTime(post.createdAt);
-  cardHeader.append(author, time);
-  card.appendChild(cardHeader);
-
-  const text = document.createElement('p');
-  text.className = 'student-feed__text';
-  text.textContent = post.text;
-  card.appendChild(text);
-
-  if (post.media) {
-    const mediaState = document.createElement('p');
-    mediaState.className = 'student-feed__media-state';
-    const isOwnPost = post.studentId === activeProfile?.studentId;
-    if (post.media.status === 'pending') {
-      mediaState.textContent = isOwnPost ? 'Photo waiting for teacher approval.' : '';
-    } else if (post.media.status === 'rejected') {
-      mediaState.textContent = isOwnPost ? 'This photo was not approved by your teacher.' : '';
-    } else if (post.media.status === 'approved') {
-      mediaState.textContent = '[Media — not yet supported in this build]';
-    }
-    if (mediaState.textContent) card.appendChild(mediaState);
-  }
-
-  if (post.source) {
-    const detail = getEventDetailRoute(post.source);
-    if (detail) {
-      const sourceLink = document.createElement('button');
-      sourceLink.type = 'button';
-      sourceLink.className = 'btn btn--text student-feed__source-link';
-      sourceLink.textContent = `${detail.ctaLabel} \u2192`;
-      sourceLink.addEventListener('click', () => onNavigateToPath(detail.path));
-      card.appendChild(sourceLink);
-    }
-  }
-
-  const actions = document.createElement('div');
-  actions.className = 'student-feed__actions';
-
-  const hasReacted = currentUid !== null && (post.reactorUids || []).includes(currentUid);
-  const reactButton = document.createElement('button');
-  reactButton.type = 'button';
-  reactButton.className = 'student-feed__reaction' + (hasReacted ? ' student-feed__reaction--active' : '');
-  reactButton.textContent = `\u2764\ufe0f ${(post.reactorUids || []).length}`;
-  reactButton.addEventListener('click', async () => {
-    reactButton.disabled = true;
-    await feedService.toggleReactionAsCurrentStudent(post.id, !hasReacted);
-    reactButton.disabled = false;
-    await refresh();
-  });
-  actions.appendChild(reactButton);
-
-  const commentToggle = document.createElement('button');
-  commentToggle.type = 'button';
-  commentToggle.className = 'student-feed__comment-toggle';
-  commentToggle.textContent = `\ud83d\udcac ${post.commentCount || 0}`;
-  actions.appendChild(commentToggle);
-
-  if (activeProfile && post.studentId === activeProfile.studentId) {
-    const deleteButton = document.createElement('button');
-    deleteButton.type = 'button';
-    deleteButton.className = 'btn btn--text student-feed__delete';
-    deleteButton.textContent = 'Delete';
-    deleteButton.addEventListener('click', async () => {
-      const confirmed = window.confirm('Delete this post? This cannot be undone.');
-      if (!confirmed) return;
-      await feedService.deleteOwnPost(post.id);
-      await refresh();
-    });
-    actions.appendChild(deleteButton);
-  }
-
-  card.appendChild(actions);
-
-  const commentsSection = document.createElement('div');
-  commentsSection.className = 'student-feed__comments';
-  commentsSection.hidden = true;
-  card.appendChild(commentsSection);
-
-  commentToggle.addEventListener('click', async () => {
-    commentsSection.hidden = !commentsSection.hidden;
-    if (!commentsSection.hidden) {
-      await renderComments(commentsSection, post, activeProfile, refresh);
-    }
-  });
-
-  return card;
-}
-
-async function renderComments(commentsSection, post, activeProfile, refresh) {
-  commentsSection.innerHTML = '';
-  const comments = await feedService.listCommentsForCurrentStudent(post.id);
-
-  comments.forEach((comment) => {
-    const row = document.createElement('div');
-    row.className = 'student-feed__comment';
-    const commentAuthor = document.createElement('span');
-    commentAuthor.className = 'student-feed__comment-author';
-    commentAuthor.textContent = comment.authorName;
-    const commentText = document.createElement('span');
-    commentText.className = 'student-feed__comment-text';
-    commentText.textContent = comment.text;
-    row.append(commentAuthor, commentText);
-
-    if (activeProfile && comment.studentId === activeProfile.studentId) {
-      const deleteCommentButton = document.createElement('button');
-      deleteCommentButton.type = 'button';
-      deleteCommentButton.className = 'btn btn--text student-feed__comment-delete';
-      deleteCommentButton.textContent = 'Delete';
-      deleteCommentButton.addEventListener('click', async () => {
-        await feedService.deleteOwnComment(post.id, comment.id);
-        await refresh();
-      });
-      row.appendChild(deleteCommentButton);
-    }
-    commentsSection.appendChild(row);
-  });
-
-  const commentComposer = document.createElement('div');
-  commentComposer.className = 'student-feed__comment-composer';
-  const commentInput = document.createElement('input');
-  commentInput.type = 'text';
-  commentInput.placeholder = 'Write a comment...';
-  commentComposer.appendChild(commentInput);
-  const commentSubmit = document.createElement('button');
-  commentSubmit.type = 'button';
-  commentSubmit.className = 'btn btn--text';
-  commentSubmit.textContent = 'Send';
-  commentSubmit.addEventListener('click', async () => {
-    const text = commentInput.value.trim();
-    if (!text) return;
-    await feedService.addCommentAsCurrentStudent(post.id, text);
-    await refresh();
-  });
-  commentComposer.appendChild(commentSubmit);
-  commentsSection.appendChild(commentComposer);
 }

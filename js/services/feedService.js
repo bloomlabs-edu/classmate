@@ -235,6 +235,47 @@ export async function removePostAsTeacher(classroomId, postId) {
 }
 
 /**
+ * A teacher's own reaction toggle — reuses the exact same
+ * feedRepository.toggleReaction() the student path already uses, via
+ * the teacher's own already-trusted instance. The existing Firestore
+ * rule for reactorUids/commentCount is deliberately not
+ * author-restricted (see firestore.rules's own comment on this), so
+ * this needed no rules change at all — only this one missing
+ * wrapper, matching removePostAsTeacher()'s own established pattern.
+ */
+export async function toggleReactionAsTeacher(classroomId, postId, uid, isReacting) {
+  try {
+    await feedRepository.toggleReaction(feedRepository.teacherFirestore(), classroomId, postId, uid, isReacting);
+    return true;
+  } catch (error) {
+    console.error('[feedService] toggleReactionAsTeacher() failed:', error);
+    return false;
+  }
+}
+
+/**
+ * A teacher's own comment — reuses the exact same
+ * feedRepository.addComment() the student path already uses.
+ * `uid` must be the teacher's own real, authenticated uid, matching
+ * the existing Firestore rule (`request.resource.data.uid ==
+ * request.auth.uid`), same as createPostAsTeacher()'s own uid
+ * requirement.
+ */
+export async function addCommentAsTeacher(classroomId, postId, { uid, authorName, text }) {
+  try {
+    return await feedRepository.addComment(feedRepository.teacherFirestore(), classroomId, postId, {
+      studentId: null,
+      uid,
+      authorName,
+      text,
+    });
+  } catch (error) {
+    console.error('[feedService] addCommentAsTeacher() failed:', error);
+    return null;
+  }
+}
+
+/**
  * Creates a teacher-authored post — reuses the exact same
  * feedRepository.createPost() write path
  * createPostAsCurrentStudent() already uses, and the exact same

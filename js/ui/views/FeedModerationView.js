@@ -1,12 +1,15 @@
 /**
  * ui/views/FeedModerationView.js
  *
- * Teacher-side Class Feed — the same feed students see, plus a
- * compact pending-media banner at the top and a Delete action on
- * every post. Deliberately one combined screen, not a separate
- * moderation subsystem, per explicit product decision — a teacher
- * checking pending media once a day is the expected rhythm, not a
- * constant push into a dedicated queue screen.
+ * Teacher-side Class Feed — the SAME Feed post card, reactions, and
+ * comment thread students see (see ui/components/FeedPostCard.js,
+ * the shared component this file and StudentFeedView.js both call),
+ * plus a compact pending-media banner and additive teacher
+ * privileges: creating a post, moderating (deleting) any post, and
+ * moderating (deleting) any comment. The teacher is a normal Feed
+ * participant first — able to react and comment exactly like a
+ * student — with moderation layered on top, not a separate
+ * admin/management screen that happens to display posts.
  *
  * Media approval/rejection here is real (see
  * services/feedService.js's own approveMedia()/rejectMedia()) even
@@ -14,12 +17,15 @@
  * lifecycle is fully wired and ready the moment upload itself is
  * built, per this project's own explicit Class Feed design decision
  * to model the states now without inventing storage infrastructure
- * yet.
+ * yet. This stays as its own banner, separate from the shared post
+ * card, since it's a distinct teacher-only workflow (approving
+ * pending media), not part of the common Feed presentation.
  */
 
 import { createBackButton } from '../components/BackButton.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import * as feedService from '../../services/feedService.js';
+import { renderFeedPostCard } from '../components/FeedPostCard.js';
 
 export async function renderFeedModerationView(container, { classroom, currentUser, onBack }) {
   container.innerHTML = '';
@@ -51,8 +57,12 @@ export async function renderFeedModerationView(container, { classroom, currentUs
   banner.hidden = true;
   wrapper.appendChild(banner);
 
+  // Reuses the exact same list container class the student Feed
+  // already uses, since the cards inside are now the exact same
+  // shared component too — this is genuinely the same Feed list,
+  // not a differently-styled teacher equivalent.
   const feedList = document.createElement('div');
-  feedList.className = 'feed-moderation__list';
+  feedList.className = 'student-feed__list';
   wrapper.appendChild(feedList);
 
   container.appendChild(wrapper);
@@ -111,10 +121,87 @@ export async function renderFeedModerationView(container, { classroom, currentUs
       return;
     }
 
-    posts.forEach((post) => feedList.appendChild(renderTeacherPostCard(post, classroom.id, refresh)));
+    for (const post of posts) {
+      const card = await renderFeedPostCard(post, {
+        currentUid: currentUser.uid,
+        // Media pending/rejected status lines are a student-only
+        // concept (a student's own uploaded photo awaiting their
+        // own teacher's review) — the teacher is never "the
+        // student who uploaded this," so this always reports
+        // false, matching the original teacher view's own silence
+        // on media status lines entirely.
+        isOwnPost: () => false,
+        onReact: (postId, isReacting) => feedService.toggleReactionAsTeacher(classroom.id, postId, currentUser.uid, isReacting),
+        onListComments: (postId) => feedService.listCommentsForTeacher(classroom.id, postId),
+        onAddComment: (postId, text) => feedService.addCommentAsTeacher(classroom.id, postId, { uid: currentUser.uid, authorName: currentUser.displayName || 'Teacher', text }),
+        // A teacher may moderate/remove ANY comment, matching the
+        // existing Firestore rule exactly (allow delete: author OR
+        // any classroom member) — not just their own.
+        canDeleteComment: () => true,
+        onDeleteComment: (postId, commentId) => feedService.removeCommentAsTeacher(classroom.id, postId, commentId),
+        // A teacher may moderate/remove ANY post, matching
+        // removePostAsTeacher()'s own existing permission model.
+        canDeletePost: () => true,
+        onDeletePost: (postId) => feedService.removePostAsTeacher(classroom.id, postId),
+        onRefresh: refresh,
+        deletePostLabel: 'Delete post',
+      });
+      card.dataset.postId = post.id;
+      feedList.appendChild(card);
+    }
+
+    if (pending.length > 0) {
+      renderMediaModerationExtras(feedList, posts, classroom.id, refresh);
+    }
   }
 
   await refresh();
+}
+
+/**
+ * The pending-media Approve/Reject controls — a distinct teacher-only
+ * workflow layered onto the already-rendered shared post cards
+ * (found by post id), not a duplicate card. Kept separate from
+ * FeedPostCard.js since media approval has no equivalent at all in
+ * the student Feed experience.
+ */
+function renderMediaModerationExtras(feedList, posts, classroomId, refresh) {
+  posts.forEach((post) => {
+    if (!post.media || post.media.status !== 'pending') return;
+    const matchingCard = [...feedList.children].find((el) => el.dataset && el.dataset.postId === post.id);
+    if (!matchingCard) return;
+
+    matchingCard.classList.add('feed-moderation__card--pending');
+
+    const mediaLine = document.createElement('p');
+    mediaLine.className = 'feed-moderation__media-line';
+    mediaLine.textContent = `Media (${post.media.type}) \u2014 ${post.media.status}`;
+    matchingCard.appendChild(mediaLine);
+
+    const actions = document.createElement('div');
+    actions.className = 'feed-moderation__actions';
+
+    const approveButton = document.createElement('button');
+    approveButton.type = 'button';
+    approveButton.className = 'btn btn--primary';
+    approveButton.textContent = 'Approve';
+    approveButton.addEventListener('click', async () => {
+      await feedService.approveMedia(classroomId, post.id);
+      await refresh();
+    });
+
+    const rejectButton = document.createElement('button');
+    rejectButton.type = 'button';
+    rejectButton.className = 'btn btn--danger';
+    rejectButton.textContent = 'Remove/Reject';
+    rejectButton.addEventListener('click', async () => {
+      await feedService.rejectMedia(classroomId, post.id);
+      await refresh();
+    });
+
+    actions.append(approveButton, rejectButton);
+    matchingCard.appendChild(actions);
+  });
 }
 
 /**
@@ -122,10 +209,10 @@ export async function renderFeedModerationView(container, { classroom, currentUs
  * the existing single `text` field on publish (title, then a blank
  * line, then the message) rather than adding a new field to the
  * post data model at all. Both StudentFeedView.js's own post text
- * and this same screen's own post text already render with
- * white-space: pre-wrap, so the title/message combination displays
- * as two visually distinct lines on both sides without any further
- * change.
+ * and this same screen's own post text (via the shared FeedPostCard)
+ * already render with white-space: pre-wrap, so the title/message
+ * combination displays as two visually distinct lines on both sides
+ * without any further change.
  */
 function renderShareComposer({ onCancel, onPublish }) {
   const composer = document.createElement('div');
@@ -182,74 +269,4 @@ function renderShareComposer({ onCancel, onPublish }) {
   actions.append(cancelButton, publishButton);
   composer.append(titleLabel, messageLabel, errorLine, actions);
   return composer;
-}
-
-
-function renderTeacherPostCard(post, classroomId, refresh) {
-  const card = document.createElement('div');
-  card.className = 'feed-moderation__card';
-  if (post.media && post.media.status === 'pending') card.classList.add('feed-moderation__card--pending');
-
-  const cardHeader = document.createElement('div');
-  cardHeader.className = 'feed-moderation__card-header';
-  const author = document.createElement('span');
-  author.className = 'feed-moderation__author';
-  author.textContent = post.authorName;
-  cardHeader.appendChild(author);
-  card.appendChild(cardHeader);
-
-  const text = document.createElement('p');
-  text.className = 'feed-moderation__text';
-  text.textContent = post.text;
-  card.appendChild(text);
-
-  if (post.media) {
-    const mediaLine = document.createElement('p');
-    mediaLine.className = 'feed-moderation__media-line';
-    mediaLine.textContent = `Media (${post.media.type}) \u2014 ${post.media.status}`;
-    card.appendChild(mediaLine);
-
-    if (post.media.status === 'pending') {
-      const actions = document.createElement('div');
-      actions.className = 'feed-moderation__actions';
-
-      const approveButton = document.createElement('button');
-      approveButton.type = 'button';
-      approveButton.className = 'btn btn--primary';
-      approveButton.textContent = 'Approve';
-      approveButton.addEventListener('click', async () => {
-        await feedService.approveMedia(classroomId, post.id);
-        await refresh();
-      });
-
-      const rejectButton = document.createElement('button');
-      rejectButton.type = 'button';
-      rejectButton.className = 'btn btn--danger';
-      rejectButton.textContent = 'Remove/Reject';
-      rejectButton.addEventListener('click', async () => {
-        await feedService.rejectMedia(classroomId, post.id);
-        await refresh();
-      });
-
-      actions.append(approveButton, rejectButton);
-      card.appendChild(actions);
-    }
-  }
-
-  const footerActions = document.createElement('div');
-  footerActions.className = 'feed-moderation__footer-actions';
-  const deletePostButton = document.createElement('button');
-  deletePostButton.type = 'button';
-  deletePostButton.className = 'btn btn--text';
-  deletePostButton.textContent = 'Delete Post';
-  deletePostButton.addEventListener('click', async () => {
-    const confirmed = window.confirm(`Remove this post from ${post.authorName}? Students will no longer see it.`);
-    if (!confirmed) return;
-    await feedService.removePostAsTeacher(classroomId, post.id);
-    await refresh();
-  });
-  footerActions.appendChild(deletePostButton);
-  card.appendChild(footerActions);
-
-  return card;
 }

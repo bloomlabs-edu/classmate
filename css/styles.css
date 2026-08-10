@@ -8727,26 +8727,8 @@ button.wizard-checklist__row:hover {
   font-weight: 600;
   margin-bottom: 1rem;
 }
-.feed-moderation__list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-.feed-moderation__card {
-  background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  padding: 0.9rem;
-}
 .feed-moderation__card--pending {
   border-left: 3px solid var(--color-warning);
-}
-.feed-moderation__author {
-  font-weight: var(--font-weight-bold);
-}
-.feed-moderation__text {
-  margin: 0.4rem 0;
-  white-space: pre-wrap;
 }
 .feed-moderation__media-line {
   font-size: 0.85rem;
@@ -8757,10 +8739,6 @@ button.wizard-checklist__row:hover {
   display: flex;
   gap: 0.5rem;
   margin-bottom: 0.5rem;
-}
-.feed-moderation__footer-actions {
-  display: flex;
-  justify-content: flex-end;
 }
 
 /* Notebook Tracker — teacher-side "Needs Attention" section (see ui/views/NotebookTrackerView.js) */
