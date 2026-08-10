@@ -39,6 +39,7 @@
 
 import { NotebookWorkType } from '../../services/workTypes/NotebookWorkType.js';
 import * as workRequestService from '../../services/workRequestService.js';
+import * as notebookConfigService from '../../services/notebookConfigService.js';
 import { getClassroomStudents } from '../../services/assessmentService.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { createBackButton } from '../components/BackButton.js';
@@ -65,6 +66,11 @@ export function renderNotebookTrackerView(container, { classroom, onBack, onNavi
   const needsAttention = workRequestService.getStudentsNeedingAttention(classroom);
   if (needsAttention.length > 0) {
     content.appendChild(renderNeedsAttentionSection(needsAttention, classroom, onNavigate));
+  }
+
+  const configuredNotebooks = listConfiguredNotebooks(classroom);
+  if (configuredNotebooks.length > 0) {
+    content.appendChild(renderCheckpointsEntrySection(configuredNotebooks, classroom, onNavigate));
   }
 
   const activeWork = NotebookWorkType.getActiveWork(classroom);
@@ -102,6 +108,52 @@ export function renderNotebookTrackerView(container, { classroom, onBack, onNavi
  * that exact, already-existing drill-down (StudentProfileView's own
  * 'notebooks' tab) — no new destination invented.
  */
+/** Every configured Subject x Notebook Type combination — the same enumeration NotebookWorkType.js's own getStartActions() already does internally, reused directly here since this section needs the same list for a genuinely different purpose (a permanent destination, not a start-action). */
+function listConfiguredNotebooks(classroom) {
+  const notebooks = [];
+  notebookConfigService.listSubjects(classroom).forEach((subject) => {
+    notebookConfigService.listNotebookTypes(classroom, subject.id).forEach((notebookType) => {
+      notebooks.push({ subject, notebookType });
+    });
+  });
+  return notebooks;
+}
+
+/**
+ * A genuinely separate section from the Active Work / Start Actions
+ * grid above — Checkpoints are an always-present destination per
+ * Notebook, not "active work awaiting something" or "a new check to
+ * start," so this deliberately does not go through
+ * NotebookWorkType.js's own frozen getActiveWork()/getStartActions()
+ * contract at all.
+ */
+function renderCheckpointsEntrySection(configuredNotebooks, classroom, onNavigate) {
+  const section = document.createElement('div');
+  section.className = 'notebook-tracker__checkpoints-entry';
+
+  const heading = document.createElement('p');
+  heading.className = 'notebook-tracker__checkpoints-entry-heading';
+  heading.textContent = 'Checkpoints';
+  section.appendChild(heading);
+
+  const list = document.createElement('div');
+  list.className = 'notebook-tracker__checkpoints-entry-list';
+
+  configuredNotebooks.forEach(({ subject, notebookType }) => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'notebook-tracker__checkpoints-entry-row';
+    row.textContent = `${subject.name} \u00b7 ${notebookType.name} \u2192`;
+    row.addEventListener('click', () =>
+      onNavigate(`/classroom/${classroom.id}/notebooks/${subject.id}/${notebookType.id}/checkpoints`)
+    );
+    list.appendChild(row);
+  });
+
+  section.appendChild(list);
+  return section;
+}
+
 function renderNeedsAttentionSection(needsAttention, classroom, onNavigate) {
   const section = document.createElement('div');
   section.className = 'notebook-tracker__attention';

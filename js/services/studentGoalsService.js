@@ -23,6 +23,7 @@ import * as goalStatisticsService from './goalStatisticsService.js';
 import * as studentAuthService from './studentAuthService.js';
 import * as studentDeviceService from './studentDeviceService.js';
 import * as workspaceService from './workspaceService.js';
+import * as studentPortalDataService from './studentPortalDataService.js';
 import * as goalsRepository from '../repositories/firestoreStudentGoalsRepository.js';
 
 function teacherFirestore() {
@@ -39,7 +40,15 @@ export async function getGoalCycleForCurrentStudent() {
   const activeProfile = studentDeviceService.getActiveProfile();
   if (!activeProfile) return null;
 
-  const classroom = await workspaceService.getClassroomOnce(activeProfile.classroomId);
+  // A pure read for rendering — reuses the Student Portal's own
+  // single live subscription when one exists for this exact
+  // classroom, rather than an independent, redundant fresh read.
+  // Never applied to submitGoalForCurrentStudent()'s own read below
+  // this function, which is a genuine pre-write read and must stay
+  // fresh.
+  const classroom =
+    studentPortalDataService.getLiveClassroomIfSubscribed(activeProfile.classroomId) ??
+    (await workspaceService.getClassroomOnce(activeProfile.classroomId));
   if (!classroom) return null;
 
   const cycle = goalService.getActiveCycle(classroom);

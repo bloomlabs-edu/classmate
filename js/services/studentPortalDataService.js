@@ -530,6 +530,22 @@ export function isClassroomSubscribed(classroomId) {
   return subscribedClassroomId === classroomId;
 }
 
+/**
+ * The one, minimal new public surface this milestone adds — lets
+ * code outside this file (studentGoalsService.js,
+ * StudentNotebooksView.js) reuse the exact same "live snapshot if
+ * subscribed, else null" check already proven inside this file (see
+ * getPublicProfileForStudent()'s own identical inline check), rather
+ * than duplicating this logic or leaving a read site to bypass the
+ * live subscription entirely. Returns null (never throws, never
+ * silently falls back itself) when not subscribed to this exact
+ * classroom — the caller decides how to handle that, exactly as
+ * getPublicProfileForStudent() already does today.
+ */
+export function getLiveClassroomIfSubscribed(classroomId) {
+  return subscribedClassroomId === classroomId ? liveClassroom : null;
+}
+
 export async function getTeamSummary() {
   const found = await loadCurrentStudentAndClassroom();
   if (!found || !found.team || found.team.isUngrouped) return null;

@@ -8865,3 +8865,464 @@ button.wizard-checklist__row:hover {
   background-color: rgba(120, 144, 156, 0.08);
   color: #5c7480;
 }
+
+/* Notebook Checkpoints — the "View Checkpoints" entry section on the Notebook Tracker landing page */
+.notebook-tracker__checkpoints-entry {
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+}
+.notebook-tracker__checkpoints-entry-heading {
+  font-weight: var(--font-weight-bold);
+  margin: 0 0 0.5rem;
+}
+.notebook-tracker__checkpoints-entry-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.notebook-tracker__checkpoints-entry-row {
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  font-size: 0.92rem;
+}
+.notebook-tracker__checkpoints-entry-row:hover {
+  background: var(--color-surface-muted, #f4f4f4);
+}
+
+/* Notebook Checkpoints — the grid itself (see ui/views/NotebookCheckpointsView.js) */
+.notebook-checkpoints__content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.notebook-checkpoints__add-button {
+  align-self: flex-start;
+}
+
+.notebook-checkpoints__column-header {
+  min-width: 170px;
+  vertical-align: top;
+  padding: 0.4rem 0.5rem !important;
+}
+.notebook-checkpoints__column-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.3rem;
+}
+.notebook-checkpoints__column-title {
+  font-weight: 600;
+  white-space: normal;
+}
+.notebook-checkpoints__column-meta {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--color-muted);
+  margin-top: 0.15rem;
+}
+.notebook-checkpoints__column-actions {
+  display: flex;
+  gap: 0.2rem;
+  margin-top: 0.3rem;
+}
+.notebook-checkpoints__column-action {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  padding: 0.1rem 0.35rem;
+  cursor: pointer;
+}
+.notebook-checkpoints__column-action:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.notebook-checkpoints__column-action--danger {
+  color: #c62828;
+  border-color: rgba(229, 57, 53, 0.35);
+}
+
+.notebook-checkpoints__cell {
+  padding: 0.3rem !important;
+  text-align: center;
+}
+.notebook-checkpoints__cell-button {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.2rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  white-space: normal;
+}
+.notebook-checkpoints__cell-button:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+.notebook-checkpoints__cell-label {
+  font-size: 0.7rem;
+  color: var(--color-muted);
+}
+.notebook-checkpoints__cell-quick-mark {
+  display: block;
+  width: 100%;
+  margin-top: 0.15rem;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 0.68rem;
+  padding: 0.15rem 0.3rem;
+  cursor: pointer;
+  color: #2e7d9e;
+}
+.notebook-checkpoints__cell-quick-mark:hover {
+  background: rgba(46, 125, 158, 0.08);
+}
+.notebook-checkpoints__cell-quick-review {
+  display: flex;
+  gap: 0.2rem;
+  margin-top: 0.15rem;
+}
+.notebook-checkpoints__cell-quick-review-button {
+  flex: 1;
+  border: 1px solid;
+  border-radius: 6px;
+  font-size: 0.65rem;
+  padding: 0.15rem 0.2rem;
+  cursor: pointer;
+  background: var(--color-surface, #fff);
+  white-space: nowrap;
+}
+.notebook-checkpoints__cell-quick-review-button--complete {
+  border-color: rgba(46, 158, 91, 0.4);
+  color: #227a46;
+}
+.notebook-checkpoints__cell-quick-review-button--complete:hover {
+  background: rgba(46, 158, 91, 0.1);
+}
+.notebook-checkpoints__cell-quick-review-button--incomplete {
+  border-color: rgba(229, 57, 53, 0.4);
+  color: #c62828;
+}
+.notebook-checkpoints__cell-quick-review-button--incomplete:hover {
+  background: rgba(229, 57, 53, 0.1);
+}
+
+.notebook-checkpoints__cell--gray { background-color: rgba(120, 144, 156, 0.08); }
+.notebook-checkpoints__cell--amber { background-color: rgba(183, 121, 31, 0.08); }
+.notebook-checkpoints__cell--purple { background-color: rgba(124, 92, 214, 0.08); }
+.notebook-checkpoints__cell--green { background-color: rgba(46, 158, 91, 0.08); }
+.notebook-checkpoints__cell--orange { background-color: rgba(224, 123, 19, 0.08); }
+.notebook-checkpoints__cell--red { background-color: rgba(229, 57, 53, 0.08); }
+
+/* Checkpoint create/edit form */
+.notebook-checkpoints__form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 1rem;
+  max-width: 420px;
+}
+.notebook-checkpoints__form input[type="text"],
+.notebook-checkpoints__form textarea {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: 0.5rem 0.6rem;
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+.notebook-checkpoints__form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+.notebook-checkpoints__form-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Cell editor sheet */
+.notebook-checkpoints__cell-editor-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+.notebook-checkpoints__cell-editor {
+  background: var(--color-surface, #fff);
+  border-radius: 14px;
+  padding: 1.25rem;
+  width: 90%;
+  max-width: 380px;
+  max-height: 85vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.notebook-checkpoints__cell-editor-heading {
+  font-weight: var(--font-weight-bold);
+  font-size: 1.05rem;
+  margin: 0;
+}
+.notebook-checkpoints__cell-editor-subheading {
+  color: var(--color-muted);
+  margin: 0 0 0.4rem;
+}
+.notebook-checkpoints__cell-editor-section-label {
+  font-weight: 600;
+  font-size: 0.85rem;
+  margin: 0.4rem 0 0.1rem;
+}
+.notebook-checkpoints__cell-editor select,
+.notebook-checkpoints__cell-editor input[type="date"],
+.notebook-checkpoints__cell-editor textarea {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: 0.45rem 0.6rem;
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+.notebook-checkpoints__cell-editor-late-notice {
+  color: #b8630f;
+  font-size: 0.82rem;
+  font-weight: 600;
+  min-height: 1em;
+  margin: 0.2rem 0;
+}
+.notebook-checkpoints__cell-editor-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .notebook-checkpoints__column-header {
+    min-width: 130px;
+  }
+}
+
+/* Checkpoint per-checkpoint summaries and class-level Needs Attention (see ui/views/NotebookCheckpointsView.js) */
+.notebook-checkpoints__summaries {
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 0.7rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.notebook-checkpoints__summary-line {
+  font-size: 0.85rem;
+  margin: 0;
+  color: var(--color-ink);
+}
+.notebook-checkpoints__summary-line span {
+  color: var(--color-muted);
+}
+
+.notebook-checkpoints__attention {
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid rgba(224, 123, 19, 0.5);
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+}
+.notebook-checkpoints__attention-heading {
+  font-weight: var(--font-weight-bold);
+  font-size: 0.8rem;
+  letter-spacing: 0.03em;
+  margin: 0 0 0.5rem;
+  color: var(--color-muted);
+}
+.notebook-checkpoints__attention-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+.notebook-checkpoints__attention-count-button {
+  background: var(--color-surface-muted, #f4f4f4);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  font-size: 0.82rem;
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+}
+.notebook-checkpoints__attention-count-button--active {
+  background: rgba(46, 125, 158, 0.12);
+  border-color: rgba(46, 125, 158, 0.5);
+  font-weight: 600;
+}
+.notebook-checkpoints__attention-students {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.5rem;
+}
+.notebook-checkpoints__attention-student-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0.3rem 0.4rem;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  width: 100%;
+}
+.notebook-checkpoints__attention-student-row:hover {
+  background: var(--color-surface-muted, #f4f4f4);
+}
+.notebook-checkpoints__attention-student-row--active {
+  background: rgba(46, 125, 158, 0.1);
+}
+.notebook-checkpoints__attention-student-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.notebook-checkpoints__attention-student-items {
+  font-size: 0.78rem;
+  color: var(--color-muted);
+}
+
+/* Grid highlight/dim states, applied only while an attention filter is active */
+.notebook-checkpoints__cell--highlighted {
+  outline: 2px solid #2e7d9e;
+  outline-offset: -2px;
+}
+.notebook-checkpoints__cell--dimmed {
+  opacity: 0.35;
+}
+
+/* Student-facing Checkpoints section (see ui/student-portal/views/StudentNotebooksView.js) */
+.student-notebooks__checkpoints-section {
+  margin-top: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.student-notebooks__checkpoints-heading {
+  font-size: 1rem;
+  font-weight: var(--font-weight-bold);
+  margin: 0;
+}
+.student-notebooks__all-caught-up {
+  background: rgba(46, 158, 91, 0.08);
+  border: 1px solid rgba(46, 158, 91, 0.3);
+  border-radius: 12px;
+  padding: 0.6rem 0.9rem;
+  font-weight: 600;
+  color: #227a46;
+  margin: 0;
+}
+.student-notebooks__checkpoint-notebook {
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  padding: 0.75rem 0.9rem;
+}
+.student-notebooks__checkpoint-notebook-heading {
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  color: var(--color-muted);
+  margin: 0 0 0.5rem;
+}
+.student-notebooks__checkpoint-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--color-border);
+  padding: 0.55rem 0.1rem;
+  text-align: left;
+  cursor: pointer;
+}
+.student-notebooks__checkpoint-notebook .student-notebooks__checkpoint-row:first-of-type {
+  border-top: none;
+}
+.student-notebooks__checkpoint-row-title {
+  flex: 1 1 auto;
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+.student-notebooks__checkpoint-row-status {
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.student-notebooks__checkpoint-row-status--gray { color: #5c7480; }
+.student-notebooks__checkpoint-row-status--amber { color: #92660a; }
+.student-notebooks__checkpoint-row-status--purple { color: #6448b8; }
+.student-notebooks__checkpoint-row-status--green { color: #227a46; }
+.student-notebooks__checkpoint-row-status--orange { color: #b8630f; }
+.student-notebooks__checkpoint-row-status--red { color: #c62828; }
+.student-notebooks__checkpoint-row-date {
+  font-size: 0.78rem;
+  color: var(--color-muted);
+  white-space: nowrap;
+  min-width: 3.5rem;
+  text-align: right;
+}
+.student-notebooks__checkpoint-detail-description {
+  color: var(--color-muted);
+  font-size: 0.88rem;
+  margin: 0.2rem 0 0.5rem;
+}
+.student-notebooks__checkpoint-detail-dates {
+  font-size: 0.85rem;
+  color: var(--color-ink);
+  margin: 0.4rem 0;
+}
+.student-notebooks__checkpoint-detail-dates p {
+  margin: 0.15rem 0;
+}
+.student-notebooks__checkpoint-detail-note {
+  font-style: italic;
+  background: var(--color-surface-muted, #f4f4f4);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  margin: 0.3rem 0 0.6rem;
+}
+
+@media (max-width: 480px) {
+  .student-notebooks__checkpoint-row {
+    flex-wrap: wrap;
+  }
+  .student-notebooks__checkpoint-row-date {
+    min-width: 0;
+    text-align: left;
+  }
+}

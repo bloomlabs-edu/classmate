@@ -38,6 +38,7 @@
  */
 
 import { getHomeSummary, getEventFeed, loadCurrentStudentAndClassroom, getWeeklyNetPoints } from '../../../services/studentPortalDataService.js';
+import { createTeamStandingsBoardElement } from '../../components/TeamStandingsBoard.js';
 import { createWeeklyNetPointsSection } from '../../components/WeeklyNetPointsGraph.js';
 import * as studentDeviceService from '../../../services/studentDeviceService.js';
 import { createAvatarElement } from '../../components/AvatarDisplay.js';
@@ -138,36 +139,21 @@ export async function renderStudentJourneyView(container, { onSessionInvalid, on
     wrapper.appendChild(notebooksLink);
   }
 
-  // Class Standings — compact and collapsed by default, per explicit
-  // product decision: the classroom comparison is secondary to a
-  // student's own goals/progress, not the hero content of this
-  // screen. Navigates straight to the existing, real standings screen
-  // (ui/student-portal/views/StudentTeamView.js, the same one the
-  // "Team" nav tab already opens) — no standings logic duplicated or
-  // rebuilt here, just a doorway to it.
-  if (onNavigateToStandings) {
-    const standingsCard = document.createElement('button');
-    standingsCard.type = 'button';
-    standingsCard.className = 'student-home__standings-card';
-    standingsCard.addEventListener('click', onNavigateToStandings);
-
-    const standingsText = document.createElement('span');
-    standingsText.className = 'student-home__standings-text';
-    const standingsTitle = document.createElement('span');
-    standingsTitle.className = 'student-home__standings-title';
-    standingsTitle.textContent = '\ud83c\udfc6 Class Standings';
-    const standingsSubtitle = document.createElement('span');
-    standingsSubtitle.className = 'student-home__standings-subtitle';
-    standingsSubtitle.textContent = 'See how your team is doing';
-    standingsText.append(standingsTitle, standingsSubtitle);
-
-    const chevron = document.createElement('span');
-    chevron.className = 'student-home__standings-chevron';
-    chevron.textContent = '\u203a';
-    chevron.setAttribute('aria-hidden', 'true');
-
-    standingsCard.append(standingsText, chevron);
-    wrapper.appendChild(standingsCard);
+  // The actual, shared Classroom Standings board — the same
+  // component Class Mode and the "Team" tab already render, reused
+  // directly here, never redesigned or duplicated. QA fix: this
+  // previously showed only a compact, collapsed card linking away to
+  // a separate screen, which is precisely the "summarized leaderboard
+  // instead of the actual Class Mode-style board" pattern this
+  // product's own current requirement explicitly calls out to avoid.
+  if (found.classroom) {
+    wrapper.appendChild(
+      createTeamStandingsBoardElement({
+        classroom: found.classroom,
+        onTap: (student) => onNavigateToStudentProfile?.(student.id),
+        onTapTeam: (teamId) => onNavigateToTeam?.(teamId),
+      })
+    );
   }
 
   // Compact Progress Summary — one line, not a re-statement of every
