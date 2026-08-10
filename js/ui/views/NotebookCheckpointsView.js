@@ -318,14 +318,11 @@ function render(container, classroom, subjectId, notebookTypeId, editingCheckpoi
     content.appendChild(renderCheckpointForm(checkpoint, handlers));
   }
 
-  if (checkpoints.length === 0) {
-    content.appendChild(
-      createEmptyStateElement({
-        message: 'No checkpoints yet. Add a checkpoint to start tracking notebook work.',
-      })
-    );
-  } else if (students.length === 0) {
+  if (students.length === 0) {
     content.appendChild(createEmptyStateElement({ message: 'No students on this roster yet.' }));
+  } else if (checkpoints.length === 0) {
+    content.appendChild(renderEmptyCheckpointsInstructionalCue());
+    content.appendChild(renderEmptyCheckpointsGrid(students, handlers));
   } else {
     content.appendChild(renderGrid(classroom, checkpoints, students, activeAttentionFilter, handlers));
   }
@@ -340,6 +337,94 @@ function render(container, classroom, subjectId, notebookTypeId, editingCheckpoi
 
   wrapper.appendChild(content);
   container.appendChild(wrapper);
+}
+
+/**
+ * The empty-state instructional cue — small and unobtrusive, per
+ * explicit instruction, not a tutorial. Only ever shown alongside
+ * renderEmptyCheckpointsGrid() below, never on its own.
+ */
+function renderEmptyCheckpointsInstructionalCue() {
+  const cue = document.createElement('div');
+  cue.className = 'notebook-checkpoints__empty-cue';
+  const icon = document.createElement('span');
+  icon.className = 'notebook-checkpoints__empty-cue-icon';
+  icon.textContent = '\ud83d\udca1';
+  const text = document.createElement('div');
+  const title = document.createElement('p');
+  title.className = 'notebook-checkpoints__empty-cue-title';
+  title.textContent = 'Start by adding your first checkpoint.';
+  const subtitle = document.createElement('p');
+  subtitle.className = 'notebook-checkpoints__empty-cue-subtitle';
+  subtitle.textContent = 'Click the first column header to enter the unit or checkpoint you want to track.';
+  text.append(title, subtitle);
+  cue.append(icon, text);
+  return cue;
+}
+
+/**
+ * The pre-first-checkpoint grid — the real roster (reusing the exact
+ * same `students` array and sticky-table CSS classes renderGrid()
+ * itself uses), plus exactly ONE placeholder checkpoint column that
+ * is NOT a real Checkpoint at all — clicking it calls the same
+ * handlers.onStartCreate() the existing "+ Add Checkpoint" button
+ * already uses, opening the exact same, unmodified creation form.
+ * Every student cell under the placeholder is a plain, non-
+ * interactive dash — there is no real checkpoint to click into yet,
+ * and this function creates neither a Checkpoint nor any
+ * StudentCheckpointRecord merely by rendering.
+ */
+function renderEmptyCheckpointsGrid(students, handlers) {
+  const scroll = document.createElement('div');
+  scroll.className = 'assessment-gradebook__scroll';
+
+  const table = document.createElement('table');
+  table.className = 'assessment-gradebook notebook-checkpoints__table';
+
+  const thead = document.createElement('thead');
+  const headerRow = document.createElement('tr');
+
+  const nameTh = document.createElement('th');
+  nameTh.className = 'assessment-gradebook__name-header';
+  nameTh.textContent = 'Students';
+  headerRow.appendChild(nameTh);
+
+  const placeholderTh = document.createElement('th');
+  placeholderTh.className = 'notebook-checkpoints__column-header';
+  const placeholderButton = document.createElement('button');
+  placeholderButton.type = 'button';
+  placeholderButton.className = 'notebook-checkpoints__empty-column-button';
+  const placeholderIcon = document.createElement('span');
+  placeholderIcon.textContent = '\u270e';
+  const placeholderLabel = document.createElement('span');
+  placeholderLabel.textContent = 'Enter unit name / checkpoint';
+  placeholderButton.append(placeholderIcon, placeholderLabel);
+  placeholderButton.addEventListener('click', handlers.onStartCreate);
+  placeholderTh.appendChild(placeholderButton);
+  headerRow.appendChild(placeholderTh);
+
+  thead.appendChild(headerRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  students.forEach((student) => {
+    const row = document.createElement('tr');
+    const nameCell = document.createElement('td');
+    nameCell.className = 'assessment-gradebook__name-cell';
+    nameCell.textContent = student.name;
+    row.appendChild(nameCell);
+
+    const placeholderCell = document.createElement('td');
+    placeholderCell.className = 'notebook-checkpoints__cell notebook-checkpoints__cell--gray';
+    placeholderCell.textContent = '\u2014';
+    row.appendChild(placeholderCell);
+
+    tbody.appendChild(row);
+  });
+  table.appendChild(tbody);
+
+  scroll.appendChild(table);
+  return scroll;
 }
 
 function renderGrid(classroom, checkpoints, students, activeAttentionFilter, handlers) {
