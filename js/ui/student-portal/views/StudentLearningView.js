@@ -159,16 +159,62 @@ function renderUnitsLevel(subject, handlers) {
 }
 
 function renderConceptsLevel(unit, handlers) {
+  const wrapper = document.createElement('div');
+
+  if (unit?.learningHubPack) {
+    wrapper.appendChild(createPackCard(unit.learningHubPack));
+  }
+
   const concepts = unit?.concepts || [];
   if (concepts.length === 0) {
-    return createEmptyStateElement({ message: 'This unit has no concepts yet.' });
+    wrapper.appendChild(createEmptyStateElement({ message: 'This unit has no concepts yet.' }));
+    return wrapper;
   }
   const list = document.createElement('div');
   list.className = 'student-learning__list';
   concepts.forEach((concept) => {
     list.appendChild(createLearningRow(concept.title, () => handlers.onSelectConcept(concept)));
   });
-  return list;
+  wrapper.appendChild(list);
+  return wrapper;
+}
+
+/**
+ * The assigned Learning Hub Pack card — title only (ClassMate never
+ * stores the Pack's own Topics/Experiences, only this reference), a
+ * single "Open Learning Experience" launch action reusing
+ * buildLearningHubLaunchUrl('pack', packId) directly — the exact
+ * same, already-generalized function every individual Experience
+ * resource already uses, not a second launch mechanism.
+ */
+function createPackCard(learningHubPack) {
+  const card = document.createElement('div');
+  card.className = 'student-learning__resource-card';
+
+  const iconEl = createIcon('chalkboard-easel', { size: 22, className: 'student-learning__resource-icon' });
+  card.appendChild(iconEl);
+
+  const textWrap = document.createElement('div');
+  textWrap.className = 'student-learning__resource-text';
+  const titleEl = document.createElement('p');
+  titleEl.className = 'student-learning__resource-title';
+  titleEl.textContent = learningHubPack.title;
+  const typeEl = document.createElement('p');
+  typeEl.className = 'student-learning__resource-type';
+  typeEl.textContent = 'Learning Hub Pack';
+  textWrap.append(titleEl, typeEl);
+  card.appendChild(textWrap);
+
+  const openButton = document.createElement('button');
+  openButton.type = 'button';
+  openButton.className = 'btn btn--primary student-learning__resource-action';
+  openButton.textContent = 'Open Learning Experience';
+  openButton.addEventListener('click', () => {
+    window.open(buildLearningHubLaunchUrl('pack', learningHubPack.packId), '_blank');
+  });
+  card.appendChild(openButton);
+
+  return card;
 }
 
 function renderResourcesLevelPlaceholder() {

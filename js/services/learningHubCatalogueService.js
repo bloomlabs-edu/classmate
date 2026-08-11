@@ -17,7 +17,7 @@
  * showing its own "couldn't load" state when this returns empty.
  */
 
-import { LEARNING_HUB_CATALOGUE_URL } from '../config/learningHubCatalogueConfig.js';
+import { LEARNING_HUB_CATALOGUE_URL, LEARNING_HUB_PACKS_URL } from '../config/learningHubCatalogueConfig.js';
 
 export async function fetchLearningHubCatalogue() {
   try {
@@ -27,6 +27,27 @@ export async function fetchLearningHubCatalogue() {
     return Array.isArray(data.experiences) ? data.experiences : [];
   } catch (error) {
     console.error('[learningHubCatalogueService] Failed to load the Learning Hub catalogue:', error);
+    return [];
+  }
+}
+
+/**
+ * Mirrors fetchLearningHubCatalogue() exactly — same contract (never
+ * throws, empty array on failure), same "plain explicit fetch, never
+ * a persisted cache" principle already established for the
+ * Experience catalogue. ClassMate never stores a Pack's own internal
+ * Topics/Experiences anywhere — only whichever single Pack a teacher
+ * explicitly references from a Unit (see models/LearningUnit.js's
+ * own `learningHubPack` field).
+ */
+export async function fetchLearningHubPacks() {
+  try {
+    const response = await fetch(LEARNING_HUB_PACKS_URL);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return Array.isArray(data.packs) ? data.packs : [];
+  } catch (error) {
+    console.error('[learningHubCatalogueService] Failed to load Learning Hub Packs:', error);
     return [];
   }
 }

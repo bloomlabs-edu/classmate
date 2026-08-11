@@ -9459,3 +9459,43 @@ button.wizard-checklist__row:hover {
 .concept-workspace__learning-hub-experience-row:hover {
   background: rgba(46, 125, 158, 0.06);
 }
+
+/* Unit-level Learning Hub Pack association (see ui/views/LearningManagementView.js) */
+.learning-management__learning-hub-pack-section {
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.learning-management__learning-hub-pack-current {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+  flex: 1 1 auto;
+}
+.learning-management__learning-hub-pack-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+.learning-management__learning-hub-pack-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.learning-management__learning-hub-pack-option:hover {
+  background: rgba(46, 125, 158, 0.06);
+}

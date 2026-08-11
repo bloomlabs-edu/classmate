@@ -14,3 +14,6 @@
  * URL itself). This is not a real, working URL yet.
  */
 export const LEARNING_HUB_CATALOGUE_URL = 'https://learning-hub.example/catalogue.json';
+
+/** Same placeholder-host reasoning as above, for the Packs list specifically. */
+export const LEARNING_HUB_PACKS_URL = 'https://learning-hub.example/packs.json';

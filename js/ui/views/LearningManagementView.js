@@ -79,6 +79,7 @@ import { getDisplayName } from '../../services/classroomService.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
 import * as learningRecordTeacherService from '../../services/learningRecordTeacherService.js';
 import * as workspaceService from '../../services/workspaceService.js';
+import { fetchLearningHubPacks } from '../../services/learningHubCatalogueService.js';
 import * as curriculumIndexRepository from '../../services/curriculumIndexRepository.js';
 import { resetLearningManagementData } from '../../services/devLearningManagementResetService.js';
 import { isDebugModeEnabled } from '../../services/debugModeService.js';
@@ -335,6 +336,15 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
     },
     onSelectUnit: (unitId) => {
       selectedUnitId = unitId;
+      rerender();
+    },
+    onSetUnitLearningHubPack: (unit, pack) => {
+      // A reference only — {packId, title} — never the Pack's own
+      // internal Topics/Experiences. Mirrors exactly how
+      // linkedCurriculumUnitId already works on this same model.
+      unit.learningHubPack = pack ? { packId: pack.id, title: pack.title } : null;
+      if (!pack) delete unit.learningHubPack; // omit entirely when cleared, matching this field's own "omit, never undefined" Firestore-safety convention
+      workspaceService.save(selectedClassroom);
       rerender();
     },
     onSelectConcept: (concept) => {
@@ -751,6 +761,66 @@ function renderDangerZone(subject, handlers) {
   return zone;
 }
 
+/**
+ * Shows the currently-referenced Learning Hub Pack (title only, never
+ * its own internal Topics/Experiences) with a Change/Remove action,
+ * or an "Associate" action when none is set. The picker itself
+ * fetches the real Packs list on demand, mirroring the exact same
+ * "sync placeholder, then async replace" pattern already used for
+ * the Learning Hub Experience picker in ConceptWorkspaceView.js.
+ */
+export function renderUnitPackControl(container, unit, handlers) {
+  container.innerHTML = '';
+
+  if (unit.learningHubPack) {
+    const currentLine = document.createElement('p');
+    currentLine.className = 'learning-management__learning-hub-pack-current';
+    currentLine.textContent = `\ud83d\udce6 Learning Hub Pack: ${unit.learningHubPack.title}`;
+    container.appendChild(currentLine);
+
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'btn btn--text';
+    removeButton.textContent = 'Remove';
+    removeButton.addEventListener('click', () => handlers.onSetUnitLearningHubPack(unit, null));
+    container.appendChild(removeButton);
+    return;
+  }
+
+  const associateButton = document.createElement('button');
+  associateButton.type = 'button';
+  associateButton.className = 'btn btn--secondary';
+  associateButton.textContent = '+ Associate Learning Hub Pack';
+  associateButton.addEventListener('click', () => {
+    const pickerContainer = document.createElement('div');
+    pickerContainer.className = 'learning-management__learning-hub-pack-picker';
+    const loadingMessage = document.createElement('p');
+    loadingMessage.className = 'learning-management__intro';
+    loadingMessage.textContent = 'Loading\u2026';
+    pickerContainer.appendChild(loadingMessage);
+    container.appendChild(pickerContainer);
+    associateButton.disabled = true;
+
+    fetchLearningHubPacks().then((packs) => {
+      pickerContainer.innerHTML = '';
+      if (packs.length === 0) {
+        pickerContainer.appendChild(createEmptyStateElement({ message: 'Could not load Learning Hub Packs right now.' }));
+        return;
+      }
+      packs.forEach((pack) => {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'learning-management__learning-hub-pack-option';
+        const curriculumLine = pack.curriculum ? ` \u00b7 ${pack.curriculum.curriculum} \u00b7 Grade ${pack.curriculum.grade}` : '';
+        row.textContent = `${pack.title}${curriculumLine}`;
+        row.addEventListener('click', () => handlers.onSetUnitLearningHubPack(unit, pack));
+        pickerContainer.appendChild(row);
+      });
+    });
+  });
+  container.appendChild(associateButton);
+}
+
 function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, handlers) {
   const wrapper = document.createElement('div');
 
@@ -793,6 +863,12 @@ function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, handlers)
     const conceptsHeading = document.createElement('p');
     conceptsHeading.className = 'learning-management__intro';
     conceptsHeading.textContent = 'Concepts';
+
+    const packSection = document.createElement('div');
+    packSection.className = 'learning-management__learning-hub-pack-section';
+    renderUnitPackControl(packSection, selectedUnit, handlers);
+    wrapper.appendChild(packSection);
+
     wrapper.appendChild(conceptsHeading);
 
     if (selectedUnit.concepts.length === 0) {

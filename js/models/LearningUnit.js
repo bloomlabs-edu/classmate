@@ -60,7 +60,7 @@
 
 import { generateId } from '../utils/idGenerator.js';
 
-export function createLearningUnit({ id, title, concepts = [], partName, linkedCurriculumUnitId = null, number = null } = {}) {
+export function createLearningUnit({ id, title, concepts = [], partName, linkedCurriculumUnitId = null, number = null, learningHubPack = null } = {}) {
   const unit = {
     id: id || generateId(),
     title,
@@ -75,13 +75,17 @@ export function createLearningUnit({ id, title, concepts = [], partName, linkedC
     unit.partName = partName;
   }
 
-  // TEMPORARY DIAGNOSTIC — tracing whether THIS function, in THIS
-  // deployed session, actually produces the fixed shape or not. See
-  // this project's own investigation into the partName/undefined
-  // Firestore rejection bug.
-  console.error(`[createLearningUnit] TEMPORARY DIAGNOSTIC \u2014 called with partName argument =`, partName);
-  console.error(`[createLearningUnit] TEMPORARY DIAGNOSTIC \u2014 'partName' in returned unit?`, 'partName' in unit);
-  console.error(`[createLearningUnit] TEMPORARY DIAGNOSTIC \u2014 returned unit:`, JSON.stringify(unit));
+  // `learningHubPack` — optional, nullable, the exact same
+  // "reference only, never the referenced thing's own internal
+  // composition" convention `linkedCurriculumUnitId` above already
+  // established. Shape: { packId, title } — ClassMate never stores
+  // a Pack's own Topics/Experiences, only enough to launch it and
+  // show a teacher/student what it's called. Omitted entirely (not
+  // set to `undefined`) when absent, for the same Firestore-safety
+  // reason `partName` above is handled the same way.
+  if (learningHubPack !== undefined && learningHubPack !== null) {
+    unit.learningHubPack = learningHubPack;
+  }
 
   return unit;
 }
