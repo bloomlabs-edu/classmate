@@ -81,3 +81,22 @@ export const RESOURCE_STATUS_LABELS = Object.freeze({
 export function getResourceStatusLabel(status) {
   return RESOURCE_STATUS_LABELS[status] || RESOURCE_STATUS_LABELS.draft;
 }
+
+/**
+ * Who a Resource is for (see models/Resource.js's own doc comment).
+ * Deliberately explicit wording, never "Public"/"Private" — the
+ * meaning must be obvious to a teacher at a glance. Order matters
+ * here: it's the exact order the teacher-facing toggle control
+ * renders them in (see ui/views/ConceptWorkspaceView.js).
+ */
+export const AUDIENCE_KEYS = Object.freeze(['teacher', 'student', 'both']);
+
+export const AUDIENCE_LABELS = Object.freeze({
+  teacher: 'Teacher only',
+  student: 'Students',
+  both: 'Teacher + Students',
+});
+
+export function getAudienceLabel(audience) {
+  return AUDIENCE_LABELS[audience] || AUDIENCE_LABELS.teacher;
+}

@@ -109,6 +109,22 @@ export async function getResources(classroomId, concept) {
   return links.map((link) => resourceById.get(link.resourceId)).filter(Boolean);
 }
 
+/**
+ * The student-facing counterpart to getResources() — reuses it
+ * directly (never a second link-resolution implementation), then
+ * applies the one, conservative audience rule: only 'student' or
+ * 'both' is visible. An undefined audience (every resource created
+ * before this field existed, and any newly-created resource until a
+ * teacher-facing audience control exists) is treated as
+ * student-invisible, never assumed visible — per explicit product
+ * decision, this is deliberately the strict, "opt-in" direction, not
+ * "opt-out."
+ */
+export async function getStudentVisibleResources(classroomId, concept) {
+  const resources = await getResources(classroomId, concept);
+  return resources.filter((resource) => resource.audience === 'student' || resource.audience === 'both');
+}
+
 export async function getResourceById(classroomId, concept, resourceId) {
   const resources = await getResources(classroomId, concept);
   return resources.find((resource) => resource.id === resourceId) || null;
@@ -139,6 +155,22 @@ export async function setResourceStatus(classroomId, concept, resourceId, status
   const resource = await getResourceById(classroomId, concept, resourceId);
   if (!resource) return null;
   resource.status = status;
+  resource.updatedAt = getCurrentIsoDate();
+  await resourceRepository.saveResource(classroomId, resource);
+  return resource;
+}
+
+/**
+ * Mirrors setResourceStatus() exactly — same read/mutate/save shape,
+ * the same, single persistence path every other Resource mutation
+ * already uses. Never affects teacher-facing reads (getResources()
+ * always returns every resource regardless of audience); only
+ * getStudentVisibleResources() reads this field at all.
+ */
+export async function setResourceAudience(classroomId, concept, resourceId, audience) {
+  const resource = await getResourceById(classroomId, concept, resourceId);
+  if (!resource) return null;
+  resource.audience = audience;
   resource.updatedAt = getCurrentIsoDate();
   await resourceRepository.saveResource(classroomId, resource);
   return resource;

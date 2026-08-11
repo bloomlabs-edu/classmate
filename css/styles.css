@@ -9350,3 +9350,112 @@ button.wizard-checklist__row:hover {
   align-items: center;
   gap: 0.4rem;
 }
+
+/* Student Learning surface — Subjects/Units/Concepts/Resources drill-down (see ui/student-portal/views/StudentLearningView.js) */
+.student-learning__content {
+  padding: 0 1rem 1.5rem;
+}
+.student-learning__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.student-learning__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.student-learning__row-chevron {
+  color: var(--color-muted);
+  font-size: 1.1rem;
+}
+.student-learning__loading {
+  color: var(--color-muted);
+  padding: 1rem 0;
+}
+.student-learning__resource-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+}
+.student-learning__resource-icon {
+  flex-shrink: 0;
+  color: #2e7d9e;
+}
+.student-learning__resource-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.student-learning__resource-title {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+.student-learning__resource-type {
+  margin: 0.15rem 0 0;
+  font-size: 0.78rem;
+  color: var(--color-muted);
+}
+.student-learning__resource-action {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Learning Hub Experience creation flow (see ui/views/ConceptWorkspaceView.js) */
+.concept-workspace__learning-hub-option {
+  width: 100%;
+  flex-direction: row;
+  justify-content: center;
+  margin-top: 0.75rem;
+  border-color: rgba(46, 125, 158, 0.5);
+  color: #2e7d9e;
+}
+.concept-workspace__learning-hub-search {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.55rem 0.7rem;
+  margin: 0.5rem 0 0.75rem;
+}
+.concept-workspace__learning-hub-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.concept-workspace__learning-hub-group-heading {
+  font-weight: var(--font-weight-bold);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-muted);
+  margin: 0.75rem 0 0.25rem;
+}
+.concept-workspace__learning-hub-experience-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.concept-workspace__learning-hub-experience-row:hover {
+  background: rgba(46, 125, 158, 0.06);
+}

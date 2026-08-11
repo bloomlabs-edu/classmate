@@ -36,13 +36,17 @@ import * as workspaceService from '../../services/workspaceService.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
 import * as learningRecordTeacherService from '../../services/learningRecordTeacherService.js';
 import * as resourceService from '../../services/resourceService.js';
+import * as resourceRepository from '../../services/resourceRepository.js';
+import { fetchLearningHubCatalogue, groupExperiencesByType } from '../../services/learningHubCatalogueService.js';
 import { getUnderstandingLabel, getNotebookStatusLabel } from '../../config/learningRecordConfig.js';
 import {
   RESOURCE_TYPE_KEYS,
   RESOURCE_STATUS_KEYS,
+  AUDIENCE_KEYS,
   getResourceTypeLabel,
   getResourceTypeIcon,
   getResourceStatusLabel,
+  getAudienceLabel,
 } from '../../config/resourceTypeConfig.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { createIcon } from '../components/Icon.js';
@@ -75,6 +79,7 @@ export function renderConceptWorkspaceView(container, { classroom, subject, unit
   let resourceMode = initialResourceId ? 'details' : 'list';
   let pendingType = null;
   let selectedResourceId = initialResourceId;
+  let pendingLearningHubExperience = null; // the {id, title, type, entry} the teacher picked from the catalogue, held until the naming/audience step
 
   async function rerender() {
     // Learning Hub's own concern, not workspaceService's or
@@ -91,7 +96,7 @@ export function renderConceptWorkspaceView(container, { classroom, subject, unit
     // here rather than scattered through the render tree.
     const resources = await resourceService.getResources(classroom.id, concept);
 
-    renderWorkspace(container, classroom, subject, unit, concept, activeTab, resources, { resourceMode, pendingType, selectedResourceId }, {
+    renderWorkspace(container, classroom, subject, unit, concept, activeTab, resources, { resourceMode, pendingType, selectedResourceId, pendingLearningHubExperience }, {
       onBack,
       onSelectTab: (tabId) => {
         activeTab = tabId;
@@ -109,12 +114,42 @@ export function renderConceptWorkspaceView(container, { classroom, subject, unit
         resourceMode = 'name-new';
         rerender();
       },
+      onChooseLearningHubExperience: () => {
+        resourceMode = 'learning-hub-catalogue';
+        rerender();
+      },
+      onSelectLearningHubExperience: (experience) => {
+        pendingLearningHubExperience = experience;
+        resourceMode = 'learning-hub-name-new';
+        rerender();
+      },
       onCreateResource: async (title) => {
         const resource = await resourceService.createResourceOnConcept(classroom.id, concept, { title, type: pendingType });
         workspaceService.save(classroom);
         pendingType = null;
         selectedResourceId = resource.id;
         resourceMode = 'details'; // land on the new resource's own page, not back on the list
+        rerender();
+      },
+      onCreateLearningHubResource: async (title, audience) => {
+        // Per explicit product decision: an existing, appropriate
+        // Resource type is used (never a new type), content.kind
+        // remains the sole authoritative marker of "this is a
+        // Learning Hub experience," and only the selected
+        // reference — never the full catalogue entry — is stored.
+        const resourceType = LEARNING_HUB_EXPERIENCE_TYPE_TO_RESOURCE_TYPE[pendingLearningHubExperience.type] || 'activity';
+        const resource = await resourceService.createResourceOnConcept(classroom.id, concept, { title, type: resourceType });
+        resource.content = {
+          kind: 'learning_hub_experience',
+          experienceType: pendingLearningHubExperience.type,
+          experienceId: pendingLearningHubExperience.id,
+        };
+        resource.audience = audience;
+        await resourceRepository.saveResource(classroom.id, resource);
+        workspaceService.save(classroom);
+        pendingLearningHubExperience = null;
+        selectedResourceId = resource.id;
+        resourceMode = 'details';
         rerender();
       },
       onSelectResource: (resourceId) => {
@@ -126,6 +161,7 @@ export function renderConceptWorkspaceView(container, { classroom, subject, unit
         resourceMode = 'list';
         pendingType = null;
         selectedResourceId = null;
+        pendingLearningHubExperience = null;
         rerender();
       },
       rerender,
@@ -322,13 +358,19 @@ export function createTaughtToggle(classroom, concept, onChanged) {
  * pretending that editor exists yet.
  */
 function renderResourcesTab(container, classroom, concept, resources, resourceState, handlers) {
-  const { resourceMode, pendingType, selectedResourceId } = resourceState;
+  const { resourceMode, pendingType, selectedResourceId, pendingLearningHubExperience } = resourceState;
 
   if (resourceMode === 'choose-type') {
     return renderChooseResourceTypeView(handlers);
   }
   if (resourceMode === 'name-new') {
     return renderNameNewResourceView(pendingType, handlers);
+  }
+  if (resourceMode === 'learning-hub-catalogue') {
+    return renderLearningHubCatalogueView(handlers);
+  }
+  if (resourceMode === 'learning-hub-name-new') {
+    return renderLearningHubNameNewView(pendingLearningHubExperience, handlers);
   }
   if (resourceMode === 'details') {
     const resource = resources.find((r) => r.id === selectedResourceId) || null;
@@ -473,6 +515,17 @@ function renderChooseResourceTypeView(handlers) {
   });
 
   section.appendChild(grid);
+
+  const learningHubButton = document.createElement('button');
+  learningHubButton.type = 'button';
+  learningHubButton.className = 'concept-workspace__resource-type-option concept-workspace__learning-hub-option';
+  learningHubButton.appendChild(createIcon('chalkboard-easel', { size: 20 }));
+  const learningHubLabel = document.createElement('span');
+  learningHubLabel.textContent = 'Learning Hub Experience';
+  learningHubButton.appendChild(learningHubLabel);
+  learningHubButton.addEventListener('click', () => handlers.onChooseLearningHubExperience());
+  section.appendChild(learningHubButton);
+
   return section;
 }
 
@@ -524,6 +577,155 @@ function renderNameNewResourceView(pendingType, handlers) {
 }
 
 /**
+ * The Learning Hub catalogue picker — fetches the real, currently
+ * available experiences (services/learningHubCatalogueService.js)
+ * and lets a teacher search/select one. A search box filters the
+ * already-loaded list client-side (no search infrastructure, no
+ * server-side query) — matching the explicit "simple catalogue
+ * picker, not a marketplace" instruction. An unreachable/empty
+ * catalogue shows a plain message rather than a broken screen.
+ */
+function renderLearningHubCatalogueView(handlers) {
+  const section = document.createElement('div');
+  section.className = 'concept-workspace__section';
+
+  const backButton = createBackButton(handlers.onBackToResourceList);
+  section.appendChild(backButton);
+
+  const heading = document.createElement('p');
+  heading.className = 'concept-workspace__tab-intro';
+  heading.textContent = 'Learning Hub Experience';
+  section.appendChild(heading);
+
+  const searchInput = document.createElement('input');
+  searchInput.type = 'text';
+  searchInput.placeholder = 'Search experiences...';
+  searchInput.className = 'concept-workspace__learning-hub-search';
+  section.appendChild(searchInput);
+
+  const resultsContainer = document.createElement('div');
+  resultsContainer.className = 'concept-workspace__learning-hub-results';
+  const loadingMessage = document.createElement('p');
+  loadingMessage.className = 'concept-workspace__tab-intro';
+  loadingMessage.textContent = 'Loading\u2026';
+  resultsContainer.appendChild(loadingMessage);
+  section.appendChild(resultsContainer);
+
+  fetchLearningHubCatalogue().then((experiences) => {
+    function renderResults(filterText) {
+      resultsContainer.innerHTML = '';
+      const filtered = filterText
+        ? experiences.filter((experience) => experience.title.toLowerCase().includes(filterText.toLowerCase()))
+        : experiences;
+
+      if (filtered.length === 0) {
+        resultsContainer.appendChild(createEmptyStateElement({ message: experiences.length === 0 ? 'Could not load Learning Hub experiences right now.' : 'No experiences match your search.' }));
+        return;
+      }
+
+      const groups = groupExperiencesByType(filtered);
+      groups.forEach((experiencesOfType, type) => {
+        const groupHeading = document.createElement('p');
+        groupHeading.className = 'concept-workspace__learning-hub-group-heading';
+        groupHeading.textContent = LEARNING_HUB_TYPE_GROUP_LABELS[type] || type;
+        resultsContainer.appendChild(groupHeading);
+
+        experiencesOfType.forEach((experience) => {
+          const row = document.createElement('button');
+          row.type = 'button';
+          row.className = 'concept-workspace__learning-hub-experience-row';
+          row.textContent = experience.title;
+          row.addEventListener('click', () => handlers.onSelectLearningHubExperience(experience));
+          resultsContainer.appendChild(row);
+        });
+      });
+    }
+
+    renderResults('');
+    searchInput.addEventListener('input', () => renderResults(searchInput.value));
+  });
+
+  return section;
+}
+
+const LEARNING_HUB_TYPE_GROUP_LABELS = {
+  lesson: 'Lessons',
+  'element-journey': 'Element Journeys',
+  'root-journey': 'Root Word Journeys',
+  'sound-journey': 'Sound Journeys',
+  'listen-read': 'Listen & Read',
+};
+
+/**
+ * Naming + audience step for a Learning Hub experience the teacher
+ * just picked — mirrors renderNameNewResourceView()'s own shape
+ * (title input pre-filled as a suggestion, never auto-used
+ * silently) plus the Audience toggle already established for the
+ * Resource Details screen, reused here rather than a third
+ * implementation. Audience defaults to 'teacher' (the same
+ * conservative default createResource() itself already uses),
+ * never silently forced to 'student'.
+ */
+function renderLearningHubNameNewView(experience, handlers) {
+  const section = document.createElement('div');
+  section.className = 'concept-workspace__section';
+
+  const backButton = createBackButton(handlers.onBackToResourceList);
+  section.appendChild(backButton);
+
+  const heading = document.createElement('p');
+  heading.className = 'concept-workspace__tab-intro';
+  heading.textContent = 'Name your Learning Hub Experience';
+  section.appendChild(heading);
+
+  const form = document.createElement('div');
+  form.className = 'concept-workspace__name-new-form';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = experience.title; // a real, human-readable suggestion from the catalogue — never auto-used without the teacher seeing/editing it
+  input.placeholder = 'Resource title';
+  form.appendChild(input);
+
+  const audienceLabel = document.createElement('p');
+  audienceLabel.className = 'concept-workspace__tab-intro';
+  audienceLabel.textContent = 'Audience';
+  form.appendChild(audienceLabel);
+
+  const audienceGroup = document.createElement('div');
+  audienceGroup.className = 'toggle-group';
+  let selectedAudience = 'teacher'; // the same conservative default createResource() itself already uses
+  AUDIENCE_KEYS.forEach((audience) => {
+    const audienceButton = document.createElement('button');
+    audienceButton.type = 'button';
+    audienceButton.className = 'toggle-group__button' + (audience === selectedAudience ? ' toggle-group__button--active' : '');
+    audienceButton.textContent = getAudienceLabel(audience);
+    audienceButton.addEventListener('click', () => {
+      selectedAudience = audience;
+      audienceGroup.querySelectorAll('.toggle-group__button').forEach((button, index) => {
+        button.classList.toggle('toggle-group__button--active', AUDIENCE_KEYS[index] === audience);
+      });
+    });
+    audienceGroup.appendChild(audienceButton);
+  });
+  form.appendChild(audienceGroup);
+
+  const createButton = document.createElement('button');
+  createButton.type = 'button';
+  createButton.className = 'btn btn--primary';
+  createButton.textContent = 'Create';
+  createButton.addEventListener('click', () => {
+    const title = input.value.trim();
+    if (!title) return;
+    handlers.onCreateLearningHubResource(title, selectedAudience);
+  });
+  form.appendChild(createButton);
+
+  section.appendChild(form);
+  return section;
+}
+
+/**
  * A resource's own page — icon, editable title, type (fixed at
  * creation, not editable — changing what a resource *is* isn't a
  * rename, it's effectively a different resource), a status control,
@@ -531,6 +733,59 @@ function renderNameNewResourceView(pendingType, handlers) {
  * is what "make resources feel complete as objects" means concretely:
  * a resource has a real home, not just a row in a list.
  */
+// PLACEHOLDER — Learning Hub is not deployed anywhere yet (today it
+// is a file://-only ZIP with no hosting at all). This host is not a
+// real, working deployment target; it exists so the launch mechanism
+// itself can be built and tested end-to-end now, ready to point at a
+// real host the moment one exists, without any other code changing.
+const LEARNING_HUB_HOST_PLACEHOLDER = 'https://learning-hub.example';
+
+/**
+ * Maps a Learning Hub experience's own `type` (from the catalogue —
+ * see services/learningHubCatalogueService.js) to the closest
+ * existing ClassMate Resource type — never a new Resource type
+ * invented for this. Improves the created Resource's own icon/label
+ * accuracy for free; falls back to 'activity' for anything not
+ * listed here, including any future experience type the catalogue
+ * might add.
+ */
+const LEARNING_HUB_EXPERIENCE_TYPE_TO_RESOURCE_TYPE = {
+  lesson: 'activity',
+  'element-journey': 'activity',
+  'root-journey': 'activity',
+  'sound-journey': 'activity',
+  'listen-read': 'reading',
+};
+
+/**
+ * Builds a Learning Hub launch URL from an experience type + id — the
+ * ONLY thing ClassMate knows about Learning Hub's own launch
+ * mechanism: an entry TYPE and an id, never anything about Learning
+ * Hub's internal Mission/Card/Journey structure. Mirrors the real,
+ * now-multiple entry types Learning Hub's own app.js genuinely
+ * supports (lesson, element-journey, root-journey, sound-journey,
+ * listen-read) — this function doesn't hardcode "mission" as the
+ * only shape any more.
+ *
+ * Backward-compatible: calling this with a single string argument
+ * (the old missionId-only call) still builds the exact, unchanged
+ * `mission:<id>` URL — nothing already relying on the original,
+ * accepted single-argument call breaks.
+ *
+ * Exported so ui/student-portal/views/StudentLearningView.js can
+ * reuse this exact function rather than duplicating it — the same
+ * "reuse, never build a second implementation" precedent
+ * StudentNotebooksView.js already established by importing
+ * getCellMeta() directly from NotebookCheckpointsView.js.
+ */
+export function buildLearningHubLaunchUrl(experienceTypeOrMissionId, experienceId) {
+  // Old, single-argument call: build the exact, unchanged mission: URL.
+  if (experienceId === undefined) {
+    return `${LEARNING_HUB_HOST_PLACEHOLDER}/?entry=${encodeURIComponent(`mission:${experienceTypeOrMissionId}`)}`;
+  }
+  return `${LEARNING_HUB_HOST_PLACEHOLDER}/?entry=${encodeURIComponent(`${experienceTypeOrMissionId}:${experienceId}`)}`;
+}
+
 function renderResourceDetailsView(container, classroom, concept, resource, handlers) {
   const section = document.createElement('div');
   section.className = 'concept-workspace__section';
@@ -585,27 +840,71 @@ function renderResourceDetailsView(container, classroom, concept, resource, hand
   });
   detailsCard.appendChild(statusGroup);
 
+  const audienceLabel = document.createElement('p');
+  audienceLabel.className = 'concept-workspace__tab-intro';
+  audienceLabel.textContent = 'Audience';
+  detailsCard.appendChild(audienceLabel);
+
+  const audienceGroup = document.createElement('div');
+  audienceGroup.className = 'toggle-group';
+  // A resource with no audience at all (every resource created
+  // before this field existed, or any resource a teacher hasn't
+  // touched yet) displays as "Teacher only" selected here — the
+  // exact same conservative default already established for
+  // student-facing reads (see resourceService.js's own
+  // getStudentVisibleResources()). This control never implies a
+  // resource is already student-visible when it genuinely isn't.
+  const currentAudience = resource.audience || 'teacher';
+  AUDIENCE_KEYS.forEach((audience) => {
+    const audienceButton = document.createElement('button');
+    audienceButton.type = 'button';
+    audienceButton.className = 'toggle-group__button' + (audience === currentAudience ? ' toggle-group__button--active' : '');
+    audienceButton.textContent = getAudienceLabel(audience);
+    audienceButton.addEventListener('click', async () => {
+      await resourceService.setResourceAudience(classroom.id, concept, resource.id, audience);
+      workspaceService.save(classroom);
+      handlers.rerender();
+    });
+    audienceGroup.appendChild(audienceButton);
+  });
+  detailsCard.appendChild(audienceGroup);
+
   // The extension point future editors attach to — see this file's
   // header comment and resourceService.js's doc comment. Reading is
   // the first type with a real editor (see ReadingEditorView.js);
   // every other type stays disabled until it gets its own the same
   // way.
+  //
+  // A Learning Hub experience resource is a separate case, not
+  // governed by `type` at all — a Learning Hub experience could
+  // eventually be any type (quiz, simulation, worksheet...), so the
+  // discriminator is content.kind, never resource.type. This reuses
+  // the exact same button/action area, relabeled, rather than a
+  // second button or a new screen.
+  const isLearningHubExperience = resource.content?.kind === 'learning_hub_experience';
   const hasEditor = resource.type === 'reading';
 
   const openEditorButton = document.createElement('button');
   openEditorButton.type = 'button';
   openEditorButton.className = 'btn btn--primary concept-workspace__resource-open-editor-button';
-  openEditorButton.textContent = 'Open Editor';
-  openEditorButton.disabled = !hasEditor;
-  if (!hasEditor) openEditorButton.title = 'Coming soon';
-  if (hasEditor) {
+  if (isLearningHubExperience) {
+    openEditorButton.textContent = 'Open Learning Experience';
     openEditorButton.addEventListener('click', () => {
-      renderReadingEditorView(container, {
-        classroom,
-        resource,
-        onBack: handlers.rerender,
-      });
+      window.open(buildLearningHubLaunchUrl(resource.content.experienceType, resource.content.experienceId), '_blank');
     });
+  } else {
+    openEditorButton.textContent = 'Open Editor';
+    openEditorButton.disabled = !hasEditor;
+    if (!hasEditor) openEditorButton.title = 'Coming soon';
+    if (hasEditor) {
+      openEditorButton.addEventListener('click', () => {
+        renderReadingEditorView(container, {
+          classroom,
+          resource,
+          onBack: handlers.rerender,
+        });
+      });
+    }
   }
   detailsCard.appendChild(openEditorButton);
 

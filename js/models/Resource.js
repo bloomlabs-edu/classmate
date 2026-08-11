@@ -58,10 +58,23 @@
  * whatever they actually touched last, not whatever was created last.
  */
 
+/**
+ * `audience` — who this resource is for: 'student', 'teacher', or
+ * 'both'. Additive; existing resources created before this field
+ * existed simply have it undefined, not migrated. Per explicit
+ * product decision, an undefined audience is treated as
+ * student-*invisible* by every student-facing read (see
+ * resourceService.js's own getStudentVisibleResources()) —
+ * deliberately conservative, so no pre-existing resource silently
+ * becomes visible to students without a teacher's own explicit
+ * choice. New resources default to 'teacher' here (not 'both'),
+ * matching that same conservative default for anything freshly
+ * created too, until a teacher-facing audience control exists.
+ */
 import { generateId } from '../utils/idGenerator.js';
 import { getCurrentIsoDate } from '../utils/dateHelpers.js';
 
-export function createResource({ id, title, type, status = 'draft', content = null, createdAt, updatedAt } = {}) {
+export function createResource({ id, title, type, status = 'draft', content = null, audience = 'teacher', createdAt, updatedAt } = {}) {
   const timestamp = createdAt || getCurrentIsoDate();
   return {
     id: id || generateId(),
@@ -69,6 +82,7 @@ export function createResource({ id, title, type, status = 'draft', content = nu
     type,
     status,
     content,
+    audience,
     createdAt: timestamp,
     updatedAt: updatedAt || timestamp,
   };

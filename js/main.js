@@ -37,6 +37,7 @@ import { renderStudentAssessmentResultsView } from './ui/student-portal/views/St
 import { renderStudentGoalTrackerView } from './ui/student-portal/views/StudentGoalTrackerView.js';
 import { renderStudentFeedView } from './ui/student-portal/views/StudentFeedView.js';
 import { renderStudentNotebooksView } from './ui/student-portal/views/StudentNotebooksView.js';
+import { renderStudentLearningView } from './ui/student-portal/views/StudentLearningView.js';
 import * as studentAuthService from './services/studentAuthService.js';
 import { renderStudentTeamView } from './ui/student-portal/views/StudentTeamView.js';
 import { renderStudentTeamDetailView } from './ui/student-portal/views/StudentTeamDetailView.js';
@@ -309,6 +310,10 @@ function renderStudentPortalMain(route) {
         renderStudentNotebooksView(content, {
           onBack: () => router.navigate('/student'),
         });
+      } else if (route.section === 'learning') {
+        renderStudentLearningView(content, {
+          onBack: () => router.navigate('/student'),
+        });
       } else {
         renderStudentJourneyView(content, {
           onSessionInvalid: () => router.navigate('/student'),
@@ -321,6 +326,7 @@ function renderStudentPortalMain(route) {
           onNavigateToGoals: () => router.navigate('/student/goals'),
           onNavigateToFeed: () => router.navigate('/student/feed'),
           onNavigateToNotebooks: () => router.navigate('/student/notebooks'),
+          onNavigateToLearning: () => router.navigate('/student/learning'),
           onNavigateToStudentProfile: (studentId) => router.navigate(`/student/student-profile/${studentId}`),
           onNavigateToTeam: (teamId) => router.navigate(`/student/team/${teamId}`),
           onNavigateToStandings: () => router.navigate('/student/team'),

@@ -47,7 +47,7 @@ import { formatDate } from '../../../utils/dateHelpers.js';
 import { getEventDetailRoute } from '../../../config/studentEventNavigation.js';
 import { getEventCopyForViewer } from '../../../services/studentEventService.js';
 
-export async function renderStudentJourneyView(container, { onSessionInvalid, onNavigateToEventDetail, onNavigateToGoals, onNavigateToFeed, onNavigateToNotebooks, onNavigateToStudentProfile, onNavigateToTeam, onNavigateToStandings } = {}) {
+export async function renderStudentJourneyView(container, { onSessionInvalid, onNavigateToEventDetail, onNavigateToGoals, onNavigateToFeed, onNavigateToNotebooks, onNavigateToLearning, onNavigateToStudentProfile, onNavigateToTeam, onNavigateToStandings } = {}) {
   container.innerHTML = '';
 
   const [summary, eventFeed, found, weeklyNetPoints] = await Promise.all([
@@ -137,6 +137,19 @@ export async function renderStudentJourneyView(container, { onSessionInvalid, on
     notebooksLink.textContent = '\ud83d\udcd3 Notebooks \u2192';
     notebooksLink.addEventListener('click', onNavigateToNotebooks);
     wrapper.appendChild(notebooksLink);
+  }
+
+  // Learning — the new curriculum/resource discovery surface (see
+  // ui/student-portal/views/StudentLearningView.js). Same convention
+  // again: always shown, that view's own empty states handle "no
+  // subjects yet" gracefully.
+  if (onNavigateToLearning) {
+    const learningLink = document.createElement('button');
+    learningLink.type = 'button';
+    learningLink.className = 'student-home__goals-link';
+    learningLink.textContent = '\ud83d\udcda Learning \u2192';
+    learningLink.addEventListener('click', onNavigateToLearning);
+    wrapper.appendChild(learningLink);
   }
 
   // The actual, shared Classroom Standings board — the same
