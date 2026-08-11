@@ -17,23 +17,41 @@
  * home screen renders subjects through, and it has no import that
  * could reach suggestion data even if someone tried.
  *
- * A navigation list, per the platform design rules — plain rows with
- * a trailing chevron (see ui/components/NavigationRow.js), no
- * overflow menu here at all. "Change Curriculum" and "Remove Subject"
- * live inside the Subject's own screen now (a Settings "⋮" there —
- * see ui/views/LearningManagementView.js's renderSubjectStep()), not
- * scattered across this list.
+ * Square cards in a grid, deliberately NOT built on
+ * ui/components/NavigationRow.js — that component is the shared,
+ * platform-wide standard for full-width navigation rows across
+ * Units, Concepts, Students, and Assessment subjects too; reshaping
+ * it here would have changed every one of those other screens as
+ * well. This file owns its own small, local card markup instead,
+ * scoped to only the one screen a Subject list like this appears on.
  */
 
-import { createNavigationRow } from './NavigationRow.js';
+import { createIcon } from './Icon.js';
 
 export function renderExistingSubjectsList(subjects, onChooseSubject) {
-  const list = document.createElement('div');
-  list.className = 'learning-management__subject-card-list';
+  const grid = document.createElement('div');
+  grid.className = 'existing-subjects__grid';
 
   subjects.forEach((subject) => {
-    list.appendChild(createNavigationRow({ label: subject.title, onClick: () => onChooseSubject(subject) }));
+    grid.appendChild(createSubjectCard(subject, () => onChooseSubject(subject)));
   });
 
-  return list;
+  return grid;
+}
+
+function createSubjectCard(subject, onClick) {
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'existing-subjects__card';
+  card.setAttribute('aria-label', subject.title);
+  card.addEventListener('click', onClick);
+
+  card.appendChild(createIcon('book-open', { size: 28, className: 'existing-subjects__card-icon' }));
+
+  const label = document.createElement('span');
+  label.className = 'existing-subjects__card-label';
+  label.textContent = subject.title;
+  card.appendChild(label);
+
+  return card;
 }
