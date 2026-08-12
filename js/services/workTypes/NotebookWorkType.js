@@ -36,6 +36,7 @@ function getActiveWork(classroom) {
   workRequestService
     .listWorkRequests(classroom)
     .filter((request) => workRequestService.isOpen(request))
+    .filter((request) => request.pinnedToDashboard)
     .forEach((request) => {
       ACTIVE_STATUS_GROUPS.forEach(({ statuses, subtitle }) => {
         const count = statuses.reduce((sum, status) => sum + workRequestService.getEntriesByStatus(request, status).length, 0);

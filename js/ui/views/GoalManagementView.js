@@ -57,6 +57,14 @@ export function renderGoalManagementView(container, { classroom, onBack }) {
       workspaceService.save(classroom);
       rerender();
     },
+    onTogglePinCycle: (cycle) => {
+      // Pinning only changes visibility on the Dashboard's Open Work
+      // section (see services/workTypes/GoalCycleWorkType.js) —
+      // never cycle.status or anything else. Not assignment.
+      cycle.pinnedToDashboard = !cycle.pinnedToDashboard;
+      workspaceService.save(classroom);
+      rerender();
+    },
     onRemoveCategory: (cycle, categoryId) => {
       const confirmed = window.confirm('Remove this category? Any goals and completion history for it will be removed too. This cannot be undone.');
       if (!confirmed) return;
@@ -135,6 +143,13 @@ function renderHomeStep(classroom, pendingGoals, allGoals, handlers) {
   cycleHeading.className = 'learning-management__step-heading';
   cycleHeading.textContent = cycle.title;
   section.appendChild(cycleHeading);
+
+  const pinButton = document.createElement('button');
+  pinButton.type = 'button';
+  pinButton.className = 'btn btn--text';
+  pinButton.textContent = cycle.pinnedToDashboard ? 'Unpin from Dashboard' : '\ud83d\udccc Pin to Dashboard';
+  pinButton.addEventListener('click', () => handlers.onTogglePinCycle(cycle));
+  section.appendChild(pinButton);
 
   const cycleMeta = document.createElement('p');
   cycleMeta.className = 'settings-section__meta';

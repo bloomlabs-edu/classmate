@@ -45,6 +45,7 @@ export function createAssessment({
   createdAt,
   detailsLastSavedAt = null,
   assessmentSubjects = [],
+  pinnedToDashboard = false,
 } = {}) {
   return {
     id: id || generateId(),
@@ -57,5 +58,6 @@ export function createAssessment({
     createdAt: createdAt || getCurrentIsoDate(),
     detailsLastSavedAt,
     assessmentSubjects,
+    pinnedToDashboard,
   };
 }

@@ -90,6 +90,7 @@ export function createWorkRequest({
   curriculumUnitId,
   curriculumUnitNumberSnapshot,
   curriculumUnitTitleSnapshot,
+  pinnedToDashboard = false,
 } = {}) {
   const request = {
     id: id || generateId(),
@@ -101,6 +102,7 @@ export function createWorkRequest({
     dueDate,
     status,
     entries,
+    pinnedToDashboard,
   };
 
   // Only set when actually provided -- an explicit `key: undefined`

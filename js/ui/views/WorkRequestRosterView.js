@@ -51,6 +51,7 @@
 
 import * as workRequestService from '../../services/workRequestService.js';
 import * as notebookConfigService from '../../services/notebookConfigService.js';
+import * as workspaceService from '../../services/workspaceService.js';
 import { createStudentNameElement } from '../components/StudentNameElement.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
@@ -110,6 +111,7 @@ export function renderWorkRequestRosterView(container, { classroom, requestId, o
       onToggleExpand,
       onToggleOverflow,
       onSetFilter,
+      rerender,
     });
   }
 
@@ -192,6 +194,20 @@ function render(container, classroom, requestId, expandedStudentIds, openOverflo
   meta.className = 'work-request-roster__meta';
   meta.textContent = [subject?.name, request.dueDate ? `Due ${request.dueDate}` : null].filter(Boolean).join(' \u00b7 ');
   wrapper.appendChild(meta);
+
+  const pinButton = document.createElement('button');
+  pinButton.type = 'button';
+  pinButton.className = 'btn btn--text';
+  pinButton.textContent = request.pinnedToDashboard ? 'Unpin from Dashboard' : '\ud83d\udccc Pin to Dashboard';
+  pinButton.addEventListener('click', () => {
+    // Pinning only changes visibility on the Dashboard's Open Work
+    // section (see services/workTypes/NotebookWorkType.js) — never
+    // request.status, entries, or anything else. Not assignment.
+    request.pinnedToDashboard = !request.pinnedToDashboard;
+    workspaceService.save(classroom);
+    handlers.rerender();
+  });
+  wrapper.appendChild(pinButton);
 
   const allStudents = getClassroomStudents(classroom);
   wrapper.appendChild(createSummaryCards(request, allStudents.length, activeFilterStatuses, handlers.onSetFilter));

@@ -52,6 +52,7 @@ export function createGoalCycle({
   categories = [],
   goals = [],
   completions = {},
+  pinnedToDashboard = false,
 } = {}) {
   return {
     id: id || generateId(),
@@ -64,6 +65,7 @@ export function createGoalCycle({
     categories,
     goals,
     completions,
+    pinnedToDashboard,
   };
 }
 

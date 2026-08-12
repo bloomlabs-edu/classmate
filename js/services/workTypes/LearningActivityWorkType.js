@@ -28,6 +28,7 @@ import * as learningActivityService from '../learningActivityService.js';
 function getActiveWork(classroom) {
   return learningActivityService
     .listActivities(classroom)
+    .filter((activity) => activity.pinnedToDashboard)
     .map((activity) => ({
       activity,
       notAssignedCount: learningActivityService.getActivityRosterSummary(classroom, activity.id)['Not Assigned'] || 0,

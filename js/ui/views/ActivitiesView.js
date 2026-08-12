@@ -163,6 +163,20 @@ export function renderActivityRosterView(container, { classroom, activityId, onB
   header.append(backButton, title);
   wrapper.appendChild(header);
 
+  const pinButton = document.createElement('button');
+  pinButton.type = 'button';
+  pinButton.className = 'btn btn--text';
+  pinButton.textContent = activity.pinnedToDashboard ? 'Unpin from Dashboard' : '\ud83d\udccc Pin to Dashboard';
+  pinButton.addEventListener('click', () => {
+    // Pinning only changes visibility on the Dashboard's Open Work
+    // section (see services/workTypes/LearningActivityWorkType.js) —
+    // never anything about the activity or its roster. Not assignment.
+    activity.pinnedToDashboard = !activity.pinnedToDashboard;
+    workspaceService.save(classroom);
+    renderActivityRosterView(container, { classroom, activityId, onBack, onSelectStudent });
+  });
+  wrapper.appendChild(pinButton);
+
   const content = document.createElement('div');
   content.className = 'wizard-step-content';
 

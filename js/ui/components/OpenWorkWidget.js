@@ -1,15 +1,23 @@
 /**
  * ui/components/OpenWorkWidget.js
  *
- * The first, minimal instance of Open Work — not a Notebook-specific
- * discoverability hack. Aggregates
- * services/workTypes/index.js's own WORK_TYPES.flatMap(type =>
- * type.getActiveWork(classroom)) directly: every domain already in
- * the registry (Notebook, Assessment, Goal Cycle, Learning Activity)
- * contributes here identically, with zero per-domain branching in
- * this file. This widget is meant to survive unchanged into the full
- * Dashboard redesign — it already IS Open Work, scoped for now to a
- * small Dashboard preview rather than its own full page.
+ * Open Work — a deliberately teacher-curated Dashboard section, per
+ * explicit product decision. Nothing appears here automatically:
+ * each WorkType's own getActiveWork() (see
+ * services/workTypes/index.js) now filters to items the teacher has
+ * explicitly pinned (item.pinnedToDashboard === true) before this
+ * widget ever sees them — pinning itself is a real, existing-model
+ * field (see e.g. models/WorkRequest.js), set from each domain's own
+ * existing teacher-facing screen (its own "📌 Pin to Dashboard"
+ * action), never decided here. This widget still has zero domain
+ * awareness at all — it doesn't know or care that filtering happened
+ * upstream.
+ *
+ * When nothing is pinned at all, this returns null rather than an
+ * empty-state placeholder — the section is meant to disappear
+ * entirely, not show "Nothing pinned yet." The caller
+ * (ui/views/DashboardView.js) is responsible for skipping the
+ * append when this returns null.
  *
  * Reuses ui/components/WorkItemCard.js's own card renderer — the same
  * one ui/views/NotebookTrackerView.js already uses — so this widget
@@ -24,12 +32,17 @@
 
 import { WORK_TYPES } from '../../services/workTypes/index.js';
 import { createWorkItemCard } from './WorkItemCard.js';
-import { createEmptyStateElement } from './EmptyState.js';
 import { createIcon } from './Icon.js';
 
 const PREVIEW_LIMIT = 4;
 
 export function createOpenWorkWidgetElement({ classroom, onNavigate }) {
+  const activeWork = WORK_TYPES.flatMap((type) => type.getActiveWork(classroom));
+
+  if (activeWork.length === 0) {
+    return null;
+  }
+
   const widget = document.createElement('div');
   widget.className = 'dashboard-widget dashboard-widget--focus';
 
@@ -38,13 +51,6 @@ export function createOpenWorkWidgetElement({ classroom, onNavigate }) {
   heading.appendChild(createIcon('trending-up', { size: 18 }));
   heading.append('Open Work');
   widget.appendChild(heading);
-
-  const activeWork = WORK_TYPES.flatMap((type) => type.getActiveWork(classroom));
-
-  if (activeWork.length === 0) {
-    widget.appendChild(createEmptyStateElement({ message: 'Nothing open right now. Nice work.' }));
-    return widget;
-  }
 
   const list = document.createElement('div');
   list.className = 'open-work-widget__list';

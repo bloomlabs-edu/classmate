@@ -26,6 +26,7 @@ import * as goalService from '../goalService.js';
 function getActiveWork(classroom) {
   const cycle = goalService.getActiveCycle(classroom);
   if (!cycle) return [];
+  if (!cycle.pinnedToDashboard) return [];
 
   const pendingCount = goalService.getPendingApprovalGoals(cycle).length;
   if (pendingCount === 0) return [];

@@ -275,6 +275,14 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
         rerender();
       });
     },
+    onTogglePinAssessment: (assessment) => {
+      // Pinning only changes visibility on the Dashboard's Open Work
+      // section (see services/workTypes/AssessmentWorkType.js) —
+      // never assessment.status or anything else. Not assignment.
+      assessment.pinnedToDashboard = !assessment.pinnedToDashboard;
+      workspaceService.save(classroom);
+      rerender();
+    },
     onChooseAssessmentSubject: (assessmentSubject) => {
       navigateAwayGuard(() => {
         selectedAssessmentSubject = assessmentSubject;
@@ -562,6 +570,13 @@ function renderAssessmentStep(classroom, assessment, isEditingDetails, draft, ha
   heading.className = 'learning-management__step-heading';
   heading.textContent = assessment.title;
   section.appendChild(heading);
+
+  const pinButton = document.createElement('button');
+  pinButton.type = 'button';
+  pinButton.className = 'btn btn--text';
+  pinButton.textContent = assessment.pinnedToDashboard ? 'Unpin from Dashboard' : '\ud83d\udccc Pin to Dashboard';
+  pinButton.addEventListener('click', () => handlers.onTogglePinAssessment(assessment));
+  section.appendChild(pinButton);
 
   section.appendChild(renderAssessmentDetailsSection(assessment, isEditingDetails, draft, handlers));
 

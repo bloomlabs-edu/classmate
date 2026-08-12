@@ -33,6 +33,7 @@ function getActiveWork(classroom) {
   return assessmentService
     .getAssessments(classroom)
     .filter((assessment) => assessment.status !== 'Published')
+    .filter((assessment) => assessment.pinnedToDashboard)
     .map((assessment) => ({
       title: assessment.title,
       subtitle: assessment.status,

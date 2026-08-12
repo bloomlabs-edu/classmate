@@ -227,12 +227,13 @@ export function renderDashboardView(container, props) {
   // product toward the final architecture now, not sit as a
   // temporary Notebook-specific fix that gets thrown away once the
   // full Dashboard redesign lands.
-  wrapper.appendChild(
-    createOpenWorkWidgetElement({
-      classroom,
-      onNavigate: onNavigateOpenWork,
-    })
-  );
+  const openWorkWidget = createOpenWorkWidgetElement({
+    classroom,
+    onNavigate: onNavigateOpenWork,
+  });
+  if (openWorkWidget) {
+    wrapper.appendChild(openWorkWidget);
+  }
 
   wrapper.appendChild(
     renderPrimaryModulesSection({

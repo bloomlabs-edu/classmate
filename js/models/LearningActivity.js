@@ -12,12 +12,13 @@
 import { generateId } from '../utils/idGenerator.js';
 import { getCurrentIsoDate } from '../utils/dateHelpers.js';
 
-export function createLearningActivity({ id, title, type, dueDate = '', createdAt } = {}) {
+export function createLearningActivity({ id, title, type, dueDate = '', createdAt, pinnedToDashboard = false } = {}) {
   return {
     id: id || generateId(),
     title,
     type,
     dueDate,
     createdAt: createdAt || getCurrentIsoDate(),
+    pinnedToDashboard,
   };
 }
