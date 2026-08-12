@@ -1127,9 +1127,20 @@ function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUni
 
     // The Pack mechanism (renderUnitPackControl(), completely
     // unmodified) lives HERE, on the Unit page itself — never inside
-    // the Learning Hub drawer, per explicit product decision. A Pack
-    // is a Unit-level shortcut, a genuinely different concern from
-    // resource discovery.
+    // the Learning Hub drawer. Given its own heading + divider,
+    // deliberately separated from the trigger above so it never
+    // reads as "another Learning Hub launcher" — a Pack is a
+    // Unit-level shortcut, a genuinely different concern from the
+    // plugin's own resource-discovery workflow.
+    const packDivider = document.createElement('hr');
+    packDivider.className = 'learning-management__subject-divider';
+    wrapper.appendChild(packDivider);
+
+    const packHeading = document.createElement('p');
+    packHeading.className = 'learning-management__intro';
+    packHeading.textContent = 'Unit shortcut (optional)';
+    wrapper.appendChild(packHeading);
+
     const packSection = document.createElement('div');
     packSection.className = 'learning-management__learning-hub-pack-section';
     renderUnitPackControl(packSection, selectedUnit, handlers);

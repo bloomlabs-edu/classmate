@@ -84,6 +84,9 @@ export function openLearningHubPanel({ concept, unit, pendingLearningHubExperien
   const header = document.createElement('div');
   header.className = 'learning-hub-panel__header';
 
+  const headerTopRow = document.createElement('div');
+  headerTopRow.className = 'learning-hub-panel__header-top-row';
+
   const brand = document.createElement('div');
   brand.className = 'learning-hub-panel__brand';
   const icon = document.createElement('span');
@@ -94,7 +97,7 @@ export function openLearningHubPanel({ concept, unit, pendingLearningHubExperien
   name.className = 'learning-hub-panel__name';
   name.textContent = 'Learning Hub';
   brand.append(icon, name);
-  header.appendChild(brand);
+  headerTopRow.appendChild(brand);
 
   const closeButton = document.createElement('button');
   closeButton.type = 'button';
@@ -102,7 +105,14 @@ export function openLearningHubPanel({ concept, unit, pendingLearningHubExperien
   closeButton.setAttribute('aria-label', 'Close Learning Hub');
   closeButton.textContent = '\u00d7';
   closeButton.addEventListener('click', close);
-  header.appendChild(closeButton);
+  headerTopRow.appendChild(closeButton);
+
+  header.appendChild(headerTopRow);
+
+  const subtitle = document.createElement('p');
+  subtitle.className = 'learning-hub-panel__subtitle';
+  subtitle.textContent = 'Find resources for your lesson';
+  header.appendChild(subtitle);
 
   panel.appendChild(header);
 
@@ -164,7 +174,7 @@ function renderLearningHubSearchBody(container, { concept, unit }, pendingLearni
   if (concept) {
     const contextLabel = document.createElement('p');
     contextLabel.className = 'learning-hub-panel__context-label';
-    contextLabel.textContent = 'Resources for';
+    contextLabel.textContent = 'Working on';
     container.appendChild(contextLabel);
     const contextTitle = document.createElement('p');
     contextTitle.className = 'learning-hub-panel__context-title';
@@ -222,7 +232,7 @@ function renderLearningHubSearchBody(container, { concept, unit }, pendingLearni
 
         const groupsHeading = document.createElement('p');
         groupsHeading.className = 'concept-workspace__learning-hub-group-heading';
-        groupsHeading.textContent = filterText ? 'Results' : 'Recommended';
+        groupsHeading.textContent = filterText ? 'Results' : (concept ? 'Recommended for this concept' : 'Recommended');
         resultsContainer.appendChild(groupsHeading);
 
         const groups = groupExperiencesByType(filtered);
@@ -240,6 +250,12 @@ function renderLearningHubSearchBody(container, { concept, unit }, pendingLearni
             typeEl.className = 'learning-management__learning-hub-result-type';
             typeEl.textContent = LEARNING_HUB_TYPE_GROUP_LABELS[type] || type;
             textWrap.append(titleEl, typeEl);
+            if (experience.description) {
+              const descriptionEl = document.createElement('p');
+              descriptionEl.className = 'learning-management__learning-hub-result-description';
+              descriptionEl.textContent = experience.description;
+              textWrap.appendChild(descriptionEl);
+            }
             card.appendChild(textWrap);
 
             const actions = document.createElement('div');
