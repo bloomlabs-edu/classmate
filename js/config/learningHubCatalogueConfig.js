@@ -13,7 +13,12 @@
  * the same, already-accepted placeholder pattern used for the launch
  * URL itself). This is not a real, working URL yet.
  */
-export const LEARNING_HUB_CATALOGUE_URL = 'https://learning-hub.example/catalogue.json';
+/**
+ * Learning Hub's real, hosted catalogue — see
+ * https://learning-hub-b2586.web.app/. Was a placeholder host before
+ * this; now a real, deployed URL.
+ */
+export const LEARNING_HUB_CATALOGUE_URL = 'https://learning-hub-b2586.web.app/catalogue.json';
 
-/** Same placeholder-host reasoning as above, for the Packs list specifically. */
-export const LEARNING_HUB_PACKS_URL = 'https://learning-hub.example/packs.json';
+/** Same real host as above, for the Packs list specifically. */
+export const LEARNING_HUB_PACKS_URL = 'https://learning-hub-b2586.web.app/packs.json';

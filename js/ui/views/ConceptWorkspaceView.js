@@ -648,7 +648,7 @@ function renderLearningHubCatalogueView(handlers) {
   return section;
 }
 
-const LEARNING_HUB_TYPE_GROUP_LABELS = {
+export const LEARNING_HUB_TYPE_GROUP_LABELS = {
   lesson: 'Lessons',
   'element-journey': 'Element Journeys',
   'root-journey': 'Root Word Journeys',
@@ -738,7 +738,7 @@ function renderLearningHubNameNewView(experience, handlers) {
 // real, working deployment target; it exists so the launch mechanism
 // itself can be built and tested end-to-end now, ready to point at a
 // real host the moment one exists, without any other code changing.
-const LEARNING_HUB_HOST_PLACEHOLDER = 'https://learning-hub.example';
+const LEARNING_HUB_HOST_PLACEHOLDER = 'https://learning-hub-b2586.web.app';
 
 /**
  * Maps a Learning Hub experience's own `type` (from the catalogue —
@@ -748,8 +748,13 @@ const LEARNING_HUB_HOST_PLACEHOLDER = 'https://learning-hub.example';
  * accuracy for free; falls back to 'activity' for anything not
  * listed here, including any future experience type the catalogue
  * might add.
+ *
+ * Exported so ui/views/LearningManagementView.js's own Unit-level
+ * Learning Hub search plugin can reuse this exact mapping directly —
+ * the same "reuse, never build a second implementation" precedent
+ * this file's own buildLearningHubLaunchUrl() export already set.
  */
-const LEARNING_HUB_EXPERIENCE_TYPE_TO_RESOURCE_TYPE = {
+export const LEARNING_HUB_EXPERIENCE_TYPE_TO_RESOURCE_TYPE = {
   lesson: 'activity',
   'element-journey': 'activity',
   'root-journey': 'activity',

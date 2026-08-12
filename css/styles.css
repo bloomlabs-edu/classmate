@@ -9734,3 +9734,29 @@ button.wizard-checklist__row:hover {
   border-radius: 8px;
   padding: 0.5rem 0.7rem;
 }
+
+/* Learning Hub search plugin result cards — see ui/views/LearningManagementView.js's renderLearningHubSearchPlugin(). Reuses the same border/radius tokens as .concept-workspace__learning-hub-experience-row for visual consistency, structured as a flex row (text left, action right) to fit a title + type + button per result. */
+.learning-management__learning-hub-result-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+  margin-bottom: 0.3rem;
+}
+.learning-management__learning-hub-result-text {
+  min-width: 0;
+}
+.learning-management__learning-hub-result-title {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.learning-management__learning-hub-result-type {
+  margin: 0.1rem 0 0;
+  font-size: 0.78rem;
+  color: var(--color-muted);
+}

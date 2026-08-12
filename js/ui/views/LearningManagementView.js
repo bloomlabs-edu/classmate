@@ -79,6 +79,10 @@ import { getDisplayName } from '../../services/classroomService.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
 import * as learningRecordTeacherService from '../../services/learningRecordTeacherService.js';
 import * as workspaceService from '../../services/workspaceService.js';
+import * as resourceService from '../../services/resourceService.js';
+import * as resourceRepository from '../../services/resourceRepository.js';
+import { fetchLearningHubCatalogue, groupExperiencesByType } from '../../services/learningHubCatalogueService.js';
+import { LEARNING_HUB_EXPERIENCE_TYPE_TO_RESOURCE_TYPE, LEARNING_HUB_TYPE_GROUP_LABELS } from './ConceptWorkspaceView.js';
 import { fetchLearningHubPacks } from '../../services/learningHubCatalogueService.js';
 import * as curriculumIndexRepository from '../../services/curriculumIndexRepository.js';
 import { resetLearningManagementData } from '../../services/devLearningManagementResetService.js';
@@ -178,6 +182,12 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
   // until now).
   let addingUnit = false;
   let addingConcept = false;
+  // Set only while a teacher has picked a Learning Hub result but the
+  // Unit has more than one Concept, so a small "which concept?" step
+  // is needed before the real Resource+link is created — see
+  // renderLearningHubSearchPlugin()'s own comment for why this can't
+  // just always use the first Concept.
+  let pendingLearningHubExperience = null;
 
   /**
    * Applies a fresh, server-confirmed classroom object in place of the
@@ -238,6 +248,7 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
         selectedSubjectCurriculumState,
         addingUnit,
         addingConcept,
+        pendingLearningHubExperience,
         singleClassroomMode,
         saveState: selectedClassroom ? workspaceService.getSaveState(selectedClassroom.id) : null,
       },
@@ -320,6 +331,7 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
       conceptContext = null;
       addingUnit = false;
       addingConcept = false;
+      pendingLearningHubExperience = null;
       mode = 'subject';
       loadCurriculumStateFor(subject);
     },
@@ -347,11 +359,13 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
       selectedPartName = partName;
       selectedUnitId = null;
       addingUnit = false;
+      pendingLearningHubExperience = null;
       rerender();
     },
     onSelectUnit: (unitId) => {
       selectedUnitId = unitId;
       addingConcept = false;
+      pendingLearningHubExperience = null;
       rerender();
     },
     onSetUnitLearningHubPack: (unit, pack) => {
@@ -395,6 +409,46 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
       learningRecordTeacherService.createConcept(selectedClassroom, unitId, { title });
       workspaceService.save(selectedClassroom);
       addingConcept = false;
+      rerender();
+    },
+    onPickLearningHubExperience: (experience, unit) => {
+      // Exactly one Concept — no ambiguity about which one this is
+      // for, so create the real Resource+link immediately, skipping
+      // an unnecessary extra step.
+      if (unit.concepts.length === 1) {
+        handlers.onUseLearningHubResourceForConcept(experience, unit.concepts[0]);
+        return;
+      }
+      // Zero Concepts — there is genuinely nothing to attach this to
+      // yet; rerender() below will show a plain, honest message
+      // rather than silently doing nothing.
+      if (unit.concepts.length === 0) {
+        pendingLearningHubExperience = experience;
+        rerender();
+        return;
+      }
+      // More than one — a real choice exists; ask which Concept this
+      // is for rather than guessing.
+      pendingLearningHubExperience = experience;
+      rerender();
+    },
+    onCancelPendingLearningHubExperience: () => {
+      pendingLearningHubExperience = null;
+      rerender();
+    },
+    onUseLearningHubResourceForConcept: async (experience, concept) => {
+      // Mirrors ui/views/ConceptWorkspaceView.js's own
+      // onCreateLearningHubResource exactly — same Resource type
+      // mapping, same content shape, same default ('teacher')
+      // audience, reusing the exact same, already-existing
+      // createResourceOnConcept() call. Not a second implementation.
+      const resourceType = LEARNING_HUB_EXPERIENCE_TYPE_TO_RESOURCE_TYPE[experience.type] || 'activity';
+      const resource = await resourceService.createResourceOnConcept(selectedClassroom.id, concept, { title: experience.title, type: resourceType });
+      resource.content = { kind: 'learning_hub_experience', experienceType: experience.type, experienceId: experience.id };
+      resource.audience = 'teacher';
+      await resourceRepository.saveResource(selectedClassroom.id, resource);
+      workspaceService.save(selectedClassroom);
+      pendingLearningHubExperience = null;
       rerender();
     },
     onSelectConcept: (concept) => {
@@ -595,7 +649,7 @@ function renderView(container, mode, state, handlers) {
   if (mode === 'choose-class') {
     wrapper.appendChild(renderChooseClassStep(state.classrooms, handlers));
   } else if (mode === 'subject') {
-    wrapper.appendChild(renderSubjectStep(state.selectedSubject, state.selectedSubjectCurriculumState, state.selectedPartName, state.selectedUnitId, state.addingUnit, state.addingConcept, handlers));
+    wrapper.appendChild(renderSubjectStep(state.selectedSubject, state.selectedSubjectCurriculumState, state.selectedPartName, state.selectedUnitId, state.addingUnit, state.addingConcept, state.pendingLearningHubExperience, handlers));
   } else {
     wrapper.appendChild(renderHomeStep(state.selectedClassroom, handlers));
   }
@@ -729,7 +783,7 @@ function renderDeveloperUtilities(handlers) {
  * everything else here, not hidden behind "⋮". No floating menu
  * anywhere on this screen.
  */
-function renderSubjectStep(subject, curriculumState, selectedPartName, selectedUnitId, addingUnit, addingConcept, handlers) {
+function renderSubjectStep(subject, curriculumState, selectedPartName, selectedUnitId, addingUnit, addingConcept, pendingLearningHubExperience, handlers) {
   const section = document.createElement('div');
   section.className = 'learning-management__section';
 
@@ -775,7 +829,7 @@ function renderSubjectStep(subject, curriculumState, selectedPartName, selectedU
     // Units are shown whenever they genuinely exist — regardless of
     // Curriculum status — matching how Assessments already read this
     // exact same tree with no curriculum gating at all.
-    section.appendChild(renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUnit, addingConcept, handlers));
+    section.appendChild(renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUnit, addingConcept, pendingLearningHubExperience, handlers));
     // "Import from Curriculum" is deliberately NOT offered here once
     // real Units already exist without one — curriculumLinkingService.js's
     // own assignment fully replaces subject.units (never merges),
@@ -977,7 +1031,120 @@ function renderAddConceptControl(unitId, addingConcept, handlers) {
   return wrapper;
 }
 
-function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUnit, addingConcept, handlers) {
+/**
+ * The Learning Hub search plugin — see this file's own header
+ * comment area for the product framing. Deliberately NOT an embed
+ * of Learning Hub's own app; a lightweight, repository-wide search
+ * surface reusing fetchLearningHubCatalogue()/groupExperiencesByType()
+ * directly (services/learningHubCatalogueService.js) — the exact
+ * same functions ui/views/ConceptWorkspaceView.js's own "Learning Hub
+ * Experience" picker already uses. No second search implementation,
+ * no new model: selecting a result reuses createResourceOnConcept()
+ * (services/resourceService.js) to create a real Resource +
+ * ConceptResourceLink, exactly like that existing picker does.
+ */
+function renderLearningHubSearchPlugin(container, unit, pendingLearningHubExperience, handlers) {
+  container.innerHTML = '';
+
+  if (pendingLearningHubExperience) {
+    if (unit.concepts.length === 0) {
+      container.appendChild(createEmptyStateElement({ message: 'Add a Concept first \u2014 then you can use this resource for it.' }));
+      const cancelButton = document.createElement('button');
+      cancelButton.type = 'button';
+      cancelButton.className = 'btn btn--text';
+      cancelButton.textContent = 'Cancel';
+      cancelButton.addEventListener('click', handlers.onCancelPendingLearningHubExperience);
+      container.appendChild(cancelButton);
+      return;
+    }
+
+    const prompt = document.createElement('p');
+    prompt.className = 'concept-workspace__tab-intro';
+    prompt.textContent = `Use "${pendingLearningHubExperience.title}" for which Concept?`;
+    container.appendChild(prompt);
+
+    const list = document.createElement('div');
+    list.className = 'learning-management__subject-card-list';
+    unit.concepts.forEach((concept) => {
+      list.appendChild(createNavigationRow({ label: concept.title, onClick: () => handlers.onUseLearningHubResourceForConcept(pendingLearningHubExperience, concept) }));
+    });
+    container.appendChild(list);
+
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'btn btn--text';
+    cancelButton.textContent = 'Cancel';
+    cancelButton.addEventListener('click', handlers.onCancelPendingLearningHubExperience);
+    container.appendChild(cancelButton);
+    return;
+  }
+
+  const searchInput = document.createElement('input');
+  searchInput.type = 'text';
+  searchInput.placeholder = 'Search concepts, missions, subjects\u2026';
+  searchInput.className = 'concept-workspace__learning-hub-search';
+  container.appendChild(searchInput);
+
+  const resultsContainer = document.createElement('div');
+  resultsContainer.className = 'concept-workspace__learning-hub-results';
+  const loadingMessage = document.createElement('p');
+  loadingMessage.className = 'concept-workspace__tab-intro';
+  loadingMessage.textContent = 'Loading\u2026';
+  resultsContainer.appendChild(loadingMessage);
+  container.appendChild(resultsContainer);
+
+  fetchLearningHubCatalogue().then((experiences) => {
+    function renderResults(filterText) {
+      resultsContainer.innerHTML = '';
+      const filtered = filterText
+        ? experiences.filter((experience) => experience.title.toLowerCase().includes(filterText.toLowerCase()))
+        : experiences;
+
+      if (filtered.length === 0) {
+        resultsContainer.appendChild(createEmptyStateElement({ message: experiences.length === 0 ? 'Could not load Learning Hub resources right now.' : 'No resources match your search.' }));
+        return;
+      }
+
+      const groups = groupExperiencesByType(filtered);
+      groups.forEach((experiencesOfType, type) => {
+        const groupHeading = document.createElement('p');
+        groupHeading.className = 'concept-workspace__learning-hub-group-heading';
+        groupHeading.textContent = LEARNING_HUB_TYPE_GROUP_LABELS[type] || type;
+        resultsContainer.appendChild(groupHeading);
+
+        experiencesOfType.forEach((experience) => {
+          const card = document.createElement('div');
+          card.className = 'learning-management__learning-hub-result-card';
+
+          const textWrap = document.createElement('div');
+          textWrap.className = 'learning-management__learning-hub-result-text';
+          const titleEl = document.createElement('p');
+          titleEl.className = 'learning-management__learning-hub-result-title';
+          titleEl.textContent = experience.title;
+          const typeEl = document.createElement('p');
+          typeEl.className = 'learning-management__learning-hub-result-type';
+          typeEl.textContent = LEARNING_HUB_TYPE_GROUP_LABELS[type] || type;
+          textWrap.append(titleEl, typeEl);
+          card.appendChild(textWrap);
+
+          const useButton = document.createElement('button');
+          useButton.type = 'button';
+          useButton.className = 'btn btn--secondary';
+          useButton.textContent = 'Use for this concept';
+          useButton.addEventListener('click', () => handlers.onPickLearningHubExperience(experience, unit));
+          card.appendChild(useButton);
+
+          resultsContainer.appendChild(card);
+        });
+      });
+    }
+
+    renderResults('');
+    searchInput.addEventListener('input', () => renderResults(searchInput.value));
+  });
+}
+
+function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUnit, addingConcept, pendingLearningHubExperience, handlers) {
   const wrapper = document.createElement('div');
 
   const distinctPartNames = [...new Set(subject.units.map((unit) => unit.partName).filter(Boolean))];
@@ -1050,9 +1217,19 @@ function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUni
 
     const learningHubIntro = document.createElement('p');
     learningHubIntro.className = 'learning-management__intro';
-    learningHubIntro.textContent = "Find learning resources for the concepts you're teaching.";
+    learningHubIntro.textContent = "Find resources for what you're teaching.";
     wrapper.appendChild(learningHubIntro);
 
+    const pluginContainer = document.createElement('div');
+    renderLearningHubSearchPlugin(pluginContainer, selectedUnit, pendingLearningHubExperience, handlers);
+    wrapper.appendChild(pluginContainer);
+
+    // The Pack mechanism is retained, completely unmodified
+    // internally (see renderUnitPackControl()'s own header comment)
+    // — demoted to a small, secondary option beneath search, per
+    // explicit product decision: search is now the primary Learning
+    // Hub interaction; Packs are an optional shortcut, not something
+    // a teacher needs to understand to find resources.
     const packSection = document.createElement('div');
     packSection.className = 'learning-management__learning-hub-pack-section';
     renderUnitPackControl(packSection, selectedUnit, handlers);
