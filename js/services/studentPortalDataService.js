@@ -33,6 +33,7 @@ import * as studentEventService from './studentEventService.js';
 import * as assessmentService from './assessmentService.js';
 import * as goalService from './goalService.js';
 import * as goalCompletionService from './goalCompletionService.js';
+import * as learningRecordStudentService from './learningRecordStudentService.js';
 import * as goalStatisticsService from './goalStatisticsService.js';
 import * as teamStatisticsService from './teamStatisticsService.js';
 import { getWeekRange } from '../utils/dateHelpers.js';
@@ -519,6 +520,31 @@ export async function setGoalCompletionForCurrentStudent(goalId, dateKey, comple
     // server, rather than the checkbox appearing to work and then
     // silently reverting on the next fresh read.
     console.error('[studentPortalDataService] setGoalCompletionForCurrentStudent() — the write did not reach the server:', error);
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * A student self-reporting their own understanding of a concept —
+ * mirrors setGoalCompletionForCurrentStudent()'s exact shape above
+ * (the established, correct student-side persistence pattern: load,
+ * mutate, saveExplicitly(), surface any write failure rather than
+ * silently swallowing it). Reuses learningRecordStudentService's own
+ * real setUnderstanding() for the mutation itself — no second
+ * implementation of that logic.
+ */
+export async function setUnderstandingForCurrentStudent(conceptId, understanding) {
+  const found = await loadCurrentStudentAndClassroom();
+  if (!found) return false;
+
+  learningRecordStudentService.setUnderstanding(found.student, conceptId, understanding);
+
+  try {
+    await workspaceService.saveExplicitly(found.classroom);
+  } catch (error) {
+    console.error('[studentPortalDataService] setUnderstandingForCurrentStudent() — the write did not reach the server:', error);
     return false;
   }
 

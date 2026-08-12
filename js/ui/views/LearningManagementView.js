@@ -709,13 +709,18 @@ function renderSubjectStep(subject, curriculumState, selectedPartName, selectedU
     curriculumActionButton.addEventListener('click', handlers.onManageCurriculum);
   } else if (curriculumState.status === 'none') {
     // Still the prominent, primary call-to-action — a Subject with
-    // no curriculum installed at all is the one case where reaching
-    // the Curriculum Hub genuinely IS the most important thing on
-    // this screen, per explicit product decision (once a curriculum
-    // exists, this same action recedes to a secondary "Change" text
-    // link instead, immediately above).
+    // nothing set up at all is the one case where reaching the
+    // Curriculum Hub genuinely IS the most important thing on this
+    // screen, per explicit product decision (once units exist, this
+    // same action recedes to a secondary "Change" text link instead,
+    // immediately above). Worded around what this genuinely does for
+    // the classroom (bring in real Units to teach) rather than
+    // framing it as installing a curriculum — same handler, same
+    // underlying curriculumLinkingService mechanism, only the words
+    // a teacher reads changed, per explicit product decision to
+    // remove unnecessary curriculum prominence from this screen.
     curriculumActionButton.className = 'btn btn--primary learning-management__curriculum-action';
-    curriculumActionButton.textContent = 'Install Curriculum';
+    curriculumActionButton.textContent = 'Set Up Units';
     curriculumActionButton.addEventListener('click', handlers.onGoToAssignCurriculum);
   }
   if (curriculumState.status === 'ready' || curriculumState.status === 'none') {

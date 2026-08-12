@@ -9535,3 +9535,135 @@ button.wizard-checklist__row:hover {
   text-align: center;
   line-height: 1.3;
 }
+
+/* Student concept map + concept detail (see ui/student-portal/views/StudentLearningView.js) */
+.student-learning__map-summary {
+  margin-bottom: 1.25rem;
+}
+.student-learning__map-summary-text {
+  margin: 0 0 0.6rem;
+  font-weight: var(--font-weight-black);
+  font-size: 1.15rem;
+}
+.student-learning__map-progress-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--color-border);
+  overflow: hidden;
+}
+.student-learning__map-progress-fill {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: 4px;
+  transition: width 0.2s ease;
+}
+.student-learning__concept-map-row {
+  align-items: center;
+  border-left: 4px solid var(--color-border);
+}
+.student-learning__concept-map-row--need_help {
+  border-left-color: var(--color-danger);
+}
+.student-learning__concept-map-row--understand {
+  border-left-color: var(--color-warning);
+}
+.student-learning__concept-map-row--confident {
+  border-left-color: var(--color-success);
+}
+.student-learning__concept-map-row--can_teach {
+  border-left-color: var(--color-accent);
+}
+.student-learning__concept-map-icon {
+  font-size: 1.35rem;
+  flex-shrink: 0;
+  margin-right: 0.6rem;
+}
+.student-learning__concept-map-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  text-align: left;
+  min-width: 0;
+}
+.student-learning__concept-map-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.student-learning__concept-map-status {
+  font-size: 0.78rem;
+  color: var(--color-muted);
+  margin-top: 0.1rem;
+}
+.student-learning__concept-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.student-learning__concept-detail-position {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-weight: var(--font-weight-bold);
+}
+.student-learning__concept-detail-title {
+  margin: 0;
+  font-size: 1.4rem;
+}
+.student-learning__concept-detail-intro {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+.student-learning__concept-detail-prompt {
+  margin: 0.75rem 0 0;
+  font-weight: var(--font-weight-bold);
+  font-size: 0.85rem;
+}
+.student-learning__reflection-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.student-learning__reflection-option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  text-align: left;
+  background: var(--color-surface, #fff);
+  border: 2px solid var(--color-border);
+  border-radius: 12px;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.student-learning__reflection-option--need_help.student-learning__reflection-option--active {
+  border-color: var(--color-danger);
+  background: rgba(225, 83, 68, 0.08);
+}
+.student-learning__reflection-option--understand.student-learning__reflection-option--active {
+  border-color: var(--color-warning);
+  background: rgba(255, 211, 55, 0.12);
+}
+.student-learning__reflection-option--confident.student-learning__reflection-option--active {
+  border-color: var(--color-success);
+  background: rgba(183, 201, 48, 0.14);
+}
+.student-learning__reflection-option--can_teach.student-learning__reflection-option--active {
+  border-color: var(--color-accent);
+  background: rgba(201, 151, 31, 0.12);
+}
+.student-learning__concept-detail-continue {
+  margin-top: 0.5rem;
+}
+.student-learning__continue-button {
+  width: 100%;
+}
+.student-learning__concept-nav-row {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.5rem;
+}

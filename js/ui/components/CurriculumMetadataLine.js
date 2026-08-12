@@ -60,7 +60,7 @@ export function renderCurriculumMetadataLine(container, { curriculumState }) {
   const text = document.createElement('span');
   text.className = 'curriculum-metadata-line__text';
   if (curriculumState.status === 'none') {
-    text.textContent = 'No curriculum assigned.';
+    text.textContent = 'Nothing set up for this Subject yet.';
   } else {
     const { curriculumIndex } = curriculumState;
     text.textContent = `${curriculumIndex.curriculum.name} \u00b7 ${curriculumIndex.curriculum.grade}`;

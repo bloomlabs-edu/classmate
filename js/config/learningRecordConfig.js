@@ -29,14 +29,15 @@ export const CONCEPT_STATUS_LABELS = Object.freeze({
   taught: 'Taught',
 });
 
-/** A student's own self-reported grasp of a concept. Per-student — see models/StudentConceptRecord.js. Student-controlled. */
-export const UNDERSTANDING_KEYS = Object.freeze(['not_marked', 'understand', 'can_teach', 'need_help']);
+/** A student's own self-reported grasp of a concept. Per-student — see models/StudentConceptRecord.js. Student-controlled. 'confident' sits between 'understand' ("still learning") and 'can_teach' (the top/Mastered tier) — see ui/views/ConceptWorkspaceView.js's own masteredCount, which deliberately continues to count 'can_teach' only, never 'confident', per explicit product decision. */
+export const UNDERSTANDING_KEYS = Object.freeze(['not_marked', 'understand', 'can_teach', 'need_help', 'confident']);
 
 export const UNDERSTANDING_LABELS = Object.freeze({
   not_marked: 'Not Marked',
   understand: 'I Understand',
   can_teach: 'I Can Teach This',
   need_help: 'I Need Help',
+  confident: 'I Feel Confident',
 });
 
 /** A student's notebook-work status for a concept. Per-student, but teacher-controlled — a teacher marks work pending/submitted/corrected the same way notebook checks work elsewhere in this app (see services/notebookCheckService.js). Not every concept requires notebook work — 'not_required' is the default. */
@@ -55,6 +56,40 @@ export function getConceptStatusLabel(status) {
 
 export function getUnderstandingLabel(understanding) {
   return UNDERSTANDING_LABELS[understanding] || UNDERSTANDING_LABELS.not_marked;
+}
+
+/**
+ * The student-facing reflection vocabulary — same underlying
+ * UNDERSTANDING_KEYS values, deliberately different words than
+ * UNDERSTANDING_LABELS above, which remains exactly as-is for the
+ * teacher-facing ConceptWorkspaceView.js. This mirrors the same
+ * "different vocabulary at different layers, same underlying object"
+ * principle already used for Learning Hub terminology — the student
+ * never needs to know this maps onto a key also displayed to their
+ * teacher as "I Need Help".
+ */
+export const STUDENT_UNDERSTANDING_LABELS = Object.freeze({
+  not_marked: 'Not explored yet',
+  need_help: "I don't understand this yet",
+  understand: "I'm still learning this",
+  confident: 'I feel confident with this',
+  can_teach: 'I can teach this',
+});
+
+export const STUDENT_UNDERSTANDING_ICONS = Object.freeze({
+  not_marked: '\u26aa',
+  need_help: '\ud83d\udd34',
+  understand: '\ud83d\udfe1',
+  confident: '\ud83d\udfe2',
+  can_teach: '\u2b50',
+});
+
+export function getStudentUnderstandingLabel(understanding) {
+  return STUDENT_UNDERSTANDING_LABELS[understanding] || STUDENT_UNDERSTANDING_LABELS.not_marked;
+}
+
+export function getStudentUnderstandingIcon(understanding) {
+  return STUDENT_UNDERSTANDING_ICONS[understanding] || STUDENT_UNDERSTANDING_ICONS.not_marked;
 }
 
 export function getNotebookStatusLabel(notebookStatus) {

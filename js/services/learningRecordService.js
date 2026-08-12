@@ -92,7 +92,7 @@ export function getTaughtConcepts(classroom) {
  * Returns counts per config/learningRecordConfig.js's UNDERSTANDING_KEYS.
  */
 export function getStudentUnderstandingSummary(classroom, student) {
-  const summary = { not_marked: 0, understand: 0, can_teach: 0, need_help: 0 };
+  const summary = { not_marked: 0, understand: 0, can_teach: 0, need_help: 0, confident: 0 };
   getTaughtConcepts(classroom).forEach(({ concept }) => {
     const record = getStudentConceptRecord(student, concept.id);
     summary[record.understanding] = (summary[record.understanding] || 0) + 1;
