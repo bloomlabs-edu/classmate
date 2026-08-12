@@ -9760,3 +9760,81 @@ button.wizard-checklist__row:hover {
   font-size: 0.78rem;
   color: var(--color-muted);
 }
+
+/* Learning Hub plugin trigger + drawer panel — see ui/components/LearningHubPanel.js. Dormant until opened: this trigger is the entire Learning Hub footprint on the Unit page when the panel is closed. */
+.learning-management__learning-hub-trigger {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.4rem 0.9rem;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.learning-management__learning-hub-trigger:hover {
+  background: rgba(46, 125, 158, 0.06);
+}
+
+/* Reuses .modal-overlay's own fixed/backdrop/click-outside-to-close
+   behavior (see css/styles.css's own .modal-overlay rule) — this
+   class only overrides the alignment, right-anchoring the panel
+   instead of centering a dialog. */
+.learning-hub-panel-overlay {
+  justify-content: flex-end;
+  padding: 0;
+}
+.learning-hub-panel {
+  background: var(--color-surface, #fff);
+  width: min(420px, 100vw);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.15);
+  animation: learning-hub-panel-slide-in 0.2s var(--ease-standard, ease-out);
+}
+@keyframes learning-hub-panel-slide-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.learning-hub-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.1rem;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+.learning-hub-panel__brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: var(--font-weight-black);
+  font-size: 1.05rem;
+}
+.learning-hub-panel__icon {
+  font-size: 1.2rem;
+}
+.learning-hub-panel__close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--color-muted);
+  padding: 0.2rem 0.4rem;
+}
+.learning-hub-panel__body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 1rem 1.1rem;
+}
+@media (max-width: 640px) {
+  .learning-hub-panel {
+    width: 100vw;
+  }
+}
