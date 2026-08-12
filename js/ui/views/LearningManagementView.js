@@ -1017,29 +1017,47 @@ function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUni
     }
 
     const conceptsHeading = document.createElement('p');
-    conceptsHeading.className = 'learning-management__intro';
+    conceptsHeading.className = 'learning-management__primary-section-heading';
     conceptsHeading.textContent = 'Concepts';
+    wrapper.appendChild(conceptsHeading);
+
+    if (selectedUnit.concepts.length === 0) {
+      wrapper.appendChild(createEmptyStateElement({ message: "What do you want your students to understand in this unit?" }));
+      wrapper.appendChild(renderAddConceptControl(selectedUnit.id, addingConcept, handlers));
+    } else {
+      const conceptList = document.createElement('div');
+      conceptList.className = 'learning-management__subject-card-list';
+      selectedUnit.concepts.forEach((concept) => {
+        conceptList.appendChild(createNavigationRow({ label: concept.title, onClick: () => handlers.onSelectConcept(concept) }));
+      });
+      wrapper.appendChild(conceptList);
+      wrapper.appendChild(renderAddConceptControl(selectedUnit.id, addingConcept, handlers));
+    }
+
+    const learningHubDivider = document.createElement('hr');
+    learningHubDivider.className = 'learning-management__subject-divider';
+    wrapper.appendChild(learningHubDivider);
+
+    // Secondary, optional tool section — deliberately below Concepts,
+    // per explicit product decision. A Learning Hub loading failure
+    // (see renderUnitPackControl()'s own "Could not load..." state)
+    // is structurally confined inside packSection below; it can never
+    // appear above or block the Concepts workspace above it.
+    const learningHubHeading = document.createElement('p');
+    learningHubHeading.className = 'learning-management__intro';
+    learningHubHeading.textContent = 'Learning Hub';
+    wrapper.appendChild(learningHubHeading);
+
+    const learningHubIntro = document.createElement('p');
+    learningHubIntro.className = 'learning-management__intro';
+    learningHubIntro.textContent = "Find learning resources for the concepts you're teaching.";
+    wrapper.appendChild(learningHubIntro);
 
     const packSection = document.createElement('div');
     packSection.className = 'learning-management__learning-hub-pack-section';
     renderUnitPackControl(packSection, selectedUnit, handlers);
     wrapper.appendChild(packSection);
 
-    wrapper.appendChild(conceptsHeading);
-
-    if (selectedUnit.concepts.length === 0) {
-      wrapper.appendChild(createEmptyStateElement({ message: 'No concepts yet.' }));
-      wrapper.appendChild(renderAddConceptControl(selectedUnit.id, addingConcept, handlers));
-      return wrapper;
-    }
-
-    const conceptList = document.createElement('div');
-    conceptList.className = 'learning-management__subject-card-list';
-    selectedUnit.concepts.forEach((concept) => {
-      conceptList.appendChild(createNavigationRow({ label: concept.title, onClick: () => handlers.onSelectConcept(concept) }));
-    });
-    wrapper.appendChild(conceptList);
-    wrapper.appendChild(renderAddConceptControl(selectedUnit.id, addingConcept, handlers));
     return wrapper;
   }
 
