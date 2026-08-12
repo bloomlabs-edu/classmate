@@ -38,6 +38,7 @@ import * as learningRecordTeacherService from '../../services/learningRecordTeac
 import * as resourceService from '../../services/resourceService.js';
 import * as resourceRepository from '../../services/resourceRepository.js';
 import { fetchLearningHubCatalogue, groupExperiencesByType } from '../../services/learningHubCatalogueService.js';
+import { openLearningHubPanel } from '../components/LearningHubPanel.js';
 import { getUnderstandingLabel, getNotebookStatusLabel } from '../../config/learningRecordConfig.js';
 import {
   RESOURCE_TYPE_KEYS,
@@ -98,6 +99,7 @@ export function renderConceptWorkspaceView(container, { classroom, subject, unit
 
     renderWorkspace(container, classroom, subject, unit, concept, activeTab, resources, { resourceMode, pendingType, selectedResourceId, pendingLearningHubExperience }, {
       onBack,
+      rerender,
       onSelectTab: (tabId) => {
         activeTab = tabId;
         resourceMode = 'list'; // switching tabs away and back always returns to the plain list
@@ -195,6 +197,49 @@ function renderWorkspace(container, classroom, subject, unit, concept, activeTab
   header.appendChild(title);
 
   wrapper.appendChild(header);
+
+  // A distinct, dormant Learning Hub trigger — see
+  // ui/components/LearningHubPanel.js's own header comment. Opened
+  // from here, the panel always knows this exact Concept — no
+  // "which Concept?" step is ever needed at all.
+  const learningHubTrigger = document.createElement('button');
+  learningHubTrigger.type = 'button';
+  learningHubTrigger.className = 'learning-management__learning-hub-trigger concept-workspace__learning-hub-trigger';
+  learningHubTrigger.setAttribute('aria-label', 'Open Learning Hub');
+  const triggerIcon = document.createElement('span');
+  triggerIcon.setAttribute('aria-hidden', 'true');
+  triggerIcon.textContent = '\ud83d\udcda';
+  const triggerLabel = document.createElement('span');
+  triggerLabel.textContent = 'Learning Hub';
+  learningHubTrigger.append(triggerIcon, ' ', triggerLabel);
+  learningHubTrigger.addEventListener('click', () => {
+    openLearningHubPanel({
+      concept,
+      unit,
+      pendingLearningHubExperience: null,
+      handlers: {
+        onPickLearningHubExperience: async (experience) => {
+          // Mirrors ui/views/LearningManagementView.js's own
+          // onUseLearningHubResourceForConcept exactly — same
+          // Resource type mapping, same content shape, same default
+          // ('teacher') audience. Not a second implementation; this
+          // Concept is always known here already, so there is no
+          // "which Concept?" step at all.
+          const resourceType = LEARNING_HUB_EXPERIENCE_TYPE_TO_RESOURCE_TYPE[experience.type] || 'activity';
+          const resource = await resourceService.createResourceOnConcept(classroom.id, concept, { title: experience.title, type: resourceType });
+          resource.content = { kind: 'learning_hub_experience', experienceType: experience.type, experienceId: experience.id };
+          resource.audience = 'teacher';
+          await resourceRepository.saveResource(classroom.id, resource);
+          workspaceService.save(classroom);
+          handlers.rerender();
+        },
+        onUseLearningHubResourceForConcept: () => {},
+        onCancelPendingLearningHubExperience: () => {},
+      },
+      onClose: () => {},
+    });
+  });
+  wrapper.appendChild(learningHubTrigger);
 
   // Tab bar
   const tabBar = document.createElement('div');

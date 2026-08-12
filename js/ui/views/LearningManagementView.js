@@ -421,10 +421,10 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
     },
     onOpenLearningHubPanel: (unit) => {
       openLearningHubPanelInstance = openLearningHubPanel({
+        concept: unit.concepts.length === 1 ? unit.concepts[0] : null,
         unit,
         pendingLearningHubExperience,
         handlers,
-        renderPackSection: (container) => renderUnitPackControl(container, unit, handlers),
         onClose: () => {
           openLearningHubPanelInstance = null;
           pendingLearningHubExperience = null;
@@ -1104,16 +1104,19 @@ function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUni
     // Learning Hub is now a dormant plugin (see
     // ui/components/LearningHubPanel.js), never a permanent page
     // section — per explicit product decision, this trigger is the
-    // ENTIRE Learning Hub footprint on the Unit page when the panel
-    // is closed. No heading, no search box, no results, no Pack
-    // control occupy any space here at all.
+    // ENTIRE Learning Hub resource-discovery footprint on the Unit
+    // page when the panel is closed. Docked toward the right edge
+    // (align-self: flex-end on this file's own existing flex column
+    // — see css/styles.css's own .learning-management__section) so
+    // it reads as a plugin launcher, not another stacked ClassMate
+    // action beneath "+ Add Concept".
     const learningHubTrigger = document.createElement('button');
     learningHubTrigger.type = 'button';
     learningHubTrigger.className = 'learning-management__learning-hub-trigger';
     learningHubTrigger.setAttribute('aria-label', 'Open Learning Hub');
     const triggerIcon = document.createElement('span');
     triggerIcon.setAttribute('aria-hidden', 'true');
-    triggerIcon.textContent = '\ud83e\udded';
+    triggerIcon.textContent = '\ud83d\udcda';
     const triggerLabel = document.createElement('span');
     triggerLabel.textContent = 'Learning Hub';
     learningHubTrigger.append(triggerIcon, ' ', triggerLabel);
@@ -1121,6 +1124,16 @@ function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUni
       handlers.onOpenLearningHubPanel(selectedUnit);
     });
     wrapper.appendChild(learningHubTrigger);
+
+    // The Pack mechanism (renderUnitPackControl(), completely
+    // unmodified) lives HERE, on the Unit page itself — never inside
+    // the Learning Hub drawer, per explicit product decision. A Pack
+    // is a Unit-level shortcut, a genuinely different concern from
+    // resource discovery.
+    const packSection = document.createElement('div');
+    packSection.className = 'learning-management__learning-hub-pack-section';
+    renderUnitPackControl(packSection, selectedUnit, handlers);
+    wrapper.appendChild(packSection);
 
     return wrapper;
   }

@@ -9763,7 +9763,7 @@ button.wizard-checklist__row:hover {
 
 /* Learning Hub plugin trigger + drawer panel — see ui/components/LearningHubPanel.js. Dormant until opened: this trigger is the entire Learning Hub footprint on the Unit page when the panel is closed. */
 .learning-management__learning-hub-trigger {
-  align-self: flex-start;
+  align-self: flex-end;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -9832,6 +9832,29 @@ button.wizard-checklist__row:hover {
   flex: 1 1 auto;
   overflow-y: auto;
   padding: 1rem 1.1rem;
+}
+.learning-hub-panel__context-label {
+  margin: 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-muted);
+}
+.learning-hub-panel__context-title {
+  margin: 0.1rem 0 0.75rem;
+  font-weight: var(--font-weight-bold);
+  font-size: 1.05rem;
+}
+.learning-hub-panel__result-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+.concept-workspace__learning-hub-trigger {
+  display: block;
+  margin-left: auto;
+  margin-top: -0.5rem;
 }
 @media (max-width: 640px) {
   .learning-hub-panel {

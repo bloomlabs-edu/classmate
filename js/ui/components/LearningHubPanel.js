@@ -2,69 +2,64 @@
  * ui/components/LearningHubPanel.js
  *
  * Learning Hub as a dormant plugin, not a permanent ClassMate page
- * section — per explicit product decision. openLearningHubPanel()
- * mounts a right-side drawer (near-full-screen on narrow viewports —
- * see css/styles.css's own media query) on top of the existing
- * ClassMate workspace via the same .modal-overlay backdrop mechanism
- * ui/components/AssignCurriculumModal.js already established
- * (fixed, full-viewport, click-outside-to-close) — this file adds a
- * new, side-anchored panel variant rather than reusing .modal itself,
- * since that's centered, not a drawer.
+ * section. openLearningHubPanel() mounts a right-side drawer on top
+ * of the existing ClassMate workspace via the same .modal-overlay
+ * backdrop mechanism ui/components/AssignCurriculumModal.js already
+ * established (fixed, full-viewport, click-outside-to-close) — this
+ * file adds a new, side-anchored panel variant rather than reusing
+ * .modal itself, since that's centered, not a drawer.
  *
- * The search body itself (renderLearningHubSearchBody) is the exact
- * same fetchLearningHubCatalogue()/groupExperiencesByType()-driven UI
- * that used to render permanently inline on the Unit page — moved
- * here unchanged internally, not rewritten, per explicit instruction.
+ * Per explicit product decision, this drawer is resource-discovery
+ * ONLY — Learning Hub Pack association does not live here at all.
+ * That control (renderUnitPackControl(), unmodified) is rendered
+ * directly on the Unit page itself (see
+ * ui/views/LearningManagementView.js), not inside this file, and this
+ * file never imports or references it.
+ *
+ * Concept-aware: when `concept` is a real, specific Concept (passed
+ * by the caller — either ui/views/ConceptWorkspaceView.js's own
+ * screen for one unambiguous Concept, or LearningManagementView.js's
+ * Unit-level list when it has exactly one Concept), the panel shows
+ * "Resources for: {concept.title}" and pre-fills search with it. This
+ * is a starting point, never a restriction — the teacher can clear or
+ * replace the query at any time, and "Use for this concept" always
+ * targets the exact concept the panel currently knows, with zero
+ * separate "which Concept?" step needed at all in that case. When no
+ * single Concept is known (the Unit-level list with zero or several
+ * Concepts), the existing "which Concept?" chooser step still applies
+ * after a result is picked — unchanged from before.
+ *
+ * fetchLearningHubCatalogue()/groupExperiencesByType() are reused
+ * completely unmodified (services/learningHubCatalogueService.js) —
+ * no rewrite of the underlying search logic, only of how its states
+ * are now genuinely distinguished (loading vs. loaded-with-no-query
+ * vs. no-matches vs. real fetch failure — see renderResults() below).
  * Selecting a result still calls the exact same, existing
  * handlers.onPickLearningHubExperience()/onUseLearningHubResourceForConcept()
  * (see ui/views/LearningManagementView.js's own closure) — this file
  * has no resource-creation logic of its own at all.
- *
- * The existing Pack-association control (renderUnitPackControl(),
- * completely unmodified, zero other callers anywhere in the
- * codebase) is not imported here at all — the caller passes a small
- * `renderPackSection(container)` callback instead, so this file never
- * needs to know that function exists. Keeps the Pack mechanism
- * completely untouched while still surfacing it inside the panel,
- * per explicit product decision ("if the Pack association action
- * belongs inside the Learning Hub plugin, move its UI into the
- * drawer").
  */
 
 import { fetchLearningHubCatalogue, groupExperiencesByType } from '../../services/learningHubCatalogueService.js';
-import { LEARNING_HUB_TYPE_GROUP_LABELS } from '../views/ConceptWorkspaceView.js';
+import { LEARNING_HUB_TYPE_GROUP_LABELS, buildLearningHubLaunchUrl } from '../views/ConceptWorkspaceView.js';
 import { createEmptyStateElement } from './EmptyState.js';
 import { createNavigationRow } from './NavigationRow.js';
 
 /**
- * Opens the panel. `unit` is the current ClassMate context (the Unit
- * the teacher is working in) — used only to (a) pre-fill an initial
- * search when the Unit has exactly one Concept, matching the exact
- * same "no ambiguity, skip the extra step" precedent already used
- * for resource association, and (b) offer that Unit's own real
- * Concepts in the "which Concept is this for?" step. The teacher can
- * always search anything else afterward — this never restricts
- * search itself, only suggests a starting point.
+ * Opens the panel.
+ *
+ * `concept` — a specific, unambiguous Concept if the caller knows
+ * one (see this file's own header comment); otherwise null.
+ * `unit` — always required, for the Unit-level "which Concept?" step
+ * when `concept` itself is null and the Unit has more than one.
  *
  * `handlers` must provide: onPickLearningHubExperience,
  * onUseLearningHubResourceForConcept, onCancelPendingLearningHubExperience
- * — the exact same handlers the old inline plugin used, unchanged.
+ * — the exact same handlers already used before this change.
  *
- * `renderPackSection(container)` is an optional callback the caller
- * provides to render the existing, untouched Pack control inside the
- * panel's own body, beneath search results.
- *
- * `pendingLearningHubExperience` mirrors the caller's own closure
- * state exactly, so the "which Concept?" step (see
- * LearningManagementView.js's own onPickLearningHubExperience) keeps
- * working precisely as it did inline — this panel is a new location
- * for that UI, not a new implementation of it.
- *
- * Returns { close, rerender } — `rerender` lets the caller refresh
- * the panel's own body after a state change (e.g. a Concept was just
- * chosen) without closing and reopening the whole drawer.
+ * Returns { close, rerender }.
  */
-export function openLearningHubPanel({ unit, pendingLearningHubExperience, handlers, renderPackSection, onClose }) {
+export function openLearningHubPanel({ concept, unit, pendingLearningHubExperience, handlers, onClose }) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay learning-hub-panel-overlay';
 
@@ -93,7 +88,7 @@ export function openLearningHubPanel({ unit, pendingLearningHubExperience, handl
   brand.className = 'learning-hub-panel__brand';
   const icon = document.createElement('span');
   icon.className = 'learning-hub-panel__icon';
-  icon.textContent = '\ud83e\udded'; // a compass — a distinct, non-ClassMate mark, deliberately not reusing any existing ClassMate icon glyph
+  icon.textContent = '\ud83d\udcda';
   icon.setAttribute('aria-hidden', 'true');
   const name = document.createElement('span');
   name.className = 'learning-hub-panel__name';
@@ -116,7 +111,7 @@ export function openLearningHubPanel({ unit, pendingLearningHubExperience, handl
   panel.appendChild(body);
 
   function rerender(nextPendingLearningHubExperience) {
-    renderLearningHubSearchBody(body, unit, nextPendingLearningHubExperience, handlers, renderPackSection);
+    renderLearningHubSearchBody(body, { concept, unit }, nextPendingLearningHubExperience, handlers);
   }
 
   rerender(pendingLearningHubExperience);
@@ -124,17 +119,15 @@ export function openLearningHubPanel({ unit, pendingLearningHubExperience, handl
   return { close, rerender };
 }
 
-/**
- * The moved search body — identical logic to the old, permanently
- * inline plugin, just rendered inside the panel's own body instead
- * of directly on the Unit page. An initial query pre-fills from
- * `unit`'s own single Concept, if it has exactly one; the teacher can
- * clear or replace it freely.
- */
-function renderLearningHubSearchBody(container, unit, pendingLearningHubExperience, handlers, renderPackSection) {
+function renderLearningHubSearchBody(container, { concept, unit }, pendingLearningHubExperience, handlers) {
   container.innerHTML = '';
 
   if (pendingLearningHubExperience) {
+    if (concept) {
+      handlers.onUseLearningHubResourceForConcept(pendingLearningHubExperience, concept);
+      return;
+    }
+
     if (unit.concepts.length === 0) {
       container.appendChild(createEmptyStateElement({ message: 'Add a Concept first \u2014 then you can use this resource for it.' }));
       const cancelButton = document.createElement('button');
@@ -153,8 +146,8 @@ function renderLearningHubSearchBody(container, unit, pendingLearningHubExperien
 
     const list = document.createElement('div');
     list.className = 'learning-management__subject-card-list';
-    unit.concepts.forEach((concept) => {
-      list.appendChild(createNavigationRow({ label: concept.title, onClick: () => handlers.onUseLearningHubResourceForConcept(pendingLearningHubExperience, concept) }));
+    unit.concepts.forEach((unitConcept) => {
+      list.appendChild(createNavigationRow({ label: unitConcept.title, onClick: () => handlers.onUseLearningHubResourceForConcept(pendingLearningHubExperience, unitConcept) }));
     });
     container.appendChild(list);
 
@@ -167,61 +160,73 @@ function renderLearningHubSearchBody(container, unit, pendingLearningHubExperien
     return;
   }
 
+  const initialQuery = concept ? concept.title : (unit.concepts.length === 1 ? unit.concepts[0].title : '');
+  if (concept) {
+    const contextLabel = document.createElement('p');
+    contextLabel.className = 'learning-hub-panel__context-label';
+    contextLabel.textContent = 'Resources for';
+    container.appendChild(contextLabel);
+    const contextTitle = document.createElement('p');
+    contextTitle.className = 'learning-hub-panel__context-title';
+    contextTitle.textContent = concept.title;
+    container.appendChild(contextTitle);
+  }
+
   const searchInput = document.createElement('input');
   searchInput.type = 'text';
   searchInput.placeholder = 'Search concepts, missions, subjects\u2026';
   searchInput.className = 'concept-workspace__learning-hub-search';
-  // A starting point, not a restriction — the teacher can clear or
-  // replace this at any time; search is never limited to it.
-  searchInput.value = unit.concepts.length === 1 ? unit.concepts[0].title : '';
+  searchInput.value = initialQuery;
   container.appendChild(searchInput);
 
   const resultsContainer = document.createElement('div');
   resultsContainer.className = 'concept-workspace__learning-hub-results';
-  const loadingMessage = document.createElement('p');
-  loadingMessage.className = 'concept-workspace__tab-intro';
-  loadingMessage.textContent = 'Loading\u2026';
-  resultsContainer.appendChild(loadingMessage);
   container.appendChild(resultsContainer);
 
-  function loadAndRender() {
+  function renderLoading() {
     resultsContainer.innerHTML = '';
-    const freshLoadingMessage = document.createElement('p');
-    freshLoadingMessage.className = 'concept-workspace__tab-intro';
-    freshLoadingMessage.textContent = 'Loading\u2026';
-    resultsContainer.appendChild(freshLoadingMessage);
+    const loadingMessage = document.createElement('p');
+    loadingMessage.className = 'concept-workspace__tab-intro';
+    loadingMessage.textContent = 'Loading Learning Hub\u2026';
+    resultsContainer.appendChild(loadingMessage);
+  }
+
+  function loadAndRender() {
+    renderLoading();
 
     fetchLearningHubCatalogue().then((experiences) => {
+      const genuinelyFailed = experiences.length === 0;
+
       function renderResults(filterText) {
         resultsContainer.innerHTML = '';
+
+        if (genuinelyFailed) {
+          resultsContainer.appendChild(createEmptyStateElement({ message: "Learning Hub couldn't be loaded right now." }));
+          const retryButton = document.createElement('button');
+          retryButton.type = 'button';
+          retryButton.className = 'btn btn--text';
+          retryButton.textContent = 'Retry';
+          retryButton.addEventListener('click', loadAndRender);
+          resultsContainer.appendChild(retryButton);
+          return;
+        }
+
         const filtered = filterText
           ? experiences.filter((experience) => experience.title.toLowerCase().includes(filterText.toLowerCase()))
           : experiences;
 
         if (filtered.length === 0) {
-          const emptyState = createEmptyStateElement({ message: experiences.length === 0 ? "Learning Hub couldn't be loaded right now." : 'No resources match your search.' });
-          resultsContainer.appendChild(emptyState);
-          // Error isolation — this Retry only ever re-fetches the
-          // catalogue inside this panel; it never touches the
-          // Concepts workspace behind it at all.
-          if (experiences.length === 0) {
-            const retryButton = document.createElement('button');
-            retryButton.type = 'button';
-            retryButton.className = 'btn btn--text';
-            retryButton.textContent = 'Retry';
-            retryButton.addEventListener('click', loadAndRender);
-            resultsContainer.appendChild(retryButton);
-          }
+          resultsContainer.appendChild(createEmptyStateElement({ message: 'No Learning Hub resources found for this search.' }));
           return;
         }
 
+        const groupsHeading = document.createElement('p');
+        groupsHeading.className = 'concept-workspace__learning-hub-group-heading';
+        groupsHeading.textContent = filterText ? 'Results' : 'Recommended';
+        resultsContainer.appendChild(groupsHeading);
+
         const groups = groupExperiencesByType(filtered);
         groups.forEach((experiencesOfType, type) => {
-          const groupHeading = document.createElement('p');
-          groupHeading.className = 'concept-workspace__learning-hub-group-heading';
-          groupHeading.textContent = LEARNING_HUB_TYPE_GROUP_LABELS[type] || type;
-          resultsContainer.appendChild(groupHeading);
-
           experiencesOfType.forEach((experience) => {
             const card = document.createElement('div');
             card.className = 'learning-management__learning-hub-result-card';
@@ -237,13 +242,26 @@ function renderLearningHubSearchBody(container, unit, pendingLearningHubExperien
             textWrap.append(titleEl, typeEl);
             card.appendChild(textWrap);
 
+            const actions = document.createElement('div');
+            actions.className = 'learning-hub-panel__result-actions';
+
+            const previewButton = document.createElement('button');
+            previewButton.type = 'button';
+            previewButton.className = 'btn btn--text';
+            previewButton.textContent = 'Preview';
+            previewButton.addEventListener('click', () => {
+              window.open(buildLearningHubLaunchUrl(experience.type, experience.id), '_blank');
+            });
+            actions.appendChild(previewButton);
+
             const useButton = document.createElement('button');
             useButton.type = 'button';
             useButton.className = 'btn btn--secondary';
             useButton.textContent = 'Use for this concept';
-            useButton.addEventListener('click', () => handlers.onPickLearningHubExperience(experience, unit));
-            card.appendChild(useButton);
+            useButton.addEventListener('click', () => handlers.onPickLearningHubExperience(experience, concept ? { concepts: [concept] } : unit));
+            actions.appendChild(useButton);
 
+            card.appendChild(actions);
             resultsContainer.appendChild(card);
           });
         });
@@ -255,13 +273,4 @@ function renderLearningHubSearchBody(container, unit, pendingLearningHubExperien
   }
 
   loadAndRender();
-
-  if (renderPackSection) {
-    const packDivider = document.createElement('hr');
-    packDivider.className = 'learning-management__subject-divider';
-    container.appendChild(packDivider);
-    const packContainer = document.createElement('div');
-    container.appendChild(packContainer);
-    renderPackSection(packContainer);
-  }
 }
