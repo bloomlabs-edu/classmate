@@ -8127,13 +8127,64 @@ button.wizard-checklist__row:hover {
 }
 
 /* Open Work Dashboard widget — see ui/components/OpenWorkWidget.js.
-   Reuses .notebook-tracker__card's own styling for each item; this
-   just lays out a compact, scrollable-if-needed list of them. */
+   Deliberately scoped to THIS widget's own list container via a
+   descendant selector, never a bare .notebook-tracker__card rule —
+   that class is also used by ui/views/NotebookTrackerView.js's own,
+   separate landing page, which must stay completely untouched.
+   (Genuine finding from inspection: .notebook-tracker__card had no
+   real CSS rule anywhere in this file at all before this change —
+   every card here was rendering as plain, stacked <p>/<button>
+   elements with nothing but their own default browser margins,
+   which is exactly what produced the "raw text in a huge container"
+   look. This fixes that, scoped to this one widget only.) */
 .open-work-widget__list {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
   margin-top: 0.75rem;
+}
+.open-work-widget__list .notebook-tracker__card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 0.75rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: 0.65rem 0.85rem;
+}
+.open-work-widget__list .notebook-tracker__card-title {
+  grid-column: 1;
+  grid-row: 1;
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-bold);
+  line-height: 1.3;
+}
+.open-work-widget__list .notebook-tracker__card-subtitle {
+  grid-column: 1;
+  grid-row: 2;
+  margin: 0.15rem 0 0;
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+}
+.open-work-widget__list .notebook-tracker__card > .btn {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  flex-shrink: 0;
+}
+@media (max-width: 480px) {
+  .open-work-widget__list .notebook-tracker__card {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+    row-gap: 0.5rem;
+  }
+  .open-work-widget__list .notebook-tracker__card > .btn {
+    grid-column: 1;
+    grid-row: 3;
+    width: 100%;
+  }
 }
 .open-work-widget__more {
   margin-top: 0.5rem;
@@ -9666,4 +9717,20 @@ button.wizard-checklist__row:hover {
   display: flex;
   justify-content: space-between;
   margin-top: 0.5rem;
+}
+
+/* Add Unit / Add Concept inline controls (see ui/views/LearningManagementView.js) */
+.learning-management__add-unit-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+.learning-management__add-unit-control input[type="text"] {
+  flex: 1 1 180px;
+  font: inherit;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
 }

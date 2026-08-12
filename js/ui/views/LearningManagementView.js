@@ -168,6 +168,16 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
   // {status:'loading'} | {status:'ready', curriculumIndex} |
   // {status:'none'} | {status:'error'}.
   let selectedSubjectCurriculumState = null;
+  // Whether the small, inline "Add Unit"/"Add Concept" forms are
+  // currently open — per explicit product decision, Units/Concepts
+  // are now a first-class ClassMate structure independent of
+  // Curriculum, so creating one manually needs a real UI entry point
+  // (learningRecordTeacherService.createUnit()/createConcept()
+  // already existed and already worked without any Curriculum
+  // reference at all; they simply had no caller anywhere in the UI
+  // until now).
+  let addingUnit = false;
+  let addingConcept = false;
 
   /**
    * Applies a fresh, server-confirmed classroom object in place of the
@@ -226,6 +236,8 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
         selectedUnitId,
         conceptContext,
         selectedSubjectCurriculumState,
+        addingUnit,
+        addingConcept,
         singleClassroomMode,
         saveState: selectedClassroom ? workspaceService.getSaveState(selectedClassroom.id) : null,
       },
@@ -306,6 +318,8 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
       selectedPartName = null;
       selectedUnitId = null;
       conceptContext = null;
+      addingUnit = false;
+      addingConcept = false;
       mode = 'subject';
       loadCurriculumStateFor(subject);
     },
@@ -332,10 +346,12 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
     onChoosePart: (partName) => {
       selectedPartName = partName;
       selectedUnitId = null;
+      addingUnit = false;
       rerender();
     },
     onSelectUnit: (unitId) => {
       selectedUnitId = unitId;
+      addingConcept = false;
       rerender();
     },
     onSetUnitLearningHubPack: (unit, pack) => {
@@ -345,6 +361,40 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
       unit.learningHubPack = pack ? { packId: pack.id, title: pack.title } : null;
       if (!pack) delete unit.learningHubPack; // omit entirely when cleared, matching this field's own "omit, never undefined" Firestore-safety convention
       workspaceService.save(selectedClassroom);
+      rerender();
+    },
+    onStartAddUnit: () => {
+      addingUnit = true;
+      rerender();
+    },
+    onCancelAddUnit: () => {
+      addingUnit = false;
+      rerender();
+    },
+    onCreateUnit: (title) => {
+      // Reuses the exact, already-existing, already-curriculum-optional
+      // service function directly — no linkedCurriculumUnitId passed
+      // at all, matching a manually-created Unit's own real
+      // provenance. Behaves identically to a curriculum-derived Unit
+      // from this point forward (see models/LearningUnit.js's own
+      // header comment).
+      learningRecordTeacherService.createUnit(selectedClassroom, selectedSubject.id, { title });
+      workspaceService.save(selectedClassroom);
+      addingUnit = false;
+      rerender();
+    },
+    onStartAddConcept: () => {
+      addingConcept = true;
+      rerender();
+    },
+    onCancelAddConcept: () => {
+      addingConcept = false;
+      rerender();
+    },
+    onCreateConcept: (unitId, title) => {
+      learningRecordTeacherService.createConcept(selectedClassroom, unitId, { title });
+      workspaceService.save(selectedClassroom);
+      addingConcept = false;
       rerender();
     },
     onSelectConcept: (concept) => {
@@ -545,7 +595,7 @@ function renderView(container, mode, state, handlers) {
   if (mode === 'choose-class') {
     wrapper.appendChild(renderChooseClassStep(state.classrooms, handlers));
   } else if (mode === 'subject') {
-    wrapper.appendChild(renderSubjectStep(state.selectedSubject, state.selectedSubjectCurriculumState, state.selectedPartName, state.selectedUnitId, handlers));
+    wrapper.appendChild(renderSubjectStep(state.selectedSubject, state.selectedSubjectCurriculumState, state.selectedPartName, state.selectedUnitId, state.addingUnit, state.addingConcept, handlers));
   } else {
     wrapper.appendChild(renderHomeStep(state.selectedClassroom, handlers));
   }
@@ -679,7 +729,7 @@ function renderDeveloperUtilities(handlers) {
  * everything else here, not hidden behind "⋮". No floating menu
  * anywhere on this screen.
  */
-function renderSubjectStep(subject, curriculumState, selectedPartName, selectedUnitId, handlers) {
+function renderSubjectStep(subject, curriculumState, selectedPartName, selectedUnitId, addingUnit, addingConcept, handlers) {
   const section = document.createElement('div');
   section.className = 'learning-management__section';
 
@@ -688,51 +738,61 @@ function renderSubjectStep(subject, curriculumState, selectedPartName, selectedU
   heading.textContent = subject.title;
   section.appendChild(heading);
 
-  const metadataSlot = document.createElement('div');
-  renderCurriculumMetadataLine(metadataSlot, { curriculumState });
-  section.appendChild(metadataSlot);
+  const hasUnits = subject.units.length > 0;
+
+  // Curriculum metadata (e.g. "Linked to NCERT Science Grade 8") is
+  // still shown when genuinely relevant — but only once real Units
+  // already exist. A brand-new Subject with neither Units nor a
+  // Curriculum shows the plain "No Units yet." message below instead,
+  // per explicit product decision: Curriculum status is no longer
+  // the thing this screen leads with.
+  if (hasUnits) {
+    const metadataSlot = document.createElement('div');
+    renderCurriculumMetadataLine(metadataSlot, { curriculumState });
+    section.appendChild(metadataSlot);
+  }
 
   const curriculumActionButton = document.createElement('button');
   curriculumActionButton.type = 'button';
+  // Always a secondary, "btn--text" action now — reaching the
+  // Curriculum Hub (to import/change a curriculum) is one optional
+  // way to populate Units, never the primary or required one. Same,
+  // unmodified handlers/mechanism either way.
+  curriculumActionButton.className = 'btn btn--text learning-management__curriculum-action';
   if (curriculumState.status === 'ready') {
-    // Opens the Curriculum Hub itself (Review Units, Concepts, and
-    // everything else it already does — see
-    // ui/views/CurriculumManagementView.js, deliberately unredesigned)
-    // to manage this Subject's own curriculum structure. Distinct
-    // from — and safe, unlike — *reassigning a different* Curriculum
-    // Index to this Subject, which has genuine data consequences
-    // (Units/Concepts/Resources are materialized from the curriculum
-    // at assignment time) and remains its own, separately-built,
-    // not-yet-implemented confirmation flow.
-    curriculumActionButton.className = 'btn btn--text learning-management__curriculum-action';
-    curriculumActionButton.textContent = 'Change';
+    curriculumActionButton.textContent = 'Change Curriculum';
     curriculumActionButton.addEventListener('click', handlers.onManageCurriculum);
   } else if (curriculumState.status === 'none') {
-    // Still the prominent, primary call-to-action — a Subject with
-    // nothing set up at all is the one case where reaching the
-    // Curriculum Hub genuinely IS the most important thing on this
-    // screen, per explicit product decision (once units exist, this
-    // same action recedes to a secondary "Change" text link instead,
-    // immediately above). Worded around what this genuinely does for
-    // the classroom (bring in real Units to teach) rather than
-    // framing it as installing a curriculum — same handler, same
-    // underlying curriculumLinkingService mechanism, only the words
-    // a teacher reads changed, per explicit product decision to
-    // remove unnecessary curriculum prominence from this screen.
-    curriculumActionButton.className = 'btn btn--primary learning-management__curriculum-action';
-    curriculumActionButton.textContent = 'Set Up Units';
+    curriculumActionButton.textContent = 'Import from Curriculum';
     curriculumActionButton.addEventListener('click', handlers.onGoToAssignCurriculum);
-  }
-  if (curriculumState.status === 'ready' || curriculumState.status === 'none') {
-    section.appendChild(curriculumActionButton);
   }
 
   const divider = document.createElement('hr');
   divider.className = 'learning-management__subject-divider';
   section.appendChild(divider);
 
-  if (curriculumState.status === 'ready') {
-    section.appendChild(renderUnitsOrParts(subject, selectedPartName, selectedUnitId, handlers));
+  if (hasUnits) {
+    // Units are shown whenever they genuinely exist — regardless of
+    // Curriculum status — matching how Assessments already read this
+    // exact same tree with no curriculum gating at all.
+    section.appendChild(renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUnit, addingConcept, handlers));
+    // "Import from Curriculum" is deliberately NOT offered here once
+    // real Units already exist without one — curriculumLinkingService.js's
+    // own assignment fully replaces subject.units (never merges),
+    // confirmed directly; offering this action here would risk
+    // silently destroying a teacher's own manually-created Units.
+    // "Change Curriculum" remains available for a Subject that
+    // already has a real curriculum link — that path is safe, since
+    // a teacher explicitly chose it once already.
+    if (curriculumState.status === 'ready') {
+      section.appendChild(curriculumActionButton);
+    }
+  } else {
+    section.appendChild(createEmptyStateElement({ message: 'No Units yet.' }));
+    section.appendChild(renderAddUnitControl(addingUnit, handlers));
+    if (curriculumState.status === 'none') {
+      section.appendChild(curriculumActionButton);
+    }
   }
 
   section.appendChild(renderDangerZone(subject, handlers));
@@ -826,7 +886,98 @@ export function renderUnitPackControl(container, unit, handlers) {
   container.appendChild(associateButton);
 }
 
-function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, handlers) {
+/**
+ * The "+ Add Unit" action/inline form — reuses the exact, already-
+ * existing learningRecordTeacherService.createUnit() directly, with
+ * no linkedCurriculumUnitId at all, matching a manually-created
+ * Unit's own real provenance. Once created, this Unit behaves
+ * identically to a curriculum-derived one everywhere else in the app
+ * (see models/LearningUnit.js's own header comment) — this control's
+ * only job is calling that existing function, not a second creation
+ * path.
+ */
+function renderAddUnitControl(addingUnit, handlers) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'learning-management__add-unit-control';
+
+  if (!addingUnit) {
+    const addButton = document.createElement('button');
+    addButton.type = 'button';
+    addButton.className = 'btn btn--secondary';
+    addButton.textContent = '+ Add Unit';
+    addButton.addEventListener('click', handlers.onStartAddUnit);
+    wrapper.appendChild(addButton);
+    return wrapper;
+  }
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'Unit title';
+  wrapper.appendChild(input);
+
+  const createButton = document.createElement('button');
+  createButton.type = 'button';
+  createButton.className = 'btn btn--primary';
+  createButton.textContent = 'Create';
+  createButton.addEventListener('click', () => {
+    const title = input.value.trim();
+    if (!title) return;
+    handlers.onCreateUnit(title);
+  });
+  const cancelButton = document.createElement('button');
+  cancelButton.type = 'button';
+  cancelButton.className = 'btn btn--text';
+  cancelButton.textContent = 'Cancel';
+  cancelButton.addEventListener('click', handlers.onCancelAddUnit);
+  wrapper.append(createButton, cancelButton);
+
+  return wrapper;
+}
+
+/**
+ * The "+ Add Concept" action/inline form — mirrors renderAddUnitControl()
+ * exactly, reusing the existing learningRecordTeacherService.createConcept()
+ * directly.
+ */
+function renderAddConceptControl(unitId, addingConcept, handlers) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'learning-management__add-unit-control';
+
+  if (!addingConcept) {
+    const addButton = document.createElement('button');
+    addButton.type = 'button';
+    addButton.className = 'btn btn--secondary';
+    addButton.textContent = '+ Add Concept';
+    addButton.addEventListener('click', handlers.onStartAddConcept);
+    wrapper.appendChild(addButton);
+    return wrapper;
+  }
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'Concept title';
+  wrapper.appendChild(input);
+
+  const createButton = document.createElement('button');
+  createButton.type = 'button';
+  createButton.className = 'btn btn--primary';
+  createButton.textContent = 'Create';
+  createButton.addEventListener('click', () => {
+    const title = input.value.trim();
+    if (!title) return;
+    handlers.onCreateConcept(unitId, title);
+  });
+  const cancelButton = document.createElement('button');
+  cancelButton.type = 'button';
+  cancelButton.className = 'btn btn--text';
+  cancelButton.textContent = 'Cancel';
+  cancelButton.addEventListener('click', handlers.onCancelAddConcept);
+  wrapper.append(createButton, cancelButton);
+
+  return wrapper;
+}
+
+function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUnit, addingConcept, handlers) {
   const wrapper = document.createElement('div');
 
   const distinctPartNames = [...new Set(subject.units.map((unit) => unit.partName).filter(Boolean))];
@@ -878,6 +1029,7 @@ function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, handlers)
 
     if (selectedUnit.concepts.length === 0) {
       wrapper.appendChild(createEmptyStateElement({ message: 'No concepts yet.' }));
+      wrapper.appendChild(renderAddConceptControl(selectedUnit.id, addingConcept, handlers));
       return wrapper;
     }
 
@@ -887,6 +1039,7 @@ function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, handlers)
       conceptList.appendChild(createNavigationRow({ label: concept.title, onClick: () => handlers.onSelectConcept(concept) }));
     });
     wrapper.appendChild(conceptList);
+    wrapper.appendChild(renderAddConceptControl(selectedUnit.id, addingConcept, handlers));
     return wrapper;
   }
 
@@ -902,6 +1055,7 @@ function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, handlers)
     list.appendChild(createNavigationRow({ label, onClick: () => handlers.onSelectUnit(unit.id) }));
   });
   wrapper.appendChild(list);
+  wrapper.appendChild(renderAddUnitControl(addingUnit, handlers));
 
   return wrapper;
 }

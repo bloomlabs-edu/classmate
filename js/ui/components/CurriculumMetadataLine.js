@@ -32,6 +32,18 @@
 export function renderCurriculumMetadataLine(container, { curriculumState }) {
   container.innerHTML = '';
 
+  if (curriculumState.status === 'none') {
+    // This component is only ever called once real Units already
+    // exist (see ui/views/LearningManagementView.js's own
+    // renderSubjectStep()) — "none" here genuinely means "no
+    // curriculum link exists for this already-populated Subject,"
+    // never "nothing exists at all." There's nothing meaningful to
+    // say about curriculum in that case, so nothing is shown at all
+    // rather than a confusing "Nothing set up" line directly above a
+    // real Units list.
+    return;
+  }
+
   const line = document.createElement('div');
   line.className = 'curriculum-metadata-line';
   container.appendChild(line);
@@ -59,11 +71,7 @@ export function renderCurriculumMetadataLine(container, { curriculumState }) {
 
   const text = document.createElement('span');
   text.className = 'curriculum-metadata-line__text';
-  if (curriculumState.status === 'none') {
-    text.textContent = 'Nothing set up for this Subject yet.';
-  } else {
-    const { curriculumIndex } = curriculumState;
-    text.textContent = `${curriculumIndex.curriculum.name} \u00b7 ${curriculumIndex.curriculum.grade}`;
-  }
+  const { curriculumIndex } = curriculumState;
+  text.textContent = `${curriculumIndex.curriculum.name} \u00b7 ${curriculumIndex.curriculum.grade}`;
   line.appendChild(text);
 }
