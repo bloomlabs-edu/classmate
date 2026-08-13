@@ -553,6 +553,7 @@ function renderRoute(route, reason = 'unspecified') {
     } else if (route.name === 'studentAccess') {
       renderStudentAccessView(appContainer, {
         classroom,
+        currentUser,
         onBack: () => router.navigate(`/classroom/${classroom.id}`),
         onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
       });

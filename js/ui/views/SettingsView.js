@@ -11,11 +11,11 @@
  * Real, Google-authenticated membership now exists (see
  * services/memberService.js and models/Classroom.js's `members` map) —
  * the Teachers tab shows the actual Owner and Teachers on this shared
- * classroom, and its owner-only "Classroom ID" section is the real
- * co-teacher joining mechanism: a shared code (see
- * classroomService.ensureJoinCode()), not an email-based invite (this
- * app has no way to look up another account by email — see
- * authService.js's own module comment). Permissions is still a static
+ * classroom. The co-teacher join code itself now lives on the
+ * Classroom Access screen (see ui/views/StudentAccessView.js) —
+ * a shared code (see classroomService.ensureJoinCode()), not an
+ * email-based invite (this app has no way to look up another account
+ * by email — see authService.js's own module comment). Permissions is still a static
  * reference table, but the role matrix it displays is now the real one
  * enforced (client-side) elsewhere — e.g. Danger Zone below only lets
  * the owner delete the classroom.
@@ -28,7 +28,7 @@ import * as memberService from '../../services/memberService.js';
 import * as workspaceService from '../../services/workspaceService.js';
 import * as setupProgressService from '../../services/setupProgressService.js';
 import * as notebookConfigService from '../../services/notebookConfigService.js';
-import { getDisplayName, ClassroomValidationError, ensureJoinCode } from '../../services/classroomService.js';
+import { getDisplayName, ClassroomValidationError } from '../../services/classroomService.js';
 import { createIcon } from '../components/Icon.js';
 import { createBackButton } from '../components/BackButton.js';
 import { MEMBER_ROLES, PERMISSIONS, ROLE_PERMISSIONS } from '../../config/memberRoles.js';
@@ -116,7 +116,7 @@ export function renderSettingsView(container, { classroom, currentUser, section,
  * hold, unlike a roster a teacher touches constantly.
  */
 function renderClassSection(content, classroom, rerender, onOpenStudentAccess, currentUser, onSelectStudent) {
-  renderTeachersSection(content, classroom, rerender, currentUser);
+  renderTeachersSection(content, classroom, rerender, currentUser, onOpenStudentAccess);
 }
 
 /** Subjects, Notebook Types, and learning-related settings together — everything about instruction, not administration. */
@@ -505,7 +505,7 @@ function createStatusRow(label, done) {
 // for the corresponding "never delete students" Delete Group behavior.
 
 
-function renderTeachersSection(content, classroom, rerender, currentUser) {
+function renderTeachersSection(content, classroom, rerender, currentUser, onOpenStudentAccess) {
   const section = document.createElement('div');
   section.className = 'settings-section';
 
@@ -545,73 +545,19 @@ function renderTeachersSection(content, classroom, rerender, currentUser) {
     section.appendChild(teachersList);
   }
 
-  // The join code IS the invitation mechanism — a co-teacher, signed
-  // into their own account, enters this code from their own Home
-  // screen ("Join a Classroom") to add themselves as a teacher member.
-  // No email lookup is involved (this app has no way to find another
-  // account by email — see authService.js), and no separate invite
-  // record is needed: the code itself is the whole mechanism.
-  if (isOwner) {
-    const joinCodeHeading = document.createElement('h3');
-    joinCodeHeading.className = 'settings-team-block__heading';
-    joinCodeHeading.textContent = 'Classroom ID';
-    section.appendChild(joinCodeHeading);
-
-    const joinCodeNote = document.createElement('p');
-    joinCodeNote.className = 'settings-section__meta';
-    joinCodeNote.textContent =
-      'Share this code with a co-teacher so they can join this classroom from their own account \u2014 they\u2019ll enter it from "Join a Classroom" on their Home screen.';
-    section.appendChild(joinCodeNote);
-
-    const joinCodeRow = document.createElement('div');
-    joinCodeRow.className = 'join-code-display';
-
-    if (classroom.classroomJoinCode) {
-      const joinCodeValue = document.createElement('span');
-      joinCodeValue.className = 'join-code-display__value';
-      joinCodeValue.textContent = classroom.classroomJoinCode;
-      joinCodeRow.appendChild(joinCodeValue);
-
-      const copyButton = document.createElement('button');
-      copyButton.type = 'button';
-      copyButton.className = 'btn btn--ghost';
-      copyButton.textContent = 'Copy';
-      copyButton.addEventListener('click', async () => {
-        try {
-          await navigator.clipboard.writeText(classroom.classroomJoinCode);
-          copyButton.textContent = 'Copied!';
-          setTimeout(() => {
-            copyButton.textContent = 'Copy';
-          }, 1500);
-        } catch (error) {
-          console.error('[SettingsView] Failed to copy join code:', error);
-          window.alert(`Classroom ID: ${classroom.classroomJoinCode}`);
-        }
-      });
-      joinCodeRow.appendChild(copyButton);
-    } else {
-      // Every classroom created after this fix already has a join
-      // code from the moment it's created (see
-      // classroomService.createEmptyClassroom) — this branch only
-      // exists for a classroom that predates that change. Generating
-      // one here happens only in response to an explicit click, never
-      // automatically as a side effect of rendering this section.
-      const generateButton = document.createElement('button');
-      generateButton.type = 'button';
-      generateButton.className = 'btn btn--primary';
-      generateButton.textContent = 'Generate Classroom ID';
-      generateButton.addEventListener('click', () => {
-        ensureJoinCode(classroom);
-        workspaceService.save(classroom);
-        workspaceService.createJoinCodeMapping(classroom.classroomJoinCode, classroom.id);
-        rerender();
-      });
-      joinCodeRow.appendChild(generateButton);
-    }
-
-    section.appendChild(joinCodeRow);
+  // Inviting a co-teacher (the join-code mechanism) now lives on the
+  // Classroom Access screen — one single place for both the student
+  // and co-teacher invite codes, rather than splitting them between
+  // this page and that one. Owner-only, matching who could actually
+  // use the code there.
+  if (isOwner && onOpenStudentAccess) {
+    const inviteLink = document.createElement('button');
+    inviteLink.type = 'button';
+    inviteLink.className = 'btn btn--text';
+    inviteLink.textContent = 'Invite a co-teacher \u2192';
+    inviteLink.addEventListener('click', onOpenStudentAccess);
+    section.appendChild(inviteLink);
   }
-
 
   content.appendChild(section);
 }

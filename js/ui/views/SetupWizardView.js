@@ -642,7 +642,7 @@ function renderInviteTeachersStep(content, classroom, { finish }) {
   const intro = document.createElement('p');
   intro.className = 'wizard-step__intro';
   intro.textContent =
-    "This adds another teacher to this classroom, with full access to students, scores, and settings — not a student invitation. If you're teaching solo, skip this. Looking to invite students? That's a separate code, in Settings \u2192 Student Access, once you've finished setup.";
+    "This adds another teacher to this classroom, with full access to students, scores, and settings — not a student invitation. If you're teaching solo, skip this. Looking to invite students? That's a separate code, on Classroom Access, once you've finished setup.";
   content.appendChild(intro);
 
   const codeDisplay = document.createElement('div');

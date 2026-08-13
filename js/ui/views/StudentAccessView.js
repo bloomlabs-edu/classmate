@@ -17,6 +17,8 @@
 
 import * as classroomService from '../../services/classroomService.js';
 import * as workspaceService from '../../services/workspaceService.js';
+import * as memberService from '../../services/memberService.js';
+import { ensureJoinCode } from '../../services/classroomService.js';
 import { showToast } from '../components/Toast.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { getDisplayName } from '../../services/classroomService.js';
@@ -24,7 +26,7 @@ import { APP_BASE_URL } from '../../config/appConfig.js';
 import { createIcon } from '../components/Icon.js';
 import { createBackButton } from '../components/BackButton.js';
 
-export function renderStudentAccessView(container, { classroom, onBack, onSelectStudent }) {
+export function renderStudentAccessView(container, { classroom, currentUser, onBack, onSelectStudent }) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
@@ -39,7 +41,7 @@ export function renderStudentAccessView(container, { classroom, onBack, onSelect
   titleBlock.className = 'tracker-header__title-block';
   const title = document.createElement('h1');
   title.className = 'tracker-header__title';
-  title.textContent = 'Student Access';
+  title.textContent = 'Classroom Access';
   const subtitle = document.createElement('p');
   subtitle.className = 'tracker-header__subtitle';
   subtitle.textContent = getDisplayName(classroom);
@@ -52,10 +54,13 @@ export function renderStudentAccessView(container, { classroom, onBack, onSelect
   content.className = 'wizard-step-content';
 
   content.appendChild(
-    createInviteStudentsCard(classroom, () => renderStudentAccessView(container, { classroom, onBack, onSelectStudent }))
+    createInviteStudentsCard(classroom, () => renderStudentAccessView(container, { classroom, currentUser, onBack, onSelectStudent }))
   );
   content.appendChild(
-    createDeviceSecurityCard(classroom, () => renderStudentAccessView(container, { classroom, onBack, onSelectStudent }))
+    createInviteCoTeacherCard(classroom, currentUser, () => renderStudentAccessView(container, { classroom, currentUser, onBack, onSelectStudent }))
+  );
+  content.appendChild(
+    createDeviceSecurityCard(classroom, () => renderStudentAccessView(container, { classroom, currentUser, onBack, onSelectStudent }))
   );
 
   const allStudents = classroom.teams.flatMap((team) => team.students);
@@ -165,6 +170,72 @@ function createInviteStudentsCard(classroom, rerender) {
   actions.appendChild(copyCodeButton);
 
   card.appendChild(actions);
+  return card;
+}
+
+/**
+ * The co-teacher join code — mirrors SettingsView.js's own former
+ * "Classroom ID" block exactly (same field, classroom.classroomJoinCode,
+ * same ensureJoinCode()/generate-on-click behavior). Moved here so a
+ * teacher has one single place to find both invite mechanisms,
+ * instead of splitting them between this screen and Settings — see
+ * this file's own header comment. Only shown to the classroom owner;
+ * a non-owner has no reason to hand this code out.
+ */
+function createInviteCoTeacherCard(classroom, currentUser, rerender) {
+  const card = document.createElement('div');
+  card.className = 'settings-section invite-students-card';
+
+  const isOwner = currentUser && memberService.isOwner(classroom, currentUser.uid);
+  if (!isOwner) return card;
+
+  const heading = document.createElement('h2');
+  heading.className = 'settings-page-heading';
+  heading.textContent = 'Invite a Co-Teacher';
+  card.appendChild(heading);
+
+  const description = document.createElement('p');
+  description.className = 'settings-section__meta';
+  description.textContent =
+    'This adds another teacher to this classroom, with full access to students, scores, and settings \u2014 not the student code above. Share this code with them; they\u2019ll enter it from "Join a Classroom" on their own Home screen, once signed into their own account.';
+  card.appendChild(description);
+
+  if (!classroom.classroomJoinCode) {
+    const generateButton = document.createElement('button');
+    generateButton.type = 'button';
+    generateButton.className = 'btn btn--primary';
+    generateButton.textContent = 'Generate Classroom ID';
+    generateButton.addEventListener('click', () => {
+      ensureJoinCode(classroom);
+      workspaceService.save(classroom);
+      workspaceService.createJoinCodeMapping(classroom.classroomJoinCode, classroom.id);
+      rerender();
+    });
+    card.appendChild(generateButton);
+    return card;
+  }
+
+  const codeDisplay = document.createElement('div');
+  codeDisplay.className = 'invite-students-card__code';
+  codeDisplay.textContent = classroom.classroomJoinCode;
+  card.appendChild(codeDisplay);
+
+  const copyButton = document.createElement('button');
+  copyButton.type = 'button';
+  copyButton.className = 'btn btn--ghost';
+  copyButton.textContent = 'Copy Code';
+  copyButton.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(classroom.classroomJoinCode);
+      copyButton.textContent = 'Copied!';
+      setTimeout(() => { copyButton.textContent = 'Copy Code'; }, 1500);
+    } catch (error) {
+      console.error('[StudentAccessView] Failed to copy join code:', error);
+      window.alert(`Classroom ID: ${classroom.classroomJoinCode}`);
+    }
+  });
+  card.appendChild(copyButton);
+
   return card;
 }
 

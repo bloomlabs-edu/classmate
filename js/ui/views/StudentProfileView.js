@@ -397,7 +397,7 @@ function renderAccessTab(content, classroom, student, team, rerender, onOpenStud
   const manageButton = document.createElement('button');
   manageButton.type = 'button';
   manageButton.className = 'btn btn--ghost';
-  manageButton.textContent = 'Manage in Student Access';
+  manageButton.textContent = 'Manage in Classroom Access';
   manageButton.addEventListener('click', () => onOpenStudentAccess?.());
   section.appendChild(manageButton);
 

@@ -586,7 +586,7 @@ function createStudentAccessButton(onOpenStudentAccess) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'btn btn--ghost';
-  button.textContent = 'Student Access';
+  button.textContent = 'Classroom Access';
   button.addEventListener('click', onOpenStudentAccess);
   return button;
 }
