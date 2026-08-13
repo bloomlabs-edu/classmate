@@ -485,9 +485,14 @@ select:focus-visible,
 }
 
 .landing-view__title {
-  font-size: 2.5rem;
+  font-size: 4.25rem;
   font-weight: var(--font-weight-black);
   margin: 0;
+}
+@media (max-width: 480px) {
+  .landing-view__title {
+    font-size: 3rem;
+  }
 }
 .landing-view__title-class {
   color: #5ea6da;
