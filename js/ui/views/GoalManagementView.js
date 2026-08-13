@@ -88,6 +88,14 @@ export function renderGoalManagementView(container, { classroom, onBack }) {
       reviewingGoalId = null;
       rerender();
     },
+    onOpenManageGoals: () => {
+      mode = 'manage';
+      rerender();
+    },
+    onCloseManageGoals: () => {
+      mode = 'home';
+      rerender();
+    },
     onOpenDashboard: () => {
       renderGoalDashboardView(container, { classroom, onBack: () => renderGoalManagementView(container, { classroom, onBack }) });
     },
@@ -104,7 +112,7 @@ function render(container, mode, state, handlers) {
 
   const header = document.createElement('header');
   header.className = 'tracker-header';
-  header.appendChild(createBackButton(mode === 'home' ? handlers.onBack : handlers.onCancelReview));
+  header.appendChild(createBackButton(mode === 'home' ? handlers.onBack : mode === 'manage' ? handlers.onCloseManageGoals : handlers.onCancelReview));
   const titleBlock = document.createElement('div');
   titleBlock.className = 'tracker-header__title-block';
   const title = document.createElement('h1');
@@ -119,6 +127,8 @@ function render(container, mode, state, handlers) {
 
   if (mode === 'reviewGoal') {
     content.appendChild(renderReviewGoalStep(state.classroom, state.reviewingGoal, handlers));
+  } else if (mode === 'manage') {
+    content.appendChild(renderManageGoalsStep(state.classroom, handlers));
   } else {
     content.appendChild(renderHomeStep(state.classroom, state.pendingGoals, state.allGoals, handlers));
   }
@@ -144,13 +154,6 @@ function renderHomeStep(classroom, pendingGoals, allGoals, handlers) {
   cycleHeading.textContent = cycle.title;
   section.appendChild(cycleHeading);
 
-  const pinButton = document.createElement('button');
-  pinButton.type = 'button';
-  pinButton.className = 'btn btn--text';
-  pinButton.textContent = cycle.pinnedToDashboard ? 'Unpin from Dashboard' : '\ud83d\udccc Pin to Dashboard';
-  pinButton.addEventListener('click', () => handlers.onTogglePinCycle(cycle));
-  section.appendChild(pinButton);
-
   const cycleMeta = document.createElement('p');
   cycleMeta.className = 'settings-section__meta';
   cycleMeta.textContent = `${cycle.startDate} \u2192 ${cycle.endDate}`;
@@ -163,35 +166,19 @@ function renderHomeStep(classroom, pendingGoals, allGoals, handlers) {
   dashboardButton.addEventListener('click', handlers.onOpenDashboard);
   section.appendChild(dashboardButton);
 
-  // Categories
-  const categoriesHeading = document.createElement('h3');
-  categoriesHeading.className = 'settings-team-block__heading';
-  categoriesHeading.textContent = 'Categories';
-  section.appendChild(categoriesHeading);
-
-  const categoriesList = document.createElement('ul');
-  categoriesList.className = 'settings-editable-list';
-  goalService.listCategories(cycle).forEach((category) => {
-    const item = document.createElement('li');
-    item.className = 'settings-editable-list__item';
-    const label = document.createElement('span');
-    label.style.flex = '1';
-    label.textContent = category.name;
-    item.appendChild(label);
-    const removeButton = document.createElement('button');
-    removeButton.type = 'button';
-    removeButton.className = 'btn btn--text';
-    removeButton.style.color = 'var(--color-danger)';
-    removeButton.textContent = 'Remove';
-    removeButton.addEventListener('click', () => handlers.onRemoveCategory(cycle, category.id));
-    item.appendChild(removeButton);
-    categoriesList.appendChild(item);
-  });
-  section.appendChild(categoriesList);
-
-  section.appendChild(
-    createAddCategoryRow((name) => handlers.onAddCategory(cycle, name))
-  );
+  // Deliberately styled and worded as a doorway to a separate screen,
+  // not an action this screen performs directly — same convention
+  // ui/views/NotebookTrackerView.js's own "⚙ Configure Notebook
+  // Types" link already established. Pin/Unpin, Categories, and Add
+  // Category all moved to renderManageGoalsStep() below — this
+  // primary screen now leads with the teacher's actual daily task
+  // (reviewing pending goals), not configuration.
+  const manageLink = document.createElement('button');
+  manageLink.type = 'button';
+  manageLink.className = 'notebook-tracker__configure-link';
+  manageLink.textContent = '\u2699 Manage Goals';
+  manageLink.addEventListener('click', handlers.onOpenManageGoals);
+  section.appendChild(manageLink);
 
   // Pending approvals
   const pendingHeading = document.createElement('h3');
@@ -246,6 +233,68 @@ function renderHomeStep(classroom, pendingGoals, allGoals, handlers) {
     missingNote.textContent = missing.map((s) => s.name).join(', ');
     section.appendChild(missingNote);
   }
+
+  return section;
+}
+
+/**
+ * Configuration/management actions — Pin/Unpin, Categories, Add
+ * Category — moved here from renderHomeStep() per explicit product
+ * decision: the primary Goals screen should lead with the teacher's
+ * actual daily task (reviewing pending goals), not setup/config
+ * actions a teacher touches rarely. Same handlers, same behavior as
+ * before; only the screen they live on changed.
+ */
+function renderManageGoalsStep(classroom, handlers) {
+  const section = document.createElement('div');
+  section.className = 'learning-management__section';
+
+  const cycle = goalService.getActiveCycle(classroom);
+  if (!cycle) {
+    section.appendChild(createEmptyStateElement({ message: 'No active Goal Cycle to manage.' }));
+    return section;
+  }
+
+  const heading = document.createElement('p');
+  heading.className = 'learning-management__step-heading';
+  heading.textContent = `Manage \u201c${cycle.title}\u201d`;
+  section.appendChild(heading);
+
+  const pinButton = document.createElement('button');
+  pinButton.type = 'button';
+  pinButton.className = 'btn btn--text';
+  pinButton.textContent = cycle.pinnedToDashboard ? 'Unpin from Dashboard' : '\ud83d\udccc Pin to Dashboard';
+  pinButton.addEventListener('click', () => handlers.onTogglePinCycle(cycle));
+  section.appendChild(pinButton);
+
+  const categoriesHeading = document.createElement('h3');
+  categoriesHeading.className = 'settings-team-block__heading';
+  categoriesHeading.textContent = 'Categories';
+  section.appendChild(categoriesHeading);
+
+  const categoriesList = document.createElement('ul');
+  categoriesList.className = 'settings-editable-list';
+  goalService.listCategories(cycle).forEach((category) => {
+    const item = document.createElement('li');
+    item.className = 'settings-editable-list__item';
+    const label = document.createElement('span');
+    label.style.flex = '1';
+    label.textContent = category.name;
+    item.appendChild(label);
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'btn btn--text';
+    removeButton.style.color = 'var(--color-danger)';
+    removeButton.textContent = 'Remove';
+    removeButton.addEventListener('click', () => handlers.onRemoveCategory(cycle, category.id));
+    item.appendChild(removeButton);
+    categoriesList.appendChild(item);
+  });
+  section.appendChild(categoriesList);
+
+  section.appendChild(
+    createAddCategoryRow((name) => handlers.onAddCategory(cycle, name))
+  );
 
   return section;
 }
