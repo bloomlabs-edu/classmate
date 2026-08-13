@@ -1,28 +1,25 @@
 /**
  * ui/views/NotebookTrackerView.js
  *
- * The classroom-level Notebook landing page — an OPERATIONAL
- * workspace, not a configuration list. Renders directly from
+ * The classroom-level Notebook landing page — a pure launcher now,
+ * per explicit product decision: "Notebook Type → Checkpoints"
+ * directly, with the old "Notebook Type → Notebook Check →
+ * Checkpoints" middle layer removed from this workflow entirely.
+ *
+ * The old "Notebook Check" card grid (fed by
  * services/workTypes/NotebookWorkType.js's own getActiveWork()/
- * getStartActions() — this view contains zero notebook-specific
- * business logic itself; every card's title/subtitle/count/
- * navigateTo already came fully-formed from NotebookWorkType, per the
- * frozen WorkType architecture ("Dashboard owns all presentation...
- * WorkType orchestrates domain services, never duplicates business
- * logic").
- *
- * Redesigned into a card dashboard (ui/components/OperationalWorkCard.js)
- * — a pure presentation-layer change. No service touched, no WorkType
- * interface touched, no new persistence: every card still consumes
- * exactly the same plain { title, subtitle, count, navigateTo } shape
- * that already existed. One real, pre-existing bug fixed along the
- * way: the "start a new check" button used to display item.title
- * itself ("New Homework") as its own button label, instead of a real
- * call-to-action — now correctly reads "Start Notebook Check".
- *
- * The grid (.operational-work-grid) is responsive via CSS alone —
- * 2-3 columns on desktop, 2 on tablet, 1 on mobile — no JS layout
- * logic, matching how every other grid in this app already works.
+ * getStartActions(), leading to ui/views/WorkRequestCreateView.js —
+ * a genuinely different flow from Checkpoints) and the separate
+ * "Checkpoints" text-link list are both gone from this page, replaced
+ * by one unified grid of Notebook Type cards
+ * (createNotebookTypeCard() below) — each one a plain, clickable
+ * destination straight to its own real Checkpoints screen
+ * (ui/views/NotebookCheckpointsView.js, via the exact, unmodified
+ * notebookCheckpoints route in ui/router.js). Neither
+ * NotebookWorkType.js nor WorkRequestCreateView.js was touched at
+ * all — "starting a new notebook check" still exists as a real
+ * capability, it's simply no longer surfaced on this specific
+ * landing page.
  *
  * "⚙ Configure Notebook Types" is deliberately phrased as a doorway
  * out, not an action that belongs to this screen — per the frozen
@@ -37,13 +34,11 @@
  * own creation form.
  */
 
-import { NotebookWorkType } from '../../services/workTypes/NotebookWorkType.js';
 import * as workRequestService from '../../services/workRequestService.js';
 import * as notebookConfigService from '../../services/notebookConfigService.js';
 import { getClassroomStudents } from '../../services/assessmentService.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { createBackButton } from '../components/BackButton.js';
-import { createOperationalWorkCard } from '../components/OperationalWorkCard.js';
 
 export function renderNotebookTrackerView(container, { classroom, onBack, onNavigate, onOpenNotebookConfiguration }) {
   container.innerHTML = '';
@@ -69,26 +64,14 @@ export function renderNotebookTrackerView(container, { classroom, onBack, onNavi
   }
 
   const configuredNotebooks = listConfiguredNotebooks(classroom);
-  if (configuredNotebooks.length > 0) {
-    content.appendChild(renderCheckpointsEntrySection(configuredNotebooks, classroom, onNavigate));
-  }
-
-  const activeWork = NotebookWorkType.getActiveWork(classroom);
-  const startActions = NotebookWorkType.getStartActions(classroom);
-
-  if (activeWork.length === 0 && startActions.length === 0) {
+  if (configuredNotebooks.length === 0) {
     content.appendChild(createEmptyStateElement({ message: 'No subjects or notebook types configured yet.' }));
   } else {
     const grid = document.createElement('div');
     grid.className = 'operational-work-grid';
-
-    activeWork.forEach((item) => {
-      grid.appendChild(createOperationalWorkCard(item, 'Continue', onNavigate));
+    configuredNotebooks.forEach(({ subject, notebookType }) => {
+      grid.appendChild(createNotebookTypeCard(subject, notebookType, classroom, onNavigate));
     });
-    startActions.forEach((item) => {
-      grid.appendChild(createOperationalWorkCard(item, 'Start Notebook Check', onNavigate));
-    });
-
     content.appendChild(grid);
   }
 
@@ -120,38 +103,36 @@ function listConfiguredNotebooks(classroom) {
 }
 
 /**
- * A genuinely separate section from the Active Work / Start Actions
- * grid above — Checkpoints are an always-present destination per
- * Notebook, not "active work awaiting something" or "a new check to
- * start," so this deliberately does not go through
- * NotebookWorkType.js's own frozen getActiveWork()/getStartActions()
- * contract at all.
+ * A selectable destination, not an operational status card — per
+ * explicit product decision, this is deliberately simpler than
+ * ui/components/OperationalWorkCard.js (no status line, no separate
+ * button; the whole card is the click target), matching the "choose
+ * a notebook, see its checkpoints" mental model directly. Navigates
+ * straight to the exact, unmodified Checkpoints route
+ * (ui/router.js's own notebookCheckpoints route,
+ * ui/views/NotebookCheckpointsView.js) — no new routing, no new
+ * model.
  */
-function renderCheckpointsEntrySection(configuredNotebooks, classroom, onNavigate) {
-  const section = document.createElement('div');
-  section.className = 'notebook-tracker__checkpoints-entry';
+function createNotebookTypeCard(subject, notebookType, classroom, onNavigate) {
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'notebook-tracker__type-card';
+  card.addEventListener('click', () =>
+    onNavigate(`/classroom/${classroom.id}/notebooks/${subject.id}/${notebookType.id}/checkpoints`)
+  );
 
-  const heading = document.createElement('p');
-  heading.className = 'notebook-tracker__checkpoints-entry-heading';
-  heading.textContent = 'Checkpoints';
-  section.appendChild(heading);
+  const icon = document.createElement('span');
+  icon.className = 'notebook-tracker__type-card-icon';
+  icon.textContent = '\ud83d\udcd3';
+  icon.setAttribute('aria-hidden', 'true');
+  card.appendChild(icon);
 
-  const list = document.createElement('div');
-  list.className = 'notebook-tracker__checkpoints-entry-list';
+  const title = document.createElement('span');
+  title.className = 'notebook-tracker__type-card-title';
+  title.textContent = `${subject.name} \u00b7 ${notebookType.name}`;
+  card.appendChild(title);
 
-  configuredNotebooks.forEach(({ subject, notebookType }) => {
-    const row = document.createElement('button');
-    row.type = 'button';
-    row.className = 'notebook-tracker__checkpoints-entry-row';
-    row.textContent = `${subject.name} \u00b7 ${notebookType.name} \u2192`;
-    row.addEventListener('click', () =>
-      onNavigate(`/classroom/${classroom.id}/notebooks/${subject.id}/${notebookType.id}/checkpoints`)
-    );
-    list.appendChild(row);
-  });
-
-  section.appendChild(list);
-  return section;
+  return card;
 }
 
 function renderNeedsAttentionSection(needsAttention, classroom, onNavigate) {

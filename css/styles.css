@@ -9875,3 +9875,31 @@ button.wizard-checklist__row:hover {
     width: 100vw;
   }
 }
+
+/* Notebook Type destination cards — see ui/views/NotebookTrackerView.js's createNotebookTypeCard(). Deliberately simpler than .operational-work-card (no status line, no separate button — the whole card is the click target), reusing the exact same border-radius/shadow/blue-accent tokens for visual consistency with the rest of ClassMate. */
+.notebook-tracker__type-card {
+  background-color: #ffffff;
+  border: none;
+  border-radius: 20px;
+  padding: 1.75rem 1.5rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  cursor: pointer;
+  text-align: center;
+  transition: transform var(--duration-fast, 0.15s) var(--ease-standard, ease-out);
+}
+.notebook-tracker__type-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.09);
+}
+.notebook-tracker__type-card-icon {
+  font-size: 2rem;
+}
+.notebook-tracker__type-card-title {
+  font-weight: var(--font-weight-bold);
+  font-size: 1rem;
+  color: var(--color-primary, #2e7d9e);
+}
