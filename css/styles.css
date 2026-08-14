@@ -10087,6 +10087,7 @@ button.wizard-checklist__row:hover {
 }
 .seating-view__room {
   flex: 2 1 420px;
+  max-width: 560px;
   background: var(--color-surface, #fff);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
@@ -10118,7 +10119,8 @@ button.wizard-checklist__row:hover {
 .seating-view__seat {
   position: relative;
   aspect-ratio: 1;
-  min-height: 3.5rem;
+  min-height: 1.75rem;
+  max-height: 3rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-surface-muted, #f4f4f4);
@@ -10131,10 +10133,11 @@ button.wizard-checklist__row:hover {
   font-family: inherit;
 }
 .seating-view__seat-label {
-  font-size: 0.75rem;
+  font-size: 0.65rem;
   font-weight: var(--font-weight-bold);
   overflow-wrap: anywhere;
   text-align: center;
+  line-height: 1.1;
 }
 .seating-view__seat--occupied {
   background: var(--color-surface, #fff);
