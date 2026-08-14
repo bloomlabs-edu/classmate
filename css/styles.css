@@ -10057,3 +10057,155 @@ button.wizard-checklist__row:hover {
     padding: 1.1rem;
   }
 }
+
+/* Seating — active "Coming Soon" card variant, see ui/views/ClassroomManagementView.js's own renderComingSoonSection(). Reuses .classroom-management__coming-soon-card's own base layout, just no longer muted/disabled-looking. */
+.classroom-management__coming-soon-card--active {
+  border: none;
+  cursor: pointer;
+  background-color: var(--color-surface, #fff);
+  color: var(--color-primary, #2e7d9e);
+  opacity: 1;
+  box-shadow: var(--elevation-card);
+  font-weight: var(--font-weight-bold);
+  font-family: inherit;
+}
+.classroom-management__coming-soon-card--active:hover {
+  transform: translateY(-1px);
+}
+
+/* Seating view — see ui/views/SeatingView.js. The physical classroom layout (Board, seat grid, Teacher) plus an Unseated Students roster, side by side on desktop, stacked on narrow screens. */
+.seating-view__hint {
+  color: var(--color-muted);
+  margin: 0.5rem 0 0;
+}
+.seating-view__layout {
+  display: flex;
+  gap: 1.5rem;
+  margin-top: 1rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.seating-view__room {
+  flex: 2 1 420px;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 1.5rem;
+  box-shadow: var(--elevation-card);
+}
+.seating-view__board,
+.seating-view__teacher-label {
+  text-align: center;
+  padding: 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-muted, #f4f4f4);
+  color: var(--color-muted);
+  font-weight: var(--font-weight-bold);
+  font-size: 0.8rem;
+  letter-spacing: 0.05em;
+}
+.seating-view__board {
+  margin-bottom: 1.5rem;
+}
+.seating-view__teacher-label {
+  margin-top: 1.5rem;
+}
+.seating-view__grid {
+  display: grid;
+  gap: 0.6rem;
+}
+.seating-view__seat {
+  position: relative;
+  aspect-ratio: 1;
+  min-height: 3.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-muted, #f4f4f4);
+  color: var(--color-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  font-family: inherit;
+}
+.seating-view__seat-label {
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+.seating-view__seat--occupied {
+  background: var(--color-surface, #fff);
+  color: var(--color-ink);
+  border-color: var(--color-primary, #2e7d9e);
+}
+.seating-view__seat--selected {
+  border-width: 2px;
+  border-color: var(--color-primary, #2e7d9e);
+  background: color-mix(in srgb, var(--color-primary, #2e7d9e) 12%, var(--color-surface, #fff));
+}
+.seating-view__seat-clear {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+.seating-view__roster {
+  flex: 1 1 220px;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 1.25rem;
+  box-shadow: var(--elevation-card);
+}
+.seating-view__roster-heading {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+.seating-view__roster-team-heading {
+  margin: 1rem 0 0.35rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-muted);
+}
+.seating-view__roster-team-heading:first-of-type {
+  margin-top: 0;
+}
+.seating-view__roster-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border: none;
+  border-radius: var(--radius-control);
+  background: none;
+  font-family: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.seating-view__roster-row:hover {
+  background: var(--color-surface-muted, #f4f4f4);
+}
+.seating-view__roster-row--selected {
+  background: color-mix(in srgb, var(--color-primary, #2e7d9e) 12%, var(--color-surface, #fff));
+  color: var(--color-primary, #2e7d9e);
+  font-weight: var(--font-weight-bold);
+}
+.seating-view__roster-empty {
+  color: var(--color-muted);
+}
+@media (max-width: 640px) {
+  .seating-view__layout {
+    flex-direction: column;
+  }
+  .seating-view__room,
+  .seating-view__roster {
+    flex-basis: auto;
+    width: 100%;
+  }
+}

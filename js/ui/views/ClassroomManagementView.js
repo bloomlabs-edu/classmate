@@ -8,10 +8,11 @@
  * decision: they're daily operational data, not occasional
  * configuration — Settings now holds only what's rarely touched
  * (classroom name, grade, school, join code, Teachers, Archive,
- * Delete, Preferences). Attendance, Buddy Pairs, Seating, and Live
- * Classroom tools are named as this module's future scope but are
+ * Delete, Preferences). Attendance, Buddy Pairs, and Live Classroom
+ * Tools are named as this module's future scope but remain
  * deliberately not built here — shown as clearly-labeled, disabled
- * placeholders, not silently omitted.
+ * placeholders, not silently omitted. Seating is now activated (see
+ * this file's own later comment, and ui/views/SeatingView.js).
  *
  * Students always belong to either a real Group or the automatic
  * Ungrouped team (see services/classroomService.js's
@@ -24,6 +25,12 @@
  * services/teamService.js's removeTeamAndRelocateStudents(), which
  * relocates every student to a chosen destination before the now-
  * empty group is actually removed.
+ *
+ * Seating is now activated (see ui/views/SeatingView.js) — the first
+ * of this module's own named-but-unbuilt features to ship, per
+ * explicit product decision. Attendance, Buddy Pairs, and Live
+ * Classroom Tools remain deliberately unbuilt, shown as clearly-
+ * labeled, disabled placeholders, not silently omitted.
  *
  * Every list here is a NavigationRow-style plain row where nothing but
  * navigation happens on click, and an overflow "⋮" menu (see
@@ -52,6 +59,7 @@ import { getOrCreateUngroupedTeam } from '../../services/classroomService.js';
 import * as classroomImportService from '../../services/classroomImportService.js';
 import { ClassroomImportError } from '../../services/classroomImportService.js';
 import { openImportPreviewModal } from '../components/ImportPreviewModal.js';
+import { renderSeatingView } from './SeatingView.js';
 
 // UI-only — which Group cards are currently collapsed. Not persisted;
 // resets naturally on a full reload, the same way e.g. a modal's own
@@ -75,7 +83,9 @@ export function renderClassroomManagementView(container, { classroom, onBack, on
   wrapper.appendChild(header);
 
   wrapper.appendChild(renderStudentsAndGroupsSection(classroom, rerender, onSelectStudent));
-  wrapper.appendChild(renderComingSoonSection());
+  wrapper.appendChild(renderComingSoonSection(() => {
+    renderSeatingView(container, { classroom, onBack: rerender });
+  }));
 
   container.appendChild(wrapper);
 }
@@ -531,7 +541,15 @@ export function openNameEntryModal({ heading, placeholder = 'Student name', init
  * rather than silently building none of them and leaving no trace
  * they're coming.
  */
-function renderComingSoonSection() {
+/**
+ * Attendance, Buddy Pairs, and Live Classroom tools remain named as
+ * this module's own future scope — disabled placeholders, unchanged.
+ * Seating is the first of these activated (see this file's own
+ * header comment) — a real button leading to ui/views/SeatingView.js,
+ * the same "swap this container's content" navigation convention
+ * used everywhere else in this app.
+ */
+function renderComingSoonSection(onOpenSeating) {
   const section = document.createElement('div');
   section.className = 'learning-management__section';
 
@@ -544,13 +562,18 @@ function renderComingSoonSection() {
   grid.className = 'classroom-management__coming-soon-grid';
 
   [
-    { icon: 'calendar', label: 'Attendance' },
-    { icon: 'users', label: 'Buddy Pairs' },
-    { icon: 'clipboard-list', label: 'Seating' },
-    { icon: 'chalkboard-easel', label: 'Live Classroom Tools' },
-  ].forEach(({ icon, label }) => {
-    const card = document.createElement('div');
+    { icon: 'calendar', label: 'Attendance', active: false },
+    { icon: 'users', label: 'Buddy Pairs', active: false },
+    { icon: 'clipboard-list', label: 'Seating', active: true },
+    { icon: 'chalkboard-easel', label: 'Live Classroom Tools', active: false },
+  ].forEach(({ icon, label, active }) => {
+    const card = document.createElement(active ? 'button' : 'div');
+    if (active) card.type = 'button';
     card.className = 'classroom-management__coming-soon-card';
+    if (active) {
+      card.classList.add('classroom-management__coming-soon-card--active');
+      card.addEventListener('click', onOpenSeating);
+    }
     card.appendChild(createIcon(icon, { size: 20 }));
     const labelEl = document.createElement('span');
     labelEl.textContent = label;
