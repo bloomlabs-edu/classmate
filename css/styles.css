@@ -9914,3 +9914,146 @@ button.wizard-checklist__row:hover {
   font-size: 1rem;
   color: var(--color-primary, #2e7d9e);
 }
+
+/* Student Notebook Tracker — attached-tab interface (redesign; see ui/student-portal/views/StudentNotebooksView.js). Tab strip + content panel share one visual surface — an "open notebook" metaphor, not four floating buttons above a card. */
+.student-notebook-tabs {
+  margin-top: 1rem;
+}
+.student-notebook-tabs__strip {
+  display: flex;
+  gap: 0.35rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 0.15rem;
+}
+.student-notebook-tabs__tab {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.7rem 1.1rem;
+  border: 1px solid var(--color-border);
+  border-bottom: none;
+  border-top-left-radius: var(--radius-card, 14px);
+  border-top-right-radius: var(--radius-card, 14px);
+  background: color-mix(in srgb, var(--color-surface-muted, #f4f4f4) 70%, transparent);
+  color: var(--color-muted);
+  font-weight: var(--font-weight-bold);
+  font-size: 0.9rem;
+  cursor: pointer;
+  /* Overlaps the panel's own top border by 1px, eliminating the seam between an active tab and the panel below it — the "merged, open notebook" look. */
+  margin-bottom: -1px;
+}
+.student-notebook-tabs__tab-icon {
+  font-size: 1rem;
+  filter: grayscale(1) opacity(0.6);
+}
+.student-notebook-tabs__tab--active {
+  background: var(--color-surface, #fff);
+  color: var(--color-primary, #2e7d9e);
+  border-color: var(--color-border);
+  border-top: 2px solid var(--color-primary, #2e7d9e);
+  z-index: 1;
+  position: relative;
+}
+.student-notebook-tabs__tab--active .student-notebook-tabs__tab-icon {
+  filter: none;
+}
+.student-notebook-tabs__panel {
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: 0 var(--radius-card, 14px) var(--radius-card, 14px) var(--radius-card, 14px);
+  padding: 1.5rem;
+  box-shadow: var(--elevation-card);
+}
+.student-notebook-tabs__panel-heading {
+  margin: 0 0 1rem;
+  font-size: 1.15rem;
+  font-weight: var(--font-weight-black);
+}
+.student-notebook-tabs__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+.student-notebook-tabs__legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.student-notebook-tabs__legend-dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.student-notebook-tabs__legend-dot--green { background: #227a46; }
+.student-notebook-tabs__legend-dot--red { background: #c62828; }
+.student-notebook-tabs__legend-dot--purple { background: #6448b8; }
+.student-notebook-tabs__table {
+  display: flex;
+  flex-direction: column;
+}
+.student-notebook-tabs__row {
+  display: grid;
+  grid-template-columns: 2fr 1.4fr 1fr 1fr;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.85rem 0.25rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+  text-align: left;
+}
+.student-notebook-tabs__row--header {
+  color: var(--color-muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-weight: var(--font-weight-bold);
+}
+.student-notebook-tabs__row--clickable {
+  background: none;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  width: 100%;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+.student-notebook-tabs__row--clickable:hover {
+  background: color-mix(in srgb, var(--color-surface-muted, #f4f4f4) 50%, transparent);
+}
+.student-notebook-tabs__row-title {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+}
+.student-notebook-tabs__row-status {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: var(--font-weight-bold);
+}
+.student-notebook-tabs__row-status--green { color: #227a46; }
+.student-notebook-tabs__row-status--red { color: #c62828; }
+.student-notebook-tabs__row-status--purple { color: #6448b8; }
+.student-notebook-tabs__row-status--gray { color: #5c7480; }
+.student-notebook-tabs__row-status--amber { color: #92660a; }
+.student-notebook-tabs__row-status--orange { color: #b8630f; }
+.student-notebook-tabs__row-date {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+@media (max-width: 640px) {
+  .student-notebook-tabs__row {
+    grid-template-columns: 1.6fr 1.3fr;
+  }
+  .student-notebook-tabs__row-date {
+    display: none;
+  }
+  .student-notebook-tabs__panel {
+    padding: 1.1rem;
+  }
+}

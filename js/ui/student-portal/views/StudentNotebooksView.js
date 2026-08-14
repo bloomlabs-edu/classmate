@@ -41,7 +41,7 @@ export async function renderStudentNotebooksView(container, { onBack }) {
   header.appendChild(createBackButton(onBack));
   const title = document.createElement('h1');
   title.className = 'student-section__title';
-  title.textContent = 'Notebooks';
+  title.textContent = 'Notebook Tracker';
   header.appendChild(title);
   wrapper.appendChild(header);
 
@@ -66,13 +66,17 @@ export async function renderStudentNotebooksView(container, { onBack }) {
 
   const obligations = workRequestService.getNotebookObligationsForStudent(classroom, activeProfile.studentId);
   const checkpointNotebooks = checkpointService.getCheckpointsForStudentAcrossNotebooks(classroom, activeProfile.studentId);
-  const hasAnyCheckpoints = checkpointNotebooks.some((notebook) => notebook.checkpoints.length > 0);
 
-  if (obligations.length === 0 && !hasAnyCheckpoints) {
+  if (obligations.length === 0 && checkpointNotebooks.length === 0) {
     wrapper.appendChild(createEmptyStateElement({ message: 'No notebook checks yet \u2014 nothing due right now.' }));
     return;
   }
 
+  // A genuinely separate concern from the tabbed Checkpoints
+  // component below — an "obligation" (see
+  // workRequestService.js's own getNotebookObligationsForStudent())
+  // is a notebook check that may not have any checkpoints attached
+  // to it at all yet. Left completely unmodified by this redesign.
   if (obligations.length > 0) {
     const list = document.createElement('div');
     list.className = 'student-notebooks__list';
@@ -82,85 +86,167 @@ export async function renderStudentNotebooksView(container, { onBack }) {
     wrapper.appendChild(list);
   }
 
-  wrapper.appendChild(renderCheckpointsSection(checkpointNotebooks, activeProfile.studentId));
+  if (checkpointNotebooks.length > 0) {
+    wrapper.appendChild(renderNotebookTabs(checkpointNotebooks));
+  }
 }
 
 /**
- * The new Checkpoints section — grouped by Notebook (Subject x
- * Notebook Type), reusing NotebookCheckpointsView.js's own
- * getCellMeta() directly for status language/color, not a second,
- * duplicated status model. Strictly read-only: no write handler is
- * passed to anything here at all, so there is structurally no path
- * from this section to a mutation.
+ * The attached-tab + checkpoint-panel component — per explicit
+ * product decision, one connected component (tab strip + content
+ * panel share a single outer container), not four independent
+ * buttons floating above a card. Reuses
+ * checkpointService.getCheckpointsForStudentAcrossNotebooks()'s own
+ * already-fetched data directly — no new Firestore read, no
+ * re-fetch on tab switch, since every notebook's own checkpoints are
+ * already in memory. Switching tabs only ever re-renders the content
+ * panel in place (see rerenderPanel() below) — never navigates, never
+ * touches the outer view at all.
  */
-function renderCheckpointsSection(notebooks, studentId) {
-  const section = document.createElement('div');
-  section.className = 'student-notebooks__checkpoints-section';
+function renderNotebookTabs(notebooks) {
+  const root = document.createElement('div');
+  root.className = 'student-notebook-tabs';
 
-  const heading = document.createElement('h2');
-  heading.className = 'student-notebooks__checkpoints-heading';
-  heading.textContent = 'Checkpoints';
-  section.appendChild(heading);
+  const tabStrip = document.createElement('div');
+  tabStrip.className = 'student-notebook-tabs__strip';
+  tabStrip.setAttribute('role', 'tablist');
+  root.appendChild(tabStrip);
 
-  const allCheckpointEntries = notebooks.flatMap((notebook) => notebook.checkpoints);
+  const panel = document.createElement('div');
+  panel.className = 'student-notebook-tabs__panel';
+  panel.setAttribute('role', 'tabpanel');
+  root.appendChild(panel);
 
-  if (allCheckpointEntries.length === 0) {
-    section.appendChild(createEmptyStateElement({ message: 'No checkpoints have been added to your Notebooks yet.' }));
-    return section;
-  }
+  let activeIndex = 0;
+  const tabButtons = [];
 
-  const allCaughtUp = allCheckpointEntries.every(({ record }) => record && record.reviewStatus === 'complete');
-  if (allCaughtUp) {
-    const caughtUpMessage = document.createElement('p');
-    caughtUpMessage.className = 'student-notebooks__all-caught-up';
-    caughtUpMessage.textContent = '\ud83c\udf89 All caught up!';
-    section.appendChild(caughtUpMessage);
-  }
-
-  notebooks.forEach((notebook) => {
-    if (notebook.checkpoints.length === 0) return; // an empty Notebook renders nothing at all, never an empty table
-
-    const notebookBlock = document.createElement('div');
-    notebookBlock.className = 'student-notebooks__checkpoint-notebook';
-
-    const notebookHeading = document.createElement('p');
-    notebookHeading.className = 'student-notebooks__checkpoint-notebook-heading';
-    notebookHeading.textContent = [notebook.subject.name, notebook.notebookType.name].filter(Boolean).join(' \u00b7 ');
-    notebookBlock.appendChild(notebookHeading);
-
-    notebook.checkpoints.forEach(({ checkpoint, record }) => {
-      notebookBlock.appendChild(renderStudentCheckpointRow(checkpoint, record, studentId));
+  function setActive(index) {
+    activeIndex = index;
+    tabButtons.forEach((button, i) => {
+      button.classList.toggle('student-notebook-tabs__tab--active', i === index);
     });
+    renderCheckpointPanel(panel, notebooks[index]);
+  }
 
-    section.appendChild(notebookBlock);
+  notebooks.forEach((notebook, index) => {
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.className = 'student-notebook-tabs__tab';
+    tab.setAttribute('role', 'tab');
+
+    const icon = document.createElement('span');
+    icon.className = 'student-notebook-tabs__tab-icon';
+    icon.textContent = '\ud83d\udcd6';
+    icon.setAttribute('aria-hidden', 'true');
+    tab.appendChild(icon);
+
+    const label = document.createElement('span');
+    label.className = 'student-notebook-tabs__tab-label';
+    label.textContent = [notebook.subject.name, notebook.notebookType.name].filter(Boolean).join(' \u00b7 ');
+    tab.appendChild(label);
+
+    tab.addEventListener('click', () => setActive(index));
+    tabStrip.appendChild(tab);
+    tabButtons.push(tab);
   });
 
-  return section;
+  setActive(0);
+  return root;
 }
 
-function renderStudentCheckpointRow(checkpoint, record) {
+/**
+ * The content panel for exactly one active notebook — a status
+ * legend, then a clean checkpoint table. Deliberately shows only
+ * this one student's own status: no other students, no names, no
+ * teacher controls (Mark Submitted, review, create/edit, column
+ * management), no submission-count statistics. getCellMeta() is
+ * reused completely unmodified for status language/color — the
+ * teacher-side view's own established status model, not a second,
+ * duplicated one.
+ */
+function renderCheckpointPanel(panel, notebook) {
+  panel.innerHTML = '';
+
+  const heading = document.createElement('h2');
+  heading.className = 'student-notebook-tabs__panel-heading';
+  heading.textContent = 'Checkpoints';
+  panel.appendChild(heading);
+
+  if (notebook.checkpoints.length === 0) {
+    panel.appendChild(createEmptyStateElement({ message: 'No checkpoints have been added to this Notebook yet.' }));
+    return;
+  }
+
+  const legend = document.createElement('div');
+  legend.className = 'student-notebook-tabs__legend';
+  [
+    { label: 'Complete', chipClass: 'green' },
+    { label: 'Incomplete', chipClass: 'red' },
+    { label: 'Not submitted', chipClass: 'purple' },
+  ].forEach(({ label, chipClass }) => {
+    const item = document.createElement('span');
+    item.className = 'student-notebook-tabs__legend-item';
+    const dot = document.createElement('span');
+    dot.className = `student-notebook-tabs__legend-dot student-notebook-tabs__legend-dot--${chipClass}`;
+    item.appendChild(dot);
+    const text = document.createElement('span');
+    text.textContent = label;
+    item.appendChild(text);
+    legend.appendChild(item);
+  });
+  panel.appendChild(legend);
+
+  const table = document.createElement('div');
+  table.className = 'student-notebook-tabs__table';
+
+  const headerRow = document.createElement('div');
+  headerRow.className = 'student-notebook-tabs__row student-notebook-tabs__row--header';
+  ['Checkpoint', 'Status', 'Submitted On', 'Reviewed On'].forEach((label, index) => {
+    const cell = document.createElement('span');
+    cell.textContent = label;
+    if (index >= 2) cell.className = 'student-notebook-tabs__row-date';
+    headerRow.appendChild(cell);
+  });
+  table.appendChild(headerRow);
+
+  notebook.checkpoints.forEach(({ checkpoint, record }) => {
+    table.appendChild(renderCheckpointRow(checkpoint, record));
+  });
+  panel.appendChild(table);
+}
+
+function renderCheckpointRow(checkpoint, record) {
   const row = document.createElement('button');
   row.type = 'button';
-  row.className = 'student-notebooks__checkpoint-row';
+  row.className = 'student-notebook-tabs__row student-notebook-tabs__row--clickable';
+  row.addEventListener('click', () => showCheckpointDetailSheet(checkpoint, record));
+
+  const titleCell = document.createElement('span');
+  titleCell.className = 'student-notebook-tabs__row-title';
+  titleCell.textContent = checkpoint.title;
+  row.appendChild(titleCell);
 
   const meta = getCellMeta(checkpoint, record);
+  const statusCell = document.createElement('span');
+  statusCell.className = `student-notebook-tabs__row-status student-notebook-tabs__row-status--${meta.chipClass}`;
+  const statusDot = document.createElement('span');
+  statusDot.className = `student-notebook-tabs__legend-dot student-notebook-tabs__legend-dot--${meta.chipClass}`;
+  statusCell.appendChild(statusDot);
+  const statusLabel = document.createElement('span');
+  statusLabel.textContent = meta.label;
+  statusCell.appendChild(statusLabel);
+  row.appendChild(statusCell);
 
-  const titleEl = document.createElement('span');
-  titleEl.className = 'student-notebooks__checkpoint-row-title';
-  titleEl.textContent = checkpoint.title;
-  row.appendChild(titleEl);
+  const submittedCell = document.createElement('span');
+  submittedCell.className = 'student-notebook-tabs__row-date';
+  submittedCell.textContent = record?.submittedDate ? formatDate(record.submittedDate) : '\u2014';
+  row.appendChild(submittedCell);
 
-  const statusEl = document.createElement('span');
-  statusEl.className = `student-notebooks__checkpoint-row-status student-notebooks__checkpoint-row-status--${meta.chipClass}`;
-  statusEl.textContent = `${meta.icon} ${meta.label}`;
-  row.appendChild(statusEl);
+  const reviewedCell = document.createElement('span');
+  reviewedCell.className = 'student-notebook-tabs__row-date';
+  reviewedCell.textContent = record?.reviewedDate ? formatDate(record.reviewedDate) : '\u2014';
+  row.appendChild(reviewedCell);
 
-  const dateEl = document.createElement('span');
-  dateEl.className = 'student-notebooks__checkpoint-row-date';
-  dateEl.textContent = record?.submittedDate ? formatDate(record.submittedDate) : '\u2014';
-  row.appendChild(dateEl);
-
-  row.addEventListener('click', () => showCheckpointDetailSheet(checkpoint, record));
   return row;
 }
 
