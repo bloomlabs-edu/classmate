@@ -86,13 +86,15 @@ export async function getGoalCycleForCurrentStudent() {
 
   const categories = goalService.listCategories(cycle).map((category) => {
     const goal = goals.find((g) => g.categoryId === category.id) ?? null;
-    if (goal && goal.status === 'approved') {
-      goal.completedToday = goalStatisticsService.isCompletedToday(cycle, goal.id);
-      goal.currentStreak = goalStatisticsService.getCurrentStreak(cycle, goal.id);
-      goal.longestStreak = goalStatisticsService.getLongestStreak(cycle, goal.id);
-      goal.weeklyCompletionPercent = goalStatisticsService.getWeeklyCompletionPercent(cycle, goal.id);
-      goal.overallCompletionPercent = goalStatisticsService.getOverallCompletionPercent(cycle, goal.id);
-    }
+    // completedToday/currentStreak/longestStreak/overallCompletionPercent
+    // are already correct as stored directly on the goal document
+    // itself — set by submitGoal()'s own defaults at creation, kept
+    // current by setCompletionForCurrentStudent() whenever completion
+    // changes (see studentGoalsService.js's own header comment on
+    // that function). Recomputing them here against the real Goal
+    // Cycle object would read stale, always-empty data — that
+    // object's own .completions field is never written to any more
+    // under this architecture; only the goal document's own field is.
     return { categoryId: category.id, categoryName: category.name, goal };
   });
 
@@ -137,6 +139,73 @@ export async function submitGoalForCurrentStudent(categoryId, text) {
     return true;
   } catch (error) {
     console.error('[studentGoalsService] submitGoalForCurrentStudent() failed \u2014 the write was rejected:', error);
+    return false;
+  }
+}
+
+/**
+ * Toggles one day's completion for one of the current student's own
+ * goals — the actual fix for the real, reported "permission-denied"
+ * error: the previous implementation (see
+ * studentPortalDataService.js's own setGoalCompletionForCurrentStudent(),
+ * now rewired to call this) mutated the OLD, deprecated
+ * cycle.completions{} shape and saved the ENTIRE classroom document
+ * via workspaceService.saveExplicitly() — a write a student's own
+ * anonymous, per-slot identity was never permitted to make at all
+ * (and, per this project's own established security model, never
+ * should be). This function writes only the one, specific
+ * studentGoals document this goal already lives in, via the
+ * student's own per-slot Firestore instance — the exact same scoping
+ * submitGoalForCurrentStudent() above already, correctly uses.
+ *
+ * completedToday/currentStreak/longestStreak/overallCompletionPercent
+ * are recomputed here by reusing goalStatisticsService.js's own
+ * existing, completely unmodified functions — not reimplemented —
+ * passed a minimal, compatible {startDate, endDate, completions}
+ * shape (those functions only ever read cycle.startDate/.endDate and
+ * cycle.completions?.[goalId], confirmed directly; they don't need
+ * the real, full Goal Cycle object at all).
+ */
+export async function setCompletionForCurrentStudent(goalId, dateKey, completed) {
+  const activeProfile = studentDeviceService.getActiveProfile();
+  if (!activeProfile) return false;
+
+  const classroom = await workspaceService.getClassroomOnce(activeProfile.classroomId);
+  const cycle = classroom && goalService.getActiveCycle(classroom);
+  if (!cycle) return false;
+
+  const slotIndex = studentDeviceService.getSlotForStudent(activeProfile.studentId);
+  if (slotIndex === null) return false;
+
+  const db = studentAuthService.getFirestoreForSlot(slotIndex);
+  const uid = await studentAuthService.ensureAnonymousSignIn(slotIndex);
+
+  try {
+    const goal = await goalsRepository.getGoalById(db, activeProfile.classroomId, goalId);
+    if (!goal) return false;
+
+    const completions = { ...(goal.completions || {}) };
+    if (completed) {
+      completions[dateKey] = true;
+    } else {
+      delete completions[dateKey];
+    }
+
+    // A minimal stand-in for the real Goal Cycle — goalStatisticsService.js's
+    // own functions only ever read .startDate/.endDate/.completions?.[goalId]
+    // from it (confirmed directly in that file), never anything else.
+    const statsShimCycle = { startDate: cycle.startDate, endDate: cycle.endDate, completions: { [goalId]: completions } };
+
+    await goalsRepository.updateCompletion(db, activeProfile.classroomId, goalId, {
+      completions,
+      completedToday: goalStatisticsService.isCompletedToday(statsShimCycle, goalId),
+      currentStreak: goalStatisticsService.getCurrentStreak(statsShimCycle, goalId),
+      longestStreak: goalStatisticsService.getLongestStreak(statsShimCycle, goalId),
+      overallCompletionPercent: goalStatisticsService.getOverallCompletionPercent(statsShimCycle, goalId),
+    });
+    return true;
+  } catch (error) {
+    console.error('[studentGoalsService] setCompletionForCurrentStudent() failed \u2014 the write was rejected:', error);
     return false;
   }
 }

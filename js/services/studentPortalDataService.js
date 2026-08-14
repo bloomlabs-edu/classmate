@@ -32,7 +32,7 @@ import * as timelineService from './timelineService.js';
 import * as studentEventService from './studentEventService.js';
 import * as assessmentService from './assessmentService.js';
 import * as goalService from './goalService.js';
-import * as goalCompletionService from './goalCompletionService.js';
+import * as studentGoalsService from './studentGoalsService.js';
 import * as learningRecordStudentService from './learningRecordStudentService.js';
 import * as goalStatisticsService from './goalStatisticsService.js';
 import * as teamStatisticsService from './teamStatisticsService.js';
@@ -503,27 +503,16 @@ export async function submitGoalForCurrentStudent(categoryId, text) {
 
 /** Ticks or unticks one day's completion for one of this student's own approved goals. */
 export async function setGoalCompletionForCurrentStudent(goalId, dateKey, completed) {
-  const found = await loadCurrentStudentAndClassroom();
-  if (!found) return false;
-
-  const cycle = goalService.getActiveCycle(found.classroom);
-  if (!cycle) return false;
-
-  goalCompletionService.setCompletion(cycle, goalId, dateKey, completed);
-
-  try {
-    await workspaceService.saveExplicitly(found.classroom);
-  } catch (error) {
-    // Surfaced, not silently swallowed — saveExplicitly() already logs
-    // the full error itself; this just makes sure the caller (and, in
-    // turn, the student) genuinely learns the write didn't reach the
-    // server, rather than the checkbox appearing to work and then
-    // silently reverting on the next fresh read.
-    console.error('[studentPortalDataService] setGoalCompletionForCurrentStudent() — the write did not reach the server:', error);
-    return false;
-  }
-
-  return true;
+  // Delegates to studentGoalsService.js's own setCompletionForCurrentStudent()
+  // — a scoped write to this one goal's own document, via the
+  // student's own per-slot Firestore instance. The previous
+  // implementation here mutated the old, deprecated
+  // cycle.completions{} shape and called workspaceService.saveExplicitly()
+  // on the ENTIRE classroom document — a write a student's own
+  // anonymous identity was never permitted to make at all, which is
+  // exactly the real "Missing or insufficient permissions" error
+  // this was rewired to fix.
+  return studentGoalsService.setCompletionForCurrentStudent(goalId, dateKey, completed);
 }
 
 /**

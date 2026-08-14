@@ -93,6 +93,31 @@ export async function submitGoal(db, { classroomId, studentId, cycleId, category
   return goalId;
 }
 
+/** A single goal by its own document ID, from the student's own per-slot instance — mirrors findGoal()'s own read shape, keyed directly by ID rather than query filters. */
+export async function getGoalById(db, classroomId, goalId) {
+  const snapshot = await getDoc(goalDoc(db, classroomId, goalId));
+  return snapshot.exists() ? snapshot.data() : null;
+}
+
+/**
+ * Persists a completion toggle for one specific goal — a scoped
+ * update to this one studentGoals document only, via the student's
+ * own per-slot Firestore instance, never a write to the whole
+ * classroom document. The caller (studentGoalsService.js) computes
+ * the real completions/completedToday/streak/percent values first —
+ * this function is deliberately "dumb," matching the same
+ * repository/service split every other write in this file follows.
+ */
+export async function updateCompletion(db, classroomId, goalId, { completions, completedToday, currentStreak, longestStreak, overallCompletionPercent }) {
+  await updateDoc(goalDoc(db, classroomId, goalId), {
+    completions,
+    completedToday,
+    currentStreak,
+    longestStreak,
+    overallCompletionPercent,
+  });
+}
+
 /** The one existing goal for this exact (studentId, categoryId, cycleId), or null — mirrors goalService.js's own getGoalForStudent() semantics for the old shape. */
 /**
  * `uid` is required here for the same reason

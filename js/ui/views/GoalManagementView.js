@@ -10,16 +10,16 @@
  * container-swap pattern Assessments/Learning/Classroom Management
  * already use — never URL routing.
  *
- * Two modes: 'home' (the active cycle's own summary, category list,
- * and pending-approval queue — or a create-cycle form if none is
- * active yet) and 'reviewGoal' (approve one specific pending goal).
- * The Goal Dashboard (per-student today/streak/completion table) is
- * its own separate view (see GoalDashboardView.js), reached from here.
+ * Two modes: 'home' (the active cycle's own summary and
+ * "⚙ Manage Goals"/"Open Goal Dashboard" doorways) and 'manage'
+ * (Pin/Unpin, Categories, Add Category). Reviewing/approving pending
+ * goals and seeing who hasn't submitted both moved to
+ * GoalDashboardView.js — that's where a teacher already looks at
+ * per-student status, so review/approval belongs there too, not
+ * split across two screens.
  */
 
 import * as goalService from '../../services/goalService.js';
-import * as studentGoalsService from '../../services/studentGoalsService.js';
-import * as goalStatisticsService from '../../services/goalStatisticsService.js';
 import * as workspaceService from '../../services/workspaceService.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
@@ -27,22 +27,9 @@ import { renderGoalDashboardView } from './GoalDashboardView.js';
 
 export function renderGoalManagementView(container, { classroom, onBack }) {
   let mode = 'home';
-  let reviewingGoalId = null;
-  let pendingGoals = [];
-  let allGoals = [];
-  let reviewingGoal = null;
 
-  async function rerender() {
-    const cycle = goalService.getActiveCycle(classroom);
-    if (cycle && mode === 'home') {
-      pendingGoals = await studentGoalsService.getPendingApprovalGoalsForClassroom(classroom.id, cycle.id);
-      allGoals = await studentGoalsService.getAllGoalsForClassroom(classroom.id, cycle.id);
-    }
-    if (cycle && mode === 'reviewGoal') {
-      const cycleGoals = await studentGoalsService.getPendingApprovalGoalsForClassroom(classroom.id, cycle.id);
-      reviewingGoal = cycleGoals.find((g) => g.id === reviewingGoalId) ?? null;
-    }
-    render(container, mode, { classroom, pendingGoals, allGoals, reviewingGoal }, handlers);
+  function rerender() {
+    render(container, mode, { classroom }, handlers);
   }
 
   const handlers = {
@@ -72,22 +59,6 @@ export function renderGoalManagementView(container, { classroom, onBack }) {
       workspaceService.save(classroom);
       rerender();
     },
-    onReviewGoal: (goalId) => {
-      reviewingGoalId = goalId;
-      mode = 'reviewGoal';
-      rerender();
-    },
-    onApproveGoal: async (goalId) => {
-      await studentGoalsService.approveGoal(classroom.id, goalId);
-      mode = 'home';
-      reviewingGoalId = null;
-      rerender();
-    },
-    onCancelReview: () => {
-      mode = 'home';
-      reviewingGoalId = null;
-      rerender();
-    },
     onOpenManageGoals: () => {
       mode = 'manage';
       rerender();
@@ -112,7 +83,7 @@ function render(container, mode, state, handlers) {
 
   const header = document.createElement('header');
   header.className = 'tracker-header';
-  header.appendChild(createBackButton(mode === 'home' ? handlers.onBack : mode === 'manage' ? handlers.onCloseManageGoals : handlers.onCancelReview));
+  header.appendChild(createBackButton(mode === 'home' ? handlers.onBack : handlers.onCloseManageGoals));
   const titleBlock = document.createElement('div');
   titleBlock.className = 'tracker-header__title-block';
   const title = document.createElement('h1');
@@ -125,19 +96,17 @@ function render(container, mode, state, handlers) {
   const content = document.createElement('div');
   content.className = 'wizard-step-content';
 
-  if (mode === 'reviewGoal') {
-    content.appendChild(renderReviewGoalStep(state.classroom, state.reviewingGoal, handlers));
-  } else if (mode === 'manage') {
+  if (mode === 'manage') {
     content.appendChild(renderManageGoalsStep(state.classroom, handlers));
   } else {
-    content.appendChild(renderHomeStep(state.classroom, state.pendingGoals, state.allGoals, handlers));
+    content.appendChild(renderHomeStep(state.classroom, handlers));
   }
 
   wrapper.appendChild(content);
   container.appendChild(wrapper);
 }
 
-function renderHomeStep(classroom, pendingGoals, allGoals, handlers) {
+function renderHomeStep(classroom, handlers) {
   const section = document.createElement('div');
   section.className = 'learning-management__section';
 
@@ -179,60 +148,6 @@ function renderHomeStep(classroom, pendingGoals, allGoals, handlers) {
   manageLink.textContent = '\u2699 Manage Goals';
   manageLink.addEventListener('click', handlers.onOpenManageGoals);
   section.appendChild(manageLink);
-
-  // Pending approvals
-  const pendingHeading = document.createElement('h3');
-  pendingHeading.className = 'settings-team-block__heading';
-  pendingHeading.textContent = 'Goals Awaiting Approval';
-  section.appendChild(pendingHeading);
-
-  const pending = pendingGoals;
-  if (pending.length === 0) {
-    const empty = document.createElement('p');
-    empty.className = 'settings-section__meta';
-    empty.textContent = 'Nothing waiting for review right now.';
-    section.appendChild(empty);
-  } else {
-    const pendingList = document.createElement('ul');
-    pendingList.className = 'settings-editable-list';
-    pending.forEach((goal) => {
-      const student = goalService.getClassroomStudents(classroom).find((s) => s.id === goal.studentId);
-      const category = cycle.categories.find((c) => c.id === goal.categoryId);
-      const item = document.createElement('li');
-      item.className = 'settings-editable-list__item';
-      const label = document.createElement('span');
-      label.style.flex = '1';
-      label.textContent = `${student ? student.name : 'Unknown student'} \u2014 ${category ? category.name : 'Unknown category'}`;
-      item.appendChild(label);
-      const reviewButton = document.createElement('button');
-      reviewButton.type = 'button';
-      reviewButton.className = 'btn btn--secondary';
-      reviewButton.textContent = 'Review';
-      reviewButton.addEventListener('click', () => handlers.onReviewGoal(goal.id));
-      item.appendChild(reviewButton);
-      pendingList.appendChild(item);
-    });
-    section.appendChild(pendingList);
-  }
-
-  // Students who haven't submitted at all — computed against the new
-  // studentGoals collection's own data (allGoals, any status), not
-  // goalService.js's own getStudentsWithoutAllGoals(), which still
-  // reads the old cycle.goals[] shape that nothing writes to anymore.
-  const categoryCount = goalService.listCategories(cycle).length;
-  const missing = goalService.getClassroomStudents(classroom).filter(
-    (student) => allGoals.filter((g) => g.studentId === student.id).length < categoryCount
-  );
-  if (missing.length > 0) {
-    const missingHeading = document.createElement('h3');
-    missingHeading.className = 'settings-team-block__heading';
-    missingHeading.textContent = 'Haven\u2019t Submitted All Goals Yet';
-    section.appendChild(missingHeading);
-    const missingNote = document.createElement('p');
-    missingNote.className = 'settings-section__meta';
-    missingNote.textContent = missing.map((s) => s.name).join(', ');
-    section.appendChild(missingNote);
-  }
 
   return section;
 }
@@ -295,41 +210,6 @@ function renderManageGoalsStep(classroom, handlers) {
   section.appendChild(
     createAddCategoryRow((name) => handlers.onAddCategory(cycle, name))
   );
-
-  return section;
-}
-
-function renderReviewGoalStep(classroom, goal, handlers) {
-  const section = document.createElement('div');
-  section.className = 'learning-management__section';
-  const cycle = goalService.getActiveCycle(classroom);
-
-  if (!goal) {
-    section.appendChild(createEmptyStateElement({ message: 'This goal is no longer available.' }));
-    return section;
-  }
-
-  const student = goalService.getClassroomStudents(classroom).find((s) => s.id === goal.studentId);
-  const category = cycle?.categories.find((c) => c.id === goal.categoryId);
-
-  const heading = document.createElement('p');
-  heading.className = 'learning-management__step-heading';
-  heading.textContent = `${student ? student.name : 'Unknown student'} \u2014 ${category ? category.name : ''}`;
-  section.appendChild(heading);
-
-  const goalText = document.createElement('p');
-  goalText.className = 'settings-section__meta';
-  goalText.style.fontSize = '1.1rem';
-  goalText.style.color = 'var(--color-ink)';
-  goalText.textContent = `\u201C${goal.text}\u201D`;
-  section.appendChild(goalText);
-
-  const approveButton = document.createElement('button');
-  approveButton.type = 'button';
-  approveButton.className = 'btn btn--primary';
-  approveButton.textContent = 'Approve';
-  approveButton.addEventListener('click', () => handlers.onApproveGoal(goal.id));
-  section.appendChild(approveButton);
 
   return section;
 }
