@@ -10213,9 +10213,24 @@ button.wizard-checklist__row:hover {
 /* Seating layout configuration — Rows/Seats-per-row steppers, see ui/views/SeatingView.js's own renderLayoutConfig(). Deliberately compact, sitting above the classroom map, never competing with it for attention. */
 .seating-view__layout-config {
   display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin: 1rem 0 1.5rem;
+}
+.seating-view__layout-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.seating-view__layout-summary-text {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+}
+.seating-view__gap-controls {
+  display: flex;
   flex-wrap: wrap;
   gap: 1.5rem;
-  margin: 1rem 0 1.5rem;
 }
 .seating-view__stepper {
   display: flex;
@@ -10249,7 +10264,8 @@ button.wizard-checklist__row:hover {
   cursor: not-allowed;
 }
 .seating-view__stepper-value {
-  min-width: 1.5rem;
+  min-width: 4.5rem;
   text-align: center;
   font-weight: var(--font-weight-bold);
+  font-size: 0.85rem;
 }

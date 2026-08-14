@@ -2,55 +2,66 @@
  * ui/views/SeatingView.js
  *
  * Seating — the first of Classroom Management's own "Coming Soon"
- * features to be activated (see ClassroomManagementView.js's own
- * header comment). Attendance, Buddy Pairs, and Live Classroom Tools
- * remain untouched, disabled placeholders; this file activates only
- * Seating, per explicit product decision.
+ * features to be activated. Attendance, Buddy Pairs, and Live
+ * Classroom Tools remain untouched, disabled placeholders.
  *
  * Represents the PHYSICAL classroom (a grid of seats, Board at the
- * top, Teacher at the bottom) — not a list. Reuses
- * classroom.teams[].students[] directly (see models/Team.js,
- * models/Student.js) — no second student/classroom model. The seating
- * arrangement itself is a small, classroom-level field
- * (classroom.seatingConfig — see models/Classroom.js), following the
- * exact same convention as every other classroom-level feature
- * (planner, notebookConfig, etc.): a plain object persisted via
+ * top, Teacher at the bottom, with genuine row/column gaps — aisles,
+ * not decoration) — not a list. Reuses classroom.teams[].students[]
+ * directly (see models/Team.js, models/Student.js) — no second
+ * student/classroom model. The seating arrangement itself is a
+ * small, classroom-level field (classroom.seatingConfig — see
+ * models/Classroom.js), following the exact same convention as every
+ * other classroom-level feature: a plain object persisted via
  * workspaceService.save(), no new repository/collection at all.
  *
- * seatingConfig.assignments is keyed "r{row}c{col}" (1-indexed, e.g.
- * "r1c1") -> studentId. An unlisted key is an empty seat.
+ * CANONICAL SHAPE (the one, single source of truth from this point
+ * forward — see normalizeSeatingConfig() below for why "canonical"
+ * matters here specifically):
+ *   { rows, columns, rowGap, columnGap, assignments }
+ * assignments is keyed "r{row}c{col}" (1-indexed, e.g. "r1c1") ->
+ * studentId. An unlisted key is an empty seat. rowGap/columnGap are
+ * small integers (1 = compact, 2 = normal, 3 = wide) — never a raw
+ * CSS/pixel value at all; renderClassroomGrid() below is the one
+ * place that maps a level to an actual gap size.
  *
- * ROOT-CAUSE FIX for the reported "kicked back to Dashboard" bug:
- * this view (and ClassroomManagementView.js, its own parent screen)
- * are reached via a plain function call, never router.navigate() — so
- * the router's own real, current route never actually advances past
+ * MIGRATION, not just a default (see normalizeSeatingConfig()): this
+ * feature has already shipped twice before with two different,
+ * incompatible shapes — {rows, columns, assignments} keyed "row-col"
+ * (0-indexed, hyphenated), and {rows, seatsPerRow, assignments} keyed
+ * "r{row}c{col}" (1-indexed). A classroom already tested against
+ * either prior shape has that exact shape sitting in Firestore right
+ * now. The reported "Seats per row: undefined" and the parseSeatKey
+ * TypeError were both real, confirmed consequences of the newer code
+ * reading an older-shaped, persisted object with no migration at all
+ * — ensureSeatingConfig() alone only ever handled "missing entirely,"
+ * never "present but in an old shape." normalizeSeatingConfig() below
+ * is the actual fix: it runs on every load, detects either prior
+ * shape by its own distinguishing fields/key format, and rewrites it
+ * into the one canonical shape in place — never silently dropping a
+ * saved layout or a saved assignment.
+ *
+ * ROOT-CAUSE FIX for the "kicked back to Dashboard" bug: this view
+ * (and ClassroomManagementView.js, its own parent screen) are reached
+ * via a plain function call, never router.navigate() — so the
+ * router's own real, current route never actually advances past
  * 'dashboard'. workspaceService.js's own background onChangeCallback
- * (which fires on every incoming Firestore snapshot — including the
- * one triggered by this view's own save() after every action) falls
- * back to renderRoute(router.getCurrentRoute(), ...) whenever nobody
- * is registered as the classroom's active workspace — rebuilding
- * Dashboard straight into the shared container and destroying
- * whatever screen was on top of it. The real fix, confirmed by
- * tracing the actual mechanism rather than guessing: register with
- * services/workspaceCoordinator.js exactly the way
- * ui/views/LearningManagementView.js — its own only prior adopter —
- * already does, so a background snapshot updates this screen in
- * place via resyncFromServer() instead of falling through to
- * renderRoute() at all.
+ * falls back to renderRoute(router.getCurrentRoute(), ...) whenever
+ * nobody is registered as the classroom's active workspace — this
+ * view registers with services/workspaceCoordinator.js (mirroring
+ * ui/views/LearningManagementView.js's own established pattern
+ * exactly), so a background snapshot updates this screen in place via
+ * resyncFromServer() instead of ever falling through to renderRoute()
+ * at all. Every button here is explicitly type="button" and nothing
+ * here is wrapped in a <form> — confirmed directly, not assumed.
  *
  * Interaction is deliberately click-to-select, click-to-place (never
- * drag-and-drop) — works identically on desktop and mobile with no
- * touch-event/drag-library complexity. Clicking a seated student
- * "picks them up" (highlighted); clicking a different seat places
- * them there — swapping with whoever, if anyone, was already in that
- * seat. Every placement auto-saves immediately, matching the
+ * drag-and-drop). Every action auto-saves immediately, matching the
  * save-on-every-mutation convention already used throughout this app.
  *
  * Local viewport preservation: every rerender() explicitly captures
  * and restores document.scrollingElement's own scrollTop/scrollLeft
- * — this view has no nested overflow:auto container of its own, so
- * page-level scroll is the real, only scroll owner here (confirmed
- * directly against this file's own CSS).
+ * — this view has no nested overflow:auto container of its own.
  */
 
 import { createBackButton } from '../components/BackButton.js';
@@ -58,15 +69,21 @@ import { createEmptyStateElement } from '../components/EmptyState.js';
 import * as workspaceService from '../../services/workspaceService.js';
 import * as workspaceCoordinator from '../../services/workspaceCoordinator.js';
 
+const DEFAULT_SEATING_CONFIG = { rows: 4, columns: 4, rowGap: 2, columnGap: 2, assignments: {} };
+const MIN_ROWS_OR_COLUMNS = 1;
+const MAX_ROWS_OR_COLUMNS = 12;
+const MIN_GAP_LEVEL = 1;
+const MAX_GAP_LEVEL = 3;
+
 export function renderSeatingView(container, { classroom, onBack }) {
-  ensureSeatingConfig(classroom);
+  normalizeSeatingConfig(classroom);
   let currentClassroom = classroom;
   let selectedStudentId = null; // the one student currently "picked up," or null
 
   workspaceCoordinator.registerActiveWorkspace(currentClassroom.id, resyncFromServer);
 
   function resyncFromServer(freshClassroom) {
-    ensureSeatingConfig(freshClassroom);
+    normalizeSeatingConfig(freshClassroom);
     currentClassroom = freshClassroom;
     rerender();
   }
@@ -100,8 +117,18 @@ export function renderSeatingView(container, { classroom, onBack }) {
         selectedStudentId = null;
         rerender();
       },
-      onChangeLayout: (field, delta) => {
-        applyLayoutChange(currentClassroom, field, delta);
+      onAddRow: () => {
+        growLayout(currentClassroom, 'rows');
+        workspaceService.save(currentClassroom);
+        rerender();
+      },
+      onAddColumn: () => {
+        growLayout(currentClassroom, 'columns');
+        workspaceService.save(currentClassroom);
+        rerender();
+      },
+      onChangeGap: (field, delta) => {
+        changeGapLevel(currentClassroom, field, delta);
         workspaceService.save(currentClassroom);
         rerender();
       },
@@ -116,53 +143,108 @@ export function renderSeatingView(container, { classroom, onBack }) {
   rerender();
 }
 
-/** An existing classroom created before Seating shipped won't have this field at all — this establishes it on first use, matching this codebase's own established "ensure on demand" convention (e.g. classroomService.ensureJoinCode()). */
-function ensureSeatingConfig(classroom) {
-  if (!classroom.seatingConfig) {
-    classroom.seatingConfig = { rows: 4, seatsPerRow: 4, assignments: {} };
+/**
+ * The real fix for the reported crash — see this file's own header
+ * comment for the complete "why" and the two prior, incompatible
+ * shapes this migrates from. Runs on every load, is fully idempotent
+ * (running it again on an already-canonical object changes nothing
+ * at all), and never drops a saved layout or assignment — it only
+ * ever renames fields and re-keys assignments into the canonical
+ * format, in place.
+ */
+function normalizeSeatingConfig(classroom) {
+  const existing = classroom.seatingConfig;
+
+  if (!existing) {
+    classroom.seatingConfig = { ...DEFAULT_SEATING_CONFIG, assignments: {} };
+    return;
   }
+
+  // Shape 2 (previous round): {rows, seatsPerRow, assignments}, keys
+  // already in the canonical "r{row}c{col}" format — only the
+  // columns-count field name itself needs renaming, and
+  // rowGap/columnGap (new this round) need a default.
+  if (typeof existing.seatsPerRow === 'number' && typeof existing.columns !== 'number') {
+    existing.columns = existing.seatsPerRow;
+    delete existing.seatsPerRow;
+  }
+
+  // Shape 1 (first round): keys in the old "row-col" (0-indexed,
+  // hyphenated) format — every key needs re-keying into "r{row}c{col}"
+  // (1-indexed). Detected by finding any key that doesn't already
+  // match the canonical format at all.
+  const assignments = existing.assignments || {};
+  const needsKeyMigration = Object.keys(assignments).some((key) => !isValidSeatKey(key));
+  if (needsKeyMigration) {
+    const migrated = {};
+    Object.keys(assignments).forEach((key) => {
+      const oldFormatMatch = key.match(/^(\d+)-(\d+)$/);
+      if (oldFormatMatch) {
+        // Old format was 0-indexed — +1 on each axis for the new,
+        // 1-indexed canonical format.
+        migrated[seatKey(Number(oldFormatMatch[1]) + 1, Number(oldFormatMatch[2]) + 1)] = assignments[key];
+      } else if (isValidSeatKey(key)) {
+        migrated[key] = assignments[key];
+      }
+      // Any other, genuinely unrecognized key format is dropped
+      // rather than propagated — see isValidSeatKey()'s own header
+      // comment on why an invalid key must never enter the system at
+      // all, even via a migration path.
+    });
+    existing.assignments = migrated;
+  }
+
+  if (typeof existing.rows !== 'number') existing.rows = DEFAULT_SEATING_CONFIG.rows;
+  if (typeof existing.columns !== 'number') existing.columns = DEFAULT_SEATING_CONFIG.columns;
+  if (typeof existing.rowGap !== 'number') existing.rowGap = DEFAULT_SEATING_CONFIG.rowGap;
+  if (typeof existing.columnGap !== 'number') existing.columnGap = DEFAULT_SEATING_CONFIG.columnGap;
+  if (!existing.assignments) existing.assignments = {};
 }
 
-const MIN_ROWS_OR_SEATS = 1;
-const MAX_ROWS_OR_SEATS = 12;
-
 /**
- * Growing rows/seatsPerRow never touches existing assignments at all
- * — new seats simply become available. Shrinking removes any
- * assignment whose own row or column index no longer fits the new
- * layout; that student is never deleted, just no longer listed in
- * `assignments` at all, which is exactly what makes them appear back
- * in the Unseated Students roster (see renderRoster() below) — never
- * a silent data loss, matching the explicit safety requirement.
+ * The one, explicit definition of a valid seat key — "r{row}c{col}",
+ * both 1-indexed positive integers. Every place that generates,
+ * parses, or accepts a seat key in this file goes through this exact
+ * pattern or seatKey()/parseSeatKey() below, which themselves only
+ * ever produce/accept this same format — there is nowhere in this
+ * file an "undefined"/"null"/malformed key can be constructed at all.
  */
-function applyLayoutChange(classroom, field, delta) {
-  const config = classroom.seatingConfig;
-  const nextValue = Math.min(MAX_ROWS_OR_SEATS, Math.max(MIN_ROWS_OR_SEATS, config[field] + delta));
-  if (nextValue === config[field]) return;
-
-  config[field] = nextValue;
-
-  Object.keys(config.assignments).forEach((key) => {
-    const { row, column } = parseSeatKey(key);
-    if (row > config.rows || column > config.seatsPerRow) {
-      delete config.assignments[key];
-    }
-  });
+function isValidSeatKey(key) {
+  return /^r[1-9]\d*c[1-9]\d*$/.test(key);
 }
 
 function seatKey(row, column) {
   return `r${row}c${column}`;
 }
 
+/** Only ever called with a key this file itself already validated via isValidSeatKey() — see growLayout()/render's own callers. Never called speculatively against an unvalidated, external string. */
 function parseSeatKey(key) {
   const match = key.match(/^r(\d+)c(\d+)$/);
   return { row: Number(match[1]), column: Number(match[2]) };
 }
 
 /**
+ * Growing rows/columns never touches, moves, or re-keys any existing
+ * assignment at all — new seats simply become available at higher
+ * row/column indices than any existing assignment could already
+ * occupy. This is the actual fix for "adding rows or columns should
+ * NEVER cause existing assignments to shift" — there is structurally
+ * no re-keying step here at all, growth only ever changes the loop
+ * bound render() below iterates to.
+ */
+function growLayout(classroom, field) {
+  const config = classroom.seatingConfig;
+  config[field] = Math.min(MAX_ROWS_OR_COLUMNS, config[field] + 1);
+}
+
+function changeGapLevel(classroom, field, delta) {
+  const config = classroom.seatingConfig;
+  config[field] = Math.min(MAX_GAP_LEVEL, Math.max(MIN_GAP_LEVEL, config[field] + delta));
+}
+
+/**
  * Placing a selected student into a seat. If that seat already holds
- * a different student, the two swap seats (matching the physical
- * "move this student here" mental model) — unless the mover came
+ * a different student, the two swap seats — unless the mover came
  * straight from the roster (no previous seat), in which case the
  * displaced student simply becomes unseated, back in the roster.
  */
@@ -187,8 +269,7 @@ function handleSeatClick(classroom, targetSeatKey, selectedStudentId) {
   }
   // If there was no previousSeatKey (came from the roster) and a
   // displacedStudentId existed, that student is simply no longer in
-  // assignments at all now (their old key was overwritten above) —
-  // correctly unseated, back in the roster.
+  // assignments at all now — correctly unseated, back in the roster.
 }
 
 function render(container, classroom, selectedStudentId, handlers) {
@@ -240,24 +321,54 @@ function render(container, classroom, selectedStudentId, handlers) {
 }
 
 /**
- * Rows / Seats per row steppers — deliberately compact, sitting above
- * the classroom map rather than competing with it for attention (per
- * explicit visual-design instruction: "configuration UI should not
- * dominate the classroom map").
+ * "4 rows × 4 columns" + Add Row / Add Column, and the row/column
+ * spacing level controls — deliberately compact, sitting above the
+ * classroom map rather than competing with it for attention.
  */
 function renderLayoutConfig(classroom, handlers) {
   const section = document.createElement('div');
   section.className = 'seating-view__layout-config';
 
-  const { rows, seatsPerRow } = classroom.seatingConfig;
+  const { rows, columns, rowGap, columnGap } = classroom.seatingConfig;
 
-  section.appendChild(renderStepper('Rows', rows, (delta) => handlers.onChangeLayout('rows', delta)));
-  section.appendChild(renderStepper('Seats per row', seatsPerRow, (delta) => handlers.onChangeLayout('seatsPerRow', delta)));
+  const summaryRow = document.createElement('div');
+  summaryRow.className = 'seating-view__layout-summary';
+
+  const summaryText = document.createElement('span');
+  summaryText.className = 'seating-view__layout-summary-text';
+  summaryText.textContent = `${rows} rows \u00d7 ${columns} columns`;
+  summaryRow.appendChild(summaryText);
+
+  const addRowButton = document.createElement('button');
+  addRowButton.type = 'button';
+  addRowButton.className = 'btn btn--ghost';
+  addRowButton.textContent = '+ Add Row';
+  addRowButton.disabled = rows >= MAX_ROWS_OR_COLUMNS;
+  addRowButton.addEventListener('click', handlers.onAddRow);
+  summaryRow.appendChild(addRowButton);
+
+  const addColumnButton = document.createElement('button');
+  addColumnButton.type = 'button';
+  addColumnButton.className = 'btn btn--ghost';
+  addColumnButton.textContent = '+ Add Column';
+  addColumnButton.disabled = columns >= MAX_ROWS_OR_COLUMNS;
+  addColumnButton.addEventListener('click', handlers.onAddColumn);
+  summaryRow.appendChild(addColumnButton);
+
+  section.appendChild(summaryRow);
+
+  const gapRow = document.createElement('div');
+  gapRow.className = 'seating-view__gap-controls';
+  gapRow.appendChild(renderGapStepper('Row spacing', rowGap, (delta) => handlers.onChangeGap('rowGap', delta)));
+  gapRow.appendChild(renderGapStepper('Column spacing', columnGap, (delta) => handlers.onChangeGap('columnGap', delta)));
+  section.appendChild(gapRow);
 
   return section;
 }
 
-function renderStepper(label, value, onChange) {
+const GAP_LEVEL_LABELS = { 1: 'Compact', 2: 'Normal', 3: 'Wide' };
+
+function renderGapStepper(label, level, onChange) {
   const group = document.createElement('div');
   group.className = 'seating-view__stepper';
 
@@ -273,20 +384,20 @@ function renderStepper(label, value, onChange) {
   minusButton.type = 'button';
   minusButton.className = 'seating-view__stepper-button';
   minusButton.textContent = '\u2212';
-  minusButton.disabled = value <= MIN_ROWS_OR_SEATS;
+  minusButton.disabled = level <= MIN_GAP_LEVEL;
   minusButton.addEventListener('click', () => onChange(-1));
   controls.appendChild(minusButton);
 
   const valueEl = document.createElement('span');
   valueEl.className = 'seating-view__stepper-value';
-  valueEl.textContent = String(value);
+  valueEl.textContent = GAP_LEVEL_LABELS[level] ?? String(level);
   controls.appendChild(valueEl);
 
   const plusButton = document.createElement('button');
   plusButton.type = 'button';
   plusButton.className = 'seating-view__stepper-button';
   plusButton.textContent = '+';
-  plusButton.disabled = value >= MAX_ROWS_OR_SEATS;
+  plusButton.disabled = level >= MAX_GAP_LEVEL;
   plusButton.addEventListener('click', () => onChange(1));
   controls.appendChild(plusButton);
 
@@ -294,9 +405,16 @@ function renderStepper(label, value, onChange) {
   return group;
 }
 
+// A teacher-facing spacing level (1/2/3) never leaks a raw CSS value
+// to the teacher themselves — this is the one place that maps a
+// level to an actual gap size, in rem, never exposed as "16px"/"24px"
+// anywhere in the UI itself.
+const GAP_LEVEL_TO_REM = { 1: 0.4, 2: 0.9, 3: 1.6 };
+
 /**
  * The physical layout — Board at the top, a grid of seats sized by
- * classroom.seatingConfig.rows/seatsPerRow, Teacher at the bottom.
+ * rows/columns, with genuine row/column gaps (aisles) reflecting
+ * rowGap/columnGap, Teacher at the bottom.
  */
 function renderClassroomGrid(classroom, allStudents, selectedStudentId, handlers) {
   const section = document.createElement('div');
@@ -307,13 +425,15 @@ function renderClassroomGrid(classroom, allStudents, selectedStudentId, handlers
   board.textContent = 'BOARD';
   section.appendChild(board);
 
-  const { rows, seatsPerRow, assignments } = classroom.seatingConfig;
+  const { rows, columns, rowGap, columnGap, assignments } = classroom.seatingConfig;
   const grid = document.createElement('div');
   grid.className = 'seating-view__grid';
-  grid.style.gridTemplateColumns = `repeat(${seatsPerRow}, 1fr)`;
+  grid.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
+  grid.style.rowGap = `${GAP_LEVEL_TO_REM[rowGap] ?? GAP_LEVEL_TO_REM[2]}rem`;
+  grid.style.columnGap = `${GAP_LEVEL_TO_REM[columnGap] ?? GAP_LEVEL_TO_REM[2]}rem`;
 
   for (let row = 1; row <= rows; row += 1) {
-    for (let column = 1; column <= seatsPerRow; column += 1) {
+    for (let column = 1; column <= columns; column += 1) {
       const key = seatKey(row, column);
       const occupantId = assignments[key] ?? null;
       const occupant = occupantId ? allStudents.find(({ student }) => student.id === occupantId) : null;
@@ -369,11 +489,9 @@ function renderSeat(key, occupant, selectedStudentId, handlers) {
 }
 
 /**
- * Every student not currently seated, grouped by their real Team
- * (matching this module's own established "Groups" language) — this
- * IS the reuse of the existing student/group model, not a second
- * roster. Group membership never determines seating at all — it's
- * shown purely as context, per explicit instruction.
+ * Every student not currently seated, grouped by their real Team —
+ * this IS the reuse of the existing student/group model, not a
+ * second roster. Group membership never determines seating at all.
  */
 function renderRoster(classroom, allStudents, selectedStudentId, handlers) {
   const section = document.createElement('div');

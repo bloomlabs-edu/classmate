@@ -80,6 +80,7 @@ import { createClassroomSectionElement } from '../components/ClassroomSection.js
 import * as router from '../router.js';
 import { renderClassroomManagementView } from './ClassroomManagementView.js';
 import { renderClassroomLandingView } from './ClassroomLandingView.js';
+import { renderSeatingView } from './SeatingView.js';
 import { renderCurriculumManagementView } from './CurriculumManagementView.js';
 import { logViewMounted } from '../../services/persistenceLogger.js';
 
@@ -150,11 +151,19 @@ export function renderDashboardView(container, props) {
     });
   }
 
+  function openSeating() {
+    renderSeatingView(container, {
+      classroom,
+      onBack: openClassroomLanding,
+    });
+  }
+
   function openClassroomLanding() {
     renderClassroomLandingView(container, {
       onBack: () => renderDashboardView(container, props),
       onStartClassMode,
       onOpenClassroomManagement: openClassroomManagement,
+      onOpenSeating: openSeating,
     });
   }
 

@@ -18,13 +18,16 @@
  * had (still rendering the exact same, unmodified
  * ClassroomManagementView.js in place) — two entry points into one
  * existing screen, not two new ones, since that screen already shows
- * Students and Groups together.
+ * Students and Groups together. "Seating" is a third, direct entry
+ * point calling its own onOpenSeating callback — per explicit product
+ * decision, it bypasses ClassroomManagementView.js entirely
+ * ("Classroom → Seating," never "Classroom → Students → Seating").
  */
 
 import { createIcon } from '../components/Icon.js';
 import { createBackButton } from '../components/BackButton.js';
 
-export function renderClassroomLandingView(container, { onBack, onStartClassMode, onOpenClassroomManagement }) {
+export function renderClassroomLandingView(container, { onBack, onStartClassMode, onOpenClassroomManagement, onOpenSeating }) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
@@ -72,7 +75,14 @@ export function renderClassroomLandingView(container, { onBack, onStartClassMode
   teamsButton.append('Teams & Groups');
   teamsButton.addEventListener('click', onOpenClassroomManagement);
 
-  manageActions.append(studentsButton, teamsButton);
+  const seatingButton = document.createElement('button');
+  seatingButton.type = 'button';
+  seatingButton.className = 'btn btn--secondary classroom-landing__manage-button';
+  seatingButton.appendChild(createIcon('clipboard-list', { size: 18 }));
+  seatingButton.append('Seating');
+  seatingButton.addEventListener('click', onOpenSeating);
+
+  manageActions.append(studentsButton, teamsButton, seatingButton);
   manageSection.appendChild(manageActions);
   wrapper.appendChild(manageSection);
 
