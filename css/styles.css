@@ -10073,7 +10073,7 @@ button.wizard-checklist__row:hover {
   transform: translateY(-1px);
 }
 
-/* Seating view — see ui/views/SeatingView.js. The physical classroom layout (Board, seat grid, Teacher) plus an Unseated Students roster, side by side on desktop, stacked on narrow screens. */
+/* Seating view — see ui/views/SeatingView.js. A visual classroom layout builder: Board, a compact spatial seat-space map, Teacher, plus an Unseated Students roster — side by side on desktop, stacked on narrow screens. */
 .seating-view__hint {
   color: var(--color-muted);
   margin: 0.5rem 0 0;
@@ -10112,15 +10112,27 @@ button.wizard-checklist__row:hover {
 .seating-view__teacher-label {
   margin-top: 1.5rem;
 }
-.seating-view__grid {
+
+/* The spatial map itself — sized to its own real content (the teacher's actual cells), never a fixed rows x columns grid. Each slot is a genuine grid cell so cells align precisely at their own (x, y) position; an empty slot (no real cell there) renders nothing at all, never a phantom seat. */
+.seating-view__map {
   display: grid;
-  gap: 0.6rem;
+  gap: 0.5rem;
 }
-.seating-view__seat {
+.seating-view__cell-slot {
+  min-width: 2rem;
+  min-height: 2rem;
+}
+.seating-view__cell-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.seating-view__cell {
   position: relative;
   aspect-ratio: 1;
   min-height: 1.75rem;
-  max-height: 3rem;
+  max-height: 2.75rem;
+  width: 100%;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-surface-muted, #f4f4f4);
@@ -10129,34 +10141,77 @@ button.wizard-checklist__row:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0.25rem;
+  padding: 0.2rem;
   font-family: inherit;
 }
-.seating-view__seat-label {
-  font-size: 0.65rem;
+.seating-view__cell-label {
+  font-size: 0.6rem;
   font-weight: var(--font-weight-bold);
   overflow-wrap: anywhere;
   text-align: center;
   line-height: 1.1;
 }
-.seating-view__seat--occupied {
+.seating-view__cell--seat.seating-view__cell--occupied {
   background: var(--color-surface, #fff);
   color: var(--color-ink);
   border-color: var(--color-primary, #2e7d9e);
 }
-.seating-view__seat--selected {
+.seating-view__cell--space {
+  background: transparent;
+  border-style: dashed;
+  opacity: 0.5;
+  cursor: default;
+}
+.seating-view__cell--active {
   border-width: 2px;
   border-color: var(--color-primary, #2e7d9e);
   background: color-mix(in srgb, var(--color-primary, #2e7d9e) 12%, var(--color-surface, #fff));
 }
-.seating-view__seat-clear {
-  position: absolute;
-  top: 2px;
-  right: 4px;
-  font-size: 0.75rem;
-  color: var(--color-muted);
-  cursor: pointer;
+
+/* The one, currently-active cell's own controls — directional add buttons and type/removal actions. Anchored directly below that cell (see SeatingView.js's own header comment on why this is a panel, not a floating overlay), never a page-level settings panel. */
+.seating-view__cell-panel {
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: 0.5rem;
+  font-size: 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  box-shadow: var(--elevation-card);
+  position: relative;
+  z-index: 1;
 }
+.seating-view__cell-panel-heading {
+  margin: 0;
+  font-weight: var(--font-weight-bold);
+  font-size: 0.75rem;
+}
+.seating-view__cell-directions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+.seating-view__cell-direction-button {
+  font-size: 0.65rem;
+  padding: 0.25rem 0.45rem;
+}
+.seating-view__cell-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+.seating-view__cell-actions .btn {
+  font-size: 0.7rem;
+  padding: 0.3rem 0.5rem;
+}
+.seating-view__cell-panel-note {
+  margin: 0;
+  font-size: 0.65rem;
+  color: var(--color-muted);
+}
+
 .seating-view__roster {
   flex: 1 1 220px;
   background: var(--color-surface, #fff);
@@ -10211,64 +10266,4 @@ button.wizard-checklist__row:hover {
     flex-basis: auto;
     width: 100%;
   }
-}
-
-/* Seating layout configuration — Rows/Seats-per-row steppers, see ui/views/SeatingView.js's own renderLayoutConfig(). Deliberately compact, sitting above the classroom map, never competing with it for attention. */
-.seating-view__layout-config {
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
-  margin: 1rem 0 1.5rem;
-}
-.seating-view__layout-summary {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-}
-.seating-view__layout-summary-text {
-  font-weight: var(--font-weight-bold);
-  color: var(--color-ink);
-}
-.seating-view__gap-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1.5rem;
-}
-.seating-view__stepper {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-.seating-view__stepper-label {
-  font-size: 0.85rem;
-  color: var(--color-muted);
-  font-weight: var(--font-weight-bold);
-}
-.seating-view__stepper-controls {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-.seating-view__stepper-button {
-  width: 1.75rem;
-  height: 1.75rem;
-  border-radius: 50%;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface, #fff);
-  color: var(--color-primary, #2e7d9e);
-  font-size: 1rem;
-  font-weight: var(--font-weight-bold);
-  cursor: pointer;
-  line-height: 1;
-}
-.seating-view__stepper-button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.seating-view__stepper-value {
-  min-width: 4.5rem;
-  text-align: center;
-  font-weight: var(--font-weight-bold);
-  font-size: 0.85rem;
 }

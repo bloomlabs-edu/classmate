@@ -216,7 +216,7 @@ export function createClassroom({
   classroomJoinCode = null,
   classroomStudentJoinCode = null,
   deviceResetPin = null,
-  seatingConfig = { rows: 4, columns: 4, rowGap: 2, columnGap: 2, assignments: {} },
+  seatingConfig = { cells: [{ id: generateId(), x: 0, y: 0, type: 'seat', studentId: null }] },
   settings = buildDefaultSettings(),
 } = {}) {
   return {
