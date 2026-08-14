@@ -60,6 +60,7 @@ import * as classroomImportService from '../../services/classroomImportService.j
 import { ClassroomImportError } from '../../services/classroomImportService.js';
 import { openImportPreviewModal } from '../components/ImportPreviewModal.js';
 import { renderSeatingView } from './SeatingView.js';
+import * as workspaceCoordinator from '../../services/workspaceCoordinator.js';
 
 // UI-only — which Group cards are currently collapsed. Not persisted;
 // resets naturally on a full reload, the same way e.g. a modal's own
@@ -70,22 +71,32 @@ export function renderClassroomManagementView(container, { classroom, onBack, on
   container.innerHTML = '';
   const rerender = () => renderClassroomManagementView(container, { classroom, onBack, onSelectStudent });
 
+  // Mirrors ui/views/SeatingView.js's own header comment on this same
+  // mechanism exactly — without this, a background Firestore snapshot
+  // (triggered by any save anywhere, including from within Seating
+  // itself) falls back to renderRoute(), rebuilding Dashboard straight
+  // into this same container and destroying this screen.
+  workspaceCoordinator.registerActiveWorkspace(classroom.id, () => rerender());
+
   const wrapper = document.createElement('div');
   wrapper.className = 'classroom-management';
 
   const header = document.createElement('div');
   header.className = 'learning-management__header';
-  const backButton = createBackButton(onBack);
+  const backButton = createBackButton(() => {
+    workspaceCoordinator.unregisterActiveWorkspace(classroom.id);
+    onBack();
+  });
   const title = document.createElement('h1');
   title.className = 'learning-management__title';
   title.textContent = 'Classroom';
   header.append(backButton, title);
   wrapper.appendChild(header);
 
-  wrapper.appendChild(renderStudentsAndGroupsSection(classroom, rerender, onSelectStudent));
-  wrapper.appendChild(renderComingSoonSection(() => {
+  wrapper.appendChild(renderClassroomToolsSection(() => {
     renderSeatingView(container, { classroom, onBack: rerender });
   }));
+  wrapper.appendChild(renderStudentsAndGroupsSection(classroom, rerender, onSelectStudent));
 
   container.appendChild(wrapper);
 }
@@ -547,24 +558,27 @@ export function openNameEntryModal({ heading, placeholder = 'Student name', init
  * Seating is the first of these activated (see this file's own
  * header comment) — a real button leading to ui/views/SeatingView.js,
  * the same "swap this container's content" navigation convention
- * used everywhere else in this app.
+ * used everywhere else in this app. Renamed from "Coming Soon" to
+ * "Classroom Tools" and moved to the top of this screen, per explicit
+ * product decision: Seating is a Classroom Management tool in its
+ * own right, not something buried under the student list.
  */
-function renderComingSoonSection(onOpenSeating) {
+function renderClassroomToolsSection(onOpenSeating) {
   const section = document.createElement('div');
   section.className = 'learning-management__section';
 
   const heading = document.createElement('h2');
   heading.className = 'learning-management__step-heading';
-  heading.textContent = 'Coming Soon';
+  heading.textContent = 'Classroom Tools';
   section.appendChild(heading);
 
   const grid = document.createElement('div');
   grid.className = 'classroom-management__coming-soon-grid';
 
   [
+    { icon: 'clipboard-list', label: 'Seating', active: true },
     { icon: 'calendar', label: 'Attendance', active: false },
     { icon: 'users', label: 'Buddy Pairs', active: false },
-    { icon: 'clipboard-list', label: 'Seating', active: true },
     { icon: 'chalkboard-easel', label: 'Live Classroom Tools', active: false },
   ].forEach(({ icon, label, active }) => {
     const card = document.createElement(active ? 'button' : 'div');
