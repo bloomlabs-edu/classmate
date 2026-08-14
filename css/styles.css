@@ -10115,12 +10115,18 @@ button.wizard-checklist__row:hover {
 
 /* The spatial map itself — sized to its own real content (the teacher's actual cells), never a fixed rows x columns grid. Each slot is a genuine grid cell so cells align precisely at their own (x, y) position; an empty slot (no real cell there) renders nothing at all, never a phantom seat. */
 .seating-view__map {
+  /* The single source of truth for "one seat-sized unit" — both the
+     cell itself and the inter-cell gap are derived directly from
+     this, so the 10%-of-seat-width gap requirement is exact, not an
+     approximation via a container-relative percentage (which would
+     scale with the grid's own overall width, not one cell's width). */
+  --seating-cell-size: clamp(1.75rem, 6vw, 2.75rem);
   display: grid;
-  gap: 0.5rem;
+  gap: calc(var(--seating-cell-size) * 0.1);
 }
 .seating-view__cell-slot {
-  min-width: 2rem;
-  min-height: 2rem;
+  width: var(--seating-cell-size);
+  height: var(--seating-cell-size);
 }
 .seating-view__cell-wrapper {
   display: flex;
@@ -10129,10 +10135,8 @@ button.wizard-checklist__row:hover {
 }
 .seating-view__cell {
   position: relative;
-  aspect-ratio: 1;
-  min-height: 1.75rem;
-  max-height: 2.75rem;
   width: 100%;
+  height: 100%;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-surface-muted, #f4f4f4);
