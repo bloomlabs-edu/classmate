@@ -203,7 +203,7 @@ service cloud.firestore {
         request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids
       );
 
-      // A student may create/edit ONLY their own goal — proven via a
+      // A student may create ONLY their own goal — proven via a
       // direct match between the document's own uid field and the
       // caller's real, authenticated request.auth.uid (not a
       // client-supplied studentId taken at face value). Deliberately
@@ -211,19 +211,52 @@ service cloud.firestore {
       // collection, and the enrollment step that populated it, were
       // rolled back (see project history); this is the minimum,
       // direct check that keeps student goal writes working without
-      // it. May only ever set its own
-      // status to 'pending_approval' — never 'approved'.
-      allow create, update: if request.auth != null && (
+      // it. May only ever create with status 'pending_approval' —
+      // never 'approved'. Deliberately NOT broadened for this
+      // milestone's own completion-toggle feature — that write is an
+      // update to an already-existing, already-approved goal, never
+      // a create; see allow update below for its own, separate rule.
+      allow create: if request.auth != null &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.status == 'pending_approval';
+
+      // Three, deliberately separate ways a studentGoals document may
+      // be updated — kept as an explicit allow update (not folded
+      // into allow create, update above) so each grant stays legible
+      // on its own, per explicit product decision:
+      allow update: if request.auth != null && (
+        // 1) A student may keep editing their own goal's own text
+        // while it's still pending — unchanged from this rule's own
+        // original create/update condition.
         (
           request.resource.data.uid == request.auth.uid &&
           request.resource.data.status == 'pending_approval'
         ) ||
-        // A teacher member may approve — but ONLY flip status to
+        // 2) A teacher member may approve — but ONLY flip status to
         // 'approved', touching no other field on this document.
+        // Unchanged.
         (
           request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
           request.resource.data.status == 'approved'
+        ) ||
+        // 3) The goal's own linked student may toggle daily
+        // completion on their own, ALREADY-approved goal — proven
+        // against resource.data.uid (the document's own, existing,
+        // already-verified owner), never a client-supplied value;
+        // request.resource.data.uid == resource.data.uid additionally
+        // guarantees this same write can't smuggle in a uid change
+        // alongside the completion fields. Scoped to exactly the five
+        // completion-related fields via affectedKeys().hasOnly(...) —
+        // status, text, uid, and every other field remain exactly as
+        // untouchable here as they are in branch 1/2 above.
+        (
+          request.auth.uid == resource.data.uid &&
+          request.resource.data.uid == resource.data.uid &&
+          resource.data.status == 'approved' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+            ['completions', 'completedToday', 'currentStreak', 'longestStreak', 'overallCompletionPercent']
+          )
         )
       );
 
