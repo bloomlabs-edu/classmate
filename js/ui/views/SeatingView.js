@@ -23,11 +23,23 @@
  * choice, no confirmation. Clicking an existing seat/space is a
  * completely separate interaction: it opens only that cell's own
  * small management panel (assign via roster/remove a student,
- * delete) — it can never add a new cell. "Convert to Space" is
- * intentionally not exposed anywhere in this round's UI at all — the
- * underlying type field and convertCellType() are both untouched and
- * still present, simply unused by any control for now, per explicit
- * "we can revisit intentional spaces/aisles later."
+ * delete) — it can never add a new cell.
+ *
+ * INTENTIONAL SPACE CREATION (this round's own addition): "space" was
+ * already a supported cell type, but nothing in the UI could actually
+ * create one deliberately. The one, explicit way to place a space is
+ * now the active seat's own management panel's own "Add Space" row —
+ * reusing the exact same free-direction check the primary "+"
+ * controls use, adding a real space cell directly with a single
+ * click, never a separate popup. There is still no "gap" object of
+ * any kind — visual spacing between adjacent cells is purely CSS; a
+ * space is a real, explicit spatial cell, nothing more.
+ *
+ * GAP IS NOT A DATA CONCEPT: an unoccupied position that was never
+ * explicitly created (seat or space) simply doesn't exist in
+ * cells[] at all, and renders nothing — never an "Empty" cell filling
+ * a bounding box, and never a persisted gap/spacing record of any
+ * kind.
  *
  * TEMPLATES, MIGRATION, ROUTING FIX, and VIEWPORT PRESERVATION are
  * all unchanged from prior rounds — this correction only touches how
@@ -97,6 +109,12 @@ export function renderSeatingView(container, { classroom, onBack }) {
       // actually prevents the reported perimeter).
       onAddSeatAt: (x, y) => {
         const newCellId = addSeatAt(currentClassroom, x, y);
+        if (newCellId) activeCellId = newCellId;
+        workspaceService.save(currentClassroom);
+        rerender();
+      },
+      onAddSpaceAt: (x, y) => {
+        const newCellId = addSpaceAt(currentClassroom, x, y);
         if (newCellId) activeCellId = newCellId;
         workspaceService.save(currentClassroom);
         rerender();
@@ -288,6 +306,18 @@ function addSeatAt(classroom, x, y) {
   return newCell.id;
 }
 
+/**
+ * The one, deliberate way a "space" is ever created — never
+ * automatic, never generated as a side effect of anything else.
+ * Mirrors addSeatAt() exactly, differing only in the resulting type.
+ */
+function addSpaceAt(classroom, x, y) {
+  if (getCellAt(classroom, x, y)) return null; // already occupied — no-op, never overwritten
+  const newCell = { id: generateId(), x, y, type: 'space', studentId: null };
+  classroom.seatingConfig.cells.push(newCell);
+  return newCell.id;
+}
+
 function convertCellType(classroom, cellId, newType) {
   const cell = getCellById(classroom, cellId);
   if (!cell) return;
@@ -462,7 +492,7 @@ function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCel
 
       if (cell) {
         const occupant = cell.studentId ? allStudents.find(({ student }) => student.id === cell.studentId) : null;
-        slot.appendChild(renderCell(cell, occupant, selectedStudentId, activeCellId, handlers));
+        slot.appendChild(renderCell(cell, occupant, selectedStudentId, activeCellId, cells, handlers));
       } else if (activeCell && isImmediatelyAdjacent(activeCell, x, y)) {
         slot.appendChild(renderAddSeatControl(x, y, handlers));
       }
@@ -511,7 +541,7 @@ function renderAddSeatControl(x, y, handlers) {
  * (see renderClassroomMap() above) — a genuinely separate
  * interaction from clicking the seat itself.
  */
-function renderCell(cell, occupant, selectedStudentId, activeCellId, handlers) {
+function renderCell(cell, occupant, selectedStudentId, activeCellId, cells, handlers) {
   const cellWrapper = document.createElement('div');
   cellWrapper.className = 'seating-view__cell-wrapper';
 
@@ -537,7 +567,7 @@ function renderCell(cell, occupant, selectedStudentId, activeCellId, handlers) {
   cellWrapper.appendChild(cellButton);
 
   if (cell.id === activeCellId) {
-    cellWrapper.appendChild(renderCellPanel(cell, occupant, handlers));
+    cellWrapper.appendChild(renderCellPanel(cell, occupant, cells, handlers));
   }
 
   return cellWrapper;
@@ -554,7 +584,7 @@ function renderCell(cell, occupant, selectedStudentId, activeCellId, handlers) {
  * UI control for now) — only the surfaced control is removed, per
  * explicit "we can revisit intentional spaces/aisles later."
  */
-function renderCellPanel(cell, occupant, handlers) {
+function renderCellPanel(cell, occupant, cells, handlers) {
   const panel = document.createElement('div');
   panel.className = 'seating-view__cell-panel';
 
@@ -599,6 +629,40 @@ function renderCellPanel(cell, occupant, handlers) {
   }
 
   panel.appendChild(actions);
+
+  // "Add Space" — the one deliberate, explicit way to place a space,
+  // per product decision: never automatic, never a popup of its own.
+  // Reuses this seat's own already-open panel, and the exact same
+  // free-direction check the primary "+" controls use — a direction
+  // is only offered here if nothing already occupies it.
+  if (cell.type === 'seat' && !occupant) {
+    const freeDirections = [
+      { dx: 0, dy: -1, label: 'above' },
+      { dx: 0, dy: 1, label: 'below' },
+      { dx: -1, dy: 0, label: 'to the left' },
+      { dx: 1, dy: 0, label: 'to the right' },
+    ].filter(({ dx, dy }) => !cells.some((c) => c.x === cell.x + dx && c.y === cell.y + dy));
+
+    if (freeDirections.length > 0) {
+      const spaceLabel = document.createElement('p');
+      spaceLabel.className = 'seating-view__cell-panel-note';
+      spaceLabel.textContent = 'Add Space:';
+      panel.appendChild(spaceLabel);
+
+      const spaceRow = document.createElement('div');
+      spaceRow.className = 'seating-view__cell-actions';
+      freeDirections.forEach(({ dx, dy, label }) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'btn btn--ghost';
+        button.textContent = label;
+        button.addEventListener('click', () => handlers.onAddSpaceAt(cell.x + dx, cell.y + dy));
+        spaceRow.appendChild(button);
+      });
+      panel.appendChild(spaceRow);
+    }
+  }
+
   return panel;
 }
 
