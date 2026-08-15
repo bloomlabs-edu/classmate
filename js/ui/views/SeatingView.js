@@ -7,9 +7,23 @@
  * represented as adjacent individual seats; no bench object exists
  * anywhere in this model.
  *
- * CANONICAL SHAPE, unchanged: classroom.seatingConfig = {
- * templateChosen, cells: [{ id, x, y, type: 'seat' | 'space',
- * studentId }] }. x/y are plain spatial integers (can be negative).
+ * CANONICAL SHAPE: classroom.seatingConfig = { cells: [{ id, x, y,
+ * type: 'seat' | 'space', studentId }] }. x/y are plain spatial
+ * integers (can be negative).
+ *
+ * INITIAL STATE (this round's own correction): a genuinely fresh
+ * classroom — one with no seatingConfig at all — is initialized with
+ * EXACTLY one seat, and nothing else. There is no template picker,
+ * no "Choose a starting layout" step, no pre-populated arrangement
+ * of any kind, and no separate "New Layout"/"Create Layout" workflow
+ * — a prior round had introduced a template-selection screen (Rows/
+ * Pairs/Groups/etc.) that gated the map behind a choice; that entire
+ * system is removed here. There is only ever one seating layout for
+ * a classroom, and it always starts as a single blank seat, already
+ * active (its own 4 directional "+"s visible immediately — no extra
+ * click needed at all). See normalizeSeatingConfig() below for the
+ * exact case A (no config at all → one seat) / case B (real cells
+ * already exist → loaded exactly as-is, never overwritten) split.
  *
  * THE ACTUAL FOCUSED CORRECTION THIS ROUND: the immediately prior
  * round required clicking a seat first, then choosing a direction
@@ -41,9 +55,9 @@
  * a bounding box, and never a persisted gap/spacing record of any
  * kind.
  *
- * TEMPLATES, MIGRATION, ROUTING FIX, and VIEWPORT PRESERVATION are
- * all unchanged from prior rounds — this correction only touches how
- * a new cell gets added and what a clicked cell's own panel contains.
+ * MIGRATION, ROUTING FIX, and VIEWPORT PRESERVATION are all unchanged
+ * from prior rounds — this correction only touches the initial state
+ * of a genuinely fresh classroom.
  */
 
 import { createBackButton } from '../components/BackButton.js';
@@ -56,7 +70,10 @@ export function renderSeatingView(container, { classroom, onBack }) {
   normalizeSeatingConfig(classroom);
   let currentClassroom = classroom;
   let selectedStudentId = null; // the one student currently "picked up" from the roster, or null
-  let activeCellId = null; // the one seat/space cell whose own management-only panel is open, or null
+  // A genuinely fresh classroom (case A: exactly one seat) starts
+  // with that seat already active, so its own 4 "+"s are visible
+  // immediately — no extra click, no picker step of any kind.
+  let activeCellId = currentClassroom.seatingConfig.cells.length === 1 ? currentClassroom.seatingConfig.cells[0].id : null;
 
   workspaceCoordinator.registerActiveWorkspace(currentClassroom.id, resyncFromServer);
 
@@ -74,12 +91,6 @@ export function renderSeatingView(container, { classroom, onBack }) {
       onBack: () => {
         workspaceCoordinator.unregisterActiveWorkspace(currentClassroom.id);
         onBack();
-      },
-      onChooseTemplate: (templateId) => {
-        applyTemplate(currentClassroom, templateId);
-        activeCellId = currentClassroom.seatingConfig.cells.length === 1 ? currentClassroom.seatingConfig.cells[0].id : null;
-        workspaceService.save(currentClassroom);
-        rerender();
       },
       onSelectStudentFromRoster: (studentId) => {
         selectedStudentId = studentId;
@@ -141,21 +152,31 @@ export function renderSeatingView(container, { classroom, onBack }) {
   rerender();
 }
 
+/**
+ * CASE A: no seatingConfig at all (a genuinely new classroom) — the
+ * one and only initial state is exactly one seat. Never a picker,
+ * never a pre-populated arrangement of any kind.
+ *
+ * CASE B: seatingConfig already has real cells (whether built by the
+ * teacher or migrated from an older shape below) — load it exactly
+ * as-is. Never overwritten, never regenerated.
+ */
 function normalizeSeatingConfig(classroom) {
   const existing = classroom.seatingConfig;
 
   if (!existing) {
-    classroom.seatingConfig = { templateChosen: false, cells: [{ id: generateId(), x: 0, y: 0, type: 'seat', studentId: null }] };
+    classroom.seatingConfig = { cells: [{ id: generateId(), x: 0, y: 0, type: 'seat', studentId: null }] };
     return;
   }
 
   if (Array.isArray(existing.cells)) {
-    if (typeof existing.templateChosen !== 'boolean') {
-      existing.templateChosen = existing.cells.length > 1;
-    }
-    return;
+    return; // already canonical — case B, loaded exactly as-is
   }
 
+  // Migration from the older rows/columns/gap grid shape (itself
+  // already migrated once before, from two even earlier shapes) —
+  // this is still case B (real, already-built data), never
+  // destructive, and never shows any picker at all.
   const rows = existing.rows ?? 4;
   const columns = existing.columns ?? existing.seatsPerRow ?? 4;
   const rawAssignments = existing.assignments || {};
@@ -168,118 +189,7 @@ function normalizeSeatingConfig(classroom) {
       cells.push({ id: generateId(), x: column - 1, y: row - 1, type: 'seat', studentId });
     }
   }
-  classroom.seatingConfig = { templateChosen: true, cells };
-}
-
-const TEMPLATES = [
-  { id: 'rows', label: 'Rows' },
-  { id: 'pairs', label: 'Pairs' },
-  { id: 'groups', label: 'Groups' },
-  { id: 'u-shape', label: 'U-Shape' },
-  { id: 'circle', label: 'Circle' },
-  { id: 'custom', label: 'Custom' },
-];
-
-function seat(x, y, studentId = null) {
-  return { id: generateId(), x, y, type: 'seat', studentId };
-}
-function space(x, y) {
-  return { id: generateId(), x, y, type: 'space' };
-}
-
-function generateRowsTemplate(studentCount) {
-  const columns = Math.max(1, Math.ceil(Math.sqrt(Math.max(studentCount, 1))));
-  const rows = Math.max(1, Math.ceil(Math.max(studentCount, 1) / columns));
-  const cells = [];
-  for (let y = 0; y < rows; y += 1) {
-    for (let x = 0; x < columns; x += 1) {
-      cells.push(seat(x, y));
-    }
-  }
-  return cells;
-}
-
-function generatePairsTemplate(studentCount) {
-  const pairCount = Math.max(1, Math.ceil(Math.max(studentCount, 1) / 2));
-  const pairsPerRow = Math.max(1, Math.ceil(Math.sqrt(pairCount)));
-  const cells = [];
-  let pairIndex = 0;
-  for (let row = 0; pairIndex < pairCount; row += 1) {
-    for (let col = 0; col < pairsPerRow && pairIndex < pairCount; col += 1, pairIndex += 1) {
-      const baseX = col * 3;
-      cells.push(seat(baseX, row));
-      cells.push(seat(baseX + 1, row));
-      if (col < pairsPerRow - 1) cells.push(space(baseX + 2, row));
-    }
-  }
-  return cells;
-}
-
-function generateGroupsTemplate(studentCount) {
-  const groupCount = Math.max(1, Math.ceil(Math.max(studentCount, 1) / 4));
-  const groupsPerRow = Math.max(1, Math.ceil(Math.sqrt(groupCount)));
-  const cells = [];
-  let groupIndex = 0;
-  for (let gr = 0; groupIndex < groupCount; gr += 1) {
-    for (let gc = 0; gc < groupsPerRow && groupIndex < groupCount; gc += 1, groupIndex += 1) {
-      const baseX = gc * 3;
-      const baseY = gr * 3;
-      cells.push(seat(baseX, baseY), seat(baseX + 1, baseY), seat(baseX, baseY + 1), seat(baseX + 1, baseY + 1));
-    }
-  }
-  return cells;
-}
-
-function generateUShapeTemplate(studentCount) {
-  const sideLength = Math.max(2, Math.ceil(Math.max(studentCount, 1) / 3));
-  const cells = [];
-  const positions = new Set();
-  const add = (x, y) => {
-    const key = `${x},${y}`;
-    if (positions.has(key)) return;
-    positions.add(key);
-    cells.push(seat(x, y));
-  };
-  for (let x = 0; x < sideLength; x += 1) add(x, 0);
-  for (let y = 1; y < sideLength; y += 1) { add(0, y); add(sideLength - 1, y); }
-  return cells;
-}
-
-function generateCircleTemplate(studentCount) {
-  const count = Math.max(4, studentCount || 8);
-  const radius = Math.max(2, Math.round(count / 6));
-  const cells = [];
-  const seen = new Set();
-  for (let i = 0; i < count; i += 1) {
-    const angle = (2 * Math.PI * i) / count;
-    const x = Math.round(radius * Math.cos(angle));
-    const y = Math.round(radius * Math.sin(angle));
-    const key = `${x},${y}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    cells.push(seat(x, y));
-  }
-  return cells;
-}
-
-function generateCustomTemplate() {
-  return [seat(0, 0)];
-}
-
-const TEMPLATE_GENERATORS = {
-  rows: generateRowsTemplate,
-  pairs: generatePairsTemplate,
-  groups: generateGroupsTemplate,
-  'u-shape': generateUShapeTemplate,
-  circle: generateCircleTemplate,
-  custom: generateCustomTemplate,
-};
-
-function applyTemplate(classroom, templateId) {
-  const studentCount = classroom.teams.flatMap((team) => team.students).length;
-  const generator = TEMPLATE_GENERATORS[templateId] ?? generateCustomTemplate;
-  classroom.seatingConfig.cells = generator(studentCount);
-  classroom.seatingConfig.templateChosen = true;
+  classroom.seatingConfig = { cells };
 }
 
 function getCellById(classroom, cellId) {
@@ -385,12 +295,6 @@ function render(container, classroom, selectedStudentId, activeCellId, handlers)
     return;
   }
 
-  if (!classroom.seatingConfig.templateChosen) {
-    wrapper.appendChild(renderTemplatePicker(handlers));
-    container.appendChild(wrapper);
-    return;
-  }
-
   if (selectedStudentId) {
     const hint = document.createElement('p');
     hint.className = 'seating-view__hint';
@@ -412,35 +316,6 @@ function render(container, classroom, selectedStudentId, activeCellId, handlers)
   wrapper.appendChild(layout);
 
   container.appendChild(wrapper);
-}
-
-function renderTemplatePicker(handlers) {
-  const section = document.createElement('div');
-  section.className = 'seating-view__template-picker';
-
-  const heading = document.createElement('h2');
-  heading.className = 'seating-view__template-heading';
-  heading.textContent = 'Choose a starting layout';
-
-  const subheading = document.createElement('p');
-  subheading.className = 'seating-view__template-subheading';
-  subheading.textContent = 'You can change anything after picking \u2014 this is only a starting point.';
-
-  section.append(heading, subheading);
-
-  const grid = document.createElement('div');
-  grid.className = 'seating-view__template-grid';
-  TEMPLATES.forEach(({ id, label }) => {
-    const card = document.createElement('button');
-    card.type = 'button';
-    card.className = 'seating-view__template-card';
-    card.textContent = label;
-    card.addEventListener('click', () => handlers.onChooseTemplate(id));
-    grid.appendChild(card);
-  });
-  section.appendChild(grid);
-
-  return section;
 }
 
 /** The physical layout — Board, the individual-seat spatial map, Teacher. */

@@ -10225,44 +10225,6 @@ button.wizard-checklist__row:hover {
   color: var(--color-muted);
 }
 
-/* The starting-layout template picker — shown only for a genuinely fresh classroom (see SeatingView.js's own normalizeSeatingConfig()), never for one with real, already-built data. */
-.seating-view__template-picker {
-  background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  padding: 2rem;
-  box-shadow: var(--elevation-card);
-  margin-top: 1rem;
-  text-align: center;
-}
-.seating-view__template-heading {
-  margin: 0 0 0.4rem;
-  font-size: 1.2rem;
-}
-.seating-view__template-subheading {
-  margin: 0 0 1.5rem;
-  color: var(--color-muted);
-}
-.seating-view__template-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 0.75rem;
-  max-width: 640px;
-  margin: 0 auto;
-}
-.seating-view__template-card {
-  padding: 1rem 0.5rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: var(--color-surface-muted, #f4f4f4);
-  font-weight: var(--font-weight-bold);
-  cursor: pointer;
-}
-.seating-view__template-card:hover {
-  border-color: var(--color-primary, #2e7d9e);
-  color: var(--color-primary, #2e7d9e);
-}
-
 .seating-view__roster {
   flex: 1 1 220px;
   background: var(--color-surface, #fff);
