@@ -10191,22 +10191,23 @@ button.wizard-checklist__row:hover {
   font-weight: var(--font-weight-bold);
   font-size: 0.75rem;
 }
-.seating-view__cell-group-label {
-  margin: 0.2rem 0 0;
-  font-size: 0.6rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--color-muted);
+/* The always-visible "+" — a real grid item at its own (x, y) position (see SeatingView.js's own renderClassroomMap()), never a toolbar or popup. Clicking it adds a seat there immediately. */
+.seating-view__add-control {
+  width: 100%;
+  height: 100%;
+  border: 1px dashed var(--color-primary, #2e7d9e);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-primary, #2e7d9e);
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+  opacity: 0.55;
+  line-height: 1;
 }
-.seating-view__cell-directions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-}
-.seating-view__cell-direction-button {
-  font-size: 0.7rem;
-  padding: 0.25rem 0.5rem;
-  min-width: 1.75rem;
+.seating-view__add-control:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--color-primary, #2e7d9e) 8%, transparent);
 }
 .seating-view__cell-actions {
   display: flex;

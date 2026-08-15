@@ -1,56 +1,37 @@
 /**
  * ui/views/SeatingView.js
  *
- * Seating — a visual, individual-seat spatial grid editor. Per
- * explicit product correction: the fundamental layout unit is one
- * SEAT — never a bench, row, column, group, or table. A physical
- * 2-seater or 3-seater bench is simply represented as adjacent
- * individual seats; no bench object exists anywhere in this model.
+ * Seating — a visual, individual-seat spatial grid editor. The
+ * fundamental layout unit is one SEAT — never a bench, row, column,
+ * group, or table. A physical 2-seater or 3-seater bench is simply
+ * represented as adjacent individual seats; no bench object exists
+ * anywhere in this model.
  *
- * CANONICAL SHAPE: classroom.seatingConfig = { templateChosen, cells:
- * [{ id, x, y, type: 'seat' | 'space', studentId }] }. x/y are plain
- * spatial integers (can be negative). Unchanged from the two prior
- * rounds — only how a new cell gets ADDED changes this round.
+ * CANONICAL SHAPE, unchanged: classroom.seatingConfig = {
+ * templateChosen, cells: [{ id, x, y, type: 'seat' | 'space',
+ * studentId }] }. x/y are plain spatial integers (can be negative).
  *
- * TWO GENUINELY SEPARATE INTERACTIONS, per explicit product decision:
- *   1. Clicking a SEAT/SPACE reveals that one cell's own "Manage this
- *      seat" actions (assign/remove a student, convert type, delete)
- *      — never adds a new cell.
- *   2. That same reveal also shows this cell's own directional "+"
- *      controls (up/down/left/right) — spatial expansion, genuinely
- *      distinct from seat management, visually separated within the
- *      same panel with its own "Expand" label. Only shown toward a
- *      position that's genuinely free, so overlapping cells are
- *      prevented structurally.
+ * THE ACTUAL FOCUSED CORRECTION THIS ROUND: the immediately prior
+ * round required clicking a seat first, then choosing a direction
+ * from a revealed menu, then choosing Seat/Space — a form-like
+ * interaction. That's replaced here with the original sketch's own
+ * model: a small "+" genuinely attached to the spatial grid at its
+ * own real (x, y) position (see renderClassroomMap()'s own expanded-
+ * bounds rendering below — never CSS-only fake positioning), shown
+ * at every position orthogonally adjacent to a real cell. Clicking a
+ * "+" adds a real seat there immediately — no menu, no Seat/Space
+ * choice, no confirmation. Clicking an existing seat/space is a
+ * completely separate interaction: it opens only that cell's own
+ * small management panel (assign via roster/remove a student,
+ * delete) — it can never add a new cell. "Convert to Space" is
+ * intentionally not exposed anywhere in this round's UI at all — the
+ * underlying type field and convertCellType() are both untouched and
+ * still present, simply unused by any control for now, per explicit
+ * "we can revisit intentional spaces/aisles later."
  *
- * REVERTED THIS ROUND (per explicit correction): the immediately
- * prior round moved directional "+" to the whole layout's own edges
- * (expanding an entire row/column at once). That's undone here —
- * every direction now adds exactly ONE seat-sized cell, uniformly
- * offering a Seat/Space choice on click (including top/bottom, which
- * the prior round instead auto-added a fixed Space+Seat pair for —
- * that fixed-pair behavior is also removed this round).
- *
- * TEMPLATES, unchanged from the prior round — every generator below
- * produces individual seat cells only, never a bench/group object.
- * Starting points only; every cell they produce is exactly as
- * editable afterward as one built by hand. Shown only for a
- * genuinely fresh classroom (see normalizeSeatingConfig() below) —
- * never for one with real, already-built data.
- *
- * MIGRATION, unchanged: an older rows/columns/gap-shaped classroom
- * (or either of the two shapes before that) converts losslessly into
- * real seat cells, assignment preserved, templateChosen set true
- * immediately (real, already-built data never shows the picker).
- *
- * ROOT-CAUSE ROUTING FIX, unchanged: registers with
- * services/workspaceCoordinator.js so a background Firestore
- * snapshot updates this screen in place instead of ever falling
- * through to renderRoute()/Dashboard. Every button is explicitly
- * type="button"; nothing is wrapped in a <form>.
- *
- * Local viewport preservation, unchanged: every rerender() captures/
- * restores document.scrollingElement's own scrollTop/scrollLeft.
+ * TEMPLATES, MIGRATION, ROUTING FIX, and VIEWPORT PRESERVATION are
+ * all unchanged from prior rounds — this correction only touches how
+ * a new cell gets added and what a clicked cell's own panel contains.
  */
 
 import { createBackButton } from '../components/BackButton.js';
@@ -63,8 +44,7 @@ export function renderSeatingView(container, { classroom, onBack }) {
   normalizeSeatingConfig(classroom);
   let currentClassroom = classroom;
   let selectedStudentId = null; // the one student currently "picked up" from the roster, or null
-  let activeCellId = null; // the one cell whose own reveal (Expand + Manage) is open, or null
-  let pendingDirectionChoice = null; // { cellId, direction } while awaiting the teacher's Seat/Space choice, or null
+  let activeCellId = null; // the one seat/space cell whose own management-only panel is open, or null
 
   workspaceCoordinator.registerActiveWorkspace(currentClassroom.id, resyncFromServer);
 
@@ -78,7 +58,7 @@ export function renderSeatingView(container, { classroom, onBack }) {
     const scrollTop = document.scrollingElement?.scrollTop ?? 0;
     const scrollLeft = document.scrollingElement?.scrollLeft ?? 0;
 
-    render(container, currentClassroom, selectedStudentId, activeCellId, pendingDirectionChoice, {
+    render(container, currentClassroom, selectedStudentId, activeCellId, {
       onBack: () => {
         workspaceCoordinator.unregisterActiveWorkspace(currentClassroom.id);
         onBack();
@@ -105,32 +85,13 @@ export function renderSeatingView(container, { classroom, onBack }) {
       },
       onToggleActiveCell: (cellId) => {
         activeCellId = activeCellId === cellId ? null : cellId;
-        pendingDirectionChoice = null;
         rerender();
       },
-      onOpenDirectionChoice: (cellId, direction) => {
-        pendingDirectionChoice = { cellId, direction };
-        rerender();
-      },
-      onCancelDirectionChoice: () => {
-        pendingDirectionChoice = null;
-        rerender();
-      },
-      onChooseDirectionType: (cellId, direction, type) => {
-        addSingleCellInDirection(currentClassroom, cellId, direction, type);
-        pendingDirectionChoice = null;
-        workspaceService.save(currentClassroom);
-        rerender();
-      },
-      onConvertToSpace: (cellId) => {
-        convertCellType(currentClassroom, cellId, 'space');
-        activeCellId = null;
-        workspaceService.save(currentClassroom);
-        rerender();
-      },
-      onConvertToSeat: (cellId) => {
-        convertCellType(currentClassroom, cellId, 'seat');
-        activeCellId = null;
+      // The actual fix for this round: clicking a "+" adds a real
+      // seat AT this exact position immediately — no Seat/Space
+      // choice, no confirmation, no menu of any kind at all.
+      onAddSeatAt: (x, y) => {
+        addSeatAt(currentClassroom, x, y);
         workspaceService.save(currentClassroom);
         rerender();
       },
@@ -305,28 +266,18 @@ function getCellAt(classroom, x, y) {
   return classroom.seatingConfig.cells.find((cell) => cell.x === x && cell.y === y) ?? null;
 }
 
-const DIRECTION_OFFSETS = { up: { dx: 0, dy: -1 }, down: { dx: 0, dy: 1 }, left: { dx: -1, dy: 0 }, right: { dx: 1, dy: 0 } };
-
 /**
- * The reverted, per-seat behavior: exactly ONE new cell, of whichever
- * type the teacher chose, uniformly for all four directions
- * (including up/down, which the prior round instead auto-added a
- * fixed Space+Seat pair for — that's removed now). Still enforces
- * "no overlapping cells": if the target is already occupied, this is
- * a genuine no-op — the UI itself already never offers this direction
- * once occupied (see renderCellPanel() below).
+ * The actual fix for this round: adds a real seat at an exact (x, y)
+ * position immediately — no menu, no Seat/Space choice, no
+ * intermediate step of any kind. Still enforces "no overlapping
+ * cells": if the position is already occupied, this is a genuine
+ * no-op — the UI itself only ever renders a "+" at a position with no
+ * real cell there at all (see renderClassroomMap() below), so
+ * reaching this branch at all would mean a stale click.
  */
-function addSingleCellInDirection(classroom, fromCellId, direction, type) {
-  const fromCell = getCellById(classroom, fromCellId);
-  if (!fromCell) return;
-
-  const { dx, dy } = DIRECTION_OFFSETS[direction];
-  const targetX = fromCell.x + dx;
-  const targetY = fromCell.y + dy;
-
-  if (getCellAt(classroom, targetX, targetY)) return; // already occupied — no-op, never overwritten
-
-  classroom.seatingConfig.cells.push({ id: generateId(), x: targetX, y: targetY, type, studentId: null });
+function addSeatAt(classroom, x, y) {
+  if (getCellAt(classroom, x, y)) return; // already occupied — no-op, never overwritten
+  classroom.seatingConfig.cells.push({ id: generateId(), x, y, type: 'seat', studentId: null });
 }
 
 function convertCellType(classroom, cellId, newType) {
@@ -373,7 +324,7 @@ function assignStudentToSeat(classroom, targetCellId, selectedStudentId) {
   }
 }
 
-function render(container, classroom, selectedStudentId, activeCellId, pendingDirectionChoice, handlers) {
+function render(container, classroom, selectedStudentId, activeCellId, handlers) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
@@ -418,7 +369,7 @@ function render(container, classroom, selectedStudentId, activeCellId, pendingDi
 
   const layout = document.createElement('div');
   layout.className = 'seating-view__layout';
-  layout.appendChild(renderClassroomMap(classroom, allStudents, selectedStudentId, activeCellId, pendingDirectionChoice, handlers));
+  layout.appendChild(renderClassroomMap(classroom, allStudents, selectedStudentId, activeCellId, handlers));
   layout.appendChild(renderRoster(classroom, allStudents, selectedStudentId, handlers));
   wrapper.appendChild(layout);
 
@@ -455,7 +406,7 @@ function renderTemplatePicker(handlers) {
 }
 
 /** The physical layout — Board, the individual-seat spatial map, Teacher. */
-function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCellId, pendingDirectionChoice, handlers) {
+function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCellId, handlers) {
   const section = document.createElement('div');
   section.className = 'seating-view__room';
 
@@ -471,25 +422,41 @@ function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCel
   const maxX = Math.max(...xs);
   const minY = Math.min(...ys);
   const maxY = Math.max(...ys);
-  const columnCount = maxX - minX + 1;
-  const rowCount = maxY - minY + 1;
+
+  // The rendering bounds are expanded by 1 in every direction beyond
+  // the real cells' own extent — this is where a "+" can genuinely
+  // live, at its own real (x, y) grid position, never a floating
+  // overlay disconnected from the underlying coordinate system.
+  const renderMinX = minX - 1;
+  const renderMaxX = maxX + 1;
+  const renderMinY = minY - 1;
+  const renderMaxY = maxY + 1;
+  const columnCount = renderMaxX - renderMinX + 1;
+  const rowCount = renderMaxY - renderMinY + 1;
 
   const map = document.createElement('div');
   map.className = 'seating-view__map';
   map.style.gridTemplateColumns = `repeat(${columnCount}, var(--seating-cell-size))`;
   map.style.gridTemplateRows = `repeat(${rowCount}, var(--seating-cell-size))`;
 
-  for (let y = minY; y <= maxY; y += 1) {
-    for (let x = minX; x <= maxX; x += 1) {
+  for (let y = renderMinY; y <= renderMaxY; y += 1) {
+    for (let x = renderMinX; x <= renderMaxX; x += 1) {
       const cell = cells.find((c) => c.x === x && c.y === y);
       const slot = document.createElement('div');
       slot.className = 'seating-view__cell-slot';
-      slot.style.gridColumn = String(x - minX + 1);
-      slot.style.gridRow = String(y - minY + 1);
+      slot.style.gridColumn = String(x - renderMinX + 1);
+      slot.style.gridRow = String(y - renderMinY + 1);
+
       if (cell) {
         const occupant = cell.studentId ? allStudents.find(({ student }) => student.id === cell.studentId) : null;
-        slot.appendChild(renderCell(cell, occupant, selectedStudentId, activeCellId, pendingDirectionChoice, cells, handlers));
+        slot.appendChild(renderCell(cell, occupant, selectedStudentId, activeCellId, handlers));
+      } else if (isAdjacentToAnyCell(cells, x, y)) {
+        slot.appendChild(renderAddSeatControl(x, y, handlers));
       }
+      // Any other empty position (not adjacent to a real cell at all
+      // — the expanded bounding box's own corners) renders nothing,
+      // matching the original sketch's own empty corners exactly.
+
       map.appendChild(slot);
     }
   }
@@ -503,11 +470,36 @@ function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCel
   return section;
 }
 
+function isAdjacentToAnyCell(cells, x, y) {
+  return cells.some(
+    (c) => (c.x === x && Math.abs(c.y - y) === 1) || (c.y === y && Math.abs(c.x - x) === 1)
+  );
+}
+
+/**
+ * A single, small "+" — genuinely attached to the spatial grid at its
+ * own real (x, y) position (see renderClassroomMap() above), not a
+ * toolbar button or a popup. Clicking it adds a seat directly, with
+ * no menu, no choice, no confirmation of any kind.
+ */
+function renderAddSeatControl(x, y, handlers) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'seating-view__add-control';
+  button.textContent = '+';
+  button.setAttribute('aria-label', `Add a seat at this position`);
+  button.addEventListener('click', () => handlers.onAddSeatAt(x, y));
+  return button;
+}
+
 /**
  * A single seat/space cell. Clicking it only ever toggles its own
- * reveal (Expand + Manage) — it never itself adds a new cell at all.
+ * management-only panel — it never adds a new cell at all. Adding a
+ * cell is exclusively the job of the "+" controls rendered around it
+ * (see renderClassroomMap() above) — a genuinely separate
+ * interaction from clicking the seat itself.
  */
-function renderCell(cell, occupant, selectedStudentId, activeCellId, pendingDirectionChoice, allCells, handlers) {
+function renderCell(cell, occupant, selectedStudentId, activeCellId, handlers) {
   const cellWrapper = document.createElement('div');
   cellWrapper.className = 'seating-view__cell-wrapper';
 
@@ -533,21 +525,24 @@ function renderCell(cell, occupant, selectedStudentId, activeCellId, pendingDire
   cellWrapper.appendChild(cellButton);
 
   if (cell.id === activeCellId) {
-    cellWrapper.appendChild(renderCellPanel(cell, occupant, pendingDirectionChoice, allCells, handlers));
+    cellWrapper.appendChild(renderCellPanel(cell, occupant, handlers));
   }
 
   return cellWrapper;
 }
 
 /**
- * This cell's own reveal — genuinely two separate groups, per
- * explicit product decision: "Expand" (directional +, spatial growth)
- * and "Manage this seat" (assign/remove/convert/delete), visually
- * separated so the teacher never confuses growing the layout with
- * editing this one seat. Only revealed when this cell is active —
- * never a permanent fixture around every seat at all.
+ * This cell's own management-only panel — assign/remove a student,
+ * delete this seat. Deliberately contains NO directional/expansion
+ * control at all, per explicit product decision: adding a cell is
+ * exclusively the "+" controls' own job (see renderClassroomMap()
+ * above), never this menu's. "Convert to Space" is intentionally not
+ * exposed here at all this round — the underlying type field itself
+ * is untouched (see convertCellType(), still present, unused by any
+ * UI control for now) — only the surfaced control is removed, per
+ * explicit "we can revisit intentional spaces/aisles later."
  */
-function renderCellPanel(cell, occupant, pendingDirectionChoice, allCells, handlers) {
+function renderCellPanel(cell, occupant, handlers) {
   const panel = document.createElement('div');
   panel.className = 'seating-view__cell-panel';
 
@@ -555,67 +550,6 @@ function renderCellPanel(cell, occupant, pendingDirectionChoice, allCells, handl
   heading.className = 'seating-view__cell-panel-heading';
   heading.textContent = cell.type === 'space' ? 'Space' : occupant ? occupant.student.name : 'Empty seat';
   panel.appendChild(heading);
-
-  const isPendingHere = pendingDirectionChoice?.cellId === cell.id;
-
-  const expandLabel = document.createElement('p');
-  expandLabel.className = 'seating-view__cell-group-label';
-  expandLabel.textContent = 'Expand';
-  panel.appendChild(expandLabel);
-
-  if (isPendingHere) {
-    const choiceRow = document.createElement('div');
-    choiceRow.className = 'seating-view__cell-directions';
-
-    const seatChoiceButton = document.createElement('button');
-    seatChoiceButton.type = 'button';
-    seatChoiceButton.className = 'btn btn--secondary seating-view__cell-direction-button';
-    seatChoiceButton.textContent = 'Seat';
-    seatChoiceButton.addEventListener('click', () => handlers.onChooseDirectionType(cell.id, pendingDirectionChoice.direction, 'seat'));
-    choiceRow.appendChild(seatChoiceButton);
-
-    const spaceChoiceButton = document.createElement('button');
-    spaceChoiceButton.type = 'button';
-    spaceChoiceButton.className = 'btn btn--ghost seating-view__cell-direction-button';
-    spaceChoiceButton.textContent = 'Space';
-    spaceChoiceButton.addEventListener('click', () => handlers.onChooseDirectionType(cell.id, pendingDirectionChoice.direction, 'space'));
-    choiceRow.appendChild(spaceChoiceButton);
-
-    const cancelChoiceButton = document.createElement('button');
-    cancelChoiceButton.type = 'button';
-    cancelChoiceButton.className = 'btn btn--text';
-    cancelChoiceButton.textContent = 'Cancel';
-    cancelChoiceButton.addEventListener('click', handlers.onCancelDirectionChoice);
-    choiceRow.appendChild(cancelChoiceButton);
-
-    panel.appendChild(choiceRow);
-  } else {
-    const directions = document.createElement('div');
-    directions.className = 'seating-view__cell-directions';
-    [
-      { direction: 'up', label: '\u2191' },
-      { direction: 'down', label: '\u2193' },
-      { direction: 'left', label: '\u2190' },
-      { direction: 'right', label: '\u2192' },
-    ].forEach(({ direction, label }) => {
-      const { dx, dy } = DIRECTION_OFFSETS[direction];
-      const targetOccupied = allCells.some((c) => c.x === cell.x + dx && c.y === cell.y + dy);
-      if (targetOccupied) return; // never offered toward an already-occupied position at all
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'btn btn--ghost seating-view__cell-direction-button';
-      button.textContent = label;
-      button.setAttribute('aria-label', `Add a seat ${direction === 'up' ? 'above' : direction === 'down' ? 'below' : direction === 'left' ? 'to the left' : 'to the right'}`);
-      button.addEventListener('click', () => handlers.onOpenDirectionChoice(cell.id, direction));
-      directions.appendChild(button);
-    });
-    panel.appendChild(directions);
-  }
-
-  const manageLabel = document.createElement('p');
-  manageLabel.className = 'seating-view__cell-group-label';
-  manageLabel.textContent = 'Manage this seat';
-  panel.appendChild(manageLabel);
 
   const actions = document.createElement('div');
   actions.className = 'seating-view__cell-actions';
@@ -630,18 +564,11 @@ function renderCellPanel(cell, occupant, pendingDirectionChoice, allCells, handl
 
     const blockedNote = document.createElement('p');
     blockedNote.className = 'seating-view__cell-panel-note';
-    blockedNote.textContent = 'Remove the student first to convert or delete this seat.';
+    blockedNote.textContent = 'Remove the student first to delete this seat.';
     actions.appendChild(blockedNote);
   }
 
   if (cell.type === 'seat' && !occupant) {
-    const convertButton = document.createElement('button');
-    convertButton.type = 'button';
-    convertButton.className = 'btn btn--text';
-    convertButton.textContent = 'Convert to Space';
-    convertButton.addEventListener('click', () => handlers.onConvertToSpace(cell.id));
-    actions.appendChild(convertButton);
-
     const deleteButton = document.createElement('button');
     deleteButton.type = 'button';
     deleteButton.className = 'btn btn--text';
@@ -651,13 +578,6 @@ function renderCellPanel(cell, occupant, pendingDirectionChoice, allCells, handl
   }
 
   if (cell.type === 'space') {
-    const convertButton = document.createElement('button');
-    convertButton.type = 'button';
-    convertButton.className = 'btn btn--text';
-    convertButton.textContent = 'Convert to Seat';
-    convertButton.addEventListener('click', () => handlers.onConvertToSeat(cell.id));
-    actions.appendChild(convertButton);
-
     const deleteButton = document.createElement('button');
     deleteButton.type = 'button';
     deleteButton.className = 'btn btn--text';
