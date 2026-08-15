@@ -135,6 +135,16 @@ export function renderSeatingView(container, { classroom, onBack }) {
         workspaceService.save(currentClassroom);
         rerender();
       },
+      // Moves an already-seated student to an adjacent, existing,
+      // unoccupied seat — never creates a cell, never overwrites an
+      // occupant. Genuinely distinct from the "+" building controls:
+      // this only ever operates on cells that already exist.
+      onMoveStudent: (cellId, direction) => {
+        const newActiveCellId = moveStudent(currentClassroom, cellId, direction);
+        if (newActiveCellId) activeCellId = newActiveCellId;
+        workspaceService.save(currentClassroom);
+        rerender();
+      },
       onDeleteCell: (cellId) => {
         deleteCell(currentClassroom, cellId);
         activeCellId = null;
@@ -240,6 +250,30 @@ function setCellStudent(classroom, cellId, studentId) {
   const cell = getCellById(classroom, cellId);
   if (!cell || cell.type !== 'seat') return;
   cell.studentId = studentId;
+}
+
+const MOVE_DIRECTION_OFFSETS = { up: { dx: 0, dy: -1 }, down: { dx: 0, dy: 1 }, left: { dx: -1, dy: 0 }, right: { dx: 1, dy: 0 } };
+
+/**
+ * Moves an already-seated student to an adjacent, existing,
+ * unoccupied seat. Genuinely distinct from the building "+" controls
+ * — this NEVER creates a cell at all (only ever reads an existing one
+ * via getCellAt) and never overwrites an occupant (only proceeds if
+ * the destination is a real seat with no student already in it).
+ * Returns the destination cell's own id on success, so it can become
+ * the new active cell — or null if the move didn't happen at all.
+ */
+function moveStudent(classroom, cellId, direction) {
+  const sourceCell = getCellById(classroom, cellId);
+  if (!sourceCell || sourceCell.type !== 'seat' || !sourceCell.studentId) return null;
+
+  const { dx, dy } = MOVE_DIRECTION_OFFSETS[direction];
+  const destinationCell = getCellAt(classroom, sourceCell.x + dx, sourceCell.y + dy);
+  if (!destinationCell || destinationCell.type !== 'seat' || destinationCell.studentId) return null; // no existing seat there, or it's a space, or already occupied — never overwritten
+
+  destinationCell.studentId = sourceCell.studentId;
+  sourceCell.studentId = null;
+  return destinationCell.id;
 }
 
 /** Deleting an occupied seat is blocked for the same safety reason as convert-to-space. */
@@ -478,11 +512,6 @@ function renderCellPanel(cell, occupant, cells, handlers) {
     removeButton.textContent = 'Remove Student';
     removeButton.addEventListener('click', () => handlers.onRemoveStudent(cell.id));
     actions.appendChild(removeButton);
-
-    const blockedNote = document.createElement('p');
-    blockedNote.className = 'seating-view__cell-panel-note';
-    blockedNote.textContent = 'Remove the student first to delete this seat.';
-    actions.appendChild(blockedNote);
   }
 
   if (cell.type === 'seat' && !occupant) {
@@ -504,6 +533,51 @@ function renderCellPanel(cell, occupant, cells, handlers) {
   }
 
   panel.appendChild(actions);
+
+  // "Move Student" — genuinely distinct from the "+" building
+  // controls: this only ever moves a student between cells that
+  // already exist. A direction is only offered when a real seat cell
+  // (not a space, not empty air, not already occupied) exists there
+  // — mirroring the same "only offer what's valid" pattern the "+"
+  // controls themselves use, inverted (they require the position to
+  // be free; this requires it to already be a real, empty seat).
+  if (cell.type === 'seat' && occupant) {
+    const validMoves = [
+      { direction: 'up', symbol: '\u2191', label: 'Above' },
+      { direction: 'down', symbol: '\u2193', label: 'Below' },
+      { direction: 'left', symbol: '\u2190', label: 'Left' },
+      { direction: 'right', symbol: '\u2192', label: 'Right' },
+    ].filter(({ direction }) => {
+      const { dx, dy } = MOVE_DIRECTION_OFFSETS[direction];
+      const destination = cells.find((c) => c.x === cell.x + dx && c.y === cell.y + dy);
+      return destination && destination.type === 'seat' && !destination.studentId;
+    });
+
+    if (validMoves.length > 0) {
+      const moveLabel = document.createElement('p');
+      moveLabel.className = 'seating-view__cell-group-label';
+      moveLabel.textContent = 'Move Student';
+      panel.appendChild(moveLabel);
+
+      const moveRow = document.createElement('div');
+      moveRow.className = 'seating-view__move-controls';
+      validMoves.forEach(({ direction, symbol, label }) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `btn btn--ghost seating-view__move-button seating-view__move-button--${direction}`;
+
+        const symbolSpan = document.createElement('span');
+        symbolSpan.setAttribute('aria-hidden', 'true');
+        symbolSpan.textContent = symbol;
+        button.appendChild(symbolSpan);
+        button.append(` ${label}`);
+
+        button.addEventListener('click', () => handlers.onMoveStudent(cell.id, direction));
+        moveRow.appendChild(button);
+      });
+      panel.appendChild(moveRow);
+    }
+  }
 
   // "Add Space" — the one deliberate, explicit way to place a space,
   // per product decision: never automatic, never a popup of its own.

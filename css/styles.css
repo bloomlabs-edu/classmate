@@ -10177,19 +10177,22 @@ button.wizard-checklist__row:hover {
   background: var(--color-surface, #fff);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
-  padding: 0.5rem;
-  font-size: 0.7rem;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.75rem;
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.4rem;
   box-shadow: var(--elevation-card);
   position: relative;
   z-index: 1;
+  min-width: 11rem;
+  width: max-content;
+  max-width: 15rem;
 }
 .seating-view__cell-panel-heading {
   margin: 0 0 0.15rem;
   font-weight: var(--font-weight-bold);
-  font-size: 0.75rem;
+  font-size: 0.85rem;
 }
 /* The always-visible "+" — a real grid item at its own (x, y) position (see SeatingView.js's own renderClassroomMap()), never a toolbar or popup. Clicking it adds a seat there immediately. */
 .seating-view__add-control {
@@ -10224,6 +10227,38 @@ button.wizard-checklist__row:hover {
   font-size: 0.65rem;
   color: var(--color-muted);
 }
+.seating-view__cell-group-label {
+  margin: 0.1rem 0 0;
+  font-size: 0.65rem;
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-muted);
+}
+
+/* "Move Student" — genuinely distinct from the "+" building controls both in purpose and appearance. Arranged as a compact cross (Above / Left+Right / Below), matching the requested layout exactly. */
+.seating-view__move-controls {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  grid-template-areas:
+    ".      above  ."
+    "left   .      right"
+    ".      below  .";
+  gap: 0.3rem;
+  justify-items: center;
+}
+.seating-view__move-button {
+  font-size: 0.7rem;
+  padding: 0.3rem 0.55rem;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.seating-view__move-button--up { grid-area: above; }
+.seating-view__move-button--down { grid-area: below; }
+.seating-view__move-button--left { grid-area: left; }
+.seating-view__move-button--right { grid-area: right; }
 
 .seating-view__roster {
   flex: 1 1 220px;
