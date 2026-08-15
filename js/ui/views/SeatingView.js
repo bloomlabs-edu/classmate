@@ -536,80 +536,85 @@ function renderCellPanel(cell, occupant, cells, handlers) {
 
   // "Move Student" — genuinely distinct from the "+" building
   // controls: this only ever moves a student between cells that
-  // already exist. A direction is only offered when a real seat cell
-  // (not a space, not empty air, not already occupied) exists there
-  // — mirroring the same "only offer what's valid" pattern the "+"
-  // controls themselves use, inverted (they require the position to
-  // be free; this requires it to already be a real, empty seat).
+  // already exist. Per explicit product decision, all 4 directions
+  // are ALWAYS rendered in a fixed order — an invalid direction is
+  // shown disabled, never hidden, so the panel looks identical
+  // regardless of the student's own position in the layout.
   if (cell.type === 'seat' && occupant) {
-    const validMoves = [
+    const moveLabel = document.createElement('p');
+    moveLabel.className = 'seating-view__cell-group-label';
+    moveLabel.textContent = 'Move Student';
+    panel.appendChild(moveLabel);
+
+    const moveRow = document.createElement('div');
+    moveRow.className = 'seating-view__move-controls';
+    [
       { direction: 'up', symbol: '\u2191', label: 'Above' },
       { direction: 'down', symbol: '\u2193', label: 'Below' },
       { direction: 'left', symbol: '\u2190', label: 'Left' },
       { direction: 'right', symbol: '\u2192', label: 'Right' },
-    ].filter(({ direction }) => {
+    ].forEach(({ direction, symbol, label }) => {
       const { dx, dy } = MOVE_DIRECTION_OFFSETS[direction];
       const destination = cells.find((c) => c.x === cell.x + dx && c.y === cell.y + dy);
-      return destination && destination.type === 'seat' && !destination.studentId;
-    });
+      const isValidMove = !!destination && destination.type === 'seat' && !destination.studentId;
 
-    if (validMoves.length > 0) {
-      const moveLabel = document.createElement('p');
-      moveLabel.className = 'seating-view__cell-group-label';
-      moveLabel.textContent = 'Move Student';
-      panel.appendChild(moveLabel);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `btn btn--ghost seating-view__move-button seating-view__move-button--${direction}`;
+      button.disabled = !isValidMove;
 
-      const moveRow = document.createElement('div');
-      moveRow.className = 'seating-view__move-controls';
-      validMoves.forEach(({ direction, symbol, label }) => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = `btn btn--ghost seating-view__move-button seating-view__move-button--${direction}`;
+      const symbolSpan = document.createElement('span');
+      symbolSpan.setAttribute('aria-hidden', 'true');
+      symbolSpan.textContent = symbol;
+      button.appendChild(symbolSpan);
+      button.append(` ${label}`);
 
-        const symbolSpan = document.createElement('span');
-        symbolSpan.setAttribute('aria-hidden', 'true');
-        symbolSpan.textContent = symbol;
-        button.appendChild(symbolSpan);
-        button.append(` ${label}`);
-
+      if (isValidMove) {
         button.addEventListener('click', () => handlers.onMoveStudent(cell.id, direction));
-        moveRow.appendChild(button);
-      });
-      panel.appendChild(moveRow);
-    }
+      }
+      moveRow.appendChild(button);
+    });
+    panel.appendChild(moveRow);
   }
 
   // "Add Space" — the one deliberate, explicit way to place a space,
   // per product decision: never automatic, never a popup of its own.
-  // Reuses this seat's own already-open panel, and the exact same
-  // free-direction check the primary "+" controls use — a direction
-  // is only offered here if nothing already occupies it.
+  // All 4 directions are ALWAYS rendered in the same fixed order,
+  // matching Move Student's own pattern — a direction that's already
+  // occupied is shown disabled, never hidden.
   if (cell.type === 'seat' && !occupant) {
-    const freeDirections = [
-      { dx: 0, dy: -1, label: 'above' },
-      { dx: 0, dy: 1, label: 'below' },
-      { dx: -1, dy: 0, label: 'to the left' },
-      { dx: 1, dy: 0, label: 'to the right' },
-    ].filter(({ dx, dy }) => !cells.some((c) => c.x === cell.x + dx && c.y === cell.y + dy));
+    const spaceLabel = document.createElement('p');
+    spaceLabel.className = 'seating-view__cell-group-label';
+    spaceLabel.textContent = 'Add Space';
+    panel.appendChild(spaceLabel);
 
-    if (freeDirections.length > 0) {
-      const spaceLabel = document.createElement('p');
-      spaceLabel.className = 'seating-view__cell-panel-note';
-      spaceLabel.textContent = 'Add Space:';
-      panel.appendChild(spaceLabel);
+    const spaceRow = document.createElement('div');
+    spaceRow.className = 'seating-view__move-controls';
+    [
+      { dx: 0, dy: -1, direction: 'up', symbol: '\u2191', label: 'Above' },
+      { dx: 0, dy: 1, direction: 'down', symbol: '\u2193', label: 'Below' },
+      { dx: -1, dy: 0, direction: 'left', symbol: '\u2190', label: 'Left' },
+      { dx: 1, dy: 0, direction: 'right', symbol: '\u2192', label: 'Right' },
+    ].forEach(({ dx, dy, direction, symbol, label }) => {
+      const isFree = !cells.some((c) => c.x === cell.x + dx && c.y === cell.y + dy);
 
-      const spaceRow = document.createElement('div');
-      spaceRow.className = 'seating-view__cell-actions';
-      freeDirections.forEach(({ dx, dy, label }) => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'btn btn--ghost';
-        button.textContent = label;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `btn btn--ghost seating-view__move-button seating-view__move-button--${direction}`;
+      button.disabled = !isFree;
+
+      const symbolSpan = document.createElement('span');
+      symbolSpan.setAttribute('aria-hidden', 'true');
+      symbolSpan.textContent = symbol;
+      button.appendChild(symbolSpan);
+      button.append(` ${label}`);
+
+      if (isFree) {
         button.addEventListener('click', () => handlers.onAddSpaceAt(cell.x + dx, cell.y + dy));
-        spaceRow.appendChild(button);
-      });
-      panel.appendChild(spaceRow);
-    }
+      }
+      spaceRow.appendChild(button);
+    });
+    panel.appendChild(spaceRow);
   }
 
   return panel;
