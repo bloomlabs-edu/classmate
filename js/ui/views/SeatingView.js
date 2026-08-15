@@ -1,57 +1,56 @@
 /**
  * ui/views/SeatingView.js
  *
- * Seating — a visual classroom layout builder, refined per explicit
- * product decision into two genuinely separate interactions:
- *
- *   1. Clicking a SEAT/SPACE manages that one cell (assign/remove a
- *      student, convert type, delete) — never adds a new cell.
- *   2. Edge "+" controls (top/bottom/left/right of the whole
- *      layout's own bounding box) expand the classroom — a full new
- *      row or column at once, never tied to one specific clicked
- *      cell. This is the actual fix for "don't show + around every
- *      internal seat" — edge controls exist once per side of the
- *      overall layout, not per cell at all.
+ * Seating — a visual, individual-seat spatial grid editor. Per
+ * explicit product correction: the fundamental layout unit is one
+ * SEAT — never a bench, row, column, group, or table. A physical
+ * 2-seater or 3-seater bench is simply represented as adjacent
+ * individual seats; no bench object exists anywhere in this model.
  *
  * CANONICAL SHAPE: classroom.seatingConfig = { templateChosen, cells:
  * [{ id, x, y, type: 'seat' | 'space', studentId }] }. x/y are plain
- * spatial integers (can be negative). templateChosen is new this
- * round — see chooseTemplate()/normalizeSeatingConfig() below for
- * exactly when the template picker shows and why it's safe against
- * any real, already-built layout.
+ * spatial integers (can be negative). Unchanged from the two prior
+ * rounds — only how a new cell gets ADDED changes this round.
  *
- * TEMPLATES are starting points only, never a locked mode — picking
- * one just generates an initial cells[] array (see the
- * TEMPLATE_GENERATORS map below); every cell it produces is exactly
- * as editable afterward as one the teacher built by hand.
+ * TWO GENUINELY SEPARATE INTERACTIONS, per explicit product decision:
+ *   1. Clicking a SEAT/SPACE reveals that one cell's own "Manage this
+ *      seat" actions (assign/remove a student, convert type, delete)
+ *      — never adds a new cell.
+ *   2. That same reveal also shows this cell's own directional "+"
+ *      controls (up/down/left/right) — spatial expansion, genuinely
+ *      distinct from seat management, visually separated within the
+ *      same panel with its own "Expand" label. Only shown toward a
+ *      position that's genuinely free, so overlapping cells are
+ *      prevented structurally.
  *
- * MIGRATION, unchanged from prior rounds: a classroom already holding
- * the older rows/columns/gap shape (or either of the two shapes
- * before that) is converted losslessly here — every existing seat
- * becomes a real "seat" cell at its own position, assignment
- * preserved, and templateChosen is set true immediately (this is
- * real, already-built data — it must never show the "choose a
- * starting layout" picker at all).
+ * REVERTED THIS ROUND (per explicit correction): the immediately
+ * prior round moved directional "+" to the whole layout's own edges
+ * (expanding an entire row/column at once). That's undone here —
+ * every direction now adds exactly ONE seat-sized cell, uniformly
+ * offering a Seat/Space choice on click (including top/bottom, which
+ * the prior round instead auto-added a fixed Space+Seat pair for —
+ * that fixed-pair behavior is also removed this round).
  *
- * A brand-new classroom (no seatingConfig at all) starts with
- * templateChosen: false and exactly one seat at (0, 0) as its
- * pre-template default — the picker itself is what a teacher sees
- * first in that case (see render() below).
+ * TEMPLATES, unchanged from the prior round — every generator below
+ * produces individual seat cells only, never a bench/group object.
+ * Starting points only; every cell they produce is exactly as
+ * editable afterward as one built by hand. Shown only for a
+ * genuinely fresh classroom (see normalizeSeatingConfig() below) —
+ * never for one with real, already-built data.
  *
- * Reuses classroom.teams[].students[] directly — no second
- * student/classroom model.
+ * MIGRATION, unchanged: an older rows/columns/gap-shaped classroom
+ * (or either of the two shapes before that) converts losslessly into
+ * real seat cells, assignment preserved, templateChosen set true
+ * immediately (real, already-built data never shows the picker).
  *
- * ROOT-CAUSE ROUTING FIX, carried over unchanged: this view registers
- * with services/workspaceCoordinator.js (mirroring
- * ui/views/LearningManagementView.js's own established pattern), so
- * a background Firestore snapshot updates this screen in place
- * instead of ever falling through to renderRoute()/Dashboard. Every
- * button here is explicitly type="button"; nothing is wrapped in a
- * <form>.
+ * ROOT-CAUSE ROUTING FIX, unchanged: registers with
+ * services/workspaceCoordinator.js so a background Firestore
+ * snapshot updates this screen in place instead of ever falling
+ * through to renderRoute()/Dashboard. Every button is explicitly
+ * type="button"; nothing is wrapped in a <form>.
  *
- * Local viewport preservation, carried over unchanged: every
- * rerender() captures/restores document.scrollingElement's own
- * scrollTop/scrollLeft.
+ * Local viewport preservation, unchanged: every rerender() captures/
+ * restores document.scrollingElement's own scrollTop/scrollLeft.
  */
 
 import { createBackButton } from '../components/BackButton.js';
@@ -64,8 +63,8 @@ export function renderSeatingView(container, { classroom, onBack }) {
   normalizeSeatingConfig(classroom);
   let currentClassroom = classroom;
   let selectedStudentId = null; // the one student currently "picked up" from the roster, or null
-  let activeCellId = null; // the one seat/space cell whose own management menu is open, or null
-  let pendingColumnChoice = null; // 'left' | 'right' | null, while awaiting the teacher's Seat/Space choice for a new column
+  let activeCellId = null; // the one cell whose own reveal (Expand + Manage) is open, or null
+  let pendingDirectionChoice = null; // { cellId, direction } while awaiting the teacher's Seat/Space choice, or null
 
   workspaceCoordinator.registerActiveWorkspace(currentClassroom.id, resyncFromServer);
 
@@ -79,7 +78,7 @@ export function renderSeatingView(container, { classroom, onBack }) {
     const scrollTop = document.scrollingElement?.scrollTop ?? 0;
     const scrollLeft = document.scrollingElement?.scrollLeft ?? 0;
 
-    render(container, currentClassroom, selectedStudentId, activeCellId, pendingColumnChoice, {
+    render(container, currentClassroom, selectedStudentId, activeCellId, pendingDirectionChoice, {
       onBack: () => {
         workspaceCoordinator.unregisterActiveWorkspace(currentClassroom.id);
         onBack();
@@ -106,6 +105,21 @@ export function renderSeatingView(container, { classroom, onBack }) {
       },
       onToggleActiveCell: (cellId) => {
         activeCellId = activeCellId === cellId ? null : cellId;
+        pendingDirectionChoice = null;
+        rerender();
+      },
+      onOpenDirectionChoice: (cellId, direction) => {
+        pendingDirectionChoice = { cellId, direction };
+        rerender();
+      },
+      onCancelDirectionChoice: () => {
+        pendingDirectionChoice = null;
+        rerender();
+      },
+      onChooseDirectionType: (cellId, direction, type) => {
+        addSingleCellInDirection(currentClassroom, cellId, direction, type);
+        pendingDirectionChoice = null;
+        workspaceService.save(currentClassroom);
         rerender();
       },
       onConvertToSpace: (cellId) => {
@@ -128,30 +142,6 @@ export function renderSeatingView(container, { classroom, onBack }) {
       onDeleteCell: (cellId) => {
         deleteCell(currentClassroom, cellId);
         activeCellId = null;
-        workspaceService.save(currentClassroom);
-        rerender();
-      },
-      onExpandTop: () => {
-        expandVertical(currentClassroom, 'top');
-        workspaceService.save(currentClassroom);
-        rerender();
-      },
-      onExpandBottom: () => {
-        expandVertical(currentClassroom, 'bottom');
-        workspaceService.save(currentClassroom);
-        rerender();
-      },
-      onOpenColumnChoice: (direction) => {
-        pendingColumnChoice = direction;
-        rerender();
-      },
-      onCancelColumnChoice: () => {
-        pendingColumnChoice = null;
-        rerender();
-      },
-      onChooseColumnType: (type) => {
-        expandHorizontal(currentClassroom, pendingColumnChoice, type);
-        pendingColumnChoice = null;
         workspaceService.save(currentClassroom);
         rerender();
       },
@@ -200,10 +190,8 @@ const TEMPLATES = [
   { id: 'rows', label: 'Rows' },
   { id: 'pairs', label: 'Pairs' },
   { id: 'groups', label: 'Groups' },
-  { id: 'discussion', label: 'Discussion' },
   { id: 'u-shape', label: 'U-Shape' },
   { id: 'circle', label: 'Circle' },
-  { id: 'flexible', label: 'Flexible' },
   { id: 'custom', label: 'Custom' },
 ];
 
@@ -257,15 +245,6 @@ function generateGroupsTemplate(studentCount) {
   return cells;
 }
 
-function generateDiscussionTemplate(studentCount) {
-  const perSide = Math.max(1, Math.ceil(Math.max(studentCount, 1) / 2));
-  const cells = [];
-  for (let x = 0; x < perSide; x += 1) cells.push(seat(x, 0));
-  for (let x = 0; x < perSide; x += 1) cells.push(space(x, 1));
-  for (let x = 0; x < perSide; x += 1) cells.push(seat(x, 2));
-  return cells;
-}
-
 function generateUShapeTemplate(studentCount) {
   const sideLength = Math.max(2, Math.ceil(Math.max(studentCount, 1) / 3));
   const cells = [];
@@ -298,10 +277,6 @@ function generateCircleTemplate(studentCount) {
   return cells;
 }
 
-function generateFlexibleTemplate() {
-  return [seat(0, 0)];
-}
-
 function generateCustomTemplate() {
   return [seat(0, 0)];
 }
@@ -310,10 +285,8 @@ const TEMPLATE_GENERATORS = {
   rows: generateRowsTemplate,
   pairs: generatePairsTemplate,
   groups: generateGroupsTemplate,
-  discussion: generateDiscussionTemplate,
   'u-shape': generateUShapeTemplate,
   circle: generateCircleTemplate,
-  flexible: generateFlexibleTemplate,
   custom: generateCustomTemplate,
 };
 
@@ -328,38 +301,38 @@ function getCellById(classroom, cellId) {
   return classroom.seatingConfig.cells.find((cell) => cell.id === cellId) ?? null;
 }
 
-function getBounds(cells) {
-  const xs = cells.map((c) => c.x);
-  const ys = cells.map((c) => c.y);
-  return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+function getCellAt(classroom, x, y) {
+  return classroom.seatingConfig.cells.find((cell) => cell.x === x && cell.y === y) ?? null;
 }
 
-function expandVertical(classroom, direction) {
-  const cells = classroom.seatingConfig.cells;
-  const { minX, maxX, minY, maxY } = getBounds(cells);
-  const seatY = direction === 'top' ? minY - 1 : maxY + 1;
-  const spaceY = direction === 'top' ? minY - 2 : maxY + 2;
+const DIRECTION_OFFSETS = { up: { dx: 0, dy: -1 }, down: { dx: 0, dy: 1 }, left: { dx: -1, dy: 0 }, right: { dx: 1, dy: 0 } };
 
-  for (let x = minX; x <= maxX; x += 1) {
-    cells.push(seat(x, seatY));
-    cells.push(space(x, spaceY));
-  }
-}
+/**
+ * The reverted, per-seat behavior: exactly ONE new cell, of whichever
+ * type the teacher chose, uniformly for all four directions
+ * (including up/down, which the prior round instead auto-added a
+ * fixed Space+Seat pair for — that's removed now). Still enforces
+ * "no overlapping cells": if the target is already occupied, this is
+ * a genuine no-op — the UI itself already never offers this direction
+ * once occupied (see renderCellPanel() below).
+ */
+function addSingleCellInDirection(classroom, fromCellId, direction, type) {
+  const fromCell = getCellById(classroom, fromCellId);
+  if (!fromCell) return;
 
-function expandHorizontal(classroom, direction, type) {
-  const cells = classroom.seatingConfig.cells;
-  const { minX, maxX, minY, maxY } = getBounds(cells);
-  const targetX = direction === 'left' ? minX - 1 : maxX + 1;
+  const { dx, dy } = DIRECTION_OFFSETS[direction];
+  const targetX = fromCell.x + dx;
+  const targetY = fromCell.y + dy;
 
-  for (let y = minY; y <= maxY; y += 1) {
-    cells.push(type === 'space' ? space(targetX, y) : seat(targetX, y));
-  }
+  if (getCellAt(classroom, targetX, targetY)) return; // already occupied — no-op, never overwritten
+
+  classroom.seatingConfig.cells.push({ id: generateId(), x: targetX, y: targetY, type, studentId: null });
 }
 
 function convertCellType(classroom, cellId, newType) {
   const cell = getCellById(classroom, cellId);
   if (!cell) return;
-  if (newType === 'space' && cell.studentId) return;
+  if (newType === 'space' && cell.studentId) return; // never silently unseat a student via a type conversion
   cell.type = newType;
   if (newType === 'space') cell.studentId = null;
 }
@@ -370,19 +343,27 @@ function setCellStudent(classroom, cellId, studentId) {
   cell.studentId = studentId;
 }
 
+/** Deleting an occupied seat is blocked for the same safety reason as convert-to-space. */
 function deleteCell(classroom, cellId) {
   const cell = getCellById(classroom, cellId);
   if (!cell || cell.studentId) return;
   classroom.seatingConfig.cells = classroom.seatingConfig.cells.filter((c) => c.id !== cellId);
 }
 
+/**
+ * Placing a selected student into a seat. If that seat already holds
+ * a different student, the two swap — unless the mover came straight
+ * from the roster (no previous seat), in which case the displaced
+ * student simply becomes unseated. A space can never receive a
+ * student at all.
+ */
 function assignStudentToSeat(classroom, targetCellId, selectedStudentId) {
   if (!selectedStudentId) return;
   const targetCell = getCellById(classroom, targetCellId);
   if (!targetCell || targetCell.type !== 'seat') return;
 
   const previousCell = classroom.seatingConfig.cells.find((cell) => cell.studentId === selectedStudentId) ?? null;
-  if (previousCell && previousCell.id === targetCellId) return;
+  if (previousCell && previousCell.id === targetCellId) return; // clicked their own current seat — no-op
 
   const displacedStudentId = targetCell.studentId ?? null;
   targetCell.studentId = selectedStudentId;
@@ -392,7 +373,7 @@ function assignStudentToSeat(classroom, targetCellId, selectedStudentId) {
   }
 }
 
-function render(container, classroom, selectedStudentId, activeCellId, pendingColumnChoice, handlers) {
+function render(container, classroom, selectedStudentId, activeCellId, pendingDirectionChoice, handlers) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
@@ -437,7 +418,7 @@ function render(container, classroom, selectedStudentId, activeCellId, pendingCo
 
   const layout = document.createElement('div');
   layout.className = 'seating-view__layout';
-  layout.appendChild(renderClassroomMap(classroom, allStudents, selectedStudentId, activeCellId, pendingColumnChoice, handlers));
+  layout.appendChild(renderClassroomMap(classroom, allStudents, selectedStudentId, activeCellId, pendingDirectionChoice, handlers));
   layout.appendChild(renderRoster(classroom, allStudents, selectedStudentId, handlers));
   wrapper.appendChild(layout);
 
@@ -473,7 +454,8 @@ function renderTemplatePicker(handlers) {
   return section;
 }
 
-function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCellId, pendingColumnChoice, handlers) {
+/** The physical layout — Board, the individual-seat spatial map, Teacher. */
+function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCellId, pendingDirectionChoice, handlers) {
   const section = document.createElement('div');
   section.className = 'seating-view__room';
 
@@ -482,17 +464,15 @@ function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCel
   board.textContent = 'BOARD';
   section.appendChild(board);
 
-  section.appendChild(renderVerticalEdgeControl('top', handlers));
-
   const cells = classroom.seatingConfig.cells;
-  const { minX, maxX, minY, maxY } = getBounds(cells);
+  const xs = cells.map((c) => c.x);
+  const ys = cells.map((c) => c.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
   const columnCount = maxX - minX + 1;
   const rowCount = maxY - minY + 1;
-
-  const mapRow = document.createElement('div');
-  mapRow.className = 'seating-view__map-row';
-
-  mapRow.appendChild(renderHorizontalEdgeControl('left', pendingColumnChoice, handlers));
 
   const map = document.createElement('div');
   map.className = 'seating-view__map';
@@ -508,17 +488,12 @@ function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCel
       slot.style.gridRow = String(y - minY + 1);
       if (cell) {
         const occupant = cell.studentId ? allStudents.find(({ student }) => student.id === cell.studentId) : null;
-        slot.appendChild(renderCell(cell, occupant, selectedStudentId, activeCellId, handlers));
+        slot.appendChild(renderCell(cell, occupant, selectedStudentId, activeCellId, pendingDirectionChoice, cells, handlers));
       }
       map.appendChild(slot);
     }
   }
-  mapRow.appendChild(map);
-
-  mapRow.appendChild(renderHorizontalEdgeControl('right', pendingColumnChoice, handlers));
-  section.appendChild(mapRow);
-
-  section.appendChild(renderVerticalEdgeControl('bottom', handlers));
+  section.appendChild(map);
 
   const teacherLabel = document.createElement('div');
   teacherLabel.className = 'seating-view__teacher-label';
@@ -528,55 +503,11 @@ function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCel
   return section;
 }
 
-function renderVerticalEdgeControl(direction, handlers) {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = `seating-view__edge-control seating-view__edge-control--${direction}`;
-  button.setAttribute('aria-label', direction === 'top' ? 'Expand classroom upward' : 'Expand classroom downward');
-  button.textContent = '+';
-  button.addEventListener('click', direction === 'top' ? handlers.onExpandTop : handlers.onExpandBottom);
-  return button;
-}
-
-function renderHorizontalEdgeControl(direction, pendingColumnChoice, handlers) {
-  const wrapper = document.createElement('div');
-  wrapper.className = 'seating-view__edge-control-wrapper';
-
-  if (pendingColumnChoice === direction) {
-    const seatChoice = document.createElement('button');
-    seatChoice.type = 'button';
-    seatChoice.className = 'btn btn--secondary seating-view__edge-choice-button';
-    seatChoice.textContent = 'Seat';
-    seatChoice.addEventListener('click', () => handlers.onChooseColumnType('seat'));
-
-    const spaceChoice = document.createElement('button');
-    spaceChoice.type = 'button';
-    spaceChoice.className = 'btn btn--ghost seating-view__edge-choice-button';
-    spaceChoice.textContent = 'Space';
-    spaceChoice.addEventListener('click', () => handlers.onChooseColumnType('space'));
-
-    const cancelChoice = document.createElement('button');
-    cancelChoice.type = 'button';
-    cancelChoice.className = 'btn btn--text';
-    cancelChoice.textContent = '\u2715';
-    cancelChoice.setAttribute('aria-label', 'Cancel');
-    cancelChoice.addEventListener('click', handlers.onCancelColumnChoice);
-
-    wrapper.append(seatChoice, spaceChoice, cancelChoice);
-  } else {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = `seating-view__edge-control seating-view__edge-control--${direction}`;
-    button.setAttribute('aria-label', direction === 'left' ? 'Expand classroom to the left' : 'Expand classroom to the right');
-    button.textContent = '+';
-    button.addEventListener('click', () => handlers.onOpenColumnChoice(direction));
-    wrapper.appendChild(button);
-  }
-
-  return wrapper;
-}
-
-function renderCell(cell, occupant, selectedStudentId, activeCellId, handlers) {
+/**
+ * A single seat/space cell. Clicking it only ever toggles its own
+ * reveal (Expand + Manage) — it never itself adds a new cell at all.
+ */
+function renderCell(cell, occupant, selectedStudentId, activeCellId, pendingDirectionChoice, allCells, handlers) {
   const cellWrapper = document.createElement('div');
   cellWrapper.className = 'seating-view__cell-wrapper';
 
@@ -602,13 +533,21 @@ function renderCell(cell, occupant, selectedStudentId, activeCellId, handlers) {
   cellWrapper.appendChild(cellButton);
 
   if (cell.id === activeCellId) {
-    cellWrapper.appendChild(renderCellMenu(cell, occupant, handlers));
+    cellWrapper.appendChild(renderCellPanel(cell, occupant, pendingDirectionChoice, allCells, handlers));
   }
 
   return cellWrapper;
 }
 
-function renderCellMenu(cell, occupant, handlers) {
+/**
+ * This cell's own reveal — genuinely two separate groups, per
+ * explicit product decision: "Expand" (directional +, spatial growth)
+ * and "Manage this seat" (assign/remove/convert/delete), visually
+ * separated so the teacher never confuses growing the layout with
+ * editing this one seat. Only revealed when this cell is active —
+ * never a permanent fixture around every seat at all.
+ */
+function renderCellPanel(cell, occupant, pendingDirectionChoice, allCells, handlers) {
   const panel = document.createElement('div');
   panel.className = 'seating-view__cell-panel';
 
@@ -616,6 +555,67 @@ function renderCellMenu(cell, occupant, handlers) {
   heading.className = 'seating-view__cell-panel-heading';
   heading.textContent = cell.type === 'space' ? 'Space' : occupant ? occupant.student.name : 'Empty seat';
   panel.appendChild(heading);
+
+  const isPendingHere = pendingDirectionChoice?.cellId === cell.id;
+
+  const expandLabel = document.createElement('p');
+  expandLabel.className = 'seating-view__cell-group-label';
+  expandLabel.textContent = 'Expand';
+  panel.appendChild(expandLabel);
+
+  if (isPendingHere) {
+    const choiceRow = document.createElement('div');
+    choiceRow.className = 'seating-view__cell-directions';
+
+    const seatChoiceButton = document.createElement('button');
+    seatChoiceButton.type = 'button';
+    seatChoiceButton.className = 'btn btn--secondary seating-view__cell-direction-button';
+    seatChoiceButton.textContent = 'Seat';
+    seatChoiceButton.addEventListener('click', () => handlers.onChooseDirectionType(cell.id, pendingDirectionChoice.direction, 'seat'));
+    choiceRow.appendChild(seatChoiceButton);
+
+    const spaceChoiceButton = document.createElement('button');
+    spaceChoiceButton.type = 'button';
+    spaceChoiceButton.className = 'btn btn--ghost seating-view__cell-direction-button';
+    spaceChoiceButton.textContent = 'Space';
+    spaceChoiceButton.addEventListener('click', () => handlers.onChooseDirectionType(cell.id, pendingDirectionChoice.direction, 'space'));
+    choiceRow.appendChild(spaceChoiceButton);
+
+    const cancelChoiceButton = document.createElement('button');
+    cancelChoiceButton.type = 'button';
+    cancelChoiceButton.className = 'btn btn--text';
+    cancelChoiceButton.textContent = 'Cancel';
+    cancelChoiceButton.addEventListener('click', handlers.onCancelDirectionChoice);
+    choiceRow.appendChild(cancelChoiceButton);
+
+    panel.appendChild(choiceRow);
+  } else {
+    const directions = document.createElement('div');
+    directions.className = 'seating-view__cell-directions';
+    [
+      { direction: 'up', label: '\u2191' },
+      { direction: 'down', label: '\u2193' },
+      { direction: 'left', label: '\u2190' },
+      { direction: 'right', label: '\u2192' },
+    ].forEach(({ direction, label }) => {
+      const { dx, dy } = DIRECTION_OFFSETS[direction];
+      const targetOccupied = allCells.some((c) => c.x === cell.x + dx && c.y === cell.y + dy);
+      if (targetOccupied) return; // never offered toward an already-occupied position at all
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn btn--ghost seating-view__cell-direction-button';
+      button.textContent = label;
+      button.setAttribute('aria-label', `Add a seat ${direction === 'up' ? 'above' : direction === 'down' ? 'below' : direction === 'left' ? 'to the left' : 'to the right'}`);
+      button.addEventListener('click', () => handlers.onOpenDirectionChoice(cell.id, direction));
+      directions.appendChild(button);
+    });
+    panel.appendChild(directions);
+  }
+
+  const manageLabel = document.createElement('p');
+  manageLabel.className = 'seating-view__cell-group-label';
+  manageLabel.textContent = 'Manage this seat';
+  panel.appendChild(manageLabel);
 
   const actions = document.createElement('div');
   actions.className = 'seating-view__cell-actions';
@@ -670,6 +670,10 @@ function renderCellMenu(cell, occupant, handlers) {
   return panel;
 }
 
+/**
+ * Every student not currently seated, grouped by their real Team.
+ * Space never counts as a seat at all.
+ */
 function renderRoster(classroom, allStudents, selectedStudentId, handlers) {
   const section = document.createElement('div');
   section.className = 'seating-view__roster';
