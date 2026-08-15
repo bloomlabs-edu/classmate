@@ -10086,14 +10086,12 @@ button.wizard-checklist__row:hover {
   flex-wrap: wrap;
 }
 .seating-view__room {
-  flex: 2 1 420px;
-  max-width: 560px;
+  flex: 3 1 480px;
   background: var(--color-surface, #fff);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
   padding: 1.5rem;
   box-shadow: var(--elevation-card);
-  overflow-x: auto;
 }
 .seating-view__board {
   text-align: center;
@@ -10106,6 +10104,18 @@ button.wizard-checklist__row:hover {
   font-size: 0.8rem;
   letter-spacing: 0.05em;
   margin-bottom: 1.5rem;
+}
+
+/* ROOM-level controls — genuinely separate from any seat's own panel, per the corrected component hierarchy (a door/window is a room element, never a seat-context one). Sits above Board, at the very top of the classroom card. */
+.seating-view__room-controls {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.seating-view__room-controls-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
 }
 
 /* THE ACTUAL FIX for the reported overflow: --seating-cell-size still defines one real seat-sized unit (used for row height and, on a narrow layout, natural column width), but each column is now genuinely flexible (minmax(0, 1fr) — see SeatingView.js's own renderClassroomMap()) and the map's own overall width is explicitly capped at min(its natural width, 100% of the room) — so a layout with many columns shrinks to fit the actual available width rather than overflowing past the card at all. */
@@ -10231,6 +10241,15 @@ button.wizard-checklist__row:hover {
   opacity: 1;
   background: color-mix(in srgb, var(--color-primary, #2e7d9e) 8%, transparent);
 }
+.seating-view__add-control--room-placement {
+  opacity: 1;
+  border-style: solid;
+  border-width: 2px;
+  border-color: #c98a1f;
+  color: #c98a1f;
+  background: color-mix(in srgb, #c98a1f 15%, var(--color-surface, #fff));
+  animation: seating-swap-target-pulse 1.6s ease-in-out infinite;
+}
 .seating-view__cell-actions {
   display: flex;
   flex-wrap: wrap;
@@ -10283,6 +10302,9 @@ button.wizard-checklist__row:hover {
 
 .seating-view__roster {
   flex: 1 1 220px;
+  max-width: 300px;
+  max-height: 32rem;
+  overflow-y: auto;
   background: var(--color-surface, #fff);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);

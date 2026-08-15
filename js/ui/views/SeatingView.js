@@ -94,6 +94,15 @@ export function renderSeatingView(container, { classroom, onBack }) {
   // this is never restricted to adjacency at all, unlike Move
   // Student), regardless of whether it's adjacent to the seat.
   let swapSourceCellId = null;
+  // Room-level placement mode: null | 'door' | 'window'. Genuinely
+  // distinct from both activeCellId and swapSourceCellId — this is a
+  // ROOM concern (per the corrected component hierarchy), not tied
+  // to any specific seat at all. While set, every position adjacent
+  // to ANY existing cell in the whole layout becomes a highlighted,
+  // clickable placement target directly on the map itself — the same
+  // "highlight and click to place" pattern Swap with Space already
+  // established, applied to a genuinely different purpose.
+  let roomPlacementMode = null;
 
   workspaceCoordinator.registerActiveWorkspace(currentClassroom.id, resyncFromServer);
 
@@ -107,7 +116,7 @@ export function renderSeatingView(container, { classroom, onBack }) {
     const scrollTop = document.scrollingElement?.scrollTop ?? 0;
     const scrollLeft = document.scrollingElement?.scrollLeft ?? 0;
 
-    render(container, currentClassroom, selectedStudentId, activeCellId, swapSourceCellId, {
+    render(container, currentClassroom, selectedStudentId, activeCellId, swapSourceCellId, roomPlacementMode, {
       onBack: () => {
         workspaceCoordinator.unregisterActiveWorkspace(currentClassroom.id);
         onBack();
@@ -150,18 +159,6 @@ export function renderSeatingView(container, { classroom, onBack }) {
         workspaceService.save(currentClassroom);
         rerender();
       },
-      onAddDoorAt: (x, y) => {
-        const newCellId = addDoorAt(currentClassroom, x, y);
-        if (newCellId) activeCellId = newCellId;
-        workspaceService.save(currentClassroom);
-        rerender();
-      },
-      onAddWindowAt: (x, y) => {
-        const newCellId = addWindowAt(currentClassroom, x, y);
-        if (newCellId) activeCellId = newCellId;
-        workspaceService.save(currentClassroom);
-        rerender();
-      },
       onRemoveStudent: (cellId) => {
         setCellStudent(currentClassroom, cellId, null);
         workspaceService.save(currentClassroom);
@@ -193,6 +190,25 @@ export function renderSeatingView(container, { classroom, onBack }) {
         swapCellPositions(currentClassroom, seatCellId, spaceCellId);
         swapSourceCellId = null;
         activeCellId = seatCellId; // the student's own seat cell keeps the focus, now at its new position
+        workspaceService.save(currentClassroom);
+        rerender();
+      },
+      // Room-level controls — genuinely distinct from seat-level "+"
+      // and Add Space, per the corrected component hierarchy. Not
+      // tied to any specific seat's own adjacent positions at all.
+      onEnterRoomPlacementMode: (elementType) => {
+        roomPlacementMode = elementType;
+        activeCellId = null; // no seat-level panel competes with room placement
+        rerender();
+      },
+      onCancelRoomPlacementMode: () => {
+        roomPlacementMode = null;
+        rerender();
+      },
+      onPlaceRoomElementAt: (x, y) => {
+        const newCellId = roomPlacementMode === 'door' ? addDoorAt(currentClassroom, x, y) : addWindowAt(currentClassroom, x, y);
+        roomPlacementMode = null;
+        if (newCellId) activeCellId = newCellId;
         workspaceService.save(currentClassroom);
         rerender();
       },
@@ -414,7 +430,7 @@ function assignStudentToSeat(classroom, targetCellId, selectedStudentId) {
   }
 }
 
-function render(container, classroom, selectedStudentId, activeCellId, swapSourceCellId, handlers) {
+function render(container, classroom, selectedStudentId, activeCellId, swapSourceCellId, roomPlacementMode, handlers) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
@@ -453,7 +469,7 @@ function render(container, classroom, selectedStudentId, activeCellId, swapSourc
 
   const layout = document.createElement('div');
   layout.className = 'seating-view__layout';
-  layout.appendChild(renderClassroomMap(classroom, allStudents, selectedStudentId, activeCellId, swapSourceCellId, handlers));
+  layout.appendChild(renderClassroomMap(classroom, allStudents, selectedStudentId, activeCellId, swapSourceCellId, roomPlacementMode, handlers));
   layout.appendChild(renderRoster(classroom, allStudents, selectedStudentId, handlers));
   wrapper.appendChild(layout);
 
@@ -461,9 +477,11 @@ function render(container, classroom, selectedStudentId, activeCellId, swapSourc
 }
 
 /** The physical layout — Board, the individual-seat spatial map, Teacher. */
-function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCellId, swapSourceCellId, handlers) {
+function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCellId, swapSourceCellId, roomPlacementMode, handlers) {
   const section = document.createElement('div');
   section.className = 'seating-view__room';
+
+  section.appendChild(renderRoomControls(roomPlacementMode, handlers));
 
   const board = document.createElement('div');
   board.className = 'seating-view__board';
@@ -516,8 +534,14 @@ function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCel
 
       if (cell) {
         const occupant = cell.studentId ? allStudents.find(({ student }) => student.id === cell.studentId) : null;
-        slot.appendChild(renderCell(cell, occupant, selectedStudentId, activeCellId, swapSourceCellId, cells, handlers));
-      } else if (!swapSourceCellId && activeCell && isImmediatelyAdjacent(activeCell, x, y)) {
+        slot.appendChild(renderCell(cell, occupant, selectedStudentId, activeCellId, swapSourceCellId, roomPlacementMode, cells, handlers));
+      } else if (roomPlacementMode && isAdjacentToAnyCell(cells, x, y)) {
+        // Room placement mode — genuinely distinct from the seat-
+        // level "+": every position adjacent to ANY existing cell in
+        // the whole layout is a valid target, not just the active
+        // cell's own four sides.
+        slot.appendChild(renderRoomPlacementControl(x, y, handlers));
+      } else if (!roomPlacementMode && !swapSourceCellId && activeCell && isImmediatelyAdjacent(activeCell, x, y)) {
         slot.appendChild(renderAddSeatControl(x, y, handlers));
       }
       // Every other empty position — including ones touching a
@@ -535,6 +559,75 @@ function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCel
 
 function isImmediatelyAdjacent(cell, x, y) {
   return (cell.x === x && Math.abs(cell.y - y) === 1) || (cell.y === y && Math.abs(cell.x - x) === 1);
+}
+
+/** Room placement mode's own adjacency check — genuinely against ANY existing cell in the whole layout, never restricted to the single active one (unlike isImmediatelyAdjacent above, used by the seat-level "+"). */
+function isAdjacentToAnyCell(cells, x, y) {
+  return cells.some((c) => isImmediatelyAdjacent(c, x, y));
+}
+
+/**
+ * ROOM-LEVEL controls — genuinely separate from any seat's own panel,
+ * per the corrected component hierarchy. "+Door"/"+Window" enter a
+ * real placement mode (see renderClassroomMap()'s own
+ * isAdjacentToAnyCell()-based highlighting above): every valid
+ * position anywhere in the layout becomes a clickable target directly
+ * on the map itself, never a form or a seat-context menu.
+ */
+function renderRoomControls(roomPlacementMode, handlers) {
+  const section = document.createElement('div');
+  section.className = 'seating-view__room-controls';
+
+  const heading = document.createElement('p');
+  heading.className = 'seating-view__cell-group-label';
+  heading.textContent = 'Room';
+  section.appendChild(heading);
+
+  if (roomPlacementMode) {
+    const hint = document.createElement('p');
+    hint.className = 'seating-view__cell-panel-note';
+    hint.textContent = `Click a highlighted position to place the ${roomPlacementMode}.`;
+    section.appendChild(hint);
+
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'btn btn--text';
+    cancelButton.textContent = 'Cancel';
+    cancelButton.addEventListener('click', handlers.onCancelRoomPlacementMode);
+    section.appendChild(cancelButton);
+  } else {
+    const row = document.createElement('div');
+    row.className = 'seating-view__room-controls-row';
+
+    const addDoorButton = document.createElement('button');
+    addDoorButton.type = 'button';
+    addDoorButton.className = 'btn btn--ghost';
+    addDoorButton.textContent = '+ Door';
+    addDoorButton.addEventListener('click', () => handlers.onEnterRoomPlacementMode('door'));
+    row.appendChild(addDoorButton);
+
+    const addWindowButton = document.createElement('button');
+    addWindowButton.type = 'button';
+    addWindowButton.className = 'btn btn--ghost';
+    addWindowButton.textContent = '+ Window';
+    addWindowButton.addEventListener('click', () => handlers.onEnterRoomPlacementMode('window'));
+    row.appendChild(addWindowButton);
+
+    section.appendChild(row);
+  }
+
+  return section;
+}
+
+/** The one, highlighted, clickable placement target shown at every valid position while room placement mode is active. */
+function renderRoomPlacementControl(x, y, handlers) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'seating-view__add-control seating-view__add-control--room-placement';
+  button.textContent = '+';
+  button.setAttribute('aria-label', 'Place here');
+  button.addEventListener('click', () => handlers.onPlaceRoomElementAt(x, y));
+  return button;
 }
 
 /**
@@ -560,7 +653,7 @@ function renderAddSeatControl(x, y, handlers) {
  * (see renderClassroomMap() above) — a genuinely separate
  * interaction from clicking the seat itself.
  */
-function renderCell(cell, occupant, selectedStudentId, activeCellId, swapSourceCellId, cells, handlers) {
+function renderCell(cell, occupant, selectedStudentId, activeCellId, swapSourceCellId, roomPlacementMode, cells, handlers) {
   const cellWrapper = document.createElement('div');
   cellWrapper.className = 'seating-view__cell-wrapper';
 
@@ -579,6 +672,7 @@ function renderCell(cell, occupant, selectedStudentId, activeCellId, swapSourceC
   cellButton.appendChild(label);
 
   cellButton.addEventListener('click', () => {
+    if (roomPlacementMode) return; // room placement mode only ever accepts a highlighted position or Cancel — an existing cell is never a valid click target during placement
     if (isSwapTarget) {
       handlers.onSwapWithSpace(swapSourceCellId, cell.id);
     } else if (selectedStudentId && cell.type === 'seat') {
@@ -810,50 +904,6 @@ function renderCellPanel(cell, occupant, cells, swapSourceCellId, handlers) {
       spaceRow.appendChild(button);
     });
     panel.appendChild(spaceRow);
-
-    // "Add Door" / "Add Window" — real classroom-layout elements
-    // (item 4/5), mirroring "Add Space" exactly: the same
-    // free-position check, the same reused control styling for
-    // visual consistency, differing only in the resulting type. Kept
-    // as a compact, single row per element rather than a large new
-    // configuration panel, per explicit item 12/14.
-    [
-      { typeLabel: 'Add Door', handlerKey: 'onAddDoorAt' },
-      { typeLabel: 'Add Window', handlerKey: 'onAddWindowAt' },
-    ].forEach(({ typeLabel, handlerKey }) => {
-      const elementLabel = document.createElement('p');
-      elementLabel.className = 'seating-view__cell-group-label';
-      elementLabel.textContent = typeLabel;
-      panel.appendChild(elementLabel);
-
-      const elementRow = document.createElement('div');
-      elementRow.className = 'seating-view__move-controls';
-      [
-        { dx: 0, dy: -1, direction: 'up', symbol: '\u2191', label: 'Above' },
-        { dx: 0, dy: 1, direction: 'down', symbol: '\u2193', label: 'Below' },
-        { dx: -1, dy: 0, direction: 'left', symbol: '\u2190', label: 'Left' },
-        { dx: 1, dy: 0, direction: 'right', symbol: '\u2192', label: 'Right' },
-      ].forEach(({ dx, dy, direction, symbol, label }) => {
-        const isFree = !cells.some((c) => c.x === cell.x + dx && c.y === cell.y + dy);
-
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = `btn btn--ghost seating-view__move-button seating-view__move-button--${direction}`;
-        button.disabled = !isFree;
-
-        const symbolSpan = document.createElement('span');
-        symbolSpan.setAttribute('aria-hidden', 'true');
-        symbolSpan.textContent = symbol;
-        button.appendChild(symbolSpan);
-        button.append(` ${label}`);
-
-        if (isFree) {
-          button.addEventListener('click', () => handlers[handlerKey](cell.x + dx, cell.y + dy));
-        }
-        elementRow.appendChild(button);
-      });
-      panel.appendChild(elementRow);
-    });
   }
 
   return panel;
