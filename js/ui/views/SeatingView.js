@@ -8,8 +8,21 @@
  * anywhere in this model.
  *
  * CANONICAL SHAPE: classroom.seatingConfig = { cells: [{ id, x, y,
- * type: 'seat' | 'space', studentId }] }. x/y are plain spatial
- * integers (can be negative).
+ * type: 'seat' | 'space' | 'door' | 'window', studentId }] }. x/y are
+ * plain spatial integers (can be negative). Door/window are real,
+ * physical classroom-layout elements — genuinely never seat-eligible
+ * (assignStudentToSeat/moveStudent/swapCellPositions all already
+ * gate on type === 'seat'/'space' explicitly, so a door/window is
+ * structurally excluded from every student-related operation without
+ * any extra guard needed).
+ *
+ * THIS ROUND'S OWN FIXES: the fixed Teacher marker is removed
+ * entirely; the map's own width is now genuinely responsive (columns
+ * are minmax(0, 1fr), capped at min(natural size, 100%) — see
+ * renderClassroomMap() below — so a wide layout shrinks to fit the
+ * card rather than overflowing past it); Space now offers "Convert
+ * to Seat" alongside "Delete Space"; Door/Window can be added from
+ * an empty seat's own panel, mirroring "Add Space" exactly.
  *
  * INITIAL STATE (this round's own correction): a genuinely fresh
  * classroom — one with no seatingConfig at all — is initialized with
@@ -137,6 +150,18 @@ export function renderSeatingView(container, { classroom, onBack }) {
         workspaceService.save(currentClassroom);
         rerender();
       },
+      onAddDoorAt: (x, y) => {
+        const newCellId = addDoorAt(currentClassroom, x, y);
+        if (newCellId) activeCellId = newCellId;
+        workspaceService.save(currentClassroom);
+        rerender();
+      },
+      onAddWindowAt: (x, y) => {
+        const newCellId = addWindowAt(currentClassroom, x, y);
+        if (newCellId) activeCellId = newCellId;
+        workspaceService.save(currentClassroom);
+        rerender();
+      },
       onRemoveStudent: (cellId) => {
         setCellStudent(currentClassroom, cellId, null);
         workspaceService.save(currentClassroom);
@@ -168,6 +193,15 @@ export function renderSeatingView(container, { classroom, onBack }) {
         swapCellPositions(currentClassroom, seatCellId, spaceCellId);
         swapSourceCellId = null;
         activeCellId = seatCellId; // the student's own seat cell keeps the focus, now at its new position
+        workspaceService.save(currentClassroom);
+        rerender();
+      },
+      // "Convert to Seat" — genuinely distinct from "Add Seat": this
+      // changes an EXISTING space cell's own type in place, keeping
+      // the same id and x/y exactly as they were. Never creates a
+      // new cell, never touches any other cell in the layout.
+      onConvertToSeat: (cellId) => {
+        convertCellType(currentClassroom, cellId, 'seat');
         workspaceService.save(currentClassroom);
         rerender();
       },
@@ -260,6 +294,30 @@ function addSeatAt(classroom, x, y) {
 function addSpaceAt(classroom, x, y) {
   if (getCellAt(classroom, x, y)) return null; // already occupied — no-op, never overwritten
   const newCell = { id: generateId(), x, y, type: 'space', studentId: null };
+  classroom.seatingConfig.cells.push(newCell);
+  return newCell.id;
+}
+
+/**
+ * Door/Window — real, physical classroom-layout elements, per
+ * explicit product decision. Mirror addSpaceAt() exactly (same
+ * no-overwrite guard, same shape), differing only in the resulting
+ * type. Neither can ever hold a student — assignStudentToSeat(),
+ * moveStudent(), and swapCellPositions() below all already gate on
+ * type === 'seat'/'space' explicitly, so a door/window is already,
+ * structurally excluded from every student-related operation without
+ * any further guard needed.
+ */
+function addDoorAt(classroom, x, y) {
+  if (getCellAt(classroom, x, y)) return null;
+  const newCell = { id: generateId(), x, y, type: 'door', studentId: null };
+  classroom.seatingConfig.cells.push(newCell);
+  return newCell.id;
+}
+
+function addWindowAt(classroom, x, y) {
+  if (getCellAt(classroom, x, y)) return null;
+  const newCell = { id: generateId(), x, y, type: 'window', studentId: null };
   classroom.seatingConfig.cells.push(newCell);
   return newCell.id;
 }
@@ -438,8 +496,15 @@ function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCel
 
   const map = document.createElement('div');
   map.className = 'seating-view__map';
-  map.style.gridTemplateColumns = `repeat(${columnCount}, var(--seating-cell-size))`;
+  // THE ACTUAL FIX for the reported overflow: each column is now
+  // genuinely flexible (minmax(0, 1fr)) rather than a fixed size —
+  // and the map's own overall width is capped at min(its natural
+  // size, 100% of the available room), so a wide layout shrinks to
+  // fit rather than spilling past the card. Rows keep the same real
+  // cell size so seats stay legible; only the width responds.
+  map.style.gridTemplateColumns = `repeat(${columnCount}, minmax(0, 1fr))`;
   map.style.gridTemplateRows = `repeat(${rowCount}, var(--seating-cell-size))`;
+  map.style.width = `min(calc(${columnCount} * (var(--seating-cell-size) + var(--seating-cell-gap))), 100%)`;
 
   for (let y = renderMinY; y <= renderMaxY; y += 1) {
     for (let x = renderMinX; x <= renderMaxX; x += 1) {
@@ -464,11 +529,6 @@ function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCel
     }
   }
   section.appendChild(map);
-
-  const teacherLabel = document.createElement('div');
-  teacherLabel.className = 'seating-view__teacher-label';
-  teacherLabel.textContent = 'TEACHER';
-  section.appendChild(teacherLabel);
 
   return section;
 }
@@ -515,7 +575,7 @@ function renderCell(cell, occupant, selectedStudentId, activeCellId, swapSourceC
 
   const label = document.createElement('span');
   label.className = 'seating-view__cell-label';
-  label.textContent = cell.type === 'space' ? '' : occupant ? occupant.student.name : 'Empty';
+  label.textContent = cell.type === 'space' ? '' : cell.type === 'door' ? 'Door' : cell.type === 'window' ? 'Window' : occupant ? occupant.student.name : 'Empty';
   cellButton.appendChild(label);
 
   cellButton.addEventListener('click', () => {
@@ -557,7 +617,7 @@ function renderCellPanel(cell, occupant, cells, swapSourceCellId, handlers) {
 
   const heading = document.createElement('p');
   heading.className = 'seating-view__cell-panel-heading';
-  heading.textContent = cell.type === 'space' ? 'Space' : occupant ? occupant.student.name : 'Empty seat';
+  heading.textContent = cell.type === 'space' ? 'Space' : cell.type === 'door' ? 'Door' : cell.type === 'window' ? 'Window' : occupant ? occupant.student.name : 'Empty seat';
   panel.appendChild(heading);
 
   const actions = document.createElement('div');
@@ -582,6 +642,13 @@ function renderCellPanel(cell, occupant, cells, swapSourceCellId, handlers) {
   }
 
   if (cell.type === 'space') {
+    const convertButton = document.createElement('button');
+    convertButton.type = 'button';
+    convertButton.className = 'btn btn--ghost';
+    convertButton.textContent = 'Convert to Seat';
+    convertButton.addEventListener('click', () => handlers.onConvertToSeat(cell.id));
+    actions.appendChild(convertButton);
+
     const deleteButton = document.createElement('button');
     deleteButton.type = 'button';
     deleteButton.className = 'btn btn--secondary';
@@ -590,7 +657,33 @@ function renderCellPanel(cell, occupant, cells, swapSourceCellId, handlers) {
     actions.appendChild(deleteButton);
   }
 
+  if (cell.type === 'door') {
+    const deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.className = 'btn btn--secondary';
+    deleteButton.textContent = 'Delete Door';
+    deleteButton.addEventListener('click', () => handlers.onDeleteCell(cell.id));
+    actions.appendChild(deleteButton);
+  }
+
+  if (cell.type === 'window') {
+    const deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.className = 'btn btn--secondary';
+    deleteButton.textContent = 'Delete Window';
+    deleteButton.addEventListener('click', () => handlers.onDeleteCell(cell.id));
+    actions.appendChild(deleteButton);
+  }
+
   panel.appendChild(actions);
+
+  // Door/Window panels are intentionally, completely minimal beyond
+  // this point — no Move Student, no Swap with Space, no Add Space,
+  // per explicit product decision (item 6): a door/window is a real
+  // classroom-layout element, never a seat-related one.
+  if (cell.type === 'door' || cell.type === 'window') {
+    return panel;
+  }
 
   // "Move Student" — genuinely distinct from the "+" building
   // controls: this only ever moves a student between cells that
@@ -717,6 +810,50 @@ function renderCellPanel(cell, occupant, cells, swapSourceCellId, handlers) {
       spaceRow.appendChild(button);
     });
     panel.appendChild(spaceRow);
+
+    // "Add Door" / "Add Window" — real classroom-layout elements
+    // (item 4/5), mirroring "Add Space" exactly: the same
+    // free-position check, the same reused control styling for
+    // visual consistency, differing only in the resulting type. Kept
+    // as a compact, single row per element rather than a large new
+    // configuration panel, per explicit item 12/14.
+    [
+      { typeLabel: 'Add Door', handlerKey: 'onAddDoorAt' },
+      { typeLabel: 'Add Window', handlerKey: 'onAddWindowAt' },
+    ].forEach(({ typeLabel, handlerKey }) => {
+      const elementLabel = document.createElement('p');
+      elementLabel.className = 'seating-view__cell-group-label';
+      elementLabel.textContent = typeLabel;
+      panel.appendChild(elementLabel);
+
+      const elementRow = document.createElement('div');
+      elementRow.className = 'seating-view__move-controls';
+      [
+        { dx: 0, dy: -1, direction: 'up', symbol: '\u2191', label: 'Above' },
+        { dx: 0, dy: 1, direction: 'down', symbol: '\u2193', label: 'Below' },
+        { dx: -1, dy: 0, direction: 'left', symbol: '\u2190', label: 'Left' },
+        { dx: 1, dy: 0, direction: 'right', symbol: '\u2192', label: 'Right' },
+      ].forEach(({ dx, dy, direction, symbol, label }) => {
+        const isFree = !cells.some((c) => c.x === cell.x + dx && c.y === cell.y + dy);
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `btn btn--ghost seating-view__move-button seating-view__move-button--${direction}`;
+        button.disabled = !isFree;
+
+        const symbolSpan = document.createElement('span');
+        symbolSpan.setAttribute('aria-hidden', 'true');
+        symbolSpan.textContent = symbol;
+        button.appendChild(symbolSpan);
+        button.append(` ${label}`);
+
+        if (isFree) {
+          button.addEventListener('click', () => handlers[handlerKey](cell.x + dx, cell.y + dy));
+        }
+        elementRow.appendChild(button);
+      });
+      panel.appendChild(elementRow);
+    });
   }
 
   return panel;

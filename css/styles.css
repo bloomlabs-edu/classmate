@@ -10093,9 +10093,9 @@ button.wizard-checklist__row:hover {
   border-radius: var(--radius-card);
   padding: 1.5rem;
   box-shadow: var(--elevation-card);
+  overflow-x: auto;
 }
-.seating-view__board,
-.seating-view__teacher-label {
+.seating-view__board {
   text-align: center;
   padding: 0.5rem;
   border: 1px solid var(--color-border);
@@ -10105,27 +10105,20 @@ button.wizard-checklist__row:hover {
   font-weight: var(--font-weight-bold);
   font-size: 0.8rem;
   letter-spacing: 0.05em;
-}
-.seating-view__board {
   margin-bottom: 1.5rem;
 }
-.seating-view__teacher-label {
-  margin-top: 1.5rem;
-}
 
-/* The spatial map itself — sized to its own real content (the teacher's actual cells), never a fixed rows x columns grid. Each slot is a genuine grid cell so cells align precisely at their own (x, y) position; an empty slot (no real cell there) renders nothing at all, never a phantom seat. */
+/* THE ACTUAL FIX for the reported overflow: --seating-cell-size still defines one real seat-sized unit (used for row height and, on a narrow layout, natural column width), but each column is now genuinely flexible (minmax(0, 1fr) — see SeatingView.js's own renderClassroomMap()) and the map's own overall width is explicitly capped at min(its natural width, 100% of the room) — so a layout with many columns shrinks to fit the actual available width rather than overflowing past the card at all. */
 .seating-view__map {
-  /* The single source of truth for "one seat-sized unit" — both the
-     cell itself and the inter-cell gap are derived directly from
-     this, so the 10%-of-seat-width gap requirement is exact, not an
-     approximation via a container-relative percentage (which would
-     scale with the grid's own overall width, not one cell's width). */
   --seating-cell-size: clamp(1.75rem, 6vw, 2.75rem);
+  --seating-cell-gap: calc(var(--seating-cell-size) * 0.1);
   display: grid;
-  gap: calc(var(--seating-cell-size) * 0.1);
+  gap: var(--seating-cell-gap);
+  max-width: 100%;
+  margin: 0 auto;
 }
 .seating-view__cell-slot {
-  width: var(--seating-cell-size);
+  min-width: 0;
   height: var(--seating-cell-size);
 }
 .seating-view__cell-wrapper {
@@ -10165,6 +10158,22 @@ button.wizard-checklist__row:hover {
   background-image: repeating-linear-gradient(45deg, color-mix(in srgb, var(--color-border) 60%, transparent) 0, color-mix(in srgb, var(--color-border) 60%, transparent) 1px, transparent 1px, transparent 6px);
   border-style: dashed;
   cursor: pointer;
+}
+.seating-view__cell--door {
+  background: color-mix(in srgb, #8a5a2b 12%, var(--color-surface, #fff));
+  border-color: #8a5a2b;
+  color: #8a5a2b;
+}
+.seating-view__cell--window {
+  background: color-mix(in srgb, #4a90d9 12%, var(--color-surface, #fff));
+  border-color: #4a90d9;
+  color: #4a90d9;
+}
+.seating-view__cell--door .seating-view__cell-label,
+.seating-view__cell--window .seating-view__cell-label {
+  font-size: 0.55rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 .seating-view__cell--swap-target {
   border-width: 2px;
