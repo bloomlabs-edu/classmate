@@ -65,6 +65,7 @@ export function renderSeatingView(container, { classroom, onBack }) {
       },
       onChooseTemplate: (templateId) => {
         applyTemplate(currentClassroom, templateId);
+        activeCellId = currentClassroom.seatingConfig.cells.length === 1 ? currentClassroom.seatingConfig.cells[0].id : null;
         workspaceService.save(currentClassroom);
         rerender();
       },
@@ -89,9 +90,14 @@ export function renderSeatingView(container, { classroom, onBack }) {
       },
       // The actual fix for this round: clicking a "+" adds a real
       // seat AT this exact position immediately — no Seat/Space
-      // choice, no confirmation, no menu of any kind at all.
+      // choice, no confirmation, no menu of any kind at all. The new
+      // seat also becomes the new "active" one, so ITS OWN adjacent
+      // +s show next (see renderClassroomMap()'s own comment on why
+      // only ever one seat's own +s render at a time — this is what
+      // actually prevents the reported perimeter).
       onAddSeatAt: (x, y) => {
-        addSeatAt(currentClassroom, x, y);
+        const newCellId = addSeatAt(currentClassroom, x, y);
+        if (newCellId) activeCellId = newCellId;
         workspaceService.save(currentClassroom);
         rerender();
       },
@@ -276,8 +282,10 @@ function getCellAt(classroom, x, y) {
  * reaching this branch at all would mean a stale click.
  */
 function addSeatAt(classroom, x, y) {
-  if (getCellAt(classroom, x, y)) return; // already occupied — no-op, never overwritten
-  classroom.seatingConfig.cells.push({ id: generateId(), x, y, type: 'seat', studentId: null });
+  if (getCellAt(classroom, x, y)) return null; // already occupied — no-op, never overwritten
+  const newCell = { id: generateId(), x, y, type: 'seat', studentId: null };
+  classroom.seatingConfig.cells.push(newCell);
+  return newCell.id;
 }
 
 function convertCellType(classroom, cellId, newType) {
@@ -423,16 +431,21 @@ function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCel
   const minY = Math.min(...ys);
   const maxY = Math.max(...ys);
 
-  // The rendering bounds are expanded by 1 in every direction beyond
-  // the real cells' own extent — this is where a "+" can genuinely
-  // live, at its own real (x, y) grid position, never a floating
-  // overlay disconnected from the underlying coordinate system.
+  // THE ACTUAL FIX for the reported perimeter: the expanded rendering
+  // bounds only ever need to reach one cell beyond the real layout's
+  // own extent on whichever side(s) the ONE active cell might need a
+  // "+" — never a full ring around the whole layout. A "+" itself is
+  // only ever rendered adjacent to the single active cell (see the
+  // loop below) — every other empty position, even one immediately
+  // touching a different, non-active seat, renders nothing at all.
   const renderMinX = minX - 1;
   const renderMaxX = maxX + 1;
   const renderMinY = minY - 1;
   const renderMaxY = maxY + 1;
   const columnCount = renderMaxX - renderMinX + 1;
   const rowCount = renderMaxY - renderMinY + 1;
+
+  const activeCell = activeCellId ? cells.find((c) => c.id === activeCellId) : null;
 
   const map = document.createElement('div');
   map.className = 'seating-view__map';
@@ -450,12 +463,13 @@ function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCel
       if (cell) {
         const occupant = cell.studentId ? allStudents.find(({ student }) => student.id === cell.studentId) : null;
         slot.appendChild(renderCell(cell, occupant, selectedStudentId, activeCellId, handlers));
-      } else if (isAdjacentToAnyCell(cells, x, y)) {
+      } else if (activeCell && isImmediatelyAdjacent(activeCell, x, y)) {
         slot.appendChild(renderAddSeatControl(x, y, handlers));
       }
-      // Any other empty position (not adjacent to a real cell at all
-      // — the expanded bounding box's own corners) renders nothing,
-      // matching the original sketch's own empty corners exactly.
+      // Every other empty position — including ones touching a
+      // different, non-active seat — renders nothing at all. This is
+      // the whole fix: at most 4 "+" controls exist at any time,
+      // always belonging to exactly one seat, never a perimeter.
 
       map.appendChild(slot);
     }
@@ -470,10 +484,8 @@ function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCel
   return section;
 }
 
-function isAdjacentToAnyCell(cells, x, y) {
-  return cells.some(
-    (c) => (c.x === x && Math.abs(c.y - y) === 1) || (c.y === y && Math.abs(c.x - x) === 1)
-  );
+function isImmediatelyAdjacent(cell, x, y) {
+  return (cell.x === x && Math.abs(cell.y - y) === 1) || (cell.y === y && Math.abs(cell.x - x) === 1);
 }
 
 /**
