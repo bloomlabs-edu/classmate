@@ -10166,6 +10166,16 @@ button.wizard-checklist__row:hover {
   border-style: dashed;
   cursor: pointer;
 }
+.seating-view__cell--swap-target {
+  border-width: 2px;
+  border-color: var(--color-success, #2e8b57);
+  background: color-mix(in srgb, var(--color-success, #2e8b57) 15%, var(--color-surface, #fff));
+  animation: seating-swap-target-pulse 1.6s ease-in-out infinite;
+}
+@keyframes seating-swap-target-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
 .seating-view__cell--active {
   border-width: 2px;
   border-color: var(--color-primary, #2e7d9e);

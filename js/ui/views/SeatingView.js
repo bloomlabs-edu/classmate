@@ -74,6 +74,13 @@ export function renderSeatingView(container, { classroom, onBack }) {
   // with that seat already active, so its own 4 "+"s are visible
   // immediately — no extra click, no picker step of any kind.
   let activeCellId = currentClassroom.seatingConfig.cells.length === 1 ? currentClassroom.seatingConfig.cells[0].id : null;
+  // The one occupied seat currently seeking a space to swap with, or
+  // null. Genuinely distinct from activeCellId — while set, every
+  // real space anywhere in the layout becomes a valid, highlighted
+  // swap destination (see renderClassroomMap()'s own comment on why
+  // this is never restricted to adjacency at all, unlike Move
+  // Student), regardless of whether it's adjacent to the seat.
+  let swapSourceCellId = null;
 
   workspaceCoordinator.registerActiveWorkspace(currentClassroom.id, resyncFromServer);
 
@@ -87,7 +94,7 @@ export function renderSeatingView(container, { classroom, onBack }) {
     const scrollTop = document.scrollingElement?.scrollTop ?? 0;
     const scrollLeft = document.scrollingElement?.scrollLeft ?? 0;
 
-    render(container, currentClassroom, selectedStudentId, activeCellId, {
+    render(container, currentClassroom, selectedStudentId, activeCellId, swapSourceCellId, {
       onBack: () => {
         workspaceCoordinator.unregisterActiveWorkspace(currentClassroom.id);
         onBack();
@@ -142,6 +149,25 @@ export function renderSeatingView(container, { classroom, onBack }) {
       onMoveStudent: (cellId, direction) => {
         const newActiveCellId = moveStudent(currentClassroom, cellId, direction);
         if (newActiveCellId) activeCellId = newActiveCellId;
+        workspaceService.save(currentClassroom);
+        rerender();
+      },
+      // "Swap with Space" — genuinely distinct from Move Student
+      // (which only ever targets an adjacent, existing, unoccupied
+      // seat). This targets any real space anywhere in the layout,
+      // regardless of adjacency, per explicit product decision.
+      onEnterSwapMode: (cellId) => {
+        swapSourceCellId = cellId;
+        rerender();
+      },
+      onCancelSwapMode: () => {
+        swapSourceCellId = null;
+        rerender();
+      },
+      onSwapWithSpace: (seatCellId, spaceCellId) => {
+        swapCellPositions(currentClassroom, seatCellId, spaceCellId);
+        swapSourceCellId = null;
+        activeCellId = seatCellId; // the student's own seat cell keeps the focus, now at its new position
         workspaceService.save(currentClassroom);
         rerender();
       },
@@ -276,6 +302,30 @@ function moveStudent(classroom, cellId, direction) {
   return destinationCell.id;
 }
 
+/**
+ * The actual "Swap with Space" operation. Exchanges ONLY the x/y
+ * coordinates of the two real cells — the seat cell keeps its own id
+ * and studentId exactly as they were; the space cell keeps its own
+ * id exactly as it was too. Never creates a cell, never deletes one,
+ * never touches any other cell in the layout at all. Can target any
+ * real space anywhere in the layout, not just an adjacent one — per
+ * explicit product decision, unlike moveStudent() above.
+ */
+function swapCellPositions(classroom, seatCellId, spaceCellId) {
+  const seatCell = getCellById(classroom, seatCellId);
+  const spaceCell = getCellById(classroom, spaceCellId);
+  if (!seatCell || !spaceCell) return;
+  if (seatCell.type !== 'seat' || !seatCell.studentId) return; // only ever initiated from a genuinely occupied seat
+  if (spaceCell.type !== 'space') return; // the destination must genuinely be a space, never a seat
+
+  const seatX = seatCell.x;
+  const seatY = seatCell.y;
+  seatCell.x = spaceCell.x;
+  seatCell.y = spaceCell.y;
+  spaceCell.x = seatX;
+  spaceCell.y = seatY;
+}
+
 /** Deleting an occupied seat is blocked for the same safety reason as convert-to-space. */
 function deleteCell(classroom, cellId) {
   const cell = getCellById(classroom, cellId);
@@ -306,7 +356,7 @@ function assignStudentToSeat(classroom, targetCellId, selectedStudentId) {
   }
 }
 
-function render(container, classroom, selectedStudentId, activeCellId, handlers) {
+function render(container, classroom, selectedStudentId, activeCellId, swapSourceCellId, handlers) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
@@ -345,7 +395,7 @@ function render(container, classroom, selectedStudentId, activeCellId, handlers)
 
   const layout = document.createElement('div');
   layout.className = 'seating-view__layout';
-  layout.appendChild(renderClassroomMap(classroom, allStudents, selectedStudentId, activeCellId, handlers));
+  layout.appendChild(renderClassroomMap(classroom, allStudents, selectedStudentId, activeCellId, swapSourceCellId, handlers));
   layout.appendChild(renderRoster(classroom, allStudents, selectedStudentId, handlers));
   wrapper.appendChild(layout);
 
@@ -353,7 +403,7 @@ function render(container, classroom, selectedStudentId, activeCellId, handlers)
 }
 
 /** The physical layout — Board, the individual-seat spatial map, Teacher. */
-function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCellId, handlers) {
+function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCellId, swapSourceCellId, handlers) {
   const section = document.createElement('div');
   section.className = 'seating-view__room';
 
@@ -401,8 +451,8 @@ function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCel
 
       if (cell) {
         const occupant = cell.studentId ? allStudents.find(({ student }) => student.id === cell.studentId) : null;
-        slot.appendChild(renderCell(cell, occupant, selectedStudentId, activeCellId, cells, handlers));
-      } else if (activeCell && isImmediatelyAdjacent(activeCell, x, y)) {
+        slot.appendChild(renderCell(cell, occupant, selectedStudentId, activeCellId, swapSourceCellId, cells, handlers));
+      } else if (!swapSourceCellId && activeCell && isImmediatelyAdjacent(activeCell, x, y)) {
         slot.appendChild(renderAddSeatControl(x, y, handlers));
       }
       // Every other empty position — including ones touching a
@@ -450,7 +500,7 @@ function renderAddSeatControl(x, y, handlers) {
  * (see renderClassroomMap() above) — a genuinely separate
  * interaction from clicking the seat itself.
  */
-function renderCell(cell, occupant, selectedStudentId, activeCellId, cells, handlers) {
+function renderCell(cell, occupant, selectedStudentId, activeCellId, swapSourceCellId, cells, handlers) {
   const cellWrapper = document.createElement('div');
   cellWrapper.className = 'seating-view__cell-wrapper';
 
@@ -460,23 +510,31 @@ function renderCell(cell, occupant, selectedStudentId, activeCellId, cells, hand
   if (occupant) cellButton.classList.add('seating-view__cell--occupied');
   if (cell.id === activeCellId) cellButton.classList.add('seating-view__cell--active');
 
+  const isSwapTarget = !!swapSourceCellId && cell.type === 'space';
+  if (isSwapTarget) cellButton.classList.add('seating-view__cell--swap-target');
+
   const label = document.createElement('span');
   label.className = 'seating-view__cell-label';
   label.textContent = cell.type === 'space' ? '' : occupant ? occupant.student.name : 'Empty';
   cellButton.appendChild(label);
 
   cellButton.addEventListener('click', () => {
-    if (selectedStudentId && cell.type === 'seat') {
+    if (isSwapTarget) {
+      handlers.onSwapWithSpace(swapSourceCellId, cell.id);
+    } else if (selectedStudentId && cell.type === 'seat') {
       handlers.onSeatClick(cell.id);
-    } else {
+    } else if (!swapSourceCellId) {
       handlers.onToggleActiveCell(cell.id);
     }
+    // While swap mode is active and this cell isn't a valid space
+    // target, the click is deliberately a no-op — the teacher must
+    // either pick a highlighted space or explicitly cancel.
   });
 
   cellWrapper.appendChild(cellButton);
 
   if (cell.id === activeCellId) {
-    cellWrapper.appendChild(renderCellPanel(cell, occupant, cells, handlers));
+    cellWrapper.appendChild(renderCellPanel(cell, occupant, cells, swapSourceCellId, handlers));
   }
 
   return cellWrapper;
@@ -493,7 +551,7 @@ function renderCell(cell, occupant, selectedStudentId, activeCellId, cells, hand
  * UI control for now) — only the surfaced control is removed, per
  * explicit "we can revisit intentional spaces/aisles later."
  */
-function renderCellPanel(cell, occupant, cells, handlers) {
+function renderCellPanel(cell, occupant, cells, swapSourceCellId, handlers) {
   const panel = document.createElement('div');
   panel.className = 'seating-view__cell-panel';
 
@@ -575,13 +633,57 @@ function renderCellPanel(cell, occupant, cells, handlers) {
       moveRow.appendChild(button);
     });
     panel.appendChild(moveRow);
+
+    // "Swap with Space" — genuinely distinct from Move Student. A
+    // space can be anywhere in the layout at all, not just adjacent,
+    // per explicit product decision — so this doesn't offer 4 fixed
+    // directions at all; it enters a real selection mode where every
+    // space in the layout becomes a highlighted, clickable target
+    // directly on the map itself (see renderCell()'s own swap-target
+    // handling above), never another popup or form.
+    const swapLabel = document.createElement('p');
+    swapLabel.className = 'seating-view__cell-group-label';
+    swapLabel.textContent = 'Swap with Space';
+    panel.appendChild(swapLabel);
+
+    const swapRow = document.createElement('div');
+    swapRow.className = 'seating-view__cell-actions';
+
+    if (swapSourceCellId === cell.id) {
+      const hint = document.createElement('p');
+      hint.className = 'seating-view__cell-panel-note';
+      hint.textContent = 'Click a highlighted space on the layout.';
+      swapRow.appendChild(hint);
+
+      const cancelButton = document.createElement('button');
+      cancelButton.type = 'button';
+      cancelButton.className = 'btn btn--text';
+      cancelButton.textContent = 'Cancel';
+      cancelButton.addEventListener('click', handlers.onCancelSwapMode);
+      swapRow.appendChild(cancelButton);
+    } else {
+      const hasAnySpace = cells.some((c) => c.type === 'space');
+      const selectButton = document.createElement('button');
+      selectButton.type = 'button';
+      selectButton.className = 'btn btn--ghost';
+      selectButton.textContent = 'Select a Space';
+      selectButton.disabled = !hasAnySpace;
+      if (hasAnySpace) selectButton.addEventListener('click', () => handlers.onEnterSwapMode(cell.id));
+      swapRow.appendChild(selectButton);
+    }
+    panel.appendChild(swapRow);
   }
 
   // "Add Space" — the one deliberate, explicit way to place a space,
   // per product decision: never automatic, never a popup of its own.
   // All 4 directions are ALWAYS rendered in the same fixed order,
   // matching Move Student's own pattern — a direction that's already
-  // occupied is shown disabled, never hidden.
+  // occupied is shown disabled, never hidden. This section only ever
+  // renders for an empty seat, which structurally can never be the
+  // one active/displayed panel while a different, occupied seat is
+  // in swap mode (only one panel is ever shown at a time) — so item
+  // 8's own "don't show Add Space during swap mode" is satisfied
+  // without needing an explicit guard here at all.
   if (cell.type === 'seat' && !occupant) {
     const spaceLabel = document.createElement('p');
     spaceLabel.className = 'seating-view__cell-group-label';
