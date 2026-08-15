@@ -526,8 +526,8 @@ function renderCellPanel(cell, occupant, cells, handlers) {
   if (cell.type === 'space') {
     const deleteButton = document.createElement('button');
     deleteButton.type = 'button';
-    deleteButton.className = 'btn btn--text';
-    deleteButton.textContent = 'Delete';
+    deleteButton.className = 'btn btn--secondary';
+    deleteButton.textContent = 'Delete Space';
     deleteButton.addEventListener('click', () => handlers.onDeleteCell(cell.id));
     actions.appendChild(deleteButton);
   }

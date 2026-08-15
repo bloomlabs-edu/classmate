@@ -10161,10 +10161,10 @@ button.wizard-checklist__row:hover {
   border-color: var(--color-primary, #2e7d9e);
 }
 .seating-view__cell--space {
-  background: transparent;
+  background: var(--color-surface-muted, #f4f4f4);
+  background-image: repeating-linear-gradient(45deg, color-mix(in srgb, var(--color-border) 60%, transparent) 0, color-mix(in srgb, var(--color-border) 60%, transparent) 1px, transparent 1px, transparent 6px);
   border-style: dashed;
-  opacity: 0.5;
-  cursor: default;
+  cursor: pointer;
 }
 .seating-view__cell--active {
   border-width: 2px;
