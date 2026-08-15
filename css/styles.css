@@ -10172,7 +10172,7 @@ button.wizard-checklist__row:hover {
   background: color-mix(in srgb, var(--color-primary, #2e7d9e) 12%, var(--color-surface, #fff));
 }
 
-/* The one, currently-active cell's own controls — directional add buttons and type/removal actions. Anchored directly below that cell (see SeatingView.js's own header comment on why this is a panel, not a floating overlay), never a page-level settings panel. */
+/* The one, currently-active cell's own management menu ONLY — never a directional control at all (see SeatingView.js's own item-9 separation: edge controls expand the layout, this panel only manages the one clicked cell). Anchored directly below that cell, not a floating overlay. */
 .seating-view__cell-panel {
   background: var(--color-surface, #fff);
   border: 1px solid var(--color-border);
@@ -10191,15 +10191,6 @@ button.wizard-checklist__row:hover {
   font-weight: var(--font-weight-bold);
   font-size: 0.75rem;
 }
-.seating-view__cell-directions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-}
-.seating-view__cell-direction-button {
-  font-size: 0.65rem;
-  padding: 0.25rem 0.45rem;
-}
 .seating-view__cell-actions {
   display: flex;
   flex-wrap: wrap;
@@ -10214,6 +10205,82 @@ button.wizard-checklist__row:hover {
   margin: 0;
   font-size: 0.65rem;
   color: var(--color-muted);
+}
+
+/* Whole-layout edge expansion controls — one set per side of the overall map's own bounding box, never per internal seat. See SeatingView.js's own renderVerticalEdgeControl()/renderHorizontalEdgeControl(). */
+.seating-view__edge-control {
+  display: block;
+  margin: 0.5rem auto;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  border: 1px dashed var(--color-primary, #2e7d9e);
+  background: var(--color-surface, #fff);
+  color: var(--color-primary, #2e7d9e);
+  font-size: 1rem;
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.seating-view__edge-control--left,
+.seating-view__edge-control--right {
+  margin: auto 0.5rem;
+}
+.seating-view__map-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+}
+.seating-view__edge-control-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+.seating-view__edge-choice-button {
+  font-size: 0.7rem;
+  padding: 0.3rem 0.5rem;
+  white-space: nowrap;
+}
+
+/* The starting-layout template picker — shown only for a genuinely fresh classroom (see SeatingView.js's own normalizeSeatingConfig()), never for one with real, already-built data. */
+.seating-view__template-picker {
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 2rem;
+  box-shadow: var(--elevation-card);
+  margin-top: 1rem;
+  text-align: center;
+}
+.seating-view__template-heading {
+  margin: 0 0 0.4rem;
+  font-size: 1.2rem;
+}
+.seating-view__template-subheading {
+  margin: 0 0 1.5rem;
+  color: var(--color-muted);
+}
+.seating-view__template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.75rem;
+  max-width: 640px;
+  margin: 0 auto;
+}
+.seating-view__template-card {
+  padding: 1rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-muted, #f4f4f4);
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+}
+.seating-view__template-card:hover {
+  border-color: var(--color-primary, #2e7d9e);
+  color: var(--color-primary, #2e7d9e);
 }
 
 .seating-view__roster {
