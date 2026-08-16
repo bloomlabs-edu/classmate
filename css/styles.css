@@ -10264,23 +10264,6 @@ button.wizard-checklist__row:hover {
   border-color: var(--color-primary, #2e7d9e);
   cursor: grab;
 }
-/* THE ACTUAL FIX for the reported name-truncation problem — an
-   expanded occupied cell grows to its own real content width (never
-   ellipsis, never clipped), using up to the full width its own
-   safely-computed column span provides, while explicitly keeping the
-   exact same height as an ordinary square cell — only the WIDTH
-   changes, per explicit requirement. */
-.seating-view__cell-wrapper--expanded .seating-view__cell {
-  width: 100%;
-  height: var(--seat-size);
-  padding: 0.3rem 0.6rem;
-}
-.seating-view__cell-wrapper--expanded .seating-view__cell-label,
-.seating-view__cell-wrapper--expanded .seating-view__cell-name-wrapper {
-  white-space: nowrap;
-  overflow: visible;
-  max-width: none;
-}
 .seating-view__cell--has-group-accent::before {
   content: '';
   position: absolute;
@@ -10339,9 +10322,14 @@ button.wizard-checklist__row:hover {
   overflow-wrap: normal;
   word-break: normal;
   line-height: 1.15;
-}
-.seating-view__cell-wrapper--expanded .seating-view__cell-name-wrapper .student-name-element__name {
-  white-space: nowrap;
+  /* THE ACTUAL FIX (this round's own rebuild): ONE font-size formula
+     for the entire grid — never a per-student decision. Scales with
+     the same --seat-size that already drives every cell's own
+     uniform dimensions, and is additionally constrained by the
+     longest word currently assigned anywhere in the grid, so a dense
+     grid with long names scales its whole typography down together
+     rather than any single cell growing to compensate. */
+  font-size: clamp(0.55rem, min(calc(var(--seat-size) * 0.22), calc(var(--seat-size) * 2.4 / max(var(--longest-word-length, 6), 6))), 0.85rem);
 }
 
 /* The contextual assignment panel — anchored directly below the clicked cell. */

@@ -166,33 +166,24 @@ function getStudentIdAt(seatingConfig, row, column) {
 }
 
 /**
- * THE ACTUAL FIX for the reported name-truncation problem — a purely
- * visual, rendering-time-only decision about how many grid columns an
- * occupied cell's own name should visually span, never touching the
- * underlying grid coordinates or the assignments data model at all
- * (see renderRoom()'s own render loop, which skips separately
- * rendering whichever columns get visually consumed this way).
- *
- * `desiredColumns` is a simple, deterministic estimate of how much
- * width the name genuinely needs — roughly one extra column for
- * every ~6 characters beyond a base column's own comfortable width,
- * capped at 3 extra columns so even an extremely long name never
- * grows unreasonably wide. `availableColumns` is the real count of
- * consecutive EMPTY columns immediately to the right in this exact
- * row — genuinely never spans into an already-occupied neighbor,
- * which is what keeps two adjacent occupied cells visually distinct
- * and non-overlapping, per explicit requirement. The final span is
- * whichever is smaller, so a name never overlaps anything, and a
- * short name in a sparse row never grows wider than it needs.
+ * THE ACTUAL FIX for this round's own explicit requirement — the
+ * longest WORD across every currently-assigned student's name, used
+ * once to drive a single, grid-wide font-size decision (see the CSS
+ * --seating-name-font-size formula). This deliberately replaces the
+ * prior per-student span/font mechanism: no individual cell's size or
+ * font ever depends on which student happens to be seated there. The
+ * whole grid's typography scales together, uniformly.
  */
-function computeOccupiedCellSpan(studentName, seatingConfig, row, column, totalColumns) {
-  const desiredExtraColumns = Math.min(3, Math.max(0, Math.ceil((studentName.length - 6) / 6)));
-  let availableExtraColumns = 0;
-  for (let c = column + 1; c < totalColumns && availableExtraColumns < desiredExtraColumns; c += 1) {
-    if (getStudentIdAt(seatingConfig, row, c)) break; // the next real cell is already occupied — stop here, never overlap it
-    availableExtraColumns += 1;
-  }
-  return 1 + Math.min(desiredExtraColumns, availableExtraColumns);
+function getLongestAssignedWordLength(seatingConfig, allStudents) {
+  let longest = 0;
+  Object.values(seatingConfig.assignments).forEach((studentId) => {
+    const occupant = allStudents.find(({ student }) => student.id === studentId);
+    if (!occupant) return;
+    occupant.student.name.split(' ').forEach((word) => {
+      if (word.length > longest) longest = word.length;
+    });
+  });
+  return longest || 6; // a sensible default when the grid has no students seated yet
 }
 
 function findAssignmentKeyForStudent(seatingConfig, studentId) {
@@ -516,24 +507,15 @@ function renderRoom(classroom, activeAssignmentKey, allStudents, unseatedStudent
   grid.className = 'seating-view__grid';
   grid.style.setProperty('--column-count', columns);
   grid.style.setProperty('--row-count', rows);
+  grid.style.setProperty('--longest-word-length', getLongestAssignedWordLength(seatingConfig, allStudents));
   grid.style.gridTemplateColumns = `repeat(${columns}, var(--seat-size))`;
   grid.style.gridTemplateRows = `repeat(${rows}, var(--seat-size))`;
 
   for (let row = 0; row < rows; row += 1) {
-    let column = 0;
-    while (column < columns) {
+    for (let column = 0; column < columns; column += 1) {
       const studentId = getStudentIdAt(seatingConfig, row, column);
       const occupant = studentId ? allStudents.find(({ student }) => student.id === studentId) : null;
-      // THE ACTUAL FIX: an occupied cell may visually span across
-      // consecutive EMPTY columns immediately to its own right in
-      // this same row — a purely visual decision, computed fresh on
-      // every render, that never touches the underlying grid
-      // coordinates at all. Columns consumed this way are skipped in
-      // this same loop, so they're never separately rendered as their
-      // own empty slot underneath the wider occupied cell.
-      const span = occupant ? computeOccupiedCellSpan(occupant.student.name, seatingConfig, row, column, columns) : 1;
-      grid.appendChild(renderGridCell(row, column, occupant, seatingConfig, activeAssignmentKey, unseatedStudents, span, handlers));
-      column += span;
+      grid.appendChild(renderGridCell(row, column, occupant, seatingConfig, activeAssignmentKey, unseatedStudents, handlers));
     }
   }
 
@@ -571,13 +553,9 @@ function renderRoom(classroom, activeAssignmentKey, allStudents, unseatedStudent
  * "other student" to reconcile with, so nothing happens rather than
  * guessing at an unrequested side effect.
  */
-function renderGridCell(row, column, occupant, seatingConfig, activeAssignmentKey, unseatedStudents, span, handlers) {
+function renderGridCell(row, column, occupant, seatingConfig, activeAssignmentKey, unseatedStudents, handlers) {
   const cellWrapper = document.createElement('div');
   cellWrapper.className = 'seating-view__cell-wrapper';
-  if (span > 1) {
-    cellWrapper.style.gridColumn = `span ${span}`;
-    cellWrapper.classList.add('seating-view__cell-wrapper--expanded');
-  }
 
   const cell = document.createElement('div');
   cell.className = 'seating-view__cell';
@@ -626,24 +604,14 @@ function renderGridCell(row, column, occupant, seatingConfig, activeAssignmentKe
       event.dataTransfer.setData('text/plain', JSON.stringify({ type: 'grid', studentId: occupant.student.id, fromRow: row, fromColumn: column }));
     });
 
+    // THE ACTUAL FIX (this round's own rebuild): every occupied cell
+    // is visually identical to every other cell in the grid — same
+    // square geometry, same font-size formula. Nothing here depends
+    // on THIS student's own name at all; the one, uniform
+    // --seating-name-font-size (see the CSS) is computed once for the
+    // entire grid from the longest currently-assigned word anywhere.
     const nameWrapper = document.createElement('span');
     nameWrapper.className = 'seating-view__cell-name-wrapper';
-    // THE ACTUAL FIX: font-size is based on the LONGEST INDIVIDUAL
-    // WORD in the name, not the total name length — the real
-    // constraint, since a wrap only ever breaks at a space, never
-    // mid-word. A single long unbreakable word ("Varalakshmi",
-    // "Karthikeyan") is what actually risks silently overflowing past
-    // a narrow, non-expanded cell and disappearing behind an adjacent
-    // occupied neighbor's own opaque background — which is what reads
-    // as "truncation" even though nothing was ever CSS-clipped.
-    if (span === 1) {
-      const longestWord = occupant.student.name.split(' ').reduce((longest, word) => (word.length > longest.length ? word : longest), '');
-      if (longestWord.length > 9) {
-        nameWrapper.style.fontSize = '0.6rem';
-      } else if (longestWord.length > 6) {
-        nameWrapper.style.fontSize = '0.7rem';
-      }
-    }
     nameWrapper.appendChild(createStudentNameElement({ student: occupant.student, leadingMarker: 'swatch' }));
     cell.appendChild(nameWrapper);
   }
