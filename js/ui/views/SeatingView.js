@@ -165,27 +165,6 @@ function getStudentIdAt(seatingConfig, row, column) {
   return seatingConfig.assignments[assignmentKey(row, column)] ?? null;
 }
 
-/**
- * THE ACTUAL FIX for this round's own explicit requirement — the
- * longest WORD across every currently-assigned student's name, used
- * once to drive a single, grid-wide font-size decision (see the CSS
- * --seating-name-font-size formula). This deliberately replaces the
- * prior per-student span/font mechanism: no individual cell's size or
- * font ever depends on which student happens to be seated there. The
- * whole grid's typography scales together, uniformly.
- */
-function getLongestAssignedWordLength(seatingConfig, allStudents) {
-  let longest = 0;
-  Object.values(seatingConfig.assignments).forEach((studentId) => {
-    const occupant = allStudents.find(({ student }) => student.id === studentId);
-    if (!occupant) return;
-    occupant.student.name.split(' ').forEach((word) => {
-      if (word.length > longest) longest = word.length;
-    });
-  });
-  return longest || 6; // a sensible default when the grid has no students seated yet
-}
-
 function findAssignmentKeyForStudent(seatingConfig, studentId) {
   return Object.keys(seatingConfig.assignments).find((key) => seatingConfig.assignments[key] === studentId) ?? null;
 }
@@ -507,16 +486,16 @@ function renderRoom(classroom, activeAssignmentKey, allStudents, unseatedStudent
   grid.className = 'seating-view__grid';
   grid.style.setProperty('--column-count', columns);
   grid.style.setProperty('--row-count', rows);
-  grid.style.setProperty('--longest-word-length', getLongestAssignedWordLength(seatingConfig, allStudents));
-  grid.style.gridTemplateColumns = `repeat(${columns}, var(--seat-size))`;
-  grid.style.gridTemplateRows = `repeat(${rows}, var(--seat-size))`;
 
   for (let row = 0; row < rows; row += 1) {
+    const rowEl = document.createElement('div');
+    rowEl.className = 'seating-view__grid-row';
     for (let column = 0; column < columns; column += 1) {
       const studentId = getStudentIdAt(seatingConfig, row, column);
       const occupant = studentId ? allStudents.find(({ student }) => student.id === studentId) : null;
-      grid.appendChild(renderGridCell(row, column, occupant, seatingConfig, activeAssignmentKey, unseatedStudents, handlers));
+      rowEl.appendChild(renderGridCell(row, column, occupant, seatingConfig, activeAssignmentKey, unseatedStudents, handlers));
     }
+    grid.appendChild(rowEl);
   }
 
   gridWrapper.appendChild(grid);

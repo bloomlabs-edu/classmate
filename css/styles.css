@@ -10233,15 +10233,20 @@ button.wizard-checklist__row:hover {
 /* THE ACTUAL FIX for the "pill" problem this rebuild starts from a clean slate on: --seat-size defines one real, square unit, used identically for both grid dimensions — genuinely never overridden by any max-width/flex-shrink mechanism that could compress it below a true square. */
 .seating-view__grid {
   --seat-size: clamp(1.1rem, min(calc(75vw / var(--column-count, 1)), calc(50vh / var(--row-count, 1))), 8rem);
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: calc(var(--seat-size) * 0.12);
-  width: max-content;
+}
+.seating-view__grid-row {
+  display: flex;
+  gap: calc(var(--seat-size) * 0.12);
 }
 .seating-view__cell-wrapper {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
   position: relative;
+  flex: 0 0 auto;
 }
 .seating-view__cell {
   position: relative;
@@ -10263,6 +10268,9 @@ button.wizard-checklist__row:hover {
   color: var(--color-ink);
   border-color: var(--color-primary, #2e7d9e);
   cursor: grab;
+  width: auto;
+  min-width: var(--seat-size);
+  padding: 0.3rem 0.65rem;
 }
 .seating-view__cell--has-group-accent::before {
   content: '';
@@ -10318,18 +10326,14 @@ button.wizard-checklist__row:hover {
 .seating-view__cell-name-wrapper .student-name-element__name {
   overflow: visible;
   text-overflow: clip;
-  white-space: normal;
-  overflow-wrap: normal;
-  word-break: normal;
-  line-height: 1.15;
-  /* THE ACTUAL FIX (this round's own rebuild): ONE font-size formula
-     for the entire grid — never a per-student decision. Scales with
-     the same --seat-size that already drives every cell's own
-     uniform dimensions, and is additionally constrained by the
-     longest word currently assigned anywhere in the grid, so a dense
-     grid with long names scales its whole typography down together
-     rather than any single cell growing to compensate. */
-  font-size: clamp(0.55rem, min(calc(var(--seat-size) * 0.22), calc(var(--seat-size) * 2.4 / max(var(--longest-word-length, 6), 6))), 0.85rem);
+  white-space: nowrap;
+  /* THE ACTUAL FIX (this round's own redesign): the name always stays
+     on ONE line — the cell itself widens to fit it (see
+     .seating-view__cell--occupied's own width: auto), so there is no
+     need to wrap at all anymore. Font-size ties only to --seat-size
+     (the overall grid's own density from rows/columns/viewport) —
+     never to any individual student's own name length. */
+  font-size: clamp(0.68rem, calc(var(--seat-size) * 0.26), 0.9rem);
 }
 
 /* The contextual assignment panel — anchored directly below the clicked cell. */
