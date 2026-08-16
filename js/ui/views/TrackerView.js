@@ -10,10 +10,12 @@
  * Header actions are limited to what a teacher would realistically
  * press with students in front of them: Undo (instant correction),
  * Notebook Tracker (a real in-class rhythm — marking notebooks while
- * students work independently), Reset Session (rare, but still a
- * live-teaching moment when the same session spans back-to-back
- * periods), and Review Session (the wrap-up gateway out of teaching
- * mode). Settings and Learning Activities were deliberately removed
+ * students work independently), Scoreboard Archive (browse past
+ * scoring periods), Reset Scoreboard (archives the current
+ * scoreboard permanently, then starts a fresh scoring period at
+ * zero — see services/scoreboardArchiveService.js), and Review
+ * Session (the wrap-up gateway out of teaching mode). Settings and
+ * Learning Activities were deliberately removed
  * from this screen — neither has a demonstrated in-class use case,
  * and both now live on the Classroom Dashboard instead, reached only
  * via "Exit Class." See this project's CHANGELOG for the full
@@ -39,12 +41,13 @@ import { openAddNoteModal } from '../components/AddNoteModal.js';
 import { showToast } from '../components/Toast.js';
 import { renderSessionReview } from '../components/SessionReview.js';
 import { openUnsavedSessionDialog } from '../components/UnsavedSessionDialog.js';
+import { openResetScoreboardModal } from '../components/ResetScoreboardModal.js';
 import { createIcon } from '../components/Icon.js';
-import * as studentService from '../../services/studentService.js';
 import * as badgeService from '../../services/badgeService.js';
 import * as noteService from '../../services/noteService.js';
 import * as classModeService from '../../services/classModeService.js';
 import * as classSessionService from '../../services/classSessionService.js';
+import * as scoreboardArchiveService from '../../services/scoreboardArchiveService.js';
 import { getDisplayName, getDisplaySubtitle } from '../../services/classroomService.js';
 
 export function renderTrackerView(container, props) {
@@ -182,27 +185,31 @@ export function renderTrackerView(container, props) {
   archiveButton.title = 'Scoreboard Archive';
   archiveButton.addEventListener('click', onOpenScoreboardArchive);
 
-  // Kept, but deliberately placed after Notebook Tracker rather than
-  // beside Undo — it's a real in-lesson action (zeroing scores for a
-  // new period's students while the previous period's are still on
-  // screen), just a much rarer one than an instant tap-correction, and
-  // shouldn't sit at the same visual weight as Undo.
+  // THE ACTUAL FIX — this button now performs the same permanent
+  // archive/reset workflow already used from the Scoreboard Archive
+  // screen (scoreboardArchiveService.archiveAndReset(), via the same
+  // ResetScoreboardModal), never the old, lighter-weight
+  // studentService.resetAllScores() path — that function still
+  // exists (see its own file for why it's deliberately left intact,
+  // unused-but-not-deleted), but is no longer called from here at
+  // all. Renamed throughout from "Reset Session" to "Reset
+  // Scoreboard" since that's genuinely what this button now does.
   const resetButton = document.createElement('button');
   resetButton.type = 'button';
   resetButton.className = 'btn btn--ghost btn--icon-only';
   resetButton.appendChild(createIcon('rotate-ccw'));
-  resetButton.setAttribute('aria-label', 'Reset session');
-  resetButton.title = 'Reset Session';
+  resetButton.setAttribute('aria-label', 'Reset Scoreboard');
+  resetButton.title = 'Reset Scoreboard';
   resetButton.disabled = !hasStudents;
   resetButton.addEventListener('click', () => {
-    const confirmed = window.confirm(
-      'Reset every student\u2019s score to zero for a new session? Badges, notes, buckets, and history are kept.'
-    );
-    if (!confirmed) return;
-    studentService.resetAllScores(classroom);
-    classModeService.clearUndoStack(classroom);
-    showToast('Session reset');
-    rerender();
+    openResetScoreboardModal({
+      onConfirm: async () => {
+        await scoreboardArchiveService.archiveAndReset(classroom);
+        classModeService.clearUndoStack(classroom);
+        showToast('Scoreboard archived and reset');
+        rerender();
+      },
+    });
   });
 
   const endClassButton = document.createElement('button');
