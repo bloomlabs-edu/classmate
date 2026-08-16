@@ -165,6 +165,27 @@ function getStudentIdAt(seatingConfig, row, column) {
   return seatingConfig.assignments[assignmentKey(row, column)] ?? null;
 }
 
+/**
+ * THE ACTUAL FIX for this round's own redesign — computes, once for
+ * the entire grid, the pixel width the LONGEST currently-assigned
+ * name would need at a comfortable default font-size (~0.6em average
+ * character width, plus room for the bucket swatch and cell padding).
+ * This feeds the one, grid-wide --seat-size formula (see the CSS) as
+ * a genuine "ideal" input, alongside the existing available-space
+ * constraint — the browser takes whichever is SMALLER, so the whole
+ * grid sizes generously when there's genuinely room for the longest
+ * name, and scales down UNIFORMLY, together, when there isn't. No
+ * individual cell is ever sized differently from any other.
+ */
+function getPreferredCellWidthPx(seatingConfig, allStudents) {
+  let longestNameLength = 4; // a sensible floor even when the grid has no students seated yet
+  Object.values(seatingConfig.assignments).forEach((studentId) => {
+    const occupant = allStudents.find(({ student }) => student.id === studentId);
+    if (occupant && occupant.student.name.length > longestNameLength) longestNameLength = occupant.student.name.length;
+  });
+  return Math.round(longestNameLength * 8.5) + 56; // ~8.5px/char at a comfortable size, plus ~56px for the swatch and padding
+}
+
 function findAssignmentKeyForStudent(seatingConfig, studentId) {
   return Object.keys(seatingConfig.assignments).find((key) => seatingConfig.assignments[key] === studentId) ?? null;
 }
@@ -486,16 +507,16 @@ function renderRoom(classroom, activeAssignmentKey, allStudents, unseatedStudent
   grid.className = 'seating-view__grid';
   grid.style.setProperty('--column-count', columns);
   grid.style.setProperty('--row-count', rows);
+  grid.style.setProperty('--preferred-cell-px', getPreferredCellWidthPx(seatingConfig, allStudents));
+  grid.style.gridTemplateColumns = `repeat(${columns}, var(--seat-size))`;
+  grid.style.gridTemplateRows = `repeat(${rows}, var(--seat-size))`;
 
   for (let row = 0; row < rows; row += 1) {
-    const rowEl = document.createElement('div');
-    rowEl.className = 'seating-view__grid-row';
     for (let column = 0; column < columns; column += 1) {
       const studentId = getStudentIdAt(seatingConfig, row, column);
       const occupant = studentId ? allStudents.find(({ student }) => student.id === studentId) : null;
-      rowEl.appendChild(renderGridCell(row, column, occupant, seatingConfig, activeAssignmentKey, unseatedStudents, handlers));
+      grid.appendChild(renderGridCell(row, column, occupant, seatingConfig, activeAssignmentKey, unseatedStudents, handlers));
     }
-    grid.appendChild(rowEl);
   }
 
   gridWrapper.appendChild(grid);
