@@ -305,6 +305,7 @@ function renderStudentPortalMain(route) {
         renderStudentFeedView(content, {
           onBack: () => router.navigate('/student'),
           onNavigateToPath: (path) => router.navigate(path),
+          onNavigateToStudentProfile: (studentId) => router.navigate(`/student/student-profile/${studentId}`),
         });
       } else if (route.section === 'notebooks') {
         renderStudentNotebooksView(content, {
@@ -501,6 +502,7 @@ function renderRoute(route, reason = 'unspecified') {
         classroom,
         currentUser,
         onBack: () => router.navigate(`/classroom/${classroom.id}`),
+        onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
       });
     } else if (route.name === 'recognition') {
       renderRecognitionScreenView(appContainer, {

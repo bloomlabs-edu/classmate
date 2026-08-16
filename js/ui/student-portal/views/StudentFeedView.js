@@ -24,7 +24,7 @@ import { ensureAnonymousSignIn } from '../../../services/studentAuthService.js';
 import * as feedService from '../../../services/feedService.js';
 import { renderFeedPostCard } from '../../components/FeedPostCard.js';
 
-export async function renderStudentFeedView(container, { onBack, onNavigateToPath }) {
+export async function renderStudentFeedView(container, { onBack, onNavigateToPath, onNavigateToStudentProfile }) {
   container.innerHTML = '';
 
   const activeProfile = getActiveProfile();
@@ -125,6 +125,7 @@ export async function renderStudentFeedView(container, { onBack, onNavigateToPat
         await renderFeedPostCard(post, {
           currentUid,
           onNavigateToPath,
+          onNavigateToStudentProfile,
           isOwnPost: (p) => p.studentId === activeProfile?.studentId,
           onReact: (postId, isReacting) => feedService.toggleReactionAsCurrentStudent(postId, isReacting),
           onListComments: (postId) => feedService.listCommentsForCurrentStudent(postId),

@@ -27,7 +27,7 @@ import { createEmptyStateElement } from '../components/EmptyState.js';
 import * as feedService from '../../services/feedService.js';
 import { renderFeedPostCard } from '../components/FeedPostCard.js';
 
-export async function renderFeedModerationView(container, { classroom, currentUser, onBack }) {
+export async function renderFeedModerationView(container, { classroom, currentUser, onBack, onSelectStudent }) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
@@ -131,6 +131,7 @@ export async function renderFeedModerationView(container, { classroom, currentUs
         // false, matching the original teacher view's own silence
         // on media status lines entirely.
         isOwnPost: () => false,
+        onNavigateToStudentProfile: onSelectStudent,
         onReact: (postId, isReacting) => feedService.toggleReactionAsTeacher(classroom.id, postId, currentUser.uid, isReacting),
         onListComments: (postId) => feedService.listCommentsForTeacher(classroom.id, postId),
         onAddComment: (postId, text) => feedService.addCommentAsTeacher(classroom.id, postId, { uid: currentUser.uid, authorName: currentUser.displayName || 'Teacher', text }),

@@ -40,6 +40,7 @@ export function formatRelativeTime(isoString) {
  * `options`:
  * - currentUid: for the "has reacted" highlight
  * - onNavigateToPath(path): optional — only used for ClassMate-generated share source links, a student-only concept today; teacher-authored posts never set `post.source`, so this is simply never called on that path
+ * - onNavigateToStudentProfile(studentId): optional — the one, explicit way a name/avatar opens a profile. Only ever called when the post/comment has a real studentId (a teacher-authored one doesn't, since ClassMate has no teacher profile page at all) — in that case the name/avatar simply isn't a link at all, never a dead click.
  * - isOwnPost(post): for the media-approval status line's own visibility, matching the exact original student-only condition
  * - onReact(postId, isReacting): required
  * - onListComments(postId): required
@@ -51,10 +52,53 @@ export function formatRelativeTime(isoString) {
  * - onRefresh(): required — re-renders the caller's own list after any mutation
  * - deletePostLabel: defaults to 'Delete' (the student's own existing label); the teacher Feed can pass 'Delete post' if that reads more clearly as a moderation action, without changing the underlying control's own placement or visual weight
  */
+function getInitials(name) {
+  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+/**
+ * The one, shared identity block — a small initials avatar + name.
+ * Genuinely clickable (button) only when this author has a real
+ * studentId and the caller supplied onNavigateToStudentProfile; a
+ * teacher-authored post/comment has no profile to open at all, so it
+ * renders as plain, non-interactive text instead of a dead link.
+ */
+function renderAuthorIdentity(authorName, studentId, onNavigateToStudentProfile, avatarClassName, nameClassName) {
+  const wrapper = document.createElement('span');
+  wrapper.className = 'student-feed__identity';
+
+  const avatar = document.createElement('span');
+  avatar.className = avatarClassName;
+  avatar.textContent = getInitials(authorName);
+  avatar.setAttribute('aria-hidden', 'true');
+
+  const canNavigate = !!studentId && typeof onNavigateToStudentProfile === 'function';
+  let nameEl;
+  if (canNavigate) {
+    nameEl = document.createElement('button');
+    nameEl.type = 'button';
+    nameEl.className = `${nameClassName} student-feed__identity-link`;
+    nameEl.addEventListener('click', () => onNavigateToStudentProfile(studentId));
+    avatar.classList.add('student-feed__avatar--clickable');
+    avatar.addEventListener('click', () => onNavigateToStudentProfile(studentId));
+  } else {
+    nameEl = document.createElement('span');
+    nameEl.className = nameClassName;
+  }
+  nameEl.textContent = authorName;
+
+  wrapper.append(avatar, nameEl);
+  return wrapper;
+}
+
 export async function renderFeedPostCard(post, options) {
   const {
     currentUid,
     onNavigateToPath,
+    onNavigateToStudentProfile,
     isOwnPost,
     onReact,
     onListComments,
@@ -72,13 +116,11 @@ export async function renderFeedPostCard(post, options) {
 
   const cardHeader = document.createElement('div');
   cardHeader.className = 'student-feed__card-header';
-  const author = document.createElement('span');
-  author.className = 'student-feed__author';
-  author.textContent = post.authorName;
+  cardHeader.appendChild(renderAuthorIdentity(post.authorName, post.studentId, onNavigateToStudentProfile, 'student-feed__avatar', 'student-feed__author'));
   const time = document.createElement('span');
   time.className = 'student-feed__time';
   time.textContent = formatRelativeTime(post.createdAt);
-  cardHeader.append(author, time);
+  cardHeader.appendChild(time);
   card.appendChild(cardHeader);
 
   const text = document.createElement('p');
@@ -165,28 +207,30 @@ export async function renderFeedPostCard(post, options) {
   commentToggle.addEventListener('click', async () => {
     commentsSection.hidden = !commentsSection.hidden;
     if (!commentsSection.hidden) {
-      await renderComments(commentsSection, post, { onListComments, onAddComment, canDeleteComment, onDeleteComment, onRefresh });
+      await renderComments(commentsSection, post, { onListComments, onAddComment, canDeleteComment, onDeleteComment, onNavigateToStudentProfile, onRefresh });
     }
   });
 
   return card;
 }
 
-async function renderComments(commentsSection, post, { onListComments, onAddComment, canDeleteComment, onDeleteComment, onRefresh }) {
+async function renderComments(commentsSection, post, { onListComments, onAddComment, canDeleteComment, onDeleteComment, onNavigateToStudentProfile, onRefresh }) {
   commentsSection.innerHTML = '';
   const comments = await onListComments(post.id);
 
   comments.forEach((comment) => {
     const row = document.createElement('div');
     row.className = 'student-feed__comment';
-    const commentAuthor = document.createElement('span');
-    commentAuthor.className = 'student-feed__comment-author';
-    commentAuthor.textContent = comment.authorName;
-    const commentText = document.createElement('span');
-    commentText.className = 'student-feed__comment-text';
-    commentText.textContent = comment.text;
-    row.append(commentAuthor, commentText);
 
+    const commentHeader = document.createElement('div');
+    commentHeader.className = 'student-feed__comment-header';
+    commentHeader.appendChild(renderAuthorIdentity(comment.authorName, comment.studentId, onNavigateToStudentProfile, 'student-feed__comment-avatar', 'student-feed__comment-author'));
+    if (comment.createdAt) {
+      const commentTime = document.createElement('span');
+      commentTime.className = 'student-feed__time';
+      commentTime.textContent = formatRelativeTime(comment.createdAt);
+      commentHeader.appendChild(commentTime);
+    }
     if (canDeleteComment(comment)) {
       const deleteCommentButton = document.createElement('button');
       deleteCommentButton.type = 'button';
@@ -196,8 +240,15 @@ async function renderComments(commentsSection, post, { onListComments, onAddComm
         await onDeleteComment(post.id, comment.id);
         await onRefresh();
       });
-      row.appendChild(deleteCommentButton);
+      commentHeader.appendChild(deleteCommentButton);
     }
+    row.appendChild(commentHeader);
+
+    const commentText = document.createElement('p');
+    commentText.className = 'student-feed__comment-text';
+    commentText.textContent = comment.text;
+    row.appendChild(commentText);
+
     commentsSection.appendChild(row);
   });
 
