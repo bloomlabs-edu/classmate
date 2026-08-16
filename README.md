@@ -188,8 +188,13 @@ Actions deploys to Firebase Hosting automatically.** There's no manual
 deploy command to remember day to day.
 
 - Every push to `main` deploys to the live site
-  ([classmate-302c2.web.app](https://classmate-302c2.web.app)) — see
-  `.github/workflows/firebase-hosting-merge.yml`.
+  ([classmate-302c2.web.app](https://classmate-302c2.web.app)) and
+  the current `firestore.rules` — see
+  `.github/workflows/firebase-hosting-merge.yml`. (Hosting and
+  Firestore rules are deployed together as two steps in the same
+  workflow — kept in sync deliberately, after a production incident
+  where a new Firestore rule was added locally but never reached the
+  live project, since Hosting deploys alone don't touch rules at all.)
 - Every pull request gets its own temporary preview URL, so changes
   can be reviewed live before merging — see
   `.github/workflows/firebase-hosting-pull-request.yml`. Preview

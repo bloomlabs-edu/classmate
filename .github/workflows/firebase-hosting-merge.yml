@@ -9,6 +9,17 @@
 # The FIREBASE_SERVICE_ACCOUNT secret this workflow depends on is
 # created automatically by running `firebase init hosting:github`
 # from the project root - see README.md's deployment section.
+#
+# THE ACTUAL FIX (see this project's own production incident: a
+# scoreboardArchives Firestore rule was added locally, but every
+# merge to main only ever deployed Hosting — action-hosting-deploy@v0
+# is Hosting-only by design, and firebase.json itself had no
+# "firestore" key at all, so even a manual `firebase deploy` for
+# rules wouldn't have known which local file to use). The new
+# "Deploy Firestore rules" step below runs the Firebase CLI directly
+# (via its own official GitHub Action) using the exact same service
+# account already authorized for this project, so rules and hosting
+# code can never drift out of sync again on a normal merge.
 
 name: Deploy to Firebase Hosting on merge
 on:
@@ -26,3 +37,9 @@ jobs:
           firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_CLASSMATE_302C2 }}'
           channelId: live
           projectId: classmate-302c2
+      - name: Deploy Firestore rules
+        uses: w9jds/firebase-action@master
+        with:
+          args: deploy --only firestore:rules --project classmate-302c2
+        env:
+          GCP_SA_KEY: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_CLASSMATE_302C2 }}'
