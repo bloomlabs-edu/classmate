@@ -10234,6 +10234,23 @@ button.wizard-checklist__row:hover {
   border-color: var(--color-primary, #2e7d9e);
   cursor: grab;
 }
+/* THE ACTUAL FIX for the reported name-truncation problem — an
+   expanded occupied cell grows to its own real content width (never
+   ellipsis, never clipped), using up to the full width its own
+   safely-computed column span provides, while explicitly keeping the
+   exact same height as an ordinary square cell — only the WIDTH
+   changes, per explicit requirement. */
+.seating-view__cell-wrapper--expanded .seating-view__cell {
+  width: 100%;
+  height: var(--seat-size);
+  padding: 0.3rem 0.6rem;
+}
+.seating-view__cell-wrapper--expanded .seating-view__cell-label,
+.seating-view__cell-wrapper--expanded .seating-view__cell-name-wrapper {
+  white-space: nowrap;
+  overflow: visible;
+  max-width: none;
+}
 .seating-view__cell--has-group-accent::before {
   content: '';
   position: absolute;
@@ -10278,6 +10295,21 @@ button.wizard-checklist__row:hover {
 .seating-view__cell-name-wrapper {
   max-width: 100%;
   text-align: center;
+}
+/* THE ACTUAL FIX: the shared StudentNameElement component's own CSS
+   has overflow:hidden/ellipsis/nowrap baked in globally (reasonable
+   for dense lists elsewhere in ClassMate) — but Seating explicitly
+   requires the full name, never truncated. Scoped to this exact
+   context only, never touching the shared, global rule other
+   features still rely on. */
+.seating-view__cell-name-wrapper .student-name-element__name {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+.seating-view__cell-wrapper--expanded .seating-view__cell-name-wrapper .student-name-element__name {
+  white-space: nowrap;
 }
 
 /* The contextual assignment panel — anchored directly below the clicked cell. */
