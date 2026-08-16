@@ -7286,6 +7286,36 @@ button.wizard-checklist__row:hover {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
 }
+.settings-add-row__suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+.settings-add-row__suggestions-label {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  margin-right: 0.15rem;
+}
+.settings-add-row__suggestion-chip {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-muted, #f4f4f4);
+  color: var(--color-ink);
+  cursor: pointer;
+}
+.settings-add-row__suggestion-chip:hover {
+  border-color: var(--color-primary, #2e7d9e);
+  color: var(--color-primary, #2e7d9e);
+}
+.settings-add-row__helper-text {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  margin: 0.4rem 0 0;
+}
 
 /* Clickable Student Event cards — see
    ui/student-portal/views/StudentJourneyView.js's renderEventCard()
@@ -10306,7 +10336,9 @@ button.wizard-checklist__row:hover {
   overflow: visible;
   text-overflow: clip;
   white-space: normal;
-  overflow-wrap: break-word;
+  overflow-wrap: normal;
+  word-break: normal;
+  line-height: 1.15;
 }
 .seating-view__cell-wrapper--expanded .seating-view__cell-name-wrapper .student-name-element__name {
   white-space: nowrap;

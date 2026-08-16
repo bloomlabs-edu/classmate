@@ -628,6 +628,14 @@ function renderGridCell(row, column, occupant, seatingConfig, activeAssignmentKe
 
     const nameWrapper = document.createElement('span');
     nameWrapper.className = 'seating-view__cell-name-wrapper';
+    // THE ACTUAL FIX: a genuinely narrow, non-expanded card (no empty
+    // neighbor to expand into) gets a modestly smaller font for a
+    // longer name — this alone resolves most long single words that
+    // would otherwise fail to fit on one line at all, well before any
+    // word-boundary wrap is even needed.
+    if (span === 1 && occupant.student.name.length > 8) {
+      nameWrapper.style.fontSize = occupant.student.name.length > 13 ? '0.62rem' : '0.7rem';
+    }
     nameWrapper.appendChild(createStudentNameElement({ student: occupant.student, leadingMarker: 'swatch' }));
     cell.appendChild(nameWrapper);
   }

@@ -217,6 +217,8 @@ function createNotebookSubjectRow(classroom, subject, rerender) {
       placeholder: 'New notebook type',
       buttonLabel: '+ Add Notebook Type',
       compact: true,
+      suggestions: ['Homework', 'Classwork', 'Notes', 'Practice', 'Revision', 'Tests'],
+      helperText: 'Notebook types help you organize different kinds of student work.',
       onAdd: (name) => {
         notebookConfigService.addNotebookType(classroom, subject.id, name);
         workspaceService.save(classroom);
@@ -297,7 +299,10 @@ function createInlineEditableLabel(currentName, onSave) {
 }
 
 /** A text input + button for adding a new Subject or Notebook Type — clears itself and refocuses after a successful add, so adding several in a row doesn't require re-clicking into the field each time. */
-function createAddRow({ placeholder, buttonLabel, onAdd, compact = false }) {
+function createAddRow({ placeholder, buttonLabel, onAdd, compact = false, suggestions = null, helperText = null }) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'settings-add-row-wrapper';
+
   const row = document.createElement('div');
   row.className = compact ? 'settings-add-row settings-add-row--compact' : 'settings-add-row';
 
@@ -328,7 +333,42 @@ function createAddRow({ placeholder, buttonLabel, onAdd, compact = false }) {
   });
 
   row.append(input, button);
-  return row;
+  wrapper.appendChild(row);
+
+  // THE ACTUAL FIX (Part B): guided suggestions — clicking one only
+  // ever populates the input, never submits it directly, so the
+  // teacher can still edit before explicitly adding it. Purely
+  // optional; a caller that doesn't pass any gets exactly the same
+  // plain add-row as before, unaffected.
+  if (suggestions && suggestions.length > 0) {
+    const suggestionsRow = document.createElement('div');
+    suggestionsRow.className = 'settings-add-row__suggestions';
+    const suggestionsLabel = document.createElement('span');
+    suggestionsLabel.className = 'settings-add-row__suggestions-label';
+    suggestionsLabel.textContent = 'Suggestions:';
+    suggestionsRow.appendChild(suggestionsLabel);
+    suggestions.forEach((suggestion) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'settings-add-row__suggestion-chip';
+      chip.textContent = suggestion;
+      chip.addEventListener('click', () => {
+        input.value = suggestion;
+        input.focus();
+      });
+      suggestionsRow.appendChild(chip);
+    });
+    wrapper.appendChild(suggestionsRow);
+  }
+
+  if (helperText) {
+    const helper = document.createElement('p');
+    helper.className = 'settings-add-row__helper-text';
+    helper.textContent = helperText;
+    wrapper.appendChild(helper);
+  }
+
+  return wrapper;
 }
 
 /**
