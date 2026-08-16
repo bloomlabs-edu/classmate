@@ -628,13 +628,21 @@ function renderGridCell(row, column, occupant, seatingConfig, activeAssignmentKe
 
     const nameWrapper = document.createElement('span');
     nameWrapper.className = 'seating-view__cell-name-wrapper';
-    // THE ACTUAL FIX: a genuinely narrow, non-expanded card (no empty
-    // neighbor to expand into) gets a modestly smaller font for a
-    // longer name — this alone resolves most long single words that
-    // would otherwise fail to fit on one line at all, well before any
-    // word-boundary wrap is even needed.
-    if (span === 1 && occupant.student.name.length > 8) {
-      nameWrapper.style.fontSize = occupant.student.name.length > 13 ? '0.62rem' : '0.7rem';
+    // THE ACTUAL FIX: font-size is based on the LONGEST INDIVIDUAL
+    // WORD in the name, not the total name length — the real
+    // constraint, since a wrap only ever breaks at a space, never
+    // mid-word. A single long unbreakable word ("Varalakshmi",
+    // "Karthikeyan") is what actually risks silently overflowing past
+    // a narrow, non-expanded cell and disappearing behind an adjacent
+    // occupied neighbor's own opaque background — which is what reads
+    // as "truncation" even though nothing was ever CSS-clipped.
+    if (span === 1) {
+      const longestWord = occupant.student.name.split(' ').reduce((longest, word) => (word.length > longest.length ? word : longest), '');
+      if (longestWord.length > 9) {
+        nameWrapper.style.fontSize = '0.6rem';
+      } else if (longestWord.length > 6) {
+        nameWrapper.style.fontSize = '0.7rem';
+      }
     }
     nameWrapper.appendChild(createStudentNameElement({ student: occupant.student, leadingMarker: 'swatch' }));
     cell.appendChild(nameWrapper);
