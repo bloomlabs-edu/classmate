@@ -10120,7 +10120,7 @@ button.wizard-checklist__row:hover {
 
 /* THE ACTUAL FIX for the reported overflow: --seating-cell-size still defines one real seat-sized unit (used for row height and, on a narrow layout, natural column width), but each column is now genuinely flexible (minmax(0, 1fr) — see SeatingView.js's own renderClassroomMap()) and the map's own overall width is explicitly capped at min(its natural width, 100% of the room) — so a layout with many columns shrinks to fit the actual available width rather than overflowing past the card at all. */
 .seating-view__map {
-  --seating-cell-size: clamp(1.75rem, 6vw, 2.75rem);
+  --seating-cell-size: clamp(2.5rem, 8vw, 6.5rem);
   --seating-cell-gap: calc(var(--seating-cell-size) * 0.1);
   display: grid;
   gap: var(--seating-cell-gap);
@@ -10152,11 +10152,16 @@ button.wizard-checklist__row:hover {
   font-family: inherit;
 }
 .seating-view__cell-label {
-  font-size: 0.6rem;
+  font-size: 0.72rem;
   font-weight: var(--font-weight-bold);
   overflow-wrap: anywhere;
   text-align: center;
-  line-height: 1.1;
+  line-height: 1.15;
+  padding: 0 0.15rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 .seating-view__cell--seat.seating-view__cell--occupied {
   background: var(--color-surface, #fff);
@@ -10217,6 +10222,11 @@ button.wizard-checklist__row:hover {
   min-width: 11rem;
   width: max-content;
   max-width: 17rem;
+}
+.seating-view__add-space-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
 }
 .seating-view__cell-panel-heading {
   margin: 0 0 0.15rem;

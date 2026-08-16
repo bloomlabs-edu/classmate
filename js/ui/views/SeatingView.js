@@ -221,6 +221,11 @@ export function renderSeatingView(container, { classroom, onBack }) {
         workspaceService.save(currentClassroom);
         rerender();
       },
+      onConvertToSpace: (cellId) => {
+        convertCellType(currentClassroom, cellId, 'space');
+        workspaceService.save(currentClassroom);
+        rerender();
+      },
       onDeleteCell: (cellId) => {
         deleteCell(currentClassroom, cellId);
         activeCellId = null;
@@ -511,6 +516,11 @@ function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCel
   const rowCount = renderMaxY - renderMinY + 1;
 
   const activeCell = activeCellId ? cells.find((c) => c.id === activeCellId) : null;
+  // THE ACTUAL FIX (item 5): the map's own "+" controls now use the
+  // exact same shared getAdjacentCellAvailability() function as every
+  // "Add Space" panel — never a second, separately-maintained
+  // definition of "available."
+  const activeCellAvailability = activeCell ? getAdjacentCellAvailability(activeCell, cells) : null;
 
   const map = document.createElement('div');
   map.className = 'seating-view__map';
@@ -541,7 +551,7 @@ function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCel
         // the whole layout is a valid target, not just the active
         // cell's own four sides.
         slot.appendChild(renderRoomPlacementControl(x, y, handlers));
-      } else if (!roomPlacementMode && !swapSourceCellId && activeCell && isImmediatelyAdjacent(activeCell, x, y)) {
+      } else if (!roomPlacementMode && !swapSourceCellId && activeCell && isAdjacentInAvailableDirection(activeCell, activeCellAvailability, x, y)) {
         slot.appendChild(renderAddSeatControl(x, y, handlers));
       }
       // Every other empty position — including ones touching a
@@ -564,6 +574,36 @@ function isImmediatelyAdjacent(cell, x, y) {
 /** Room placement mode's own adjacency check — genuinely against ANY existing cell in the whole layout, never restricted to the single active one (unlike isImmediatelyAdjacent above, used by the seat-level "+"). */
 function isAdjacentToAnyCell(cells, x, y) {
   return cells.some((c) => isImmediatelyAdjacent(c, x, y));
+}
+
+/**
+ * THE single, shared source of truth for "is this exact adjacent
+ * coordinate free" — per explicit product decision, there must never
+ * be two different definitions of directional availability. Checks
+ * ONLY the exact coordinate against every real cell in the layout —
+ * never the cell's row/column, never the layout's own bounding box,
+ * never whether the position is "outside" the current shape. If no
+ * real cell occupies that exact (x, y), the direction is available.
+ * Used identically by the map's own "+" controls and every "Add
+ * Space" panel section (empty seat, occupied seat, and space).
+ */
+function getAdjacentCellAvailability(cell, cells) {
+  return {
+    up: !cells.some((c) => c.x === cell.x && c.y === cell.y - 1),
+    down: !cells.some((c) => c.x === cell.x && c.y === cell.y + 1),
+    left: !cells.some((c) => c.x === cell.x - 1 && c.y === cell.y),
+    right: !cells.some((c) => c.x === cell.x + 1 && c.y === cell.y),
+  };
+}
+
+/** Whether the exact (x, y) position corresponds to one of activeCell's own genuinely-available directions, per the shared availability object above. */
+function isAdjacentInAvailableDirection(cell, availability, x, y) {
+  if (!availability) return false;
+  if (availability.up && x === cell.x && y === cell.y - 1) return true;
+  if (availability.down && x === cell.x && y === cell.y + 1) return true;
+  if (availability.left && x === cell.x - 1 && y === cell.y) return true;
+  if (availability.right && x === cell.x + 1 && y === cell.y) return true;
+  return false;
 }
 
 /**
@@ -695,15 +735,14 @@ function renderCell(cell, occupant, selectedStudentId, activeCellId, swapSourceC
 }
 
 /**
- * This cell's own management-only panel — assign/remove a student,
- * delete this seat. Deliberately contains NO directional/expansion
- * control at all, per explicit product decision: adding a cell is
+ * This cell's own management panel — assign/remove a student, add
+ * space, convert type, delete. Deliberately contains NO directional
+ * seat-creation control at all: adding a brand-new cell is
  * exclusively the "+" controls' own job (see renderClassroomMap()
- * above), never this menu's. "Convert to Space" is intentionally not
- * exposed here at all this round — the underlying type field itself
- * is untouched (see convertCellType(), still present, unused by any
- * UI control for now) — only the surfaced control is removed, per
- * explicit "we can revisit intentional spaces/aisles later."
+ * above); this panel only ever manages the one cell it belongs to.
+ * "Convert to Space"/"Convert to Seat" both use the same
+ * convertCellType() function, which never silently unseats a student
+ * (confirmed in its own guard).
  */
 function renderCellPanel(cell, occupant, cells, swapSourceCellId, handlers) {
   const panel = document.createElement('div');
@@ -727,6 +766,13 @@ function renderCellPanel(cell, occupant, cells, swapSourceCellId, handlers) {
   }
 
   if (cell.type === 'seat' && !occupant) {
+    const convertButton = document.createElement('button');
+    convertButton.type = 'button';
+    convertButton.className = 'btn btn--ghost';
+    convertButton.textContent = 'Convert to Space';
+    convertButton.addEventListener('click', () => handlers.onConvertToSpace(cell.id));
+    actions.appendChild(convertButton);
+
     const deleteButton = document.createElement('button');
     deleteButton.type = 'button';
     deleteButton.className = 'btn btn--text';
@@ -859,54 +905,75 @@ function renderCellPanel(cell, occupant, cells, swapSourceCellId, handlers) {
       swapRow.appendChild(selectButton);
     }
     panel.appendChild(swapRow);
+
+    // THE ACTUAL FIX: an occupied seat can genuinely extend the
+    // layout in any free direction too — Move Student only ever
+    // targets an existing, unoccupied seat, which is a genuinely
+    // stricter question than "is this exact coordinate free" at all.
+    // Reuses the exact same shared section/availability function as
+    // every other cell type, so there is only ever one definition of
+    // "available" anywhere in this file.
+    panel.appendChild(renderAddSpaceSection(cell, cells, handlers));
   }
 
   // "Add Space" — the one deliberate, explicit way to place a space,
   // per product decision: never automatic, never a popup of its own.
   // All 4 directions are ALWAYS rendered in the same fixed order,
   // matching Move Student's own pattern — a direction that's already
-  // occupied is shown disabled, never hidden. This section only ever
-  // renders for an empty seat, which structurally can never be the
-  // one active/displayed panel while a different, occupied seat is
-  // in swap mode (only one panel is ever shown at a time) — so item
-  // 8's own "don't show Add Space during swap mode" is satisfied
-  // without needing an explicit guard here at all.
+  // occupied is shown disabled, never hidden.
   if (cell.type === 'seat' && !occupant) {
-    const spaceLabel = document.createElement('p');
-    spaceLabel.className = 'seating-view__cell-group-label';
-    spaceLabel.textContent = 'Add Space';
-    panel.appendChild(spaceLabel);
-
-    const spaceRow = document.createElement('div');
-    spaceRow.className = 'seating-view__move-controls';
-    [
-      { dx: 0, dy: -1, direction: 'up', symbol: '\u2191', label: 'Above' },
-      { dx: 0, dy: 1, direction: 'down', symbol: '\u2193', label: 'Below' },
-      { dx: -1, dy: 0, direction: 'left', symbol: '\u2190', label: 'Left' },
-      { dx: 1, dy: 0, direction: 'right', symbol: '\u2192', label: 'Right' },
-    ].forEach(({ dx, dy, direction, symbol, label }) => {
-      const isFree = !cells.some((c) => c.x === cell.x + dx && c.y === cell.y + dy);
-
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = `btn btn--ghost seating-view__move-button seating-view__move-button--${direction}`;
-      button.disabled = !isFree;
-
-      const symbolSpan = document.createElement('span');
-      symbolSpan.setAttribute('aria-hidden', 'true');
-      symbolSpan.textContent = symbol;
-      button.appendChild(symbolSpan);
-      button.append(` ${label}`);
-
-      if (isFree) {
-        button.addEventListener('click', () => handlers.onAddSpaceAt(cell.x + dx, cell.y + dy));
-      }
-      spaceRow.appendChild(button);
-    });
-    panel.appendChild(spaceRow);
+    panel.appendChild(renderAddSpaceSection(cell, cells, handlers));
   }
 
   return panel;
+}
+
+/**
+ * "Add Space" — genuinely shared across every cell type that can
+ * spatially extend the layout (empty seat, occupied seat, space).
+ * Uses ONLY getAdjacentCellAvailability() — the one, shared source of
+ * truth — so there is never a discrepancy between what this section
+ * offers and what the map's own "+" controls offer for the same cell.
+ */
+function renderAddSpaceSection(cell, cells, handlers) {
+  const section = document.createElement('div');
+  section.className = 'seating-view__add-space-section';
+
+  const spaceLabel = document.createElement('p');
+  spaceLabel.className = 'seating-view__cell-group-label';
+  spaceLabel.textContent = 'Add Space';
+  section.appendChild(spaceLabel);
+
+  const availability = getAdjacentCellAvailability(cell, cells);
+  const spaceRow = document.createElement('div');
+  spaceRow.className = 'seating-view__move-controls';
+  [
+    { dx: 0, dy: -1, direction: 'up', symbol: '\u2191', label: 'Above' },
+    { dx: 0, dy: 1, direction: 'down', symbol: '\u2193', label: 'Below' },
+    { dx: -1, dy: 0, direction: 'left', symbol: '\u2190', label: 'Left' },
+    { dx: 1, dy: 0, direction: 'right', symbol: '\u2192', label: 'Right' },
+  ].forEach(({ dx, dy, direction, symbol, label }) => {
+    const isFree = availability[direction];
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `btn btn--ghost seating-view__move-button seating-view__move-button--${direction}`;
+    button.disabled = !isFree;
+
+    const symbolSpan = document.createElement('span');
+    symbolSpan.setAttribute('aria-hidden', 'true');
+    symbolSpan.textContent = symbol;
+    button.appendChild(symbolSpan);
+    button.append(` ${label}`);
+
+    if (isFree) {
+      button.addEventListener('click', () => handlers.onAddSpaceAt(cell.x + dx, cell.y + dy));
+    }
+    spaceRow.appendChild(button);
+  });
+  section.appendChild(spaceRow);
+
+  return section;
 }
 
 /**
