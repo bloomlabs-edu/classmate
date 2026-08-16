@@ -51,8 +51,6 @@ import { getGroupColorHex } from '../../config/groupColorConfig.js';
 import * as workspaceService from '../../services/workspaceService.js';
 import * as workspaceCoordinator from '../../services/workspaceCoordinator.js';
 
-const ROW_OPTIONS = [2, 3, 4, 5, 6, 7, 8];
-const COLUMN_OPTIONS = [2, 3, 4, 5, 6, 7, 8, 9, 10];
 const ORIENTATION_OPTIONS = [
   { value: 'top', label: 'Top' },
   { value: 'right', label: 'Right' },
@@ -62,7 +60,6 @@ const ORIENTATION_OPTIONS = [
 const ORIENTATION_DEGREES = { top: 0, right: 90, bottom: 180, left: 270 };
 
 export function renderSeatingView(container, { classroom, onBack, onSelectStudent }) {
-  console.log('CLASSMATE SEATING GRID REBUILD — RUNTIME VERSION 1');
   let currentClassroom = classroom;
   // The one occupied cell currently showing its own contextual panel
   // (Move/Front/Back/Left/Right/View Profile/Remove), or null. A
@@ -363,31 +360,23 @@ function renderGridForm(initialValues, submitLabel, onSubmit, onCancel) {
   const rowsLabel = document.createElement('label');
   rowsLabel.className = 'seating-view__setup-field-label';
   rowsLabel.textContent = 'Rows';
-  const rowsSelect = document.createElement('select');
-  rowsSelect.className = 'seating-view__setup-select';
-  ROW_OPTIONS.forEach((value) => {
-    const option = document.createElement('option');
-    option.value = String(value);
-    option.textContent = String(value);
-    if (value === initialValues.rows) option.selected = true;
-    rowsSelect.appendChild(option);
-  });
-  rowsLabel.appendChild(rowsSelect);
+  const rowsInput = document.createElement('input');
+  rowsInput.type = 'number';
+  rowsInput.min = '1';
+  rowsInput.className = 'seating-view__setup-number-input';
+  rowsInput.value = String(initialValues.rows);
+  rowsLabel.appendChild(rowsInput);
   form.appendChild(rowsLabel);
 
   const columnsLabel = document.createElement('label');
   columnsLabel.className = 'seating-view__setup-field-label';
   columnsLabel.textContent = 'Columns';
-  const columnsSelect = document.createElement('select');
-  columnsSelect.className = 'seating-view__setup-select';
-  COLUMN_OPTIONS.forEach((value) => {
-    const option = document.createElement('option');
-    option.value = String(value);
-    option.textContent = String(value);
-    if (value === initialValues.columns) option.selected = true;
-    columnsSelect.appendChild(option);
-  });
-  columnsLabel.appendChild(columnsSelect);
+  const columnsInput = document.createElement('input');
+  columnsInput.type = 'number';
+  columnsInput.min = '1';
+  columnsInput.className = 'seating-view__setup-number-input';
+  columnsInput.value = String(initialValues.columns);
+  columnsLabel.appendChild(columnsInput);
   form.appendChild(columnsLabel);
 
   const orientationFieldset = document.createElement('div');
@@ -428,8 +417,8 @@ function renderGridForm(initialValues, submitLabel, onSubmit, onCancel) {
   submitButton.className = 'btn btn--primary';
   submitButton.textContent = submitLabel;
   submitButton.addEventListener('click', () => {
-    const rows = Number(rowsSelect.value);
-    const columns = Number(columnsSelect.value);
+    const rows = Math.max(1, Number(rowsInput.value) || 1);
+    const columns = Math.max(1, Number(columnsInput.value) || 1);
     const result = onSubmit(rows, columns, selectedOrientation);
     if (result && result.blocked) {
       warningNote.hidden = false;
@@ -471,7 +460,7 @@ function renderGridEditor(classroom, activeAssignmentKey, handlers) {
   const allStudents = classroom.teams.flatMap((team) => team.students.map((student) => ({ student, team })));
   const unseatedStudents = allStudents.filter(({ student }) => !findAssignmentKeyForStudent(seatingConfig, student.id));
 
-  layout.appendChild(renderRoom(classroom, activeAssignmentKey, allStudents, handlers));
+  layout.appendChild(renderRoom(classroom, activeAssignmentKey, allStudents, unseatedStudents, handlers));
   layout.appendChild(renderRoster(unseatedStudents, handlers));
 
   wrapper.appendChild(layout);
@@ -479,7 +468,7 @@ function renderGridEditor(classroom, activeAssignmentKey, handlers) {
 }
 
 /** The room itself — Board (positioned per orientation) + the actual square grid. */
-function renderRoom(classroom, activeAssignmentKey, allStudents, handlers) {
+function renderRoom(classroom, activeAssignmentKey, allStudents, unseatedStudents, handlers) {
   const room = document.createElement('div');
   room.className = 'seating-view__room';
 
@@ -495,6 +484,8 @@ function renderRoom(classroom, activeAssignmentKey, allStudents, handlers) {
 
   const grid = document.createElement('div');
   grid.className = 'seating-view__grid';
+  grid.style.setProperty('--column-count', columns);
+  grid.style.setProperty('--row-count', rows);
   grid.style.gridTemplateColumns = `repeat(${columns}, var(--seat-size))`;
   grid.style.gridTemplateRows = `repeat(${rows}, var(--seat-size))`;
 
@@ -502,7 +493,7 @@ function renderRoom(classroom, activeAssignmentKey, allStudents, handlers) {
     for (let column = 0; column < columns; column += 1) {
       const studentId = getStudentIdAt(seatingConfig, row, column);
       const occupant = studentId ? allStudents.find(({ student }) => student.id === studentId) : null;
-      grid.appendChild(renderGridCell(row, column, occupant, seatingConfig, activeAssignmentKey, handlers));
+      grid.appendChild(renderGridCell(row, column, occupant, seatingConfig, activeAssignmentKey, unseatedStudents, handlers));
     }
   }
 
@@ -540,7 +531,7 @@ function renderRoom(classroom, activeAssignmentKey, allStudents, handlers) {
  * "other student" to reconcile with, so nothing happens rather than
  * guessing at an unrequested side effect.
  */
-function renderGridCell(row, column, occupant, seatingConfig, activeAssignmentKey, handlers) {
+function renderGridCell(row, column, occupant, seatingConfig, activeAssignmentKey, unseatedStudents, handlers) {
   const cellWrapper = document.createElement('div');
   cellWrapper.className = 'seating-view__cell-wrapper';
 
@@ -564,6 +555,20 @@ function renderGridCell(row, column, occupant, seatingConfig, activeAssignmentKe
     }
   });
 
+  // Both an occupied and an empty cell are genuinely clickable now —
+  // per explicit product decision, clicking an empty cell is a
+  // first-class way to assign a student (Method B), coexisting with
+  // drag-and-drop (Method A), never replacing it.
+  cell.addEventListener('click', () => handlers.onToggleAssignmentPanel(assignmentKey(row, column)));
+  cell.setAttribute('role', 'button');
+  cell.setAttribute('tabindex', '0');
+  cell.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      cell.click();
+    }
+  });
+
   if (occupant) {
     if (occupant.team?.color) {
       const groupHex = getGroupColorHex(occupant.team.color);
@@ -576,34 +581,107 @@ function renderGridCell(row, column, occupant, seatingConfig, activeAssignmentKe
     cell.addEventListener('dragstart', (event) => {
       event.dataTransfer.setData('text/plain', JSON.stringify({ type: 'grid', studentId: occupant.student.id, fromRow: row, fromColumn: column }));
     });
-    cell.addEventListener('click', () => handlers.onToggleAssignmentPanel(assignmentKey(row, column)));
-    cell.setAttribute('role', 'button');
-    cell.setAttribute('tabindex', '0');
-    cell.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        cell.click();
-      }
-    });
 
     const nameWrapper = document.createElement('span');
     nameWrapper.className = 'seating-view__cell-name-wrapper';
     nameWrapper.appendChild(createStudentNameElement({ student: occupant.student, leadingMarker: 'swatch' }));
     cell.appendChild(nameWrapper);
-  } else {
-    const label = document.createElement('span');
-    label.className = 'seating-view__cell-label';
-    label.textContent = 'Empty';
-    cell.appendChild(label);
   }
+  // An empty cell intentionally contains NO text/label at all — per
+  // explicit product decision, an unoccupied cell means "there is
+  // physical space here," not "there is an empty student slot
+  // waiting to be filled." It remains visually identifiable purely
+  // through its own border/background (see the CSS).
 
   cellWrapper.appendChild(cell);
 
-  if (occupant && assignmentKey(row, column) === activeAssignmentKey) {
-    cellWrapper.appendChild(renderAssignmentPanel(row, column, occupant, seatingConfig, handlers));
+  if (assignmentKey(row, column) === activeAssignmentKey) {
+    cellWrapper.appendChild(occupant
+      ? renderAssignmentPanel(row, column, occupant, seatingConfig, handlers)
+      : renderAssignStudentPanel(row, column, unseatedStudents, handlers));
   }
 
   return cellWrapper;
+}
+
+
+/**
+ * "Assign Student" — Method B for placing a student into a cell,
+ * coexisting with drag-and-drop (Method A), never replacing it. Only
+ * currently-unseated students are listed, grouped by team like the
+ * roster itself, with a live search filter for a large class.
+ * Clicking a name assigns immediately; the panel closes as part of
+ * the same rerender that follows (activeAssignmentKey resets after
+ * onAssignStudent, since the cell is no longer empty afterward).
+ */
+function renderAssignStudentPanel(row, column, unseatedStudents, handlers) {
+  const panel = document.createElement('div');
+  panel.className = 'seating-view__cell-panel seating-view__assign-panel';
+
+  const heading = document.createElement('p');
+  heading.className = 'seating-view__cell-panel-heading';
+  heading.textContent = 'Assign Student';
+  panel.appendChild(heading);
+
+  if (unseatedStudents.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'seating-view__cell-panel-note';
+    empty.textContent = 'Every student is already seated.';
+    panel.appendChild(empty);
+    return panel;
+  }
+
+  const searchInput = document.createElement('input');
+  searchInput.type = 'text';
+  searchInput.className = 'seating-view__assign-search';
+  searchInput.placeholder = 'Search students...';
+  panel.appendChild(searchInput);
+
+  const listWrapper = document.createElement('div');
+  listWrapper.className = 'seating-view__assign-list';
+  panel.appendChild(listWrapper);
+
+  function renderList(filterText) {
+    listWrapper.innerHTML = '';
+    const normalizedFilter = filterText.trim().toLowerCase();
+    const groupedByTeam = new Map();
+    unseatedStudents
+      .filter(({ student }) => !normalizedFilter || student.name.toLowerCase().includes(normalizedFilter))
+      .forEach(({ student, team }) => {
+        const key = team?.id ?? 'none';
+        if (!groupedByTeam.has(key)) groupedByTeam.set(key, { team, students: [] });
+        groupedByTeam.get(key).students.push(student);
+      });
+
+    if (groupedByTeam.size === 0) {
+      const noResults = document.createElement('p');
+      noResults.className = 'seating-view__cell-panel-note';
+      noResults.textContent = 'No matching students.';
+      listWrapper.appendChild(noResults);
+      return;
+    }
+
+    groupedByTeam.forEach(({ team, students }) => {
+      const teamHeading = document.createElement('p');
+      teamHeading.className = 'seating-view__roster-team-heading';
+      teamHeading.textContent = team ? team.name : 'No Team';
+      listWrapper.appendChild(teamHeading);
+
+      students.forEach((student) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'seating-view__assign-option';
+        button.textContent = student.name;
+        button.addEventListener('click', () => handlers.onAssignStudent(row, column, student.id));
+        listWrapper.appendChild(button);
+      });
+    });
+  }
+
+  searchInput.addEventListener('input', () => renderList(searchInput.value));
+  renderList('');
+
+  return panel;
 }
 
 

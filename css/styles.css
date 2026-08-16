@@ -10108,12 +10108,12 @@ button.wizard-checklist__row:hover {
   font-weight: var(--font-weight-bold);
   font-size: 0.85rem;
 }
-.seating-view__setup-select {
+.seating-view__setup-number-input {
   font: inherit;
   padding: 0.5rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
-  max-width: 12rem;
+  max-width: 8rem;
 }
 .seating-view__setup-orientation {
   display: flex;
@@ -10202,7 +10202,7 @@ button.wizard-checklist__row:hover {
 
 /* THE ACTUAL FIX for the "pill" problem this rebuild starts from a clean slate on: --seat-size defines one real, square unit, used identically for both grid dimensions — genuinely never overridden by any max-width/flex-shrink mechanism that could compress it below a true square. */
 .seating-view__grid {
-  --seat-size: clamp(4.5rem, 9vw, 8rem);
+  --seat-size: clamp(1.1rem, min(calc(75vw / var(--column-count, 1)), calc(50vh / var(--row-count, 1))), 8rem);
   display: grid;
   gap: calc(var(--seat-size) * 0.12);
   width: max-content;
@@ -10244,14 +10244,36 @@ button.wizard-checklist__row:hover {
   background: var(--seating-cell-group-accent);
   border-radius: var(--radius-control) var(--radius-control) 0 0;
 }
-.seating-view__cell-label {
-  font-size: 0.78rem;
-  font-weight: var(--font-weight-bold);
-  overflow-wrap: break-word;
-  text-align: center;
-  line-height: 1.15;
-  padding: 0 0.2rem;
-  max-width: 100%;
+.seating-view__assign-panel {
+  min-width: 13rem;
+  max-width: 15rem;
+}
+.seating-view__assign-search {
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  width: 100%;
+}
+.seating-view__assign-list {
+  max-height: 12rem;
+  overflow-y: auto;
+}
+.seating-view__assign-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border: none;
+  border-radius: var(--radius-control);
+  background: none;
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.seating-view__assign-option:hover {
+  background: var(--color-surface-muted, #f4f4f4);
 }
 .seating-view__cell-name-wrapper {
   max-width: 100%;
