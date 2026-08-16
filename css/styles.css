@@ -10092,7 +10092,6 @@ button.wizard-checklist__row:hover {
   border-radius: var(--radius-card);
   padding: 1.5rem;
   box-shadow: var(--elevation-card);
-  overflow-x: auto;
 }
 .seating-view__board {
   text-align: center;
@@ -10175,7 +10174,7 @@ button.wizard-checklist__row:hover {
   gap: var(--seating-cell-gap);
 }
 .seating-view__map-row .seating-view__map {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
 }
 .seating-view__room-element-wrapper {
   position: relative;
@@ -10214,7 +10213,7 @@ button.wizard-checklist__row:hover {
   --seating-cell-gap: calc(var(--seating-cell-size) * 0.18);
   display: grid;
   gap: var(--seating-cell-gap);
-  max-width: 100%;
+  width: max-content;
   margin: 0 auto;
 }
 .seating-view__cell-slot {
@@ -10356,6 +10355,16 @@ button.wizard-checklist__row:hover {
   color: #c98a1f;
   background: color-mix(in srgb, #c98a1f 15%, var(--color-surface, #fff));
   animation: seating-swap-target-pulse 1.6s ease-in-out infinite;
+}
+.seating-view__profile-link {
+  align-self: flex-start;
+  font-size: 0.7rem;
+  padding: 0.15rem 0;
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.15rem;
+  border-bottom: 1px solid var(--color-border);
+  width: 100%;
+  text-align: left;
 }
 .seating-view__cell-actions {
   display: flex;

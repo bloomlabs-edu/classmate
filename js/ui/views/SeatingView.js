@@ -960,18 +960,20 @@ function renderCell(cell, occupant, selectedStudentId, activeCellId, swapSourceC
   }
 
   if (occupant) {
-    // The existing, shared identity component — bucket swatch +
-    // clickable name, opening the real student profile via
-    // onSelectStudent. Wrapped so a click here never also triggers
-    // the outer seat's own "toggle active" behavior (event
-    // propagation is stopped before it can bubble up).
+    // The existing, shared identity component — bucket swatch + name,
+    // now a plain, non-interactive display (no onSelect at all,
+    // which is what makes createStudentNameElement itself render a
+    // div rather than a button — confirmed in its own source). A
+    // click here genuinely bubbles up to the seat's own click
+    // handler below, opening the same contextual panel as clicking
+    // anywhere else on the seat. Profile navigation is now an
+    // explicit "View Student Profile" action inside that panel (see
+    // renderCellPanel), never an automatic side-effect of this click.
     const nameWrapper = document.createElement('span');
     nameWrapper.className = 'seating-view__cell-name-wrapper';
-    nameWrapper.addEventListener('click', (event) => event.stopPropagation());
     nameWrapper.appendChild(createStudentNameElement({
       student: occupant.student,
       leadingMarker: 'swatch',
-      onSelect: (student) => handlers.onSelectStudent(student.id),
     }));
     cellButton.appendChild(nameWrapper);
   } else {
@@ -1027,6 +1029,20 @@ function renderCellPanel(cell, occupant, cells, swapSourceCellId, handlers) {
   heading.className = 'seating-view__cell-panel-heading';
   heading.textContent = cell.type === 'space' ? 'Space' : occupant ? occupant.student.name : 'Empty seat';
   panel.appendChild(heading);
+
+  // THE ACTUAL FIX: "View Student Profile" is now the one, explicit
+  // way to navigate away from Seating — never an automatic
+  // side-effect of clicking the student's own name (see renderCell()
+  // above). The teacher stays in the seating editor until they
+  // deliberately choose this.
+  if (cell.type === 'seat' && occupant) {
+    const profileLink = document.createElement('button');
+    profileLink.type = 'button';
+    profileLink.className = 'btn btn--text seating-view__profile-link';
+    profileLink.textContent = 'View Student Profile';
+    profileLink.addEventListener('click', () => handlers.onSelectStudent(occupant.student.id));
+    panel.appendChild(profileLink);
+  }
 
   const actions = document.createElement('div');
   actions.className = 'seating-view__cell-actions';

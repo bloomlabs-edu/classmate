@@ -30,7 +30,7 @@ export const NOT_ASSIGNED_LABEL = 'Not Assigned';
 // stronger colour reads fine against a white background.
 export const BUCKET_DISPLAY_COLORS = Object.freeze({
   green: '#2e7d32',
-  yellow: '#b7791f',
+  yellow: '#EAB308',
   red: '#c62828',
 });
 
@@ -53,7 +53,7 @@ export const BUCKET_DISPLAY_COLORS = Object.freeze({
 // tuned to read well as body text at normal size, over a long list.
 export const BUCKET_ROW_STYLES = Object.freeze({
   green: { background: '#EAF7EC', border: '#2e7d32', text: '#1a1a1a', nameColor: '#1b5e20' },
-  yellow: { background: '#FFF8E1', border: '#b7791f', text: '#1a1a1a', nameColor: '#8a5a00' },
+  yellow: { background: '#FFF8E1', border: '#EAB308', text: '#1a1a1a', nameColor: '#8a5a00' },
   red: { background: '#FDECEA', border: '#c62828', text: '#1a1a1a', nameColor: '#7a1f1f' },
   notAssigned: { background: '#F3F4F6', border: '#9AA5B1', text: '#1a1a1a', nameColor: 'var(--color-ink)' },
 });
