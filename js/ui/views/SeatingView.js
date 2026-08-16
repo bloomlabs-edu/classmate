@@ -591,10 +591,17 @@ function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCel
   const orientation = ensureOrientation(classroom);
   section.appendChild(renderRoomControls(roomPlacementMode, orientation, handlers));
 
+  // THE ACTUAL FIX for whole-room rotation: the Board is conceptually
+  // attached to the room's own logical "top" wall — exactly like a
+  // door/window is attached to its own logical wall (see
+  // renderWallStrip() below) — and rotates using the exact same
+  // rotateWall() mechanism. It genuinely moves to whichever PHYSICAL
+  // wall "top" now corresponds to; nothing about it stays fixed on
+  // screen while the room rotates around it.
+  const boardPhysicalWall = rotateWall('top', orientation);
   const board = document.createElement('div');
-  board.className = 'seating-view__board';
+  board.className = `seating-view__board seating-view__board--${boardPhysicalWall}`;
   board.textContent = 'BOARD';
-  section.appendChild(board);
 
   const cells = classroom.seatingConfig.cells;
   const roomElements = ensureRoomElements(classroom);
@@ -660,23 +667,26 @@ function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCel
     right: renderWallStrip('right', rowCount, roomElements, orientation, roomPlacementMode, activeRoomElementId, handlers),
   };
 
+  if (boardPhysicalWall === 'top') section.appendChild(board);
   section.appendChild(wallStripsByPhysicalPosition.top);
 
   const mapRow = document.createElement('div');
   mapRow.className = 'seating-view__map-row';
+  if (boardPhysicalWall === 'left') mapRow.appendChild(board);
   mapRow.appendChild(wallStripsByPhysicalPosition.left);
 
   const map = document.createElement('div');
   map.className = 'seating-view__map';
-  // THE ACTUAL FIX for the reported overflow: each column is now
-  // genuinely flexible (minmax(0, 1fr)) rather than a fixed size —
-  // and the map's own overall width is capped at min(its natural
-  // size, 100% of the available room), so a wide layout shrinks to
-  // fit rather than spilling past the card. Rows keep the same real
-  // cell size so seats stay legible; only the width responds.
-  map.style.gridTemplateColumns = `repeat(${columnCount}, minmax(0, 1fr))`;
+  // THE ACTUAL FIX for the reported "pill" seats: per this round's
+  // explicit re-prioritization (square grid > fitting the whole room
+  // on screen), columns are now a genuinely FIXED width matching the
+  // row height exactly — true squares, never shrinking to fit
+  // available space. The map's own natural width is used directly;
+  // a very wide layout scrolls horizontally within the room card
+  // itself (see .seating-view__room's own overflow-x) rather than
+  // squeezing seats into illegible pills.
+  map.style.gridTemplateColumns = `repeat(${columnCount}, var(--seating-cell-size))`;
   map.style.gridTemplateRows = `repeat(${rowCount}, var(--seating-cell-size))`;
-  map.style.width = `min(calc(${columnCount} * (var(--seating-cell-size) + var(--seating-cell-gap))), 100%)`;
 
   for (let y = renderMinY; y <= renderMaxY; y += 1) {
     for (let x = renderMinX; x <= renderMaxX; x += 1) {
@@ -702,10 +712,12 @@ function renderClassroomMap(classroom, allStudents, selectedStudentId, activeCel
     }
   }
   mapRow.appendChild(map);
+  if (boardPhysicalWall === 'right') mapRow.appendChild(board);
   mapRow.appendChild(wallStripsByPhysicalPosition.right);
   section.appendChild(mapRow);
 
   section.appendChild(wallStripsByPhysicalPosition.bottom);
+  if (boardPhysicalWall === 'bottom') section.appendChild(board);
 
   return section;
 }
@@ -931,12 +943,20 @@ function renderCell(cell, occupant, selectedStudentId, activeCellId, swapSourceC
   const isSwapTarget = !!swapSourceCellId && cell.type === 'space';
   if (isSwapTarget) cellButton.classList.add('seating-view__cell--swap-target');
 
-  // Team color tints the seat itself — the existing group-color
-  // language reused directly (getGroupColorHex), never a new system.
+  // THE ACTUAL FIX for the reported color mismatch: this mirrors
+  // TeamCard.js's own exact visual pattern (a solid, full-strength
+  // color header + a neutral body below) — the same underlying
+  // getGroupColorHex(team.color) value was already reused correctly
+  // last round, but diluting it into an 18% tint made it visually
+  // unrecognizable against Team Standings' own bold, solid header.
+  // A small solid accent strip at the seat's own top edge, at full
+  // strength, is what actually reads as "the same color" to a
+  // teacher who already knows that group's color from Standings.
   if (occupant?.team?.color) {
     const groupHex = getGroupColorHex(occupant.team.color);
     cellButton.style.borderColor = groupHex;
-    cellButton.style.backgroundColor = `color-mix(in srgb, ${groupHex} 18%, var(--color-surface, #fff))`;
+    cellButton.style.setProperty('--seating-cell-group-accent', groupHex);
+    cellButton.classList.add('seating-view__cell--has-group-accent');
   }
 
   if (occupant) {
