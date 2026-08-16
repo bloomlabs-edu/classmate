@@ -102,7 +102,7 @@ export function canApplyIncomingServerState(classroomId) {
   return status === 'clean' || status === 'saved';
 }
 
-function setSaveState(classroomId, status, error = null) {
+export function setSaveState(classroomId, status, error = null) {
   const previousStatus = getSaveState(classroomId).status;
   logPersistenceEvent(`Save state transition: ${previousStatus} \u2192 ${status}`, { classroomId });
   saveStates.set(classroomId, { status, error });

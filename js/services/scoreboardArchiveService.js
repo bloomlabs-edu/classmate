@@ -35,6 +35,7 @@
  */
 
 import { firestoreClassroomRepository as repository } from '../repositories/firestoreClassroomRepository.js';
+import * as workspaceService from './workspaceService.js';
 import { generateId } from '../utils/idGenerator.js';
 import { getCurrentIsoDate } from '../utils/dateHelpers.js';
 
@@ -84,7 +85,22 @@ export async function archiveAndReset(classroom) {
   };
 
   const resetTeams = buildResetTeams(classroom);
-  await repository.archiveScoreboardAndReset(classroom.id, archive, resetTeams);
+
+  // THE ACTUAL FIX — see this function's own header comment above for
+  // the full race-condition explanation this closes. Marking 'saving'
+  // before the write (and 'saved' after) is the exact same protection
+  // workspaceService.js's own saveExplicitly() already gives every
+  // other write in this app; without it, a background snapshot
+  // racing in during this operation could silently undo the reset
+  // this function performs below.
+  workspaceService.setSaveState(classroom.id, 'saving');
+  try {
+    await repository.archiveScoreboardAndReset(classroom.id, archive, resetTeams);
+    workspaceService.setSaveState(classroom.id, 'saved');
+  } catch (error) {
+    workspaceService.setSaveState(classroom.id, 'failed', error);
+    throw error;
+  }
 
   // Reflect the reset in the in-memory object the caller already has,
   // exactly like resetAllScores() does — the Firestore write above is
