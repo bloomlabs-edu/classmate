@@ -330,6 +330,46 @@ class FirestoreClassroomRepository extends ClassroomRepository {
     await batch.commit();
   }
 
+  _scoreboardArchivesCollection(classroomId) {
+    return collection(this._getDb(), 'classrooms', classroomId, 'scoreboardArchives');
+  }
+
+  _scoreboardArchiveDoc(classroomId, archiveId) {
+    return doc(this._getDb(), 'classrooms', classroomId, 'scoreboardArchives', archiveId);
+  }
+
+  /**
+   * THE ONE ATOMIC OPERATION this entire feature depends on — see the
+   * feature's own requirement that archiving and resetting must
+   * never happen only one at a time. A writeBatch (not a
+   * runTransaction) is enough here: unlike recordRecentNotebook()
+   * above, this never needs to READ anything mid-operation to decide
+   * what to write — the archive snapshot and the reset teams array
+   * are both fully computed ahead of time by
+   * services/scoreboardArchiveService.js, so a batch's own atomic
+   * all-or-nothing commit is sufficient and simpler than a
+   * transaction. `resetTeams` is the caller's own pre-computed
+   * "same teams/students, every score set to 0" array — this
+   * repository never decides what "reset" means, only writes what
+   * it's given.
+   */
+  async archiveScoreboardAndReset(classroomId, archive, resetTeams) {
+    const batch = writeBatch(this._getDb());
+    batch.set(this._scoreboardArchiveDoc(classroomId, archive.id), archive);
+    batch.update(this._classroomDoc(classroomId), { teams: resetTeams });
+    await batch.commit();
+  }
+
+  async listScoreboardArchives(classroomId) {
+    const snapshot = await getDocs(this._scoreboardArchivesCollection(classroomId));
+    return snapshot.docs.map((docSnapshot) => docSnapshot.data());
+  }
+
+  async getScoreboardArchive(classroomId, archiveId) {
+    const docSnapshot = await getDoc(this._scoreboardArchiveDoc(classroomId, archiveId));
+    return docSnapshot.exists() ? docSnapshot.data() : null;
+  }
+
   async claimMigration(uid) {
     const db = this._getDb();
     const userDocRef = this._userDoc(uid);

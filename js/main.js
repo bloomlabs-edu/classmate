@@ -50,6 +50,7 @@ import { renderLearningManagementView } from './ui/views/LearningManagementView.
 import { renderAssessmentManagementView } from './ui/views/AssessmentManagementView.js';
 import { renderGoalManagementView } from './ui/views/GoalManagementView.js';
 import { renderFeedModerationView } from './ui/views/FeedModerationView.js';
+import { renderScoreboardArchiveView } from './ui/views/ScoreboardArchiveView.js';
 import { renderTrackerView } from './ui/views/TrackerView.js';
 import { renderTeacherDiagnosticsView } from './ui/views/TeacherDiagnosticsView.js'; // TEMPORARY — see that file's own header comment
 import { renderSettingsView } from './ui/views/SettingsView.js';
@@ -504,6 +505,25 @@ function renderRoute(route, reason = 'unspecified') {
         onBack: () => router.navigate(`/classroom/${classroom.id}`),
         onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
       });
+    } else if (route.name === 'scoreboardArchive' || route.name === 'scoreboardArchiveDetail') {
+      renderScoreboardArchiveView(appContainer, {
+        classroom,
+        archiveId: route.name === 'scoreboardArchiveDetail' ? route.archiveId : null,
+        onBack: () => {
+          if (route.name === 'scoreboardArchiveDetail') {
+            router.navigate(`/classroom/${classroom.id}/scoreboard-archive`);
+          } else {
+            router.navigate(`/classroom/${classroom.id}/class-mode`);
+          }
+        },
+        onOpenArchive: (archiveId) => {
+          if (archiveId) {
+            router.navigate(`/classroom/${classroom.id}/scoreboard-archive/${archiveId}`);
+          } else {
+            router.navigate(`/classroom/${classroom.id}/scoreboard-archive`);
+          }
+        },
+      });
     } else if (route.name === 'recognition') {
       renderRecognitionScreenView(appContainer, {
         classroom,
@@ -520,6 +540,7 @@ function renderRoute(route, reason = 'unspecified') {
         classroom,
         onBack: () => router.navigate(`/classroom/${classroom.id}`),
         onNotebooks: () => router.navigate(`/classroom/${classroom.id}/notebooks`),
+        onOpenScoreboardArchive: () => router.navigate(`/classroom/${classroom.id}/scoreboard-archive`),
         onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
       });
     } else if (route.name === 'settings') {

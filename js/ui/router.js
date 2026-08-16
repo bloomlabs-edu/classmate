@@ -123,6 +123,12 @@ function resolvePathParts(parts) {
     if (parts[2] === 'feed') {
       return { name: 'feed', classroomId: parts[1] };
     }
+    if (parts[2] === 'scoreboard-archive') {
+      if (parts[3]) {
+        return { name: 'scoreboardArchiveDetail', classroomId: parts[1], archiveId: parts[3] };
+      }
+      return { name: 'scoreboardArchive', classroomId: parts[1] };
+    }
     // TEMPORARY — see ui/views/TeacherDiagnosticsView.js's own header
     // comment for why this exists and when it should be removed.
     if (parts[2] === 'diagnostics') {

@@ -327,6 +327,23 @@ service cloud.firestore {
       }
     }
 
+    // Scoreboard Archive — one immutable snapshot per reset, created
+    // only by a teacher (classroom member) performing the Reset
+    // Scoreboard action (see services/scoreboardArchiveService.js).
+    // Deliberately allows no update or delete at all, at the rules
+    // level: "the archive must be read-only" and "never overwrite the
+    // previous archive" are enforced here, not merely by the app
+    // choosing not to expose an edit/delete control.
+    match /classrooms/{classroomId}/scoreboardArchives/{archiveId} {
+      allow read: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+
+      allow create: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+
+      allow update, delete: if false;
+    }
+
     // Legacy, pre-sharing location — migration-only (see
     // services/workspaceService.js). Nothing new is ever written here.
     //

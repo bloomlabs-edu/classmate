@@ -48,7 +48,7 @@ import * as classSessionService from '../../services/classSessionService.js';
 import { getDisplayName, getDisplaySubtitle } from '../../services/classroomService.js';
 
 export function renderTrackerView(container, props) {
-  const { classroom, onBack, onNotebooks, onSelectStudent } = props;
+  const { classroom, onBack, onNotebooks, onOpenScoreboardArchive, onSelectStudent } = props;
   const highlight = props._highlight || {};
 
   if (!classSessionService.isSessionActive(classroom)) {
@@ -169,6 +169,19 @@ export function renderTrackerView(container, props) {
   notebooksButton.title = 'Notebook Tracker';
   notebooksButton.addEventListener('click', onNotebooks);
 
+  // Scoreboard Archive — the one new header control this feature
+  // adds. Deliberately just another small icon button, same visual
+  // weight as Undo/Notebook Tracker, never a dominant new button —
+  // the actual Reset Scoreboard action and its confirmation live one
+  // level deeper, inside the view this opens.
+  const archiveButton = document.createElement('button');
+  archiveButton.type = 'button';
+  archiveButton.className = 'btn btn--ghost btn--icon-only';
+  archiveButton.appendChild(createIcon('history'));
+  archiveButton.setAttribute('aria-label', 'Scoreboard Archive');
+  archiveButton.title = 'Scoreboard Archive';
+  archiveButton.addEventListener('click', onOpenScoreboardArchive);
+
   // Kept, but deliberately placed after Notebook Tracker rather than
   // beside Undo — it's a real in-lesson action (zeroing scores for a
   // new period's students while the previous period's are still on
@@ -200,7 +213,7 @@ export function renderTrackerView(container, props) {
     renderTrackerView(container, { ...props, _showSessionReview: true });
   });
 
-  actions.append(undoButton, notebooksButton, resetButton, endClassButton);
+  actions.append(undoButton, notebooksButton, archiveButton, resetButton, endClassButton);
   header.append(backButton, titleBlock, actions);
 
   const grid = createTeamStandingsBoardElement({
