@@ -155,6 +155,7 @@ export function renderDashboardView(container, props) {
     renderSeatingView(container, {
       classroom,
       onBack: openClassroomLanding,
+      onSelectStudent,
     });
   }
 

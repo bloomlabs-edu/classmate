@@ -10114,13 +10114,82 @@ button.wizard-checklist__row:hover {
 }
 .seating-view__room-controls-row {
   display: flex;
+  align-items: center;
   gap: 0.5rem;
   margin-top: 0.4rem;
+}
+.seating-view__orientation-label {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  margin-left: 0.5rem;
+}
+
+/* Wall strips — doors/windows genuinely belong ONLY here, never the interior seating grid. Each position is a real, fixed fraction of one seat-sized unit (thinner than a seat, since a door/window doesn't need as much room), aligned to the seating grid's own column/row count so a wall position visually lines up with the seat directly beside/above/below it. */
+.seating-view__wall-strip {
+  display: flex;
+  gap: var(--seating-cell-gap);
+}
+.seating-view__wall-strip--top,
+.seating-view__wall-strip--bottom {
+  margin: 0 auto;
+  justify-content: flex-start;
+}
+.seating-view__wall-strip--left,
+.seating-view__wall-strip--right {
+  flex-direction: column;
+  justify-content: flex-start;
+}
+.seating-view__wall-slot {
+  width: var(--seating-cell-size);
+  height: 1.4rem;
+}
+.seating-view__wall-strip--left .seating-view__wall-slot,
+.seating-view__wall-strip--right .seating-view__wall-slot {
+  width: 1.4rem;
+  height: var(--seating-cell-size);
+}
+.seating-view__map-row {
+  display: flex;
+  align-items: center;
+  gap: var(--seating-cell-gap);
+}
+.seating-view__map-row .seating-view__map {
+  flex: 1 1 auto;
+}
+.seating-view__room-element-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.seating-view__room-element {
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  cursor: pointer;
+  font-size: 0.55rem;
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  padding: 0;
+}
+.seating-view__room-element--door {
+  background: color-mix(in srgb, #8a5a2b 20%, var(--color-surface, #fff));
+  border-color: #8a5a2b;
+  color: #8a5a2b;
+}
+.seating-view__room-element--window {
+  background: color-mix(in srgb, #4a90d9 20%, var(--color-surface, #fff));
+  border-color: #4a90d9;
+  color: #4a90d9;
+}
+.seating-view__room-element--active {
+  border-width: 2px;
 }
 
 /* THE ACTUAL FIX for the reported overflow: --seating-cell-size still defines one real seat-sized unit (used for row height and, on a narrow layout, natural column width), but each column is now genuinely flexible (minmax(0, 1fr) — see SeatingView.js's own renderClassroomMap()) and the map's own overall width is explicitly capped at min(its natural width, 100% of the room) — so a layout with many columns shrinks to fit the actual available width rather than overflowing past the card at all. */
 .seating-view__map {
-  --seating-cell-size: clamp(2.5rem, 8vw, 6.5rem);
+  --seating-cell-size: clamp(3.5rem, 9vw, 7.5rem);
   --seating-cell-gap: calc(var(--seating-cell-size) * 0.1);
   display: grid;
   gap: var(--seating-cell-gap);
@@ -10152,15 +10221,12 @@ button.wizard-checklist__row:hover {
   font-family: inherit;
 }
 .seating-view__cell-label {
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   font-weight: var(--font-weight-bold);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   text-align: center;
   line-height: 1.15;
-  padding: 0 0.15rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  padding: 0 0.2rem;
   max-width: 100%;
 }
 .seating-view__cell--seat.seating-view__cell--occupied {
