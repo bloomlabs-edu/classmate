@@ -10073,15 +10073,81 @@ button.wizard-checklist__row:hover {
   transform: translateY(-1px);
 }
 
-/* Seating view — see ui/views/SeatingView.js. A visual classroom layout builder: Board, a compact spatial seat-space map, Teacher, plus an Unseated Students roster — side by side on desktop, stacked on narrow screens. */
-.seating-view__hint {
+
+/* Seating view — REBUILT around a simple rectangular grid + drag-and-drop model, see ui/views/SeatingView.js's own header comment. The old sparse-coordinate/seat-space/active-cell CSS is deleted entirely, not layered under this. */
+.seating-view__setup {
+  max-width: 32rem;
+  margin: 2rem auto 0;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 2rem;
+  box-shadow: var(--elevation-card);
+}
+.seating-view__setup-heading {
+  margin: 0 0 0.75rem;
+}
+.seating-view__setup-notice {
   color: var(--color-muted);
-  margin: 0.5rem 0 0;
+  margin: 0 0 1.5rem;
+  line-height: 1.5;
+}
+.seating-view__setup-label {
+  font-weight: var(--font-weight-bold);
+  margin: 0 0 1rem;
+}
+.seating-view__setup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.seating-view__setup-field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-weight: var(--font-weight-bold);
+  font-size: 0.85rem;
+}
+.seating-view__setup-select {
+  font: inherit;
+  padding: 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  max-width: 12rem;
+}
+.seating-view__setup-orientation {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.seating-view__orientation-option {
+  align-self: flex-start;
+}
+.seating-view__orientation-option--selected {
+  border-color: var(--color-primary, #2e7d9e);
+  color: var(--color-primary, #2e7d9e);
+  font-weight: var(--font-weight-bold);
+}
+.seating-view__setup-warning {
+  color: var(--color-danger, #c62828);
+  font-size: 0.85rem;
+  margin: 0;
+}
+.seating-view__setup-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+/* The main editor — grid receives the majority of the available space; the roster is a genuinely narrower, secondary panel. */
+.seating-view__editor {
+  margin-top: 1rem;
+}
+.seating-view__edit-grid-button {
+  margin-bottom: 1rem;
 }
 .seating-view__layout {
   display: flex;
   gap: 1.5rem;
-  margin-top: 1rem;
   align-items: flex-start;
   flex-wrap: wrap;
 }
@@ -10116,7 +10182,6 @@ button.wizard-checklist__row:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  align-self: stretch;
 }
 .seating-view__board--left {
   margin-right: 1rem;
@@ -10125,110 +10190,33 @@ button.wizard-checklist__row:hover {
 .seating-view__board--right {
   margin-left: 1rem;
 }
-
-/* ROOM-level controls — genuinely separate from any seat's own panel, per the corrected component hierarchy (a door/window is a room element, never a seat-context one). Sits above Board, at the very top of the classroom card. */
-.seating-view__room-controls {
-  margin-bottom: 1rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--color-border);
-}
-.seating-view__room-controls-row {
+.seating-view__room-row {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.4rem;
+  align-items: stretch;
 }
-.seating-view__orientation-label {
-  font-size: 0.75rem;
-  color: var(--color-muted);
-  margin-left: 0.5rem;
-}
-
-/* Wall strips — doors/windows genuinely belong ONLY here, never the interior seating grid. Each position is a real, fixed fraction of one seat-sized unit (thinner than a seat, since a door/window doesn't need as much room), aligned to the seating grid's own column/row count so a wall position visually lines up with the seat directly beside/above/below it. */
-.seating-view__wall-strip {
+.seating-view__grid-wrapper {
   display: flex;
-  gap: var(--seating-cell-gap);
-}
-.seating-view__wall-strip--top,
-.seating-view__wall-strip--bottom {
-  margin: 0 auto;
-  justify-content: flex-start;
-}
-.seating-view__wall-strip--left,
-.seating-view__wall-strip--right {
-  flex-direction: column;
-  justify-content: flex-start;
-}
-.seating-view__wall-slot {
-  width: var(--seating-cell-size);
-  height: 1.4rem;
-}
-.seating-view__wall-strip--left .seating-view__wall-slot,
-.seating-view__wall-strip--right .seating-view__wall-slot {
-  width: 1.4rem;
-  height: var(--seating-cell-size);
-}
-.seating-view__map-row {
-  display: flex;
-  align-items: center;
-  gap: var(--seating-cell-gap);
-}
-.seating-view__map-row .seating-view__map {
-  flex: 0 0 auto;
-}
-.seating-view__room-element-wrapper {
-  position: relative;
+  justify-content: center;
   width: 100%;
-  height: 100%;
-}
-.seating-view__room-element {
-  width: 100%;
-  height: 100%;
-  border: 1px solid var(--color-border);
-  border-radius: 2px;
-  cursor: pointer;
-  font-size: 0.55rem;
-  font-weight: var(--font-weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  padding: 0;
-}
-.seating-view__room-element--door {
-  background: color-mix(in srgb, #8a5a2b 20%, var(--color-surface, #fff));
-  border-color: #8a5a2b;
-  color: #8a5a2b;
-}
-.seating-view__room-element--window {
-  background: color-mix(in srgb, #4a90d9 20%, var(--color-surface, #fff));
-  border-color: #4a90d9;
-  color: #4a90d9;
-}
-.seating-view__room-element--active {
-  border-width: 2px;
 }
 
-/* THE ACTUAL FIX for the reported overflow: --seating-cell-size still defines one real seat-sized unit (used for row height and, on a narrow layout, natural column width), but each column is now genuinely flexible (minmax(0, 1fr) — see SeatingView.js's own renderClassroomMap()) and the map's own overall width is explicitly capped at min(its natural width, 100% of the room) — so a layout with many columns shrinks to fit the actual available width rather than overflowing past the card at all. */
-.seating-view__map {
-  --seating-cell-size: clamp(3.5rem, 9vw, 7.5rem);
-  --seating-cell-gap: calc(var(--seating-cell-size) * 0.18);
+/* THE ACTUAL FIX for the "pill" problem this rebuild starts from a clean slate on: --seat-size defines one real, square unit, used identically for both grid dimensions — genuinely never overridden by any max-width/flex-shrink mechanism that could compress it below a true square. */
+.seating-view__grid {
+  --seat-size: clamp(4.5rem, 9vw, 8rem);
   display: grid;
-  gap: var(--seating-cell-gap);
+  gap: calc(var(--seat-size) * 0.12);
   width: max-content;
-  margin: 0 auto;
-}
-.seating-view__cell-slot {
-  min-width: 0;
-  height: var(--seating-cell-size);
 }
 .seating-view__cell-wrapper {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+  position: relative;
 }
 .seating-view__cell {
   position: relative;
-  width: 100%;
-  height: 100%;
+  width: var(--seat-size);
+  height: var(--seat-size);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-surface-muted, #f4f4f4);
@@ -10237,22 +10225,14 @@ button.wizard-checklist__row:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0.2rem;
+  padding: 0.3rem;
   font-family: inherit;
 }
-.seating-view__cell-label {
-  font-size: 0.78rem;
-  font-weight: var(--font-weight-bold);
-  overflow-wrap: break-word;
-  text-align: center;
-  line-height: 1.15;
-  padding: 0 0.2rem;
-  max-width: 100%;
-}
-.seating-view__cell--seat.seating-view__cell--occupied {
+.seating-view__cell--occupied {
   background: var(--color-surface, #fff);
   color: var(--color-ink);
   border-color: var(--color-primary, #2e7d9e);
+  cursor: grab;
 }
 .seating-view__cell--has-group-accent::before {
   content: '';
@@ -10264,45 +10244,21 @@ button.wizard-checklist__row:hover {
   background: var(--seating-cell-group-accent);
   border-radius: var(--radius-control) var(--radius-control) 0 0;
 }
-.seating-view__cell--space {
-  background: var(--color-surface-muted, #f4f4f4);
-  background-image: repeating-linear-gradient(45deg, color-mix(in srgb, var(--color-border) 60%, transparent) 0, color-mix(in srgb, var(--color-border) 60%, transparent) 1px, transparent 1px, transparent 6px);
-  border-style: dashed;
-  cursor: pointer;
+.seating-view__cell-label {
+  font-size: 0.78rem;
+  font-weight: var(--font-weight-bold);
+  overflow-wrap: break-word;
+  text-align: center;
+  line-height: 1.15;
+  padding: 0 0.2rem;
+  max-width: 100%;
 }
-.seating-view__cell--door {
-  background: color-mix(in srgb, #8a5a2b 12%, var(--color-surface, #fff));
-  border-color: #8a5a2b;
-  color: #8a5a2b;
-}
-.seating-view__cell--window {
-  background: color-mix(in srgb, #4a90d9 12%, var(--color-surface, #fff));
-  border-color: #4a90d9;
-  color: #4a90d9;
-}
-.seating-view__cell--door .seating-view__cell-label,
-.seating-view__cell--window .seating-view__cell-label {
-  font-size: 0.55rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-.seating-view__cell--swap-target {
-  border-width: 2px;
-  border-color: var(--color-success, #2e8b57);
-  background: color-mix(in srgb, var(--color-success, #2e8b57) 15%, var(--color-surface, #fff));
-  animation: seating-swap-target-pulse 1.6s ease-in-out infinite;
-}
-@keyframes seating-swap-target-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
-}
-.seating-view__cell--active {
-  border-width: 2px;
-  border-color: var(--color-primary, #2e7d9e);
-  background: color-mix(in srgb, var(--color-primary, #2e7d9e) 12%, var(--color-surface, #fff));
+.seating-view__cell-name-wrapper {
+  max-width: 100%;
+  text-align: center;
 }
 
-/* This cell's own reveal — genuinely two, visually separated groups: "Expand" (directional +) and "Manage this seat" (assign/remove/convert/delete). Anchored directly below the clicked cell, only shown while active — never a permanent fixture around every seat. */
+/* The contextual assignment panel — anchored directly below the clicked cell. */
 .seating-view__cell-panel {
   background: var(--color-surface, #fff);
   border: 1px solid var(--color-border);
@@ -10319,67 +10275,19 @@ button.wizard-checklist__row:hover {
   width: max-content;
   max-width: 17rem;
 }
-.seating-view__add-space-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
 .seating-view__cell-panel-heading {
-  margin: 0 0 0.15rem;
+  margin: 0;
   font-weight: var(--font-weight-bold);
   font-size: 0.85rem;
-}
-/* The always-visible "+" — a real grid item at its own (x, y) position (see SeatingView.js's own renderClassroomMap()), never a toolbar or popup. Clicking it adds a seat there immediately. */
-.seating-view__add-control {
-  width: 100%;
-  height: 100%;
-  border: 1px dashed var(--color-primary, #2e7d9e);
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--color-primary, #2e7d9e);
-  font-size: 0.85rem;
-  font-weight: var(--font-weight-bold);
-  cursor: pointer;
-  opacity: 0.55;
-  line-height: 1;
-}
-.seating-view__add-control:hover {
-  opacity: 1;
-  background: color-mix(in srgb, var(--color-primary, #2e7d9e) 8%, transparent);
-}
-.seating-view__add-control--room-placement {
-  opacity: 1;
-  border-style: solid;
-  border-width: 2px;
-  border-color: #c98a1f;
-  color: #c98a1f;
-  background: color-mix(in srgb, #c98a1f 15%, var(--color-surface, #fff));
-  animation: seating-swap-target-pulse 1.6s ease-in-out infinite;
 }
 .seating-view__profile-link {
   align-self: flex-start;
   font-size: 0.7rem;
-  padding: 0.15rem 0;
   padding-bottom: 0.5rem;
   margin-bottom: 0.15rem;
   border-bottom: 1px solid var(--color-border);
   width: 100%;
   text-align: left;
-}
-.seating-view__cell-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  align-items: center;
-}
-.seating-view__cell-actions .btn {
-  font-size: 0.7rem;
-  padding: 0.3rem 0.5rem;
-}
-.seating-view__cell-panel-note {
-  margin: 0;
-  font-size: 0.65rem;
-  color: var(--color-muted);
 }
 .seating-view__cell-group-label {
   margin: 0.1rem 0 0;
@@ -10389,8 +10297,6 @@ button.wizard-checklist__row:hover {
   letter-spacing: 0.03em;
   color: var(--color-muted);
 }
-
-/* "Move Student" / "Add Space" — genuinely distinct from the "+" building controls in purpose, sharing the same visual pattern for consistency: a horizontal row of 4 equal buttons, icon stacked above label, matching the requested layout exactly. Per explicit product decision, all 4 are always rendered — an invalid direction is shown disabled, never hidden. */
 .seating-view__move-controls {
   display: flex;
   gap: 0.4rem;
@@ -10401,12 +10307,12 @@ button.wizard-checklist__row:hover {
   flex-direction: column;
   align-items: center;
   gap: 0.15rem;
-  font-size: 0.7rem;
-  padding: 0.4rem 0.3rem;
+  font-size: 0.65rem;
+  padding: 0.35rem 0.25rem;
   white-space: nowrap;
 }
 .seating-view__move-button span {
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   line-height: 1;
 }
 .seating-view__move-button:disabled {
@@ -10416,6 +10322,7 @@ button.wizard-checklist__row:hover {
   color: var(--color-muted);
 }
 
+/* The roster — a genuinely narrower, secondary panel with its own independent scroll for a long list, never affecting the grid's own size at all. */
 .seating-view__roster {
   flex: 1 1 220px;
   max-width: 300px;
@@ -10441,29 +10348,21 @@ button.wizard-checklist__row:hover {
 .seating-view__roster-team-heading:first-of-type {
   margin-top: 0;
 }
-.seating-view__roster-row {
-  display: block;
-  width: 100%;
-  text-align: left;
+.seating-view__roster-card {
   padding: 0.5rem 0.6rem;
-  border: none;
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
-  background: none;
-  font-family: inherit;
-  font-size: 0.9rem;
-  cursor: pointer;
+  margin-bottom: 0.4rem;
+  cursor: grab;
+  background: var(--color-surface, #fff);
 }
-.seating-view__roster-row:hover {
-  background: var(--color-surface-muted, #f4f4f4);
-}
-.seating-view__roster-row--selected {
-  background: color-mix(in srgb, var(--color-primary, #2e7d9e) 12%, var(--color-surface, #fff));
-  color: var(--color-primary, #2e7d9e);
-  font-weight: var(--font-weight-bold);
+.seating-view__roster-card:active {
+  cursor: grabbing;
 }
 .seating-view__roster-empty {
   color: var(--color-muted);
 }
+
 @media (max-width: 640px) {
   .seating-view__layout {
     flex-direction: column;
