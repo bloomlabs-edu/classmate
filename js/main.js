@@ -40,6 +40,7 @@ import { renderStudentNotebooksView } from './ui/student-portal/views/StudentNot
 import { renderStudentLearningView } from './ui/student-portal/views/StudentLearningView.js';
 import * as studentAuthService from './services/studentAuthService.js';
 import { renderStudentTeamView } from './ui/student-portal/views/StudentTeamView.js';
+import { renderStudentRecognitionView } from './ui/student-portal/views/StudentRecognitionView.js';
 import { renderStudentTeamDetailView } from './ui/student-portal/views/StudentTeamDetailView.js';
 import { renderStudentPublicProfileView } from './ui/student-portal/views/StudentPublicProfileView.js';
 import { renderStudentAvatarBuilderView } from './ui/student-portal/views/StudentAvatarBuilderView.js';
@@ -272,6 +273,10 @@ function renderStudentPortalMain(route) {
         renderStudentTeamView(content, {
           onNavigateToStudentProfile: (studentId) => router.navigate(`/student/student-profile/${studentId}`),
           onNavigateToTeam: (teamId) => router.navigate(`/student/team/${teamId}`),
+        });
+      } else if (route.section === 'recognition') {
+        renderStudentRecognitionView(content, {
+          onNavigateToStudentProfile: (studentId) => router.navigate(`/student/student-profile/${studentId}`),
         });
       } else if (route.section === 'student-profile') {
         renderStudentPublicProfileView(content, {

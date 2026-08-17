@@ -2,14 +2,19 @@
  * ui/student-portal/StudentPortalShell.js
  *
  * The Student Portal's persistent chrome: a friendly nav bar across
- * the 3 sections (Journey / Team / Profile), with whichever section
- * is active rendered below it. Reduced from the original 5 sections
- * (Home / Achievements / Team / Learn / Profile) — Home and
- * Achievements merged into Journey, and Learn was removed entirely
- * rather than kept as a "Coming Soon" tab, matching this app's own
- * established rule that a module with nothing behind it shouldn't
- * occupy a slot on screen (see this project's CHANGELOG). Learn comes
- * back once Learning Hub is real. Deliberately does NOT reuse
+ * the 4 sections (Journey / Team / Recognition / Profile), with
+ * whichever section is active rendered below it. Reduced from the
+ * original 5 sections (Home / Achievements / Team / Learn / Profile)
+ * — Home and Achievements merged into Journey, and Learn was removed
+ * entirely rather than kept as a "Coming Soon" tab, matching this
+ * app's own established rule that a module with nothing behind it
+ * shouldn't occupy a slot on screen (see this project's CHANGELOG).
+ * Learn comes back once Learning Hub is real. Recognition was added
+ * back as its own tab per explicit request, reusing
+ * ui/views/RecognitionScreenView.js's own existing categories/cards/
+ * leaderboards directly (see
+ * ui/student-portal/views/StudentRecognitionView.js) rather than
+ * building a second implementation. Deliberately does NOT reuse
  * Classroom Tracker's `.tracker-header` styling — the product
  * philosophy is explicit that this is "not a restricted version of
  * Classroom Tracker," so its chrome shouldn't look like an admin
@@ -28,6 +33,7 @@ import { createIcon } from '../components/Icon.js';
 const SECTIONS = [
   { id: 'journey', icon: 'graduation-cap', label: 'Journey' },
   { id: 'team', icon: 'users', label: 'Team' },
+  { id: 'recognition', icon: 'trophy', label: 'Recognition' },
   { id: 'profile', icon: 'user', label: 'Profile' },
 ];
 

@@ -63,7 +63,7 @@ function formatLeaderboardValue(category) {
 }
 
 export function renderRecognitionScreenView(container, props) {
-  const { classroom, onBack, onNavigatePeriod, onNavigateCategory, onSelectStudent } = props;
+  const { classroom, onBack, onNavigatePeriod, onNavigateCategory, onSelectStudent, hideBackButton = false } = props;
   const period = PERIOD_TABS.some((tab) => tab.id === props.period) ? props.period : 'week';
 
   const availableForPeriod = listRecognitionCategoriesForPeriod(period);
@@ -85,14 +85,21 @@ export function renderRecognitionScreenView(container, props) {
   const wrapper = document.createElement('div');
   wrapper.className = 'recognition-screen';
 
-  const header = document.createElement('header');
-  header.className = 'tracker-header';
-  const backButton = createBackButton(onBack);
-  const title = document.createElement('h1');
-  title.className = 'tracker-header__title';
-  title.textContent = '\ud83c\udfc6 Recognition';
-  header.append(backButton, title);
-  wrapper.appendChild(header);
+  if (hideBackButton) {
+    const title = document.createElement('h1');
+    title.className = 'student-section__title';
+    title.textContent = '\ud83c\udfc6 Recognition';
+    wrapper.appendChild(title);
+  } else {
+    const header = document.createElement('header');
+    header.className = 'tracker-header';
+    const backButton = createBackButton(onBack);
+    const title = document.createElement('h1');
+    title.className = 'tracker-header__title';
+    title.textContent = '\ud83c\udfc6 Recognition';
+    header.append(backButton, title);
+    wrapper.appendChild(header);
+  }
 
   const periodTabs = document.createElement('div');
   periodTabs.className = 'recognition-screen__period-tabs';
