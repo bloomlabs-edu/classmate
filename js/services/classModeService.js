@@ -43,7 +43,7 @@ function lastHistoryEntry(student) {
 export function awardStar(classroom, student) {
   const delta = 1;
   const entry = timelineService.logPoints(student, delta, 'Star Awarded');
-  console.log('[SCORE-WRITE] awardStar() — writes ONLY to student.history via timelineService.logPoints(); student.score is NOT written here at all', {
+  console.log('[SCORE-WRITE] awardStar() — calls timelineService.logPoints(), which appends to student.history AND increments student.score by the same delta (see logEntry()\u2019s own "student.score += delta")', {
     timestamp: new Date().toISOString(),
     studentId: student.id,
     studentName: student.name,
@@ -53,7 +53,7 @@ export function awardStar(classroom, student) {
   });
 
   pushUndo(classroom.id, () => {
-    console.log('[SCORE-WRITE] awardStar() undo callback — this is the ONLY place student.score is actually decremented for this action', { studentId: student.id, delta });
+    console.log('[SCORE-WRITE] awardStar() undo callback — reverses the student.score increment logEntry() already applied above', { studentId: student.id, delta });
     student.score -= delta;
     removeHistoryEntry(student, entry.id);
   });
@@ -81,7 +81,7 @@ export function awardStar(classroom, student) {
 export function deductPoint(classroom, student) {
   const delta = -1;
   const entry = timelineService.logPoints(student, delta, 'Negative Point');
-  console.log('[SCORE-WRITE] deductPoint() — writes ONLY to student.history via timelineService.logPoints(); student.score is NOT written here at all', {
+  console.log('[SCORE-WRITE] deductPoint() — calls timelineService.logPoints(), which appends to student.history AND increments student.score by the same delta (see logEntry()\u2019s own "student.score += delta")', {
     timestamp: new Date().toISOString(),
     studentId: student.id,
     studentName: student.name,
@@ -91,7 +91,7 @@ export function deductPoint(classroom, student) {
   });
 
   pushUndo(classroom.id, () => {
-    console.log('[SCORE-WRITE] deductPoint() undo callback — this is the ONLY place student.score is actually decremented for this action', { studentId: student.id, delta });
+    console.log('[SCORE-WRITE] deductPoint() undo callback — reverses the student.score decrement logEntry() already applied above', { studentId: student.id, delta });
     student.score -= delta;
     removeHistoryEntry(student, entry.id);
   });

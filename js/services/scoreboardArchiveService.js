@@ -108,6 +108,13 @@ export async function archiveAndReset(classroom) {
 
     const resetTeams = buildResetTeams(classroom);
 
+    // THE ACTUAL FIX (approved design, item 2) — the new scoring
+    // period genuinely begins now, at the exact same moment as the
+    // archive's own createdAt. This is the one, real field
+    // getNetPointsInCurrentPeriod()/getLiveTeamStandings() filter
+    // against — never just a diagnostic log payload.
+    const newPeriodStartedAt = archive.createdAt;
+
     // [RESET-VERIFY] A: THE EXACT STATE BEING WRITTEN — every
     // student's score, every group's computed total, the scoring
     // period identifier, and the exact document paths involved. This
@@ -118,7 +125,7 @@ export async function archiveAndReset(classroom) {
       classroomDocPath: `classrooms/${classroom.id}`,
       archiveDocPath: `classrooms/${classroom.id}/scoreboardArchives/${archive.id}`,
       scoringPeriodId: archive.id,
-      scoringPeriodStartedAt: archive.createdAt,
+      scoringPeriodStartedAt: newPeriodStartedAt,
       teams: resetTeams.map((team) => ({
         name: team.name,
         total: team.students.reduce((sum, s) => sum + s.score, 0),
@@ -136,7 +143,7 @@ export async function archiveAndReset(classroom) {
     workspaceService.setSaveState(classroom.id, 'saving');
     console.log('[RESET] archive write starting', { archiveId: archive.id, path: `classrooms/${classroom.id}/scoreboardArchives/${archive.id}` });
     try {
-      await repository.archiveScoreboardAndReset(classroom.id, archive, resetTeams);
+      await repository.archiveScoreboardAndReset(classroom.id, archive, resetTeams, newPeriodStartedAt);
       workspaceService.setSaveState(classroom.id, 'saved');
       console.log('[RESET] archive write completed');
     } catch (error) {
@@ -174,6 +181,7 @@ export async function archiveAndReset(classroom) {
         student.score = 0;
       });
     });
+    classroom.currentScoringPeriodStartedAt = newPeriodStartedAt;
 
     // This is the EXACT SAME `classroom` object reference TrackerView
     // holds — confirmed by direct inspection of TrackerView.js's own

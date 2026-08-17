@@ -353,10 +353,10 @@ class FirestoreClassroomRepository extends ClassroomRepository {
    * repository never decides what "reset" means, only writes what
    * it's given.
    */
-  async archiveScoreboardAndReset(classroomId, archive, resetTeams) {
+  async archiveScoreboardAndReset(classroomId, archive, resetTeams, currentScoringPeriodStartedAt) {
     const batch = writeBatch(this._getDb());
     batch.set(this._scoreboardArchiveDoc(classroomId, archive.id), archive);
-    batch.update(this._classroomDoc(classroomId), { teams: resetTeams });
+    batch.update(this._classroomDoc(classroomId), { teams: resetTeams, currentScoringPeriodStartedAt });
     await batch.commit();
   }
 

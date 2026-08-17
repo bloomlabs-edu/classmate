@@ -76,6 +76,7 @@ function normalizeClassroom(classroom) {
   classroom.notebooks = classroom.notebooks || {};
   notebookService.migrateLegacyChecksIfNeeded(classroom);
   classroom.classroomJoinCode = classroom.classroomJoinCode ?? null;
+  classroom.currentScoringPeriodStartedAt = classroom.currentScoringPeriodStartedAt ?? null;
 
   classroom.settings = classroom.settings || {};
   classroom.settings.bucketScoring = classroom.settings.bucketScoring || defaults.bucketScoring;

@@ -41,7 +41,7 @@ const LONG_PRESS_MS = 500;
 const MOVE_CANCEL_THRESHOLD_PX = 10;
 const SWIPE_THRESHOLD_PX = 60;
 
-export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongPress, tapActionLabel = 'award a star', movement }) {
+export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongPress, tapActionLabel = 'award a star', movement, displayScore }) {
   const style = getBucketRowStyle(student.bucket);
 
   const item = document.createElement('li');
@@ -62,7 +62,13 @@ export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongP
 
   const score = document.createElement('span');
   score.className = 'student-row__points';
-  score.textContent = `${getNetPoints(student)} \u2b50`;
+  // THE ACTUAL FIX (approved Reset Scoreboard design) — the live
+  // Class Mode row now displays the current-scoring-period score,
+  // passed in explicitly by the caller (TeamCard.js). Falls back to
+  // the original all-time getNetPoints(student) if no displayScore is
+  // given at all, so this stays fully backward-compatible for any
+  // caller that never adopts the new prop.
+  score.textContent = `${displayScore ?? getNetPoints(student)} \u2b50`;
 
   const trailing = document.createElement('span');
   trailing.className = 'student-row__trailing';

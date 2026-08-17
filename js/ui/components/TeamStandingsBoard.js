@@ -59,8 +59,8 @@
 
 import { createTeamCardElement } from './TeamCard.js';
 import { createEmptyStateElement } from './EmptyState.js';
-import { getTeamStandingsWithMovement, getClassLeaderboardWithMovement, getCurrentMonthPeriod } from '../../services/teamStatisticsService.js';
-import { getNetPoints } from '../../services/timelineService.js';
+import { getLiveTeamStandingsWithMovement, getClassLeaderboardWithMovement, getCurrentMonthPeriod } from '../../services/teamStatisticsService.js';
+import { getNetPointsInCurrentPeriod } from '../../services/timelineService.js';
 
 export function createTeamStandingsBoardElement({ classroom, onTap, onSwipeLeft, onLongPress, onTapTeam, highlight = {} }) {
   const grid = document.createElement('section');
@@ -76,9 +76,17 @@ export function createTeamStandingsBoardElement({ classroom, onTap, onSwipeLeft,
     return grid;
   }
 
-  const period = getCurrentMonthPeriod();
-  const standingsWithMovement = getTeamStandingsWithMovement(classroom, period);
+  // THE ACTUAL FIX (approved Reset Scoreboard design) — the live
+  // board's own group total now comes from getLiveTeamStandingsWithMovement(),
+  // net points since classroom.currentScoringPeriodStartedAt, never
+  // the old getCurrentMonthPeriod()-based calculation (which ignored
+  // Reset Scoreboard entirely). The per-student movement-arrow
+  // indicator below is deliberately left on the existing calendar-month
+  // period — a separate, cosmetic feature, not the score value itself,
+  // and out of this change's explicit scope.
+  const standingsWithMovement = getLiveTeamStandingsWithMovement(classroom);
 
+  const period = getCurrentMonthPeriod();
   const studentMovements = {};
   getClassLeaderboardWithMovement(classroom, period).forEach((entry) => {
     studentMovements[entry.studentId] = { movement: entry.movement, movementAmount: entry.movementAmount };
@@ -86,7 +94,11 @@ export function createTeamStandingsBoardElement({ classroom, onTap, onSwipeLeft,
 
   teamsWithStudents.forEach((team) => {
     const standing = standingsWithMovement.find((entry) => entry.teamId === team.id);
-    const sortedStudents = [...team.students].sort((a, b) => getNetPoints(b) - getNetPoints(a));
+    const sortedStudents = [...team.students].sort((a, b) => getNetPointsInCurrentPeriod(classroom, b) - getNetPointsInCurrentPeriod(classroom, a));
+    const displayScoreByStudentId = {};
+    team.students.forEach((student) => {
+      displayScoreByStudentId[student.id] = getNetPointsInCurrentPeriod(classroom, student);
+    });
 
     grid.appendChild(
       createTeamCardElement(team, standing ? standing.score : 0, {
@@ -98,6 +110,7 @@ export function createTeamStandingsBoardElement({ classroom, onTap, onSwipeLeft,
         movement: standing ? { movement: standing.movement, movementAmount: standing.movementAmount } : undefined,
         studentMovements,
         sortedStudents,
+        displayScoreByStudentId,
       })
     );
   });

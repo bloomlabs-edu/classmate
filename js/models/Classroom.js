@@ -217,6 +217,7 @@ export function createClassroom({
   classroomStudentJoinCode = null,
   deviceResetPin = null,
   seatingConfig = null,
+  currentScoringPeriodStartedAt = null,
   settings = buildDefaultSettings(),
 } = {}) {
   return {
@@ -244,6 +245,7 @@ export function createClassroom({
     classroomStudentJoinCode,
     deviceResetPin,
     seatingConfig,
+    currentScoringPeriodStartedAt,
     settings,
   };
 }

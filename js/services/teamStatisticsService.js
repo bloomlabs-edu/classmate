@@ -45,6 +45,7 @@
 
 import { rankDescending, getStarsInRange } from './studentProgressService.js';
 import { getMonthRange, getTodayDateKey } from '../utils/dateHelpers.js';
+import * as timelineService from './timelineService.js';
 
 /** The live, current calendar month — the only period this milestone actually uses. Not a teacher-managed concept, not stored anywhere: "the current month" is simply a fact about today's date, so there is nothing to create, close, or migrate. */
 export function getCurrentMonthPeriod() {
@@ -183,6 +184,46 @@ export function getTeamStandingsWithMovement(classroom, period, getBaseline = MO
   const current = getTeamStandings(classroom, period);
   const baseline = getTeamStandings(classroom, getBaseline(period));
   return attachMovement(current, baseline, 'teamId');
+}
+
+/**
+ * THE LIVE SCOREBOARD's own team standings — net points since
+ * `classroom.currentScoringPeriodStartedAt`, per the approved Reset
+ * Scoreboard design (see timelineService.js's own
+ * getNetPointsInCurrentPeriod(), which this is built on). A genuinely
+ * new function, not a reuse of getTeamStandings()/getStarsInRange():
+ * those compare date-only keys, the wrong granularity for a
+ * same-day reset boundary (see getNetPointsInCurrentPeriod()'s own
+ * comment for why). Individual student scores (see
+ * getLiveStudentStandings() below) and this team total are computed
+ * from the exact same period boundary, so they can never disagree.
+ */
+export function getLiveTeamStandings(classroom) {
+  const withScores = getRealTeams(classroom).map((team) => ({
+    teamId: team.id,
+    teamName: team.name,
+    score: team.students.reduce((sum, student) => sum + timelineService.getNetPointsInCurrentPeriod(classroom, student), 0),
+  }));
+  return rankDescending(withScores, 'score');
+}
+
+/** getLiveTeamStandings(), with movement against a zero baseline — every team genuinely starts a new scoring period at 0, so "movement since period start" is fully determined by the current score itself; reuses the exact same attachMovement() utility every other standings view already uses. */
+export function getLiveTeamStandingsWithMovement(classroom) {
+  const current = getLiveTeamStandings(classroom);
+  const baseline = current.map((entry) => ({ ...entry, score: 0, rank: 1 }));
+  return attachMovement(current, baseline, 'teamId');
+}
+
+/** One team's own students, ranked by their own current-scoring-period net points — the individual-row equivalent of getLiveTeamStandings() above, using the exact same period boundary. */
+export function getLiveStudentStandings(classroom, teamId) {
+  const team = classroom.teams.find((t) => t.id === teamId);
+  if (!team) return [];
+  const withScores = team.students.map((student) => ({
+    studentId: student.id,
+    studentName: student.name,
+    score: timelineService.getNetPointsInCurrentPeriod(classroom, student),
+  }));
+  return rankDescending(withScores, 'score');
 }
 
 /** getTeamLeaderboard(), enriched with previousRank/movement/movementAmount the same way getTeamStandingsWithMovement() is — see that function's own comment for the exact semantics. */
