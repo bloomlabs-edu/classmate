@@ -202,12 +202,15 @@ export function renderTrackerView(container, props) {
   resetButton.title = 'Reset Scoreboard';
   resetButton.disabled = !hasStudents;
   resetButton.addEventListener('click', () => {
+    console.log('[RESET] header Reset Scoreboard icon clicked');
     openResetScoreboardModal({
       onConfirm: async () => {
         await scoreboardArchiveService.archiveAndReset(classroom);
         classModeService.clearUndoStack(classroom);
         showToast('Scoreboard archived and reset');
+        console.log('[RESET] calling rerender() to reflect the reset scoreboard');
         rerender();
+        console.log('[RESET] rerender() returned');
       },
     });
   });

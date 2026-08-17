@@ -53,6 +53,7 @@ export function openResetScoreboardModal({ onConfirm }) {
   confirmButton.className = 'btn btn--primary';
   confirmButton.textContent = 'Archive & Reset';
   confirmButton.addEventListener('click', async () => {
+    console.log('[RESET] confirmation button clicked');
     confirmButton.disabled = true;
     confirmButton.textContent = 'Archiving\u2026';
     try {
@@ -62,6 +63,7 @@ export function openResetScoreboardModal({ onConfirm }) {
       confirmButton.disabled = false;
       confirmButton.textContent = 'Archive & Reset';
       window.alert('Something went wrong and the scoreboard was not reset. Please try again.');
+      console.error('[RESET] FAILED', error);
       console.error('[ResetScoreboardModal] archiveAndReset failed:', error);
     }
   });
