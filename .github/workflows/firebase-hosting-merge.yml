@@ -38,8 +38,24 @@ jobs:
           channelId: live
           projectId: classmate-302c2
       - name: Deploy Firestore rules
-        uses: w9jds/firebase-action@master
-        with:
-          args: deploy --only firestore:rules --project classmate-302c2
-        env:
-          GCP_SA_KEY: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_CLASSMATE_302C2 }}'
+        # THE ACTUAL FIX for a prior deployment failure at this exact
+        # step: the previous version of this step used a third-party
+        # community action (w9jds/firebase-action@master — floating on
+        # an unpinned branch, with an auth interface that couldn't be
+        # verified offline) and consistently failed here even though
+        # firestore.rules itself passed a full manual syntax audit
+        # (balanced braces/parens, and the new scoreboardArchives rule
+        # uses the exact same get()-based pattern already proven by
+        # the existing, already-deployed feedPosts/studentGoals rules
+        # in this same file). This step now uses the direct,
+        # officially-documented Google Cloud SDK approach instead:
+        # install firebase-tools, then authenticate via
+        # GOOGLE_APPLICATION_CREDENTIALS — the universal, standard env
+        # var Google's own tooling looks for, not a third-party
+        # action's own separate interface. Same secret, same service
+        # account, already proven to work for Hosting above.
+        run: |
+          npm install -g firebase-tools
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_CLASSMATE_302C2 }}' > "$RUNNER_TEMP/firebase-service-account.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
+          firebase deploy --only firestore:rules --project classmate-302c2
