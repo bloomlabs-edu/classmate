@@ -54,6 +54,22 @@ export function renderTrackerView(container, props) {
   const { classroom, onBack, onNotebooks, onOpenScoreboardArchive, onSelectStudent } = props;
   const highlight = props._highlight || {};
 
+  // [RESET-VERIFY] C: THE EXACT STATE renderTrackerView() itself
+  // received, and where it came from — this fires on every single
+  // render, including every rerender() call, so a reset's own
+  // rerender() call and its result are captured identically to any
+  // other render. `props.classroom` is the ONE, single source used —
+  // there is no separate fetch, no separate "scoreboard" object, no
+  // second state store anywhere in this function at all.
+  console.log('[RESET-VERIFY] C. TrackerView received this scoreboard state to render', {
+    source: 'props.classroom (passed in directly by the caller — main.js\'s own route dispatch on first render, or this same object echoed back by rerender() below on every subsequent one; never independently re-fetched)',
+    teams: classroom.teams.map((team) => ({
+      name: team.name,
+      total: team.students.reduce((sum, s) => sum + s.score, 0),
+      students: team.students.map((s) => ({ id: s.id, name: s.name, score: s.score })),
+    })),
+  });
+
   if (!classSessionService.isSessionActive(classroom)) {
     classSessionService.startSession(classroom);
   }
@@ -61,6 +77,7 @@ export function renderTrackerView(container, props) {
   container.innerHTML = '';
 
   const rerender = (nextHighlight) => {
+    console.log('[RESET-VERIFY] rerender() invoked — passing the exact same classroom object reference back into renderTrackerView()');
     renderTrackerView(container, { ...props, _highlight: nextHighlight || {} });
   };
 
@@ -211,6 +228,22 @@ export function renderTrackerView(container, props) {
         console.log('[RESET] calling rerender() to reflect the reset scoreboard');
         rerender();
         console.log('[RESET] rerender() returned');
+
+        // [RESET-VERIFY] D: WHAT THE USER ACTUALLY SEES — a direct
+        // read of the real, rendered DOM text, right after rerender()
+        // returns. Compare this against A/B/C above: if those all
+        // showed zeroes but this still shows the old numbers, the
+        // scoreboard is reading from something other than
+        // student.score entirely (see this project's own
+        // teamStatisticsService.js — the visible standings are
+        // computed from student.history's own "points" entries within
+        // the current period, NOT from student.score at all; reset
+        // deliberately never touches history, per an earlier,
+        // explicit design decision).
+        const renderedRows = Array.from(container.querySelectorAll('*')).filter((el) => el.children.length === 0 && el.textContent.trim());
+        console.log('[RESET-VERIFY] D. WHAT THE DOM ACTUALLY SHOWS after rerender()', {
+          allLeafTextNodes: renderedRows.map((el) => el.textContent.trim()).filter(Boolean),
+        });
       },
     });
   });

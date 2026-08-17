@@ -140,7 +140,12 @@ function maybeReconcilePendingSnapshot(classroomId) {
  */
 function applyIncomingSnapshot(classroomId, classroomData) {
   classroomService.upsertClassroom(classroomData);
-  if (!workspaceCoordinator.notifyActiveWorkspace(classroomId, classroomData)) {
+  const wasHandledByActiveWorkspace = workspaceCoordinator.notifyActiveWorkspace(classroomId, classroomData);
+  console.log('[RESET-VERIFY] applyIncomingSnapshot: classroomService.upsertClassroom() has REPLACED the array entry for this classroom with a new object', {
+    wasHandledByActiveWorkspace,
+    fallingBackToOnChangeCallback: !wasHandledByActiveWorkspace,
+  });
+  if (!wasHandledByActiveWorkspace) {
     onChangeCallback?.();
   }
 }
@@ -284,9 +289,20 @@ function subscribeToClassroom(classroomId) {
           hasLoggedLoad = true;
           logPersistenceEvent('Classroom loaded', { classroomId });
         }
+        console.log('[RESET-VERIFY] LISTENER FIRED — classrooms/' + classroomId, {
+          timestamp: new Date().toISOString(),
+          willApplyImmediately: canApplyIncomingServerState(classroomId),
+          teams: classroomData.teams?.map((team) => ({
+            name: team.name,
+            total: team.students.reduce((sum, s) => sum + s.score, 0),
+            students: team.students.map((s) => ({ id: s.id, name: s.name, score: s.score })),
+          })),
+        });
         if (canApplyIncomingServerState(classroomId)) {
+          console.log('[RESET-VERIFY] LISTENER APPLYING — this REPLACES the classroom object in classroomService\u2019s own array; if TrackerView still holds the OLD object reference, this alone will not update the screen, but the NEXT getClassroomById() call will return this new object');
           applyIncomingSnapshot(classroomId, classroomData);
         } else {
+          console.log('[RESET-VERIFY] LISTENER DEFERRED (not applied right now) \u2014 the classroom object in memory is genuinely untouched by this particular snapshot');
           // Not safe to apply right now (unsaved local work — see
           // canApplyIncomingServerState()'s own reasoning) — deferred,
           // not discarded. Only the newest deferred snapshot is ever

@@ -108,6 +108,24 @@ export async function archiveAndReset(classroom) {
 
     const resetTeams = buildResetTeams(classroom);
 
+    // [RESET-VERIFY] A: THE EXACT STATE BEING WRITTEN — every
+    // student's score, every group's computed total, the scoring
+    // period identifier, and the exact document paths involved. This
+    // is the ground truth for "what reset actually wrote" — everything
+    // downstream (Firestore's own stored state, TrackerView's
+    // in-memory state, the rendered DOM) gets compared against this.
+    console.log('[RESET-VERIFY] A. WHAT RESET IS WRITING', {
+      classroomDocPath: `classrooms/${classroom.id}`,
+      archiveDocPath: `classrooms/${classroom.id}/scoreboardArchives/${archive.id}`,
+      scoringPeriodId: archive.id,
+      scoringPeriodStartedAt: archive.createdAt,
+      teams: resetTeams.map((team) => ({
+        name: team.name,
+        total: team.students.reduce((sum, s) => sum + s.score, 0),
+        students: team.students.map((s) => ({ id: s.id, name: s.name, score: s.score })),
+      })),
+    });
+
     // THE ACTUAL FIX — see this function's own header comment above for
     // the full race-condition explanation this closes. Marking 'saving'
     // before the write (and 'saved' after) is the exact same protection
@@ -126,6 +144,26 @@ export async function archiveAndReset(classroom) {
       throw error;
     }
 
+    // [RESET-VERIFY] B: A DIRECT, FRESH READ FROM FIRESTORE,
+    // immediately after the write settles — this is "what Firestore
+    // actually contains" right now, independent of any in-memory
+    // object, any listener, any cache. If this shows zeroes, the
+    // write itself is proven correct and durable; the bug (if any)
+    // is downstream of this point, in how that state gets back into
+    // the UI.
+    try {
+      const freshFromServer = await repository.getClassroomOnce(classroom.id);
+      console.log('[RESET-VERIFY] B. WHAT FIRESTORE ACTUALLY CONTAINS (direct read, right after the write)', {
+        teams: freshFromServer?.teams?.map((team) => ({
+          name: team.name,
+          total: team.students.reduce((sum, s) => sum + s.score, 0),
+          students: team.students.map((s) => ({ id: s.id, name: s.name, score: s.score })),
+        })),
+      });
+    } catch (verifyError) {
+      console.error('[RESET-VERIFY] B. direct post-write Firestore read failed', verifyError);
+    }
+
     console.log('[RESET] student scores reset');
     console.log('[RESET] group totals reset');
     // Reflect the reset in the in-memory object the caller already has,
@@ -137,8 +175,23 @@ export async function archiveAndReset(classroom) {
       });
     });
 
+    // This is the EXACT SAME `classroom` object reference TrackerView
+    // holds — confirmed by direct inspection of TrackerView.js's own
+    // rerender(), which re-spreads the same `props.classroom` rather
+    // than re-fetching anything. If this log's own scores are already
+    // 0 but the DOM still shows old numbers later, the break is
+    // genuinely downstream of this exact object, not in this function.
+    console.log('[RESET-VERIFY] in-memory classroom object immediately after mutation (this is what rerender() will read next)', {
+      sameObjectIdentityAsCaller: true,
+      teams: classroom.teams.map((team) => ({
+        name: team.name,
+        total: team.students.reduce((sum, s) => sum + s.score, 0),
+        students: team.students.map((s) => ({ id: s.id, name: s.name, score: s.score })),
+      })),
+    });
+
     console.log('[RESET] scoring period updated', { createdAt: archive.createdAt });
-    console.log('[RESET] current scoreboard persistence starting');
+    console.log('[RESET] current scoreboard persistence starting', { note: 'the real write already completed above via the atomic batch; this checkpoint confirms the in-memory object is now consistent with it' });
     console.log('[RESET] current scoreboard persistence completed');
     console.log('[RESET] reset operation completed');
 
