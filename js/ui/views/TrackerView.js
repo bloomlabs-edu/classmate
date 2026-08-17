@@ -61,7 +61,7 @@ export function renderTrackerView(container, props) {
   // other render. `props.classroom` is the ONE, single source used —
   // there is no separate fetch, no separate "scoreboard" object, no
   // second state store anywhere in this function at all.
-  console.log('[RESET-VERIFY] C. TrackerView received this scoreboard state to render', {
+  console.log('[RESET-VERIFY] RERENDER INPUT', {
     source: 'props.classroom (passed in directly by the caller — main.js\'s own route dispatch on first render, or this same object echoed back by rerender() below on every subsequent one; never independently re-fetched)',
     teams: classroom.teams.map((team) => ({
       name: team.name,
@@ -274,6 +274,19 @@ export function renderTrackerView(container, props) {
     const pulseEl = container.querySelector(`[data-student-id="${highlight.studentId}"] .student-row__points`);
     pulseEl?.classList.add('student-row__points--pulse');
   }
+
+  // [RESET-VERIFY] DOM VALUES — fires on every render, universally
+  // (same scope as RERENDER INPUT above), reading the actual, live
+  // DOM text right out of each student row: name -> displayed score.
+  // This is literally what the teacher is looking at on screen at
+  // this exact moment, read directly from the rendered elements
+  // rather than from any JS state object at all.
+  const domRows = Array.from(container.querySelectorAll('[data-student-id]'));
+  console.log('[RESET-VERIFY] DOM VALUES', domRows.map((row) => {
+    const nameEl = row.querySelector('.student-row__name, [class*="name"]');
+    const pointsEl = row.querySelector('.student-row__points, [class*="points"], [class*="score"]');
+    return { studentId: row.getAttribute('data-student-id'), displayedName: nameEl?.textContent?.trim(), displayedScore: pointsEl?.textContent?.trim() };
+  }));
 }
 
 /** Finds which team a given student currently belongs to — needed because ui/components/TeamStandingsBoard.js's own onTap/onSwipeLeft/onLongPress callbacks only ever pass the student (the same shape every consumer of that board, including the Student Portal, receives), not the team, so this is resolved here rather than the board needing to know why a caller wants it. */

@@ -141,7 +141,7 @@ function maybeReconcilePendingSnapshot(classroomId) {
 function applyIncomingSnapshot(classroomId, classroomData) {
   classroomService.upsertClassroom(classroomData);
   const wasHandledByActiveWorkspace = workspaceCoordinator.notifyActiveWorkspace(classroomId, classroomData);
-  console.log('[RESET-VERIFY] applyIncomingSnapshot: classroomService.upsertClassroom() has REPLACED the array entry for this classroom with a new object', {
+  console.log('[STATE-LISTENER] applyIncomingSnapshot: classroomService.upsertClassroom() has REPLACED the array entry for this classroom with a new object', {
     wasHandledByActiveWorkspace,
     fallingBackToOnChangeCallback: !wasHandledByActiveWorkspace,
   });
@@ -289,7 +289,7 @@ function subscribeToClassroom(classroomId) {
           hasLoggedLoad = true;
           logPersistenceEvent('Classroom loaded', { classroomId });
         }
-        console.log('[RESET-VERIFY] LISTENER FIRED — classrooms/' + classroomId, {
+        console.log('[STATE-LISTENER] fired — classrooms/' + classroomId, {
           timestamp: new Date().toISOString(),
           willApplyImmediately: canApplyIncomingServerState(classroomId),
           teams: classroomData.teams?.map((team) => ({
@@ -299,10 +299,10 @@ function subscribeToClassroom(classroomId) {
           })),
         });
         if (canApplyIncomingServerState(classroomId)) {
-          console.log('[RESET-VERIFY] LISTENER APPLYING — this REPLACES the classroom object in classroomService\u2019s own array; if TrackerView still holds the OLD object reference, this alone will not update the screen, but the NEXT getClassroomById() call will return this new object');
+          console.log('[STATE-LISTENER] applying — this REPLACES the classroom object in classroomService\u2019s own array; if TrackerView still holds the OLD object reference, this alone will not update the screen, but the NEXT getClassroomById() call will return this new object');
           applyIncomingSnapshot(classroomId, classroomData);
         } else {
-          console.log('[RESET-VERIFY] LISTENER DEFERRED (not applied right now) \u2014 the classroom object in memory is genuinely untouched by this particular snapshot');
+          console.log('[STATE-LISTENER] deferred (not applied right now) \u2014 the classroom object in memory is genuinely untouched by this particular snapshot');
           // Not safe to apply right now (unsaved local work — see
           // canApplyIncomingServerState()'s own reasoning) — deferred,
           // not discarded. Only the newest deferred snapshot is ever

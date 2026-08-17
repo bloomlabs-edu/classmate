@@ -61,6 +61,11 @@ export function findStudentInClassroom(classroom, studentId) {
 
 /** Zeroes every student's score across every team in a classroom. */
 export function resetAllScores(classroom) {
+  console.log('[SCORE-WRITE] studentService.resetAllScores() called', {
+    timestamp: new Date().toISOString(),
+    classroomId: classroom.id,
+    note: 'no longer called by TrackerView\'s own header button (see the Reset Scoreboard workflow instead) — kept intact per explicit instruction, unused-but-not-deleted',
+  });
   classroom.teams.forEach((team) => {
     team.students.forEach((student) => {
       student.score = 0;

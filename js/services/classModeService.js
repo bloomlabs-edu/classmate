@@ -43,8 +43,17 @@ function lastHistoryEntry(student) {
 export function awardStar(classroom, student) {
   const delta = 1;
   const entry = timelineService.logPoints(student, delta, 'Star Awarded');
+  console.log('[SCORE-WRITE] awardStar() — writes ONLY to student.history via timelineService.logPoints(); student.score is NOT written here at all', {
+    timestamp: new Date().toISOString(),
+    studentId: student.id,
+    studentName: student.name,
+    delta,
+    studentScoreField: student.score,
+    historyLength: student.history?.length,
+  });
 
   pushUndo(classroom.id, () => {
+    console.log('[SCORE-WRITE] awardStar() undo callback — this is the ONLY place student.score is actually decremented for this action', { studentId: student.id, delta });
     student.score -= delta;
     removeHistoryEntry(student, entry.id);
   });
@@ -72,8 +81,17 @@ export function awardStar(classroom, student) {
 export function deductPoint(classroom, student) {
   const delta = -1;
   const entry = timelineService.logPoints(student, delta, 'Negative Point');
+  console.log('[SCORE-WRITE] deductPoint() — writes ONLY to student.history via timelineService.logPoints(); student.score is NOT written here at all', {
+    timestamp: new Date().toISOString(),
+    studentId: student.id,
+    studentName: student.name,
+    delta,
+    studentScoreField: student.score,
+    historyLength: student.history?.length,
+  });
 
   pushUndo(classroom.id, () => {
+    console.log('[SCORE-WRITE] deductPoint() undo callback — this is the ONLY place student.score is actually decremented for this action', { studentId: student.id, delta });
     student.score -= delta;
     removeHistoryEntry(student, entry.id);
   });
