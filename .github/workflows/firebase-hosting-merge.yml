@@ -13,13 +13,13 @@
 # THE ACTUAL FIX (see this project's own production incident: a
 # scoreboardArchives Firestore rule was added locally, but every
 # merge to main only ever deployed Hosting — action-hosting-deploy@v0
-# is Hosting-only by design, and firebase.json itself had no
-# "firestore" key at all, so even a manual `firebase deploy` for
-# rules wouldn't have known which local file to use). The new
-# "Deploy Firestore rules" step below runs the Firebase CLI directly
-# (via its own official GitHub Action) using the exact same service
-# account already authorized for this project, so rules and hosting
-# code can never drift out of sync again on a normal merge.
+# is Hosting-only by design, and firebase.json was MISSING a
+# "firestore" key at the time — that gap has since been closed;
+# firebase.json now has firestore.rules configured, confirmed present
+# in this repo). The "Deploy Firestore rules" step below runs the
+# Firebase CLI directly using the same service account already
+# authorized for this project, so rules and hosting code can never
+# drift out of sync again on a normal merge.
 
 name: Deploy to Firebase Hosting on merge
 on:
