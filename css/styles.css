@@ -4606,6 +4606,11 @@ button.wizard-checklist__row:hover {
   gap: 0.5rem;
   padding: 0.5rem 1.5rem 1rem;
   flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background-color: #fef9f3;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 .student-portal__tab {
   display: flex;
