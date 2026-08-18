@@ -37,7 +37,7 @@
  * itself.
  */
 
-import { getHomeSummary, getEventFeed, loadCurrentStudentAndClassroom, getWeeklyNetPoints } from '../../../services/studentPortalDataService.js';
+import { getHomeSummary, getEventFeed, loadCurrentStudentAndClassroom, getWeeklyNetPoints, getAlertsForCurrentStudent } from '../../../services/studentPortalDataService.js';
 import { createTeamStandingsBoardElement } from '../../components/TeamStandingsBoard.js';
 import { createWeeklyNetPointsSection } from '../../components/WeeklyNetPointsGraph.js';
 import * as studentDeviceService from '../../../services/studentDeviceService.js';
@@ -46,15 +46,17 @@ import { createEmptyStateElement } from '../../components/EmptyState.js';
 import { formatDate } from '../../../utils/dateHelpers.js';
 import { getEventDetailRoute } from '../../../config/studentEventNavigation.js';
 import { getEventCopyForViewer } from '../../../services/studentEventService.js';
+import { createStudentAlertsPanelElement } from '../components/StudentAlertsPanel.js';
 
 export async function renderStudentJourneyView(container, { onSessionInvalid, onNavigateToEventDetail, onNavigateToGoals, onNavigateToFeed, onNavigateToNotebooks, onNavigateToLearning, onNavigateToStudentProfile, onNavigateToTeam, onNavigateToStandings } = {}) {
   container.innerHTML = '';
 
-  const [summary, eventFeed, found, weeklyNetPoints] = await Promise.all([
+  const [summary, eventFeed, found, weeklyNetPoints, alerts] = await Promise.all([
     getHomeSummary(),
     getEventFeed(),
     loadCurrentStudentAndClassroom(),
     getWeeklyNetPoints(),
+    getAlertsForCurrentStudent(),
   ]);
 
   const wrapper = document.createElement('div');
@@ -100,6 +102,17 @@ export async function renderStudentJourneyView(container, { onSessionInvalid, on
     : `Welcome to ${summary.classroomName}! \ud83d\udc4b`;
   greetingRow.appendChild(greeting);
   wrapper.appendChild(greetingRow);
+
+  // Alerts — pending notebook submissions and upcoming published
+  // tests, per explicit product request. Placed immediately under the
+  // greeting; renders nothing at all when there's nothing to show
+  // (see StudentAlertsPanel.js's own header comment for why).
+  const alertsPanel = createStudentAlertsPanelElement({
+    pendingSubmissions: alerts.pendingSubmissions,
+    upcomingAssessments: alerts.upcomingAssessments,
+    onNavigateToNotebooks,
+  });
+  if (alertsPanel) wrapper.appendChild(alertsPanel);
 
   // "My Goals" — Goals Phase 1's own entry point into
   // StudentGoalTrackerView.js. Always shown (not conditional on a

@@ -34,6 +34,14 @@ export function getAssessments(classroom) {
   return [...(classroom.assessments || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
+/** Student-facing "upcoming tests" — only Published assessments (a Draft isn't real to students yet) with a real date today or later, soonest first. */
+export function getUpcomingAssessments(classroom) {
+  const todayKey = getCurrentIsoDate().slice(0, 10);
+  return (classroom.assessments || [])
+    .filter((assessment) => assessment.status === 'Published' && assessment.date && assessment.date >= todayKey)
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
 export function getAssessmentById(classroom, assessmentId) {
   return (classroom.assessments || []).find((assessment) => assessment.id === assessmentId) || null;
 }

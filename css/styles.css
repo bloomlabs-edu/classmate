@@ -7591,6 +7591,55 @@ button.wizard-checklist__row:hover {
   cursor: pointer;
 }
 
+/* Alerts panel — pending notebook submissions, upcoming tests. See
+   ui/student-portal/components/StudentAlertsPanel.js's own header
+   comment for placement/scope reasoning. A warm-toned card,
+   deliberately distinct from the plain white module links above, so
+   it reads as "needs your attention" rather than another neutral
+   navigation shortcut. */
+.student-alerts-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background-color: #fff4e5;
+  border: 1px solid #f5d9b0;
+  border-radius: 16px;
+  padding: 0.6rem;
+  margin-bottom: 1.25rem;
+}
+.student-alerts-panel__row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  color: #7a4a12;
+  text-align: left;
+}
+.student-alerts-panel__row--actionable {
+  background: none;
+  border: none;
+  width: 100%;
+  cursor: pointer;
+  font: inherit;
+}
+.student-alerts-panel__row--actionable:hover {
+  background-color: rgba(255, 255, 255, 0.6);
+}
+.student-alerts-panel__icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+.student-alerts-panel__text {
+  flex: 1;
+  font-weight: var(--font-weight-bold);
+}
+.student-alerts-panel__chevron {
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
 /* Class Standings — compact, collapsed-by-default doorway to the
    real standings screen. See
    ui/student-portal/views/StudentJourneyView.js's own header comment

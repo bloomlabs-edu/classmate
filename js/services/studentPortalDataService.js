@@ -31,6 +31,8 @@ import * as studentProgressService from './studentProgressService.js';
 import * as timelineService from './timelineService.js';
 import * as studentEventService from './studentEventService.js';
 import * as assessmentService from './assessmentService.js';
+import * as workRequestService from './workRequestService.js';
+import * as notebookConfigService from './notebookConfigService.js';
 import * as goalService from './goalService.js';
 import * as studentGoalsService from './studentGoalsService.js';
 import * as learningRecordStudentService from './learningRecordStudentService.js';
@@ -448,6 +450,41 @@ export async function getPublicProfileForStudent(studentId) {
     currentGoals,
     weeklyNetPoints: studentProgressService.getWeeklyNetPoints(classroom, studentId),
   };
+}
+
+/**
+ * The Journey page's own "alerts" panel — pending notebook
+ * submissions and upcoming published tests, for whichever student is
+ * currently active. Deliberately just a thin combination of two
+ * existing, already-correct reads (workRequestService.js's own
+ * getNotebookObligationsForStudent(), assessmentService.js's own
+ * getUpcomingAssessments()) — no new derivation logic, no duplicate
+ * status/date rules.
+ */
+export async function getAlertsForCurrentStudent() {
+  const found = await loadCurrentStudentAndClassroom();
+  if (!found) return { pendingSubmissions: [], upcomingAssessments: [] };
+
+  const pendingSubmissions = workRequestService
+    .getNotebookObligationsForStudent(found.classroom, found.student.id)
+    .filter((obligation) => obligation.isOpen && obligation.status !== 'reviewed')
+    .map((obligation) => {
+      const subject = notebookConfigService.getSubjectById(found.classroom, obligation.subjectId);
+      const notebookType = notebookConfigService.getNotebookTypeById(found.classroom, obligation.notebookTypeId);
+      return {
+        requestId: obligation.requestId,
+        label: [subject?.name, notebookType?.name].filter(Boolean).join(' \u00b7 ') || obligation.title,
+        dueDate: obligation.dueDate,
+      };
+    });
+
+  const upcomingAssessments = assessmentService.getUpcomingAssessments(found.classroom).map((assessment) => ({
+    id: assessment.id,
+    title: assessment.title,
+    date: assessment.date,
+  }));
+
+  return { pendingSubmissions, upcomingAssessments };
 }
 
 export async function getGoalCycleForCurrentStudent() {
