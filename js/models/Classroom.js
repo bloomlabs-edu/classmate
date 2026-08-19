@@ -186,6 +186,20 @@
  *                    see config/classroomDefaults.js for the defaults,
  *                    built fresh for every classroom (never a shared
  *                    reference)
+ *   learningProgrammes - LearningProgramme[] (see
+ *                    models/LearningProgramme.js) — an additional
+ *                    learning context attached to existing students
+ *                    (e.g. an after-school English Literacy Circle),
+ *                    deliberately separate from school learning:
+ *                    never read or written by Class Mode, the
+ *                    scoreboard, school attendance, teams, seating, or
+ *                    school subject scores. Config-sized and bounded,
+ *                    embedded here the same way `planner` is — a
+ *                    programme's own unbounded session history lives
+ *                    separately, in the classrooms/{id}/programmeSessions
+ *                    subcollection (see models/ProgrammeSession.js and
+ *                    services/programmeSessionRepository.js), never on
+ *                    this document.
  */
 
 import { generateId } from '../utils/idGenerator.js';
@@ -219,6 +233,7 @@ export function createClassroom({
   seatingConfig = null,
   currentScoringPeriodStartedAt = null,
   settings = buildDefaultSettings(),
+  learningProgrammes = [],
 } = {}) {
   return {
     id: id || generateId(),
@@ -247,5 +262,6 @@ export function createClassroom({
     seatingConfig,
     currentScoringPeriodStartedAt,
     settings,
+    learningProgrammes,
   };
 }

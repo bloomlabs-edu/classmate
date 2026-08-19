@@ -344,6 +344,51 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Learning Programmes — ProgrammeSession history (see
+    // models/ProgrammeSession.js, services/programmeSessionRepository.js).
+    // Config-sized Learning Programme data itself
+    // (classroom.learningProgrammes) lives on the classroom document
+    // above and needs no rule of its own; this block covers only the
+    // unbounded session-history subcollection.
+    //
+    // PROPOSED, NOT YET VERIFIED against a live Firebase project —
+    // this sandbox has no Firebase CLI or live Firestore project to
+    // test against, the same limitation already documented elsewhere
+    // in this project's history for other rules additions. Please
+    // review and test this specifically before deploying.
+    //
+    // Mirrors the existing classroom-membership convention exactly
+    // (see the scoreboardArchives block below, and feedPosts above):
+    // any current classroom member may read or create a session.
+    // Update is also member-scoped, since a session is genuinely
+    // recorded incrementally over the course of a real occurrence
+    // (attendance, then goals, then observations) rather than written
+    // once — unlike scoreboardArchives, which is a one-shot immutable
+    // snapshot. Delete is disallowed at the rules level, matching this
+    // project's own historical-integrity invariants for Learning
+    // Programmes: a session should never simply disappear.
+    //
+    // NOTE — a pre-existing gap discovered during this work, NOT
+    // something this change is responsible for and NOT modified here
+    // per this phase's own "do not modify unrelated Firestore rules"
+    // instruction: neither classrooms/{id}/lessons/{lessonId} (Planner)
+    // nor classrooms/{id}/resources/{resourceId} (Learning Hub) has an
+    // explicit rule anywhere in this file. Both currently fall through
+    // to the deny-by-default catch-all below. Flagged here for the
+    // reviewing team's own awareness; out of scope for this phase.
+    match /classrooms/{classroomId}/programmeSessions/{sessionId} {
+      allow read: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+
+      allow create: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+
+      allow update: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+
+      allow delete: if false;
+    }
+
     // Legacy, pre-sharing location — migration-only (see
     // services/workspaceService.js). Nothing new is ever written here.
     //
