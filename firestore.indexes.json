@@ -1,0 +1,21 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "programmeSessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "programmeId", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "programmeSessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "programmeId", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

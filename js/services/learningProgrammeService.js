@@ -171,7 +171,24 @@ export function updateProgrammeConfiguration(programme, { name, description, own
   return programme;
 }
 
-/** Archives a programme — never deletes it, its memberships, or (elsewhere) its session history. A archived programme's own past sessions remain exactly as readable as before. */
+/**
+ * Archives a programme — never deletes it, its memberships, or
+ * (elsewhere) its session history. An archived programme's own past
+ * sessions remain exactly as readable, and exactly as unchanged, as
+ * before archiving — this function has no interaction whatsoever with
+ * services/programmeSessionService.js or
+ * services/programmeSessionRepository.js, and never will, by design.
+ *
+ * PHASE 1.6 — archiving DOES have one, and only one, real effect
+ * beyond this programme object itself: as of this phase,
+ * services/programmeSessionService.js's own
+ * ensureProgrammeCanStartNewSession() refuses to create a brand-new
+ * session for a programme whose `status` is `'archived'` (per this
+ * project's own Learning Programmes Hardening authorization, Issue
+ * 4). That check lives entirely in the session service, not here —
+ * this function's own only job remains flipping `status`/`updatedAt`
+ * on the programme; it makes no decision about sessions itself.
+ */
 export function archiveProgramme(programme) {
   programme.status = 'archived';
   programme.updatedAt = getCurrentIsoDate();
@@ -195,6 +212,47 @@ export function getActiveMembership(programme, studentId) {
 /** Every student currently active in this programme — resolved fresh from `memberships` every time, never a separately-maintained list that could drift out of sync with it. */
 export function getActiveMembers(programme) {
   return programme.memberships.filter((membership) => membership.status === 'active');
+}
+
+/**
+ * PHASE 1.6 — whether this student had a real membership relationship
+ * (active OR historical) with this programme covering the given
+ * `date` (a `"YYYY-MM-DD"` string) — added per this project's own
+ * Learning Programmes Hardening authorization, Issue 5, to make the
+ * "was this session participant genuinely a programme member on that
+ * day" question directly, explicitly answerable without storing a
+ * separate participant-roster snapshot on the session itself.
+ *
+ * Deliberately NOT wired into
+ * services/programmeSessionService.js's own ensureStudentHasMembership()
+ * — that function intentionally checks for ANY historical membership
+ * at all, regardless of date, to preserve the pre-existing, deliberate
+ * Phase 1 behaviour that a departed member's own historical entries
+ * remain recordable. This function exists alongside it, as an
+ * additive, non-breaking, more precise question a future caller (e.g.
+ * a Phase 2 progress computation, or a UI wanting to show "this
+ * student had already left by this date") can ask when that finer
+ * distinction actually matters, without changing what Phase 1
+ * already allowed.
+ *
+ * A session's own `attendance`/`goals`/`teacherObservations` already
+ * identify exactly which students participated on a given occasion —
+ * this function answers the separate question of whether that
+ * participation lines up with a real, dated membership span, entirely
+ * by deriving it from `memberships[]`'s own `joinedAt`/`leftAt`
+ * range, never from a stored, driftable copy. This is why Phase 1.6
+ * deliberately does NOT add a "participants" field to ProgrammeSession
+ * (see models/ProgrammeSession.js's own header comment) — introducing
+ * one would be exactly the "unnecessary participant duplication" this
+ * project's own authorization explicitly warned against, when the
+ * same fact is already fully recoverable this way.
+ */
+export function wasStudentMemberOn(programme, studentId, date) {
+  return getMembershipsForStudent(programme, studentId).some((membership) => {
+    const joinedDate = membership.joinedAt.slice(0, 10);
+    const leftDate = membership.leftAt ? membership.leftAt.slice(0, 10) : null;
+    return joinedDate <= date && (!leftDate || date <= leftDate);
+  });
 }
 
 /**
