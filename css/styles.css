@@ -10850,19 +10850,76 @@ button.wizard-checklist__row:hover {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
 }
-.programme-session-view__attendance-status-group {
+.programme-session-view__attendance-controls {
   display: flex;
+  align-items: center;
   gap: 0.4rem;
-  flex-wrap: wrap;
 }
-.programme-session-view__attendance-status-button {
+/* Phase 2A UX correction — the single tap-to-toggle status control,
+   replacing the old three-permanent-buttons layout. One always-
+   visible control per student, color/icon-coded by status, sized for
+   a fast, confident tap on a phone. */
+.programme-session-view__attendance-status-toggle {
   min-height: 44px; /* touch-target minimum — sessions are often run from a phone */
+  min-width: 116px;
   padding: 0.5rem 0.9rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  background-color: var(--color-surface);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
 }
-.programme-session-view__attendance-status-button--active {
-  background-color: var(--color-primary-deep);
-  color: var(--color-on-primary-deep);
-  border-color: var(--color-primary-deep);
+.programme-session-view__attendance-status-toggle:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.programme-session-view__attendance-status-toggle--present {
+  border-color: var(--color-success);
+  background-color: color-mix(in srgb, var(--color-success) 15%, var(--color-surface));
+}
+.programme-session-view__attendance-status-toggle--absent {
+  border-color: var(--color-danger);
+  background-color: color-mix(in srgb, var(--color-danger) 12%, var(--color-surface));
+}
+.programme-session-view__attendance-status-toggle--late {
+  border-color: var(--color-warning);
+  background-color: color-mix(in srgb, var(--color-warning) 18%, var(--color-surface));
+}
+/* The small, always-visible secondary-actions affordance opening the
+   Late/explicit-correction sheet — a focusable equivalent alongside
+   any future long-press, mirroring
+   ui/components/ClassModeStudentRow.js's own "more actions" button
+   for exactly the same accessibility reason. */
+.programme-session-view__attendance-more-button {
+  min-height: 44px;
+  min-width: 44px;
+  font-size: 1.1rem;
+}
+/* Highlights the current status inside the secondary sheet's own
+   option list (reuses .bottom-sheet__action's base shape — see
+   ui/components/QuickActionsSheet.js). */
+.programme-session-view__attendance-sheet-option--active {
+  background-color: var(--color-bg);
+  font-weight: var(--font-weight-bold);
+}
+
+/* Phase 2A UX correction — the collapsed-by-default "💡 Suggestions"
+   disclosure for a brand-new goal, and the matching "Edit Goal"
+   reveal for an already-recorded one. Both wrap the same, unchanged
+   goal picker; only whether it's visible by default differs. */
+.programme-session-view__goal-disclosure {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.programme-session-view__goal-suggestions-toggle {
+  align-self: flex-start;
+}
+.programme-session-view__goal-edit-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
 }
 
 .programme-session-view__goal-student-block,
@@ -10971,17 +11028,16 @@ button.wizard-checklist__row:hover {
 }
 
 /* Touch-friendly / phone layout — sessions are frequently conducted
-   from a phone (see this project's own Phase 2A authorization). */
+   from a phone (see this project's own Phase 2A authorization).
+   Phase 2A UX correction: the attendance row no longer needs to
+   stack vertically at this width — a single status toggle plus one
+   small "⋮" button is already compact enough to stay on one line
+   even on a narrow phone, which is itself the point of replacing the
+   old three-button layout (a genuinely wide row that DID need to
+   stack) with this one. */
 @media (max-width: 640px) {
   .programme-session-view__attendance-row {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  .programme-session-view__attendance-status-group {
-    width: 100%;
-  }
-  .programme-session-view__attendance-status-button {
-    flex: 1;
+    justify-content: space-between;
   }
   .programme-session-view__goal-custom-row,
   .programme-session-view__add-activity-row,

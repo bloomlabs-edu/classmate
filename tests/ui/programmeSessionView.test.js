@@ -15,7 +15,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isSessionEditable, getSessionParticipantIds } from '../../js/ui/views/ProgrammeSessionView.js';
+import { isSessionEditable, getSessionParticipantIds, getEffectiveAttendanceStatus, getToggledAttendanceStatus, hasRecordedAttendance } from '../../js/ui/views/ProgrammeSessionView.js';
 import { getTodayDateKey } from '../../js/utils/dateHelpers.js';
 
 test('isSessionEditable: true for today\'s session on an active programme', () => {
@@ -68,4 +68,70 @@ test('getSessionParticipantIds: returns an empty array for a session with no rec
 
 test('getSessionParticipantIds: tolerates missing fields entirely (defaults to empty)', () => {
   assert.deepEqual(getSessionParticipantIds({}), []);
+});
+
+// ---------------------------------------------------------------------
+// PHASE 2A UX CORRECTION — attendance single-tap toggle
+// ---------------------------------------------------------------------
+
+test('getEffectiveAttendanceStatus: defaults to present when no attendance record exists', () => {
+  const session = { attendance: {} };
+  assert.equal(getEffectiveAttendanceStatus(session, 'student-1'), 'present');
+});
+
+test('getEffectiveAttendanceStatus: the default is display-only — this function never mutates the session', () => {
+  const session = { attendance: {} };
+  getEffectiveAttendanceStatus(session, 'student-1');
+  assert.deepEqual(session.attendance, {}, 'reading the effective status must never create an attendance entry as a side effect');
+});
+
+test('getEffectiveAttendanceStatus: returns the actual recorded status once one exists', () => {
+  const session = { attendance: { 'student-1': { status: 'late' } } };
+  assert.equal(getEffectiveAttendanceStatus(session, 'student-1'), 'late');
+});
+
+test('getEffectiveAttendanceStatus: returns absent when explicitly recorded, not the default', () => {
+  const session = { attendance: { 'student-1': { status: 'absent' } } };
+  assert.equal(getEffectiveAttendanceStatus(session, 'student-1'), 'absent');
+});
+
+test('getToggledAttendanceStatus: present toggles to absent', () => {
+  assert.equal(getToggledAttendanceStatus('present'), 'absent');
+});
+
+test('getToggledAttendanceStatus: absent toggles to present', () => {
+  assert.equal(getToggledAttendanceStatus('absent'), 'present');
+});
+
+test('getToggledAttendanceStatus: late resolves to present — the fast toggle never cycles through late', () => {
+  assert.equal(getToggledAttendanceStatus('late'), 'present');
+});
+
+test('getToggledAttendanceStatus: tapping twice from the default (present) returns to present', () => {
+  const first = getToggledAttendanceStatus('present');
+  const second = getToggledAttendanceStatus(first);
+  assert.equal(first, 'absent');
+  assert.equal(second, 'present');
+});
+
+test('hasRecordedAttendance: false when no entry exists', () => {
+  const session = { attendance: {} };
+  assert.equal(hasRecordedAttendance(session, 'student-1'), false);
+});
+
+test('hasRecordedAttendance: true once any status is explicitly recorded', () => {
+  const session = { attendance: { 'student-1': { status: 'absent' } } };
+  assert.equal(hasRecordedAttendance(session, 'student-1'), true);
+});
+
+test('hasRecordedAttendance: distinguishes "never touched" from "explicitly present" — a historical read-only row must not silently default', () => {
+  const untouched = { attendance: {} };
+  const explicitlyPresent = { attendance: { 'student-1': { status: 'present' } } };
+  assert.equal(hasRecordedAttendance(untouched, 'student-1'), false);
+  assert.equal(hasRecordedAttendance(explicitlyPresent, 'student-1'), true);
+  // Both would show the same *effective* status if asked, which is
+  // exactly why hasRecordedAttendance() — not getEffectiveAttendanceStatus()
+  // — must be the check a read-only view uses before deciding whether
+  // to show a real status or "Not recorded".
+  assert.equal(getEffectiveAttendanceStatus(untouched, 'student-1'), getEffectiveAttendanceStatus(explicitlyPresent, 'student-1'));
 });
