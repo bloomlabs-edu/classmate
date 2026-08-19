@@ -65,6 +65,10 @@ import { renderWorkRequestCreateView } from './ui/views/WorkRequestCreateView.js
 import { renderNotebookCheckpointsView } from './ui/views/NotebookCheckpointsView.js';
 import * as workRequestService from './services/workRequestService.js';
 import { renderDashboardView } from './ui/views/DashboardView.js';
+import { renderLearningProgrammesListView } from './ui/views/LearningProgrammesListView.js';
+import { renderLearningProgrammeOverviewView } from './ui/views/LearningProgrammeOverviewView.js';
+import { renderLearningProgrammeSettingsView } from './ui/views/LearningProgrammeSettingsView.js';
+import { renderProgrammeSessionView } from './ui/views/ProgrammeSessionView.js';
 import { renderRecognitionScreenView } from './ui/views/RecognitionScreenView.js';
 import { renderLoginView } from './ui/views/LoginView.js';
 import { renderUserBar } from './ui/components/UserBar.js';
@@ -228,6 +232,10 @@ const CLASSROOM_ROUTE_NAMES = [
   'goalManagement',
   'learningManagement',
   'feed',
+  'learningProgrammesList',
+  'learningProgrammeOverview',
+  'learningProgrammeSettings',
+  'programmeSession',
   'diagnostics', // TEMPORARY — see ui/views/TeacherDiagnosticsView.js's own header comment
 ];
 
@@ -509,6 +517,34 @@ function renderRoute(route, reason = 'unspecified') {
         currentUser,
         onBack: () => router.navigate(`/classroom/${classroom.id}`),
         onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
+      });
+    } else if (route.name === 'learningProgrammesList') {
+      renderLearningProgrammesListView(appContainer, {
+        classroom,
+        onBack: () => router.navigate(`/classroom/${classroom.id}`),
+        onSelectProgramme: (programmeId) => router.navigate(`/classroom/${classroom.id}/learning-programmes/${programmeId}`),
+      });
+    } else if (route.name === 'learningProgrammeOverview') {
+      renderLearningProgrammeOverviewView(appContainer, {
+        classroom,
+        programmeId: route.programmeId,
+        onBack: () => router.navigate(`/classroom/${classroom.id}/learning-programmes`),
+        onOpenSession: (sessionId) =>
+          router.navigate(`/classroom/${classroom.id}/learning-programmes/${route.programmeId}/session/${sessionId}`),
+        onOpenSettings: () => router.navigate(`/classroom/${classroom.id}/learning-programmes/${route.programmeId}/settings`),
+      });
+    } else if (route.name === 'learningProgrammeSettings') {
+      renderLearningProgrammeSettingsView(appContainer, {
+        classroom,
+        programmeId: route.programmeId,
+        onBack: () => router.navigate(`/classroom/${classroom.id}/learning-programmes/${route.programmeId}`),
+      });
+    } else if (route.name === 'programmeSession') {
+      renderProgrammeSessionView(appContainer, {
+        classroom,
+        programmeId: route.programmeId,
+        sessionId: route.sessionId,
+        onBack: () => router.navigate(`/classroom/${classroom.id}/learning-programmes/${route.programmeId}`),
       });
     } else if (route.name === 'scoreboardArchive' || route.name === 'scoreboardArchiveDetail') {
       renderScoreboardArchiveView(appContainer, {

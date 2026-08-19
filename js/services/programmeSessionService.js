@@ -194,6 +194,67 @@ export async function listSessionsForProgramme(classroomId, programmeId) {
   return programmeSessionRepository.listSessionsForProgramme(classroomId, programmeId);
 }
 
+/**
+ * PHASE 2A — pure decision function behind "does today's session
+ * already exist, or does a new one need to be created": given a list
+ * of ProgrammeSessions already fetched for one programme (e.g. from
+ * listSessionsForProgramme()) and a target `date` ("YYYY-MM-DD"),
+ * returns the one session whose own `date` matches, or `null` if none
+ * does. Deliberately separated from findSessionForDate()/
+ * getOrCreateSessionForDate() below (which do the actual Firestore
+ * read) so this exact decision — the one the "do not accidentally
+ * create multiple sessions on the same day" requirement hinges on —
+ * is unit-testable without a live Firebase project.
+ *
+ * If more than one session happens to share the same date (should
+ * never happen if every caller goes through getOrCreateSessionForDate()
+ * below, but this function makes no assumption about that), the
+ * first match is returned — never silently merged, never throwing.
+ */
+export function pickSessionForDate(sessions, date) {
+  return sessions.find((session) => session.date === date) || null;
+}
+
+/**
+ * Finds today's (or any specific date's) ProgrammeSession for a
+ * programme, without creating one — a thin, repository-touching
+ * wrapper around pickSessionForDate() above. Reuses
+ * listSessionsForProgramme()'s own existing query (and its existing
+ * composite index — see this project's own Phase 1.6 Hardening
+ * report §3) rather than introducing a third, narrower Firestore
+ * query/index just for this — the full list for one programme is
+ * already small (bounded by how many occurrences that programme has
+ * ever run), so filtering client-side for one date is cheap and adds
+ * no new indexing requirement.
+ */
+export async function findSessionForDate(classroomId, programmeId, date) {
+  const sessions = await listSessionsForProgramme(classroomId, programmeId);
+  return pickSessionForDate(sessions, date);
+}
+
+/**
+ * The one function a "Start Today's Session" UI action should call —
+ * resolves to an EXISTING session for this exact `date` if one
+ * already exists, never creating a second one; only creates a brand
+ * new session if none does. This is what makes it safe for a teacher
+ * to open a programme multiple times in the same day: every call with
+ * the same `programmeId` + `date` converges on the same session,
+ * never a duplicate.
+ *
+ * Still goes through buildNewSession()'s own full validation (an
+ * unknown or archived programme is refused exactly as before — see
+ * ensureProgrammeExists()/ensureProgrammeCanStartNewSession() above)
+ * on the create path; the resume path (an existing session was found)
+ * skips those checks entirely, since a session that already exists
+ * needn't re-justify its own existence.
+ */
+export async function getOrCreateSessionForDate(classroom, { programmeId, date, title } = {}) {
+  const existing = await findSessionForDate(classroom.id, programmeId, date);
+  if (existing) return existing;
+
+  return createAndSaveSession(classroom, { programmeId, date, title });
+}
+
 // ---------------------------------------------------------------------
 // In-memory mutation helpers — pure; the caller persists afterward via
 // saveSessionPatch() (or one of the build*Patch() functions further

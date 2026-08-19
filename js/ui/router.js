@@ -20,6 +20,10 @@
  *   #/classroom/{id}/assessments/{assessmentId?}/{view?} -> Assessment Management — no assessmentId = the list; an assessmentId with no view defaults to the Gradebook (see ui/views/AssessmentManagementView.js)
  *   #/classroom/{id}/goals                     -> Goal Management
  *   #/classroom/{id}/learning                  -> Learning Management
+ *   #/classroom/{id}/learning-programmes                              -> Learning Programmes list (see ui/views/LearningProgrammesListView.js)
+ *   #/classroom/{id}/learning-programmes/{programmeId}                -> one programme's overview (see ui/views/LearningProgrammeOverviewView.js)
+ *   #/classroom/{id}/learning-programmes/{programmeId}/settings       -> that programme's settings (see ui/views/LearningProgrammeSettingsView.js)
+ *   #/classroom/{id}/learning-programmes/{programmeId}/session/{sessionId} -> one ProgrammeSession, today's or historical (see ui/views/ProgrammeSessionView.js)
  *   #/classroom/{id}/feed                      -> Class Feed (teacher view)
  *   #/classroom/{id}/notebooks                                       -> notebook tracker list (Subject × Notebook Type)
  *   #/classroom/{id}/work-requests/{requestId}                        -> WorkRequest checking + inline history, one page (see WorkRequestRosterView.js) — no separate Timeline route exists anymore
@@ -63,7 +67,13 @@ function parseHash() {
   return { ...resolvePathParts(parts), query };
 }
 
-function resolvePathParts(parts) {
+/**
+ * Pure route-parsing logic — exported specifically so it's
+ * unit-testable without `window`/DOM (see tests/ui/router.test.js).
+ * Never called with anything other than the array parseHash() itself
+ * builds from the current hash; behaviour is otherwise unchanged.
+ */
+export function resolvePathParts(parts) {
   if (parts[0] === 'classroom' && parts[1]) {
     if (parts[2] === 'class-mode') {
       return { name: 'tracker', classroomId: parts[1] };
@@ -128,6 +138,25 @@ function resolvePathParts(parts) {
         return { name: 'scoreboardArchiveDetail', classroomId: parts[1], archiveId: parts[3] };
       }
       return { name: 'scoreboardArchive', classroomId: parts[1] };
+    }
+    // Learning Programmes — Phase 2A. `programmeId` with no further
+    // segment is the programme's own overview; `/settings` and
+    // `/session/{sessionId}` are its only two sub-routes. Mirrors the
+    // shallow, mostly-flat nesting every other classroom sub-feature
+    // already uses (e.g. notebooks/{subjectId}/{typeId}/checkpoints)
+    // rather than introducing a deeper convention.
+    if (parts[2] === 'learning-programmes') {
+      const programmeId = parts[3];
+      if (!programmeId) {
+        return { name: 'learningProgrammesList', classroomId: parts[1] };
+      }
+      if (parts[4] === 'settings') {
+        return { name: 'learningProgrammeSettings', classroomId: parts[1], programmeId };
+      }
+      if (parts[4] === 'session' && parts[5]) {
+        return { name: 'programmeSession', classroomId: parts[1], programmeId, sessionId: parts[5] };
+      }
+      return { name: 'learningProgrammeOverview', classroomId: parts[1], programmeId };
     }
     // TEMPORARY — see ui/views/TeacherDiagnosticsView.js's own header
     // comment for why this exists and when it should be removed.

@@ -393,6 +393,37 @@ test('buildComponentInstancePatch: produces a minimal, single-component Firestor
 });
 
 // ---------------------------------------------------------------------
+// PHASE 2A — pickSessionForDate: the pure decision behind "do not
+// accidentally create multiple sessions on the same day."
+// ---------------------------------------------------------------------
+
+test('pickSessionForDate: returns null for an empty list', () => {
+  assert.equal(programmeSessionService.pickSessionForDate([], '2026-08-19'), null);
+});
+
+test('pickSessionForDate: returns null when no session matches the date', () => {
+  const sessions = [{ id: 's1', date: '2026-08-18' }, { id: 's2', date: '2026-08-17' }];
+  assert.equal(programmeSessionService.pickSessionForDate(sessions, '2026-08-19'), null);
+});
+
+test('pickSessionForDate: returns the one session matching the date', () => {
+  const sessions = [{ id: 's1', date: '2026-08-18' }, { id: 's2', date: '2026-08-19' }];
+  const found = programmeSessionService.pickSessionForDate(sessions, '2026-08-19');
+  assert.equal(found.id, 's2');
+});
+
+test('pickSessionForDate: does not match a session from a different date, even a day off', () => {
+  const sessions = [{ id: 's1', date: '2026-08-20' }];
+  assert.equal(programmeSessionService.pickSessionForDate(sessions, '2026-08-19'), null);
+});
+
+test('pickSessionForDate: returns the first match if more than one session shares a date (should never legitimately happen, but must not throw)', () => {
+  const sessions = [{ id: 's1', date: '2026-08-19' }, { id: 's2', date: '2026-08-19' }];
+  const found = programmeSessionService.pickSessionForDate(sessions, '2026-08-19');
+  assert.equal(found.id, 's1');
+});
+
+// ---------------------------------------------------------------------
 // Activities / teacher observations
 // ---------------------------------------------------------------------
 

@@ -143,6 +143,10 @@ export function renderDashboardView(container, props) {
     router.navigate(`/classroom/${classroom.id}/feed`);
   }
 
+  function openLearningProgrammes() {
+    router.navigate(`/classroom/${classroom.id}/learning-programmes`);
+  }
+
   function openClassroomManagement() {
     renderClassroomManagementView(container, {
       classroom,
@@ -253,6 +257,7 @@ export function renderDashboardView(container, props) {
       onOpenGoalManagement: openGoalManagement,
       onOpenNotebookTracker,
       onOpenFeed: openFeed,
+      onOpenLearningProgrammes: openLearningProgrammes,
     })
   );
 
@@ -393,6 +398,21 @@ const DASHBOARD_MODULES = [
     accentColor: '#A8541A', // warm terracotta/amber, verified at 5.32:1 against white — distinct from Classroom (teal)/Learning (purple)/Assessments (slate-indigo), fitting for a growth/progress-themed module
   },
   {
+    // Learning Programmes — Phase 2A. 'graduation-cap' is otherwise
+    // unused across this module list (see ui/components/Icon.js) and
+    // fits the concept directly: an additional learning context
+    // beyond the regular classroom. Deliberately its own card, not
+    // folded into 'goals' or 'learning' — Learning Programmes are a
+    // structurally separate domain (see models/LearningProgramme.js's
+    // own header comment), not a mode of either existing feature.
+    id: 'learningProgrammes',
+    title: 'Learning Programmes',
+    icon: 'graduation-cap',
+    description: 'Run after-school circles like English Literacy Circle',
+    tier: 'daily',
+    accentColor: '#3D7A4E', // a restrained forest green, distinct from every other card's own color (teal/purple/slate-indigo/terracotta/amber-orange/blue)
+  },
+  {
     id: 'notebooks',
     title: 'Notebooks',
     icon: 'notebook-text',
@@ -410,7 +430,7 @@ const DASHBOARD_MODULES = [
   },
 ];
 
-function renderPrimaryModulesSection({ onOpenClassroomLanding, onOpenLearningManagement, onOpenAssessmentManagement, onOpenGoalManagement, onOpenNotebookTracker, onOpenFeed }) {
+function renderPrimaryModulesSection({ onOpenClassroomLanding, onOpenLearningManagement, onOpenAssessmentManagement, onOpenGoalManagement, onOpenNotebookTracker, onOpenFeed, onOpenLearningProgrammes }) {
   const section = document.createElement('div');
   section.className = 'primary-modules';
 
@@ -423,6 +443,7 @@ function renderPrimaryModulesSection({ onOpenClassroomLanding, onOpenLearningMan
     goals: onOpenGoalManagement,
     notebooks: onOpenNotebookTracker,
     feed: onOpenFeed,
+    learningProgrammes: onOpenLearningProgrammes,
   };
 
   DASHBOARD_MODULES.forEach((module) => {
