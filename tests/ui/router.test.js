@@ -47,6 +47,50 @@ test('learning-programmes session route: missing sessionId falls back to overvie
   assert.deepEqual(route, { name: 'learningProgrammeOverview', classroomId: 'classroom-1', programmeId: 'programme-1' });
 });
 
+// ---------------------------------------------------------------------
+// LEARNING CIRCLE REDESIGN — the three new drill-in routes
+// ---------------------------------------------------------------------
+
+test('learning-programmes session attendance drill-in route', () => {
+  const route = resolvePathParts(parts('classroom/classroom-1/learning-programmes/programme-1/session/session-1/attendance'));
+  assert.deepEqual(route, {
+    name: 'programmeSessionAttendance',
+    classroomId: 'classroom-1',
+    programmeId: 'programme-1',
+    sessionId: 'session-1',
+  });
+});
+
+test('learning-programmes session goals drill-in route', () => {
+  const route = resolvePathParts(parts('classroom/classroom-1/learning-programmes/programme-1/session/session-1/goals'));
+  assert.deepEqual(route, {
+    name: 'programmeSessionGoals',
+    classroomId: 'classroom-1',
+    programmeId: 'programme-1',
+    sessionId: 'session-1',
+  });
+});
+
+test('learning-programmes session observations drill-in route', () => {
+  const route = resolvePathParts(parts('classroom/classroom-1/learning-programmes/programme-1/session/session-1/observations'));
+  assert.deepEqual(route, {
+    name: 'programmeSessionObservations',
+    classroomId: 'classroom-1',
+    programmeId: 'programme-1',
+    sessionId: 'session-1',
+  });
+});
+
+test('learning-programmes session route: an unrecognized sixth segment falls back to the plain session dashboard, never throws', () => {
+  const route = resolvePathParts(parts('classroom/classroom-1/learning-programmes/programme-1/session/session-1/something-unexpected'));
+  assert.deepEqual(route, {
+    name: 'programmeSession',
+    classroomId: 'classroom-1',
+    programmeId: 'programme-1',
+    sessionId: 'session-1',
+  });
+});
+
 test('learning-programmes route: an unrecognized fourth segment falls back to overview, never throws', () => {
   const route = resolvePathParts(parts('classroom/classroom-1/learning-programmes/programme-1/something-unexpected'));
   assert.deepEqual(route, { name: 'learningProgrammeOverview', classroomId: 'classroom-1', programmeId: 'programme-1' });

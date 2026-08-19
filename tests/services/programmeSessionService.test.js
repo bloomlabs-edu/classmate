@@ -639,3 +639,72 @@ test('BUGFIX REGRESSION: a build*Patch() call reflects an already-applied local 
   assert.equal(patch['attendance.student-1'].status, 'late');
 });
 
+// ---------------------------------------------------------------------
+// PHASE 2A REDESIGN — activity removal
+// ---------------------------------------------------------------------
+
+test('removeActivity: removes the activity at the given index', () => {
+  const { classroom, programme } = makeClassroomWithProgramme();
+  const session = programmeSessionService.buildNewSession(classroom, { programmeId: programme.id });
+  programmeSessionService.recordActivity(session, { name: 'Guided Reading' });
+  programmeSessionService.recordActivity(session, { name: 'Partner Speaking' });
+
+  programmeSessionService.removeActivity(session, 0);
+
+  assert.equal(session.activities.length, 1);
+  assert.equal(session.activities[0].name, 'Partner Speaking');
+});
+
+test('removeActivity: removing one activity does not affect the others', () => {
+  const { classroom, programme } = makeClassroomWithProgramme();
+  const session = programmeSessionService.buildNewSession(classroom, { programmeId: programme.id });
+  programmeSessionService.recordActivity(session, { name: 'Guided Reading' });
+  programmeSessionService.recordActivity(session, { name: 'Partner Speaking' });
+  programmeSessionService.recordActivity(session, { name: 'Vocabulary Game' });
+
+  programmeSessionService.removeActivity(session, 1); // remove "Partner Speaking"
+
+  assert.equal(session.activities.length, 2);
+  assert.deepEqual(session.activities.map((a) => a.name), ['Guided Reading', 'Vocabulary Game']);
+});
+
+test('removeActivity: is a no-op for a negative index, never throws', () => {
+  const { classroom, programme } = makeClassroomWithProgramme();
+  const session = programmeSessionService.buildNewSession(classroom, { programmeId: programme.id });
+  programmeSessionService.recordActivity(session, { name: 'Guided Reading' });
+
+  assert.doesNotThrow(() => programmeSessionService.removeActivity(session, -1));
+  assert.equal(session.activities.length, 1, 'nothing should have been removed');
+});
+
+test('removeActivity: is a no-op for an out-of-range index, never throws', () => {
+  const { classroom, programme } = makeClassroomWithProgramme();
+  const session = programmeSessionService.buildNewSession(classroom, { programmeId: programme.id });
+  programmeSessionService.recordActivity(session, { name: 'Guided Reading' });
+
+  assert.doesNotThrow(() => programmeSessionService.removeActivity(session, 5));
+  assert.equal(session.activities.length, 1, 'nothing should have been removed');
+});
+
+test('removeActivity: mutates the session synchronously, before any persistence is attempted', () => {
+  const { classroom, programme } = makeClassroomWithProgramme();
+  const session = programmeSessionService.buildNewSession(classroom, { programmeId: programme.id });
+  programmeSessionService.recordActivity(session, { name: 'Guided Reading' });
+
+  programmeSessionService.removeActivity(session, 0);
+  assert.equal(session.activities.length, 0, 'must be reflected in the session object synchronously, with no await needed');
+});
+
+test('buildActivitiesPatch: produces a whole-array patch reflecting the current, already-mutated activities list', () => {
+  const { classroom, programme } = makeClassroomWithProgramme();
+  const session = programmeSessionService.buildNewSession(classroom, { programmeId: programme.id });
+  programmeSessionService.recordActivity(session, { name: 'Guided Reading' });
+  programmeSessionService.removeActivity(session, 0);
+  programmeSessionService.recordActivity(session, { name: 'Vocabulary Game' });
+
+  const patch = programmeSessionService.buildActivitiesPatch(session);
+
+  assert.deepEqual(Object.keys(patch).sort(), ['activities', 'updatedAt']);
+  assert.equal(patch.activities.length, 1);
+  assert.equal(patch.activities[0].name, 'Vocabulary Game');
+});

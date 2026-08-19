@@ -38,6 +38,7 @@ import { renderStudentGoalTrackerView } from './ui/student-portal/views/StudentG
 import { renderStudentFeedView } from './ui/student-portal/views/StudentFeedView.js';
 import { renderStudentNotebooksView } from './ui/student-portal/views/StudentNotebooksView.js';
 import { renderStudentLearningView } from './ui/student-portal/views/StudentLearningView.js';
+import { renderStudentLearningCircleView } from './ui/student-portal/views/StudentLearningCircleView.js';
 import * as studentAuthService from './services/studentAuthService.js';
 import { renderStudentTeamView } from './ui/student-portal/views/StudentTeamView.js';
 import { renderStudentRecognitionView } from './ui/student-portal/views/StudentRecognitionView.js';
@@ -69,6 +70,9 @@ import { renderLearningProgrammesListView } from './ui/views/LearningProgrammesL
 import { renderLearningProgrammeOverviewView } from './ui/views/LearningProgrammeOverviewView.js';
 import { renderLearningProgrammeSettingsView } from './ui/views/LearningProgrammeSettingsView.js';
 import { renderProgrammeSessionView } from './ui/views/ProgrammeSessionView.js';
+import { renderProgrammeAttendanceView } from './ui/views/ProgrammeAttendanceView.js';
+import { renderProgrammeGoalsReviewView } from './ui/views/ProgrammeGoalsReviewView.js';
+import { renderProgrammeObservationsView } from './ui/views/ProgrammeObservationsView.js';
 import { renderRecognitionScreenView } from './ui/views/RecognitionScreenView.js';
 import { renderLoginView } from './ui/views/LoginView.js';
 import { renderUserBar } from './ui/components/UserBar.js';
@@ -236,6 +240,9 @@ const CLASSROOM_ROUTE_NAMES = [
   'learningProgrammeOverview',
   'learningProgrammeSettings',
   'programmeSession',
+  'programmeSessionAttendance',
+  'programmeSessionGoals',
+  'programmeSessionObservations',
   'diagnostics', // TEMPORARY — see ui/views/TeacherDiagnosticsView.js's own header comment
 ];
 
@@ -329,6 +336,10 @@ function renderStudentPortalMain(route) {
         renderStudentLearningView(content, {
           onBack: () => router.navigate('/student'),
         });
+      } else if (route.section === 'learning-circle') {
+        renderStudentLearningCircleView(content, {
+          onBack: () => router.navigate('/student'),
+        });
       } else {
         renderStudentJourneyView(content, {
           onSessionInvalid: () => router.navigate('/student'),
@@ -342,6 +353,7 @@ function renderStudentPortalMain(route) {
           onNavigateToFeed: () => router.navigate('/student/feed'),
           onNavigateToNotebooks: () => router.navigate('/student/notebooks'),
           onNavigateToLearning: () => router.navigate('/student/learning'),
+          onNavigateToLearningCircle: () => router.navigate('/student/learning-circle'),
           onNavigateToStudentProfile: (studentId) => router.navigate(`/student/student-profile/${studentId}`),
           onNavigateToTeam: (teamId) => router.navigate(`/student/team/${teamId}`),
           onNavigateToStandings: () => router.navigate('/student/team'),
@@ -545,6 +557,33 @@ function renderRoute(route, reason = 'unspecified') {
         programmeId: route.programmeId,
         sessionId: route.sessionId,
         onBack: () => router.navigate(`/classroom/${classroom.id}/learning-programmes/${route.programmeId}`),
+        onOpenAttendance: (sessionId) =>
+          router.navigate(`/classroom/${classroom.id}/learning-programmes/${route.programmeId}/session/${sessionId}/attendance`),
+        onOpenGoals: (sessionId) =>
+          router.navigate(`/classroom/${classroom.id}/learning-programmes/${route.programmeId}/session/${sessionId}/goals`),
+        onOpenObservations: (sessionId) =>
+          router.navigate(`/classroom/${classroom.id}/learning-programmes/${route.programmeId}/session/${sessionId}/observations`),
+      });
+    } else if (route.name === 'programmeSessionAttendance') {
+      renderProgrammeAttendanceView(appContainer, {
+        classroom,
+        programmeId: route.programmeId,
+        sessionId: route.sessionId,
+        onBack: () => router.navigate(`/classroom/${classroom.id}/learning-programmes/${route.programmeId}/session/${route.sessionId}`),
+      });
+    } else if (route.name === 'programmeSessionGoals') {
+      renderProgrammeGoalsReviewView(appContainer, {
+        classroom,
+        programmeId: route.programmeId,
+        sessionId: route.sessionId,
+        onBack: () => router.navigate(`/classroom/${classroom.id}/learning-programmes/${route.programmeId}/session/${route.sessionId}`),
+      });
+    } else if (route.name === 'programmeSessionObservations') {
+      renderProgrammeObservationsView(appContainer, {
+        classroom,
+        programmeId: route.programmeId,
+        sessionId: route.sessionId,
+        onBack: () => router.navigate(`/classroom/${classroom.id}/learning-programmes/${route.programmeId}/session/${route.sessionId}`),
       });
     } else if (route.name === 'scoreboardArchive' || route.name === 'scoreboardArchiveDetail') {
       renderScoreboardArchiveView(appContainer, {

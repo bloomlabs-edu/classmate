@@ -360,6 +360,49 @@ export function recordActivity(session, { name, notes = '' }) {
 }
 
 /**
+ * PHASE 2A REDESIGN — removes one activity from this session by its
+ * own index in `activities[]`. Deliberately identifies the activity
+ * by index, not a new id field: per this project's own explicit "do
+ * not change the activity data structure" instruction for this round,
+ * `activities[]` stays exactly the plain `{ name, notes }` array it
+ * already was — no id was added. Index-based removal is consistent
+ * with this field's own already-accepted concurrency profile (see
+ * models/ProgrammeSession.js's own header comment: `activities` is
+ * session-wide, not per-student, and was deliberately left a
+ * whole-array field rather than given per-entry Firestore targeting —
+ * the same reasoning that already accepted whole-array writes for
+ * this field applies equally to a whole-array remove). A no-op
+ * (returns the session unchanged) for an out-of-range index, rather
+ * than throwing, since a stale index (e.g. from a screen that hasn't
+ * refreshed after someone else already removed the same activity) is
+ * a realistic, harmless case that shouldn't surface as an error.
+ */
+export function removeActivity(session, index) {
+  if (index < 0 || index >= session.activities.length) return session;
+  session.activities.splice(index, 1);
+  session.updatedAt = getCurrentIsoDate();
+  return session;
+}
+
+/**
+ * The smallest Firestore patch for the current, whole `activities`
+ * array — added this round purely for internal consistency: every
+ * other section already computes its own patch through a dedicated
+ * function (buildAttendancePatch()/buildGoalPatch()/
+ * buildTeacherObservationPatch()); until now, the UI layer built this
+ * exact one-line object inline instead of calling a service function
+ * for it. No behavioural change — `activities` was always, and
+ * remains, a whole-field patch, never per-entry (see removeActivity()
+ * above for why).
+ */
+export function buildActivitiesPatch(session) {
+  return {
+    activities: session.activities,
+    updatedAt: session.updatedAt,
+  };
+}
+
+/**
  * Records a teacher's own observation about one student during this
  * session — appended to `session.teacherObservations[studentId]`'s
  * own array (a student may have more than one observation per

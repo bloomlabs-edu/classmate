@@ -48,7 +48,7 @@ import { getEventDetailRoute } from '../../../config/studentEventNavigation.js';
 import { getEventCopyForViewer } from '../../../services/studentEventService.js';
 import { createStudentAlertsPanelElement } from '../components/StudentAlertsPanel.js';
 
-export async function renderStudentJourneyView(container, { onSessionInvalid, onNavigateToEventDetail, onNavigateToGoals, onNavigateToFeed, onNavigateToNotebooks, onNavigateToLearning, onNavigateToStudentProfile, onNavigateToTeam, onNavigateToStandings } = {}) {
+export async function renderStudentJourneyView(container, { onSessionInvalid, onNavigateToEventDetail, onNavigateToGoals, onNavigateToFeed, onNavigateToNotebooks, onNavigateToLearning, onNavigateToLearningCircle, onNavigateToStudentProfile, onNavigateToTeam, onNavigateToStandings } = {}) {
   container.innerHTML = '';
 
   const [summary, eventFeed, found, weeklyNetPoints, alerts] = await Promise.all([
@@ -163,6 +163,24 @@ export async function renderStudentJourneyView(container, { onSessionInvalid, on
     learningLink.textContent = '\ud83d\udcda Learning \u2192';
     learningLink.addEventListener('click', onNavigateToLearning);
     wrapper.appendChild(learningLink);
+  }
+
+  // Learning Circle — the first Learning Programme entry point
+  // anywhere in Student Mode (see
+  // ui/student-portal/views/StudentLearningCircleView.js). Same
+  // "always shown, that view's own empty state handles gracefully"
+  // convention as every other link above — a student who isn't part
+  // of any Learning Circle simply sees that view's own "You're not
+  // part of a Learning Circle yet" message once they tap through,
+  // rather than this link being conditionally hidden (which would
+  // require knowing membership before this screen even renders).
+  if (onNavigateToLearningCircle) {
+    const learningCircleLink = document.createElement('button');
+    learningCircleLink.type = 'button';
+    learningCircleLink.className = 'student-home__goals-link';
+    learningCircleLink.textContent = '\ud83c\udf93 Learning Circle \u2192';
+    learningCircleLink.addEventListener('click', onNavigateToLearningCircle);
+    wrapper.appendChild(learningCircleLink);
   }
 
   // The actual, shared Classroom Standings board — the same

@@ -10922,8 +10922,7 @@ button.wizard-checklist__row:hover {
   margin-top: 0.4rem;
 }
 
-.programme-session-view__goal-student-block,
-.programme-session-view__observation-student-block {
+.programme-session-view__goal-student-block {
   padding: 0.75rem 0;
   border-bottom: 1px solid var(--color-border);
 }
@@ -10994,55 +10993,175 @@ button.wizard-checklist__row:hover {
   color: var(--color-muted);
 }
 
-.programme-session-view__activity-list {
+/* LEARNING CIRCLE REDESIGN — the "TODAY" stats strip. Plain text,
+   matching .profile-section__meta's own existing typography rather
+   than a heavier KPI-card treatment, per the approved redesign's own
+   "compact, like a dashboard summary, not another section"
+   direction. */
+.programme-session-view__stats-strip {
+  margin: 0.5rem 0 1.5rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-control);
+  background-color: var(--color-bg);
+}
+.programme-session-view__stats-strip-label {
+  margin: 0 0 0.3rem;
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-black);
+  letter-spacing: 0.04em;
+  color: var(--color-muted);
+}
+.programme-session-view__stats-strip-line {
+  margin: 0.15rem 0;
+  font-weight: var(--font-weight-medium);
+}
+
+/* The four destination blocks — reuses .primary-modules's own
+   auto-fit/minmax grid mechanics (see ui/views/DashboardView.js) so
+   this reflows from four columns down to one with zero extra media
+   queries, exactly like the Dashboard's own module cards already do. */
+.programme-session-view__blocks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+.programme-session-view__block {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 1.1rem 1.25rem;
+}
+.programme-session-view__block-heading {
+  margin: 0 0 0.6rem;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-black);
+  letter-spacing: 0.04em;
+  color: var(--color-muted);
+}
+.programme-session-view__block-summary {
+  margin: 0 0 0.85rem;
+  font-weight: var(--font-weight-medium);
+}
+.programme-session-view__block-action {
+  display: block;
+  width: 100%;
+}
+.programme-session-view__block--activities {
+  /* Wider by default — activity chips read better with more room;
+     the grid's own auto-fit still lets this collapse to full-width
+     on a narrow phone like every other block. */
+  grid-column: span 2;
+}
+@media (max-width: 640px) {
+  .programme-session-view__block--activities {
+    grid-column: span 1;
+  }
+}
+
+/* Activity chips — real, clickable UI objects (icon + label + an
+   overflow menu), never plain embedded text. Reuses
+   ui/components/OverflowMenu.js's own existing `.overflow-menu`
+   markup directly for the "⋮" trigger; only the chip shell itself is
+   new. */
+.programme-session-view__activity-chip-list {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.85rem;
 }
 .programme-session-view__activity-chip {
-  display: inline-block;
-  padding: 0.4rem 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.7rem;
   border-radius: var(--radius-pill);
   background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
   font-size: var(--text-sm);
+  min-height: 44px; /* touch-target minimum — sessions are often run from a phone */
 }
-.programme-session-view__add-activity-row,
-.programme-session-view__add-observation-row {
+.programme-session-view__activity-chip-icon {
+  font-size: 1.1rem;
+}
+.programme-session-view__activity-chip-label {
+  font-weight: var(--font-weight-medium);
+}
+
+/* "+ Add Activity" — collapsed by default; the revealed row below
+   reuses the exact same layout/spacing the old, always-visible
+   version already had. */
+.programme-session-view__add-activity-disclosure {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.programme-session-view__add-activity-row {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
   align-items: center;
 }
-.programme-session-view__add-activity-row .modal__input,
-.programme-session-view__add-observation-row .modal__input {
+.programme-session-view__add-activity-row .modal__input {
   flex: 1;
   min-width: 160px;
   margin: 0;
 }
 
-.programme-session-view__observation-list {
-  margin: 0.4rem 0;
-  padding-left: 1.2rem;
-  font-size: var(--text-sm);
-}
-
 /* Touch-friendly / phone layout — sessions are frequently conducted
-   from a phone (see this project's own Phase 2A authorization).
-   Phase 2A UX correction: the attendance row no longer needs to
-   stack vertically at this width — a single status toggle plus one
-   small "⋮" button is already compact enough to stay on one line
-   even on a narrow phone, which is itself the point of replacing the
-   old three-button layout (a genuinely wide row that DID need to
-   stack) with this one. */
+   from a phone. The attendance row no longer needs to stack
+   vertically at this width — a single status toggle plus one small
+   "⋮" button is already compact enough to stay on one line even on a
+   narrow phone, which is itself the point of replacing the old
+   three-button layout (a genuinely wide row that DID need to stack)
+   with this one. */
 @media (max-width: 640px) {
   .programme-session-view__attendance-row {
     justify-content: space-between;
   }
   .programme-session-view__goal-custom-row,
-  .programme-session-view__add-activity-row,
-  .programme-session-view__add-observation-row {
+  .programme-session-view__add-activity-row {
     flex-direction: column;
     align-items: stretch;
   }
+}
+
+
+/* =====================================================================
+ * Student Learning Circle — Part 7. Deliberately minimal, reusing
+ * this app's own existing text-line conventions
+ * (.profile-section__heading/.profile-section__meta) rather than a
+ * separate visual language for Student Mode's own version of this
+ * screen.
+ * ===================================================================== */
+
+.student-learning-circle__programme-name {
+  margin: 0.25rem 0 0;
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-black);
+}
+.student-learning-circle__date {
+  margin: 0 0 1rem;
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+}
+.student-learning-circle__attendance-line {
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-bold);
+  margin: 0 0 1.25rem;
+}
+.student-learning-circle__goal-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.student-learning-circle__goal-category-label {
+  font-weight: var(--font-weight-black);
+  min-width: 90px;
+}
+.student-learning-circle__progress-toggle {
+  margin-top: 1.5rem;
 }

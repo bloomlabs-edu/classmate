@@ -24,6 +24,9 @@
  *   #/classroom/{id}/learning-programmes/{programmeId}                -> one programme's overview (see ui/views/LearningProgrammeOverviewView.js)
  *   #/classroom/{id}/learning-programmes/{programmeId}/settings       -> that programme's settings (see ui/views/LearningProgrammeSettingsView.js)
  *   #/classroom/{id}/learning-programmes/{programmeId}/session/{sessionId} -> one ProgrammeSession, today's or historical (see ui/views/ProgrammeSessionView.js)
+ *   #/classroom/{id}/learning-programmes/{programmeId}/session/{sessionId}/attendance -> the dedicated Attendance drill-in (see ui/views/ProgrammeAttendanceView.js)
+ *   #/classroom/{id}/learning-programmes/{programmeId}/session/{sessionId}/goals -> the dedicated Daily Goals review drill-in (see ui/views/ProgrammeGoalsReviewView.js)
+ *   #/classroom/{id}/learning-programmes/{programmeId}/session/{sessionId}/observations -> the dedicated Observations drill-in (see ui/views/ProgrammeObservationsView.js)
  *   #/classroom/{id}/feed                      -> Class Feed (teacher view)
  *   #/classroom/{id}/notebooks                                       -> notebook tracker list (Subject × Notebook Type)
  *   #/classroom/{id}/work-requests/{requestId}                        -> WorkRequest checking + inline history, one page (see WorkRequestRosterView.js) — no separate Timeline route exists anymore
@@ -154,7 +157,22 @@ export function resolvePathParts(parts) {
         return { name: 'learningProgrammeSettings', classroomId: parts[1], programmeId };
       }
       if (parts[4] === 'session' && parts[5]) {
-        return { name: 'programmeSession', classroomId: parts[1], programmeId, sessionId: parts[5] };
+        const sessionId = parts[5];
+        // LEARNING CIRCLE REDESIGN — three new focused drill-in
+        // screens reached from the session dashboard's own summary
+        // blocks (Attendance, Daily Goals, Observations). Same
+        // shallow-nesting convention as everywhere else in this
+        // route: one more segment, never a deeper structure.
+        if (parts[6] === 'attendance') {
+          return { name: 'programmeSessionAttendance', classroomId: parts[1], programmeId, sessionId };
+        }
+        if (parts[6] === 'goals') {
+          return { name: 'programmeSessionGoals', classroomId: parts[1], programmeId, sessionId };
+        }
+        if (parts[6] === 'observations') {
+          return { name: 'programmeSessionObservations', classroomId: parts[1], programmeId, sessionId };
+        }
+        return { name: 'programmeSession', classroomId: parts[1], programmeId, sessionId };
       }
       return { name: 'learningProgrammeOverview', classroomId: parts[1], programmeId };
     }
