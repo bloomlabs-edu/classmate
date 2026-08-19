@@ -156,6 +156,13 @@ export async function renderProgrammeSessionView(container, { classroom, program
    * services/programmeSessionService.js's own patch builders and
    * saveSessionPatch() do all the real work; this only sequences the
    * indicator around that existing call.
+   *
+   * Returns whether the save actually succeeded — callers use this to
+   * decide whether it's safe to redraw() (see that function's own
+   * comment for exactly why this matters). Deliberately still never
+   * re-throws: a failed save should leave the teacher looking at
+   * their own just-made, still-correct local change with a visible
+   * "Save failed" indicator, not an uncaught rejection.
    */
   async function persistPatch(buildPatch) {
     setSaveIndicator('saving');
@@ -163,32 +170,72 @@ export async function renderProgrammeSessionView(container, { classroom, program
       const patch = buildPatch();
       await programmeSessionService.saveSessionPatch(classroom.id, session.id, patch);
       setSaveIndicator('saved');
+      return true;
     } catch (error) {
       console.error('[ProgrammeSessionView] Failed to save:', error);
       setSaveIndicator('error');
+      return false;
     }
   }
 
-  function rerender() {
-    renderProgrammeSessionView(container, { classroom, programmeId, sessionId, onBack });
+  const sectionsContainer = document.createElement('div');
+  wrapper.appendChild(sectionsContainer);
+
+  /**
+   * BUG FIX (Phase 2A verification round) — rebuilds only the section
+   * markup, from the CURRENT in-memory `session`/`programme`/`roster`
+   * state, and does NOT touch Firestore. This replaces an earlier
+   * version of this file where every goal/activity/observation
+   * handler called a `rerender()` that re-invoked this whole exported
+   * function — including a fresh getSessionById() Firestore read —
+   * after every single edit, regardless of whether the just-attempted
+   * save had actually succeeded.
+   *
+   * The concrete bug that produced: recordGoal()/recordActivity()/
+   * recordTeacherObservation() each mutate the local `session` object
+   * synchronously, BEFORE the async persistPatch() call even starts —
+   * so the local, in-memory `session` is always already correct the
+   * instant a teacher acts, independent of whether the network write
+   * later succeeds. But re-fetching from Firestore right after — as
+   * the old rerender() did, unconditionally — could return whatever
+   * the server still had on a slow connection or a genuinely failed
+   * write (persistPatch() deliberately swallows the error rather than
+   * throwing, so nothing stopped that re-fetch from running), silently
+   * discarding the teacher's own just-made, correct local edit and
+   * replacing it with stale server data — the same class of problem
+   * this project's own "detect accidental full-object replacement"
+   * verification step exists to catch, just via a fresh read instead
+   * of a full-object write.
+   *
+   * redraw() cannot have this problem by construction: it never asks
+   * Firestore anything. It only re-renders `sectionsContainer` from
+   * whatever `session`/`programme`/`roster` already hold in memory —
+   * which already reflects every local mutation, saved or not. A
+   * genuine full page reload (a real browser refresh, not this
+   * in-page action) still goes through the exported function above
+   * and gets a fresh, correct server read, exactly as before; only
+   * the in-page, post-edit refresh path changed.
+   */
+  function redraw() {
+    sectionsContainer.innerHTML = '';
+
+    if (roster.length === 0) {
+      sectionsContainer.appendChild(
+        createEmptyStateElement({
+          message: editable ? 'No active members yet \u2014 add students from Settings to begin.' : 'No students were recorded in this session.',
+        })
+      );
+      sectionsContainer.appendChild(buildActivitiesSection(session, editable, persistPatch, redraw));
+      return;
+    }
+
+    sectionsContainer.appendChild(buildAttendanceSection(programme, session, roster, editable, persistPatch));
+    sectionsContainer.appendChild(buildGoalsSection(programme, session, roster, editable, persistPatch, redraw));
+    sectionsContainer.appendChild(buildActivitiesSection(session, editable, persistPatch, redraw));
+    sectionsContainer.appendChild(buildObservationsSection(programme, session, roster, editable, persistPatch, redraw));
   }
 
-  if (roster.length === 0) {
-    wrapper.appendChild(
-      createEmptyStateElement({
-        message: editable ? 'No active members yet \u2014 add students from Settings to begin.' : 'No students were recorded in this session.',
-      })
-    );
-    wrapper.appendChild(buildActivitiesSection(session, editable, persistPatch, rerender));
-    container.appendChild(wrapper);
-    return;
-  }
-
-  wrapper.appendChild(buildAttendanceSection(programme, session, roster, editable, persistPatch));
-  wrapper.appendChild(buildGoalsSection(programme, session, roster, editable, persistPatch, rerender));
-  wrapper.appendChild(buildActivitiesSection(session, editable, persistPatch, rerender));
-  wrapper.appendChild(buildObservationsSection(programme, session, roster, editable, persistPatch, rerender));
-
+  redraw();
   container.appendChild(wrapper);
 }
 
@@ -281,7 +328,7 @@ function buildAttendanceSection(programme, session, roster, editable, persistPat
 // Section 2 — Daily Goals
 // ---------------------------------------------------------------------
 
-function buildGoalsSection(programme, session, roster, editable, persistPatch, rerender) {
+function buildGoalsSection(programme, session, roster, editable, persistPatch, redraw) {
   const section = document.createElement('section');
   section.className = 'profile-section programme-session-view__section';
 
@@ -308,7 +355,7 @@ function buildGoalsSection(programme, session, roster, editable, persistPatch, r
     const relevantCategories = editable ? categories : categories.filter((c) => session.goals[student.id]?.[c.id]);
 
     relevantCategories.forEach((category) => {
-      categoryList.appendChild(buildGoalCategoryRow(programme, session, student, category, editable, persistPatch, rerender));
+      categoryList.appendChild(buildGoalCategoryRow(programme, session, student, category, editable, persistPatch, redraw));
     });
 
     if (relevantCategories.length === 0) {
@@ -325,7 +372,7 @@ function buildGoalsSection(programme, session, roster, editable, persistPatch, r
   return section;
 }
 
-function buildGoalCategoryRow(programme, session, student, category, editable, persistPatch, rerender) {
+function buildGoalCategoryRow(programme, session, student, category, editable, persistPatch, redraw) {
   const row = document.createElement('div');
   row.className = 'programme-session-view__goal-category-row';
 
@@ -337,9 +384,9 @@ function buildGoalCategoryRow(programme, session, student, category, editable, p
   const existingGoal = session.goals[student.id]?.[category.id] || null;
 
   if (existingGoal) {
-    row.appendChild(buildExistingGoalDisplay(programme, session, student, category, existingGoal, editable, persistPatch, rerender));
+    row.appendChild(buildExistingGoalDisplay(programme, session, student, category, existingGoal, editable, persistPatch, redraw));
   } else if (editable) {
-    row.appendChild(buildGoalPicker(programme, session, student, category, persistPatch, rerender));
+    row.appendChild(buildGoalPicker(programme, session, student, category, persistPatch, redraw));
   } else {
     const noneText = document.createElement('span');
     noneText.className = 'profile-section__meta';
@@ -351,7 +398,7 @@ function buildGoalCategoryRow(programme, session, student, category, editable, p
 }
 
 /** The suggested-goal / write-my-own picker — shown only for a category with no goal recorded yet in this session. */
-function buildGoalPicker(programme, session, student, category, persistPatch, rerender) {
+function buildGoalPicker(programme, session, student, category, persistPatch, redraw) {
   const picker = document.createElement('div');
   picker.className = 'programme-session-view__goal-picker';
 
@@ -368,7 +415,7 @@ function buildGoalPicker(programme, session, student, category, persistPatch, re
         source: 'suggested',
       });
       await persistPatch(() => programmeSessionService.buildGoalPatch(session, student.id, category.id));
-      rerender();
+      redraw();
     });
     picker.appendChild(optionButton);
   });
@@ -393,7 +440,7 @@ function buildGoalPicker(programme, session, student, category, persistPatch, re
       source: 'custom',
     });
     await persistPatch(() => programmeSessionService.buildGoalPatch(session, student.id, category.id));
-    rerender();
+    redraw();
   });
   customRow.append(customInput, customButton);
   picker.appendChild(customRow);
@@ -402,7 +449,7 @@ function buildGoalPicker(programme, session, student, category, persistPatch, re
 }
 
 /** An already-recorded goal — its own permanent text/source, plus outcome + reflection, which remain editable even in an otherwise-editable session's own goal (outcome is recorded after the fact). */
-function buildExistingGoalDisplay(programme, session, student, category, goal, editable, persistPatch, rerender) {
+function buildExistingGoalDisplay(programme, session, student, category, goal, editable, persistPatch, redraw) {
   const display = document.createElement('div');
   display.className = 'programme-session-view__goal-display';
 
@@ -428,7 +475,7 @@ function buildExistingGoalDisplay(programme, session, student, category, goal, e
     outcomeButton.addEventListener('click', async () => {
       programmeSessionService.recordGoalOutcome(session, { studentId: student.id, categoryId: category.id, outcome: value });
       await persistPatch(() => programmeSessionService.buildGoalPatch(session, student.id, category.id));
-      rerender();
+      redraw();
     });
     outcomeGroup.appendChild(outcomeButton);
   });
@@ -464,7 +511,7 @@ function buildExistingGoalDisplay(programme, session, student, category, goal, e
 // Section 3 — Activities
 // ---------------------------------------------------------------------
 
-function buildActivitiesSection(session, editable, persistPatch, rerender) {
+function buildActivitiesSection(session, editable, persistPatch, redraw) {
   const section = document.createElement('section');
   section.className = 'profile-section programme-session-view__section';
 
@@ -502,7 +549,7 @@ function buildActivitiesSection(session, editable, persistPatch, rerender) {
       quickButton.addEventListener('click', async () => {
         programmeSessionService.recordActivity(session, { name });
         await persistPatch(() => ({ activities: session.activities, updatedAt: session.updatedAt }));
-        rerender();
+        redraw();
       });
       addRow.appendChild(quickButton);
     });
@@ -520,7 +567,7 @@ function buildActivitiesSection(session, editable, persistPatch, rerender) {
       if (!name) return;
       programmeSessionService.recordActivity(session, { name });
       await persistPatch(() => ({ activities: session.activities, updatedAt: session.updatedAt }));
-      rerender();
+      redraw();
     });
     addRow.append(customInput, addButton);
     section.appendChild(addRow);
@@ -533,7 +580,7 @@ function buildActivitiesSection(session, editable, persistPatch, rerender) {
 // Section 4 — Teacher Observations
 // ---------------------------------------------------------------------
 
-function buildObservationsSection(programme, session, roster, editable, persistPatch, rerender) {
+function buildObservationsSection(programme, session, roster, editable, persistPatch, redraw) {
   const section = document.createElement('section');
   section.className = 'profile-section programme-session-view__section';
 
@@ -580,7 +627,7 @@ function buildObservationsSection(programme, session, roster, editable, persistP
         // granularity here); every other student's own observations
         // are untouched at the Firestore level.
         await persistPatch(() => programmeSessionService.buildTeacherObservationPatch(session, student.id));
-        rerender();
+        redraw();
       });
       addRow.append(noteInput, addButton);
       studentBlock.appendChild(addRow);

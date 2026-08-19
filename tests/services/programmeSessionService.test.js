@@ -555,3 +555,87 @@ test('MEMBERSHIP: a historical session referencing a now-departed student remain
   // And membership history itself still proves they were genuinely a member once.
   assert.equal(learningProgrammeService.getMembershipsForStudent(programme, 'student-1').length, 1);
 });
+
+// ---------------------------------------------------------------------
+// PHASE 2A VERIFICATION ROUND — regression test for a real bug found
+// by code-tracing (no live browser was available to reproduce it
+// interactively): ui/views/ProgrammeSessionView.js used to redraw its
+// goal/activity/observation sections by re-invoking the whole exported
+// render function — including a fresh getSessionById() Firestore
+// read — after every single edit, regardless of whether the
+// just-attempted save had actually succeeded. Because
+// saveSessionPatch() failures are caught and swallowed (by design —
+// see that function's own header comment), nothing stopped that
+// re-fetch from running on a failed write, silently discarding the
+// teacher's own just-made, correct local edit in favor of stale
+// server data.
+//
+// The fix (see ProgrammeSessionView.js's own "redraw()" function and
+// its header comment) replaces that Firestore-refetching redraw with
+// one that rebuilds only from the already-in-memory `session` object
+// — which is safe specifically BECAUSE recordGoal()/recordActivity()/
+// recordTeacherObservation() mutate that object SYNCHRONOUSLY, before
+// any async persistence is even attempted. This test pins down that
+// exact invariant directly: it is the one fact the whole fix depends
+// on, and if a future change ever made these functions async (or
+// deferred their mutation), this redraw-from-memory strategy would
+// silently stop being safe, so this needs its own explicit test, not
+// just an inline comment.
+// ---------------------------------------------------------------------
+
+test('BUGFIX REGRESSION: recordAttendance mutates the session synchronously, before any persistence is attempted', () => {
+  const { classroom, programme } = makeClassroomWithProgramme();
+  const session = programmeSessionService.buildNewSession(classroom, { programmeId: programme.id });
+
+  // No `await`, no Promise involved at all — recordAttendance() is a
+  // plain synchronous function. If a caller's own in-memory `session`
+  // reference didn't already reflect the change the instant this
+  // call returns, a UI that redraws from that same reference (instead
+  // of re-fetching) would be unsafe.
+  programmeSessionService.recordAttendance(programme, session, { studentId: 'student-1', status: 'present' });
+  assert.equal(session.attendance['student-1'].status, 'present', 'must be reflected in the session object synchronously, with no await needed');
+});
+
+test('BUGFIX REGRESSION: recordGoal mutates the session synchronously, before any persistence is attempted', () => {
+  const { classroom, programme } = makeClassroomWithProgramme();
+  const session = programmeSessionService.buildNewSession(classroom, { programmeId: programme.id });
+  const categoryId = programme.configuration.goalFramework.categories[0].id;
+
+  programmeSessionService.recordGoal(programme, session, { studentId: 'student-1', categoryId, text: 'Read two pages' });
+  assert.equal(session.goals['student-1'][categoryId].text, 'Read two pages', 'must be reflected in the session object synchronously, with no await needed');
+});
+
+test('BUGFIX REGRESSION: recordActivity mutates the session synchronously, before any persistence is attempted', () => {
+  const { classroom, programme } = makeClassroomWithProgramme();
+  const session = programmeSessionService.buildNewSession(classroom, { programmeId: programme.id });
+
+  programmeSessionService.recordActivity(session, { name: 'Guided Reading' });
+  assert.equal(session.activities.length, 1, 'must be reflected in the session object synchronously, with no await needed');
+});
+
+test('BUGFIX REGRESSION: recordTeacherObservation mutates the session synchronously, before any persistence is attempted', () => {
+  const { classroom, programme } = makeClassroomWithProgramme();
+  const session = programmeSessionService.buildNewSession(classroom, { programmeId: programme.id });
+
+  programmeSessionService.recordTeacherObservation(programme, session, { studentId: 'student-1', note: 'x' });
+  assert.equal(session.teacherObservations['student-1'].length, 1, 'must be reflected in the session object synchronously, with no await needed');
+});
+
+test('BUGFIX REGRESSION: a build*Patch() call reflects an already-applied local mutation regardless of whether it is ever persisted', () => {
+  // Simulates exactly the scenario the bug occurred in: mutate, THEN
+  // (conceptually) attempt a save that could fail — the patch itself,
+  // and the in-memory session, must already be correct before that
+  // save is even attempted, since a UI's own post-edit redraw must be
+  // able to rely on this without needing to know whether the save
+  // succeeded.
+  const { classroom, programme } = makeClassroomWithProgramme();
+  const session = programmeSessionService.buildNewSession(classroom, { programmeId: programme.id });
+
+  programmeSessionService.recordAttendance(programme, session, { studentId: 'student-1', status: 'late' });
+  const patch = programmeSessionService.buildAttendancePatch(session, 'student-1');
+
+  // The patch is computed from the session's own, already-mutated
+  // in-memory state — never from a server round trip.
+  assert.equal(patch['attendance.student-1'].status, 'late');
+});
+
