@@ -389,6 +389,105 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ---------------------------------------------------------------
+    // Learning Circle Student Data Boundary — Phase 1: membership
+    // identity foundation ONLY. See the security audit and
+    // architecture design this Phase was authorized from (project
+    // history) for the full reasoning; summarized here.
+    //
+    // WHAT THIS ESTABLISHES: one device's own per-slot anonymous
+    // Firebase Auth uid, self-attested as corresponding to a specific
+    // studentId's ACTIVE membership in a specific Learning Programme,
+    // verified against that programme's own real membership data at
+    // the moment of creation — not merely trusted at face value the
+    // way a bare client-supplied studentId would be.
+    //
+    // WHY THIS DOCUMENT'S OWN ID IS THE UID, NOT THE STUDENTID: so a
+    // FUTURE rule (StudentEntry, not part of this Phase) can resolve
+    // "does the caller's own uid correspond to an active member of
+    // this programme" via a single, concrete get() keyed directly by
+    // request.auth.uid — never a query, never a search across many
+    // documents, and therefore never subject to the exact limitation
+    // already documented on the studentGoals rule above (Firestore
+    // cannot prove a rule holds for every possible result of a LIST
+    // operation when that rule depends on another document's own
+    // per-result-varying field; a single get() by a value fixed for
+    // the whole request has no such problem).
+    //
+    // WHY THE CREATE RULE CAN VERIFY ACTIVE MEMBERSHIP WITHOUT A
+    // SEPARATE learningProgrammes SUBCOLLECTION: LearningProgramme
+    // documents don't exist as their own collection today — they're
+    // embedded in classroom.learningProgrammes[], each with its own
+    // memberships[] array. The nested .exists() macro below (a
+    // documented Firestore Rules/CEL capability for searching a list
+    // of maps by an arbitrary predicate, including a nested list
+    // inside each map) can inspect that embedded structure directly,
+    // without requiring it to first be promoted to a real
+    // subcollection. This exact nested-array check was NOT verified
+    // against a live or emulated Firestore project in this sandbox
+    // (no network access, no Firestore CLI/emulator available here,
+    // consistent with every other limitation already documented
+    // throughout this project's history) — flagged explicitly as a
+    // required verification step before this is considered
+    // production-ready, not something to assume works purely because
+    // it reads correctly.
+    //
+    // WHAT THIS DOES NOT ESTABLISH: cryptographic proof of a real-
+    // world student's identity. This app's own Student Portal
+    // onboarding (see ui/student-portal/onboarding/StudentDeviceFlow.js)
+    // is, by explicit product decision, a classroom code plus
+    // self-service roster-name selection — no verified enrollment
+    // step exists anywhere in this app. This document inherits that
+    // exact trust ceiling; it does not exceed it. What it DOES
+    // establish is real and specific: this uid has self-attested a
+    // studentId that, at creation time, genuinely had an active
+    // membership record in this specific programme — closing the
+    // cross-student data-boundary gap this Phase exists to fix,
+    // without claiming to solve identity verification more broadly.
+    //
+    // studentId/status can never be changed after creation (`allow
+    // update: if false`) — a new device always produces a brand-new
+    // link document (a different uid), never a rewrite of an old one.
+    // Nobody deletes these (`allow delete: if false`), matching every
+    // other immutable-record convention already used throughout this
+    // file (ProgrammeSession, StudentGoals' own append-only fields).
+    match /classrooms/{classroomId}/learningProgrammes/{programmeId}/membershipLinks/{uid} {
+      // Readable by the link's own uid, or any teacher member of this
+      // classroom — mirrors studentGoals' own read rule shape exactly
+      // (a direct match against the caller's own identity, OR
+      // existing teacher/classroom-owner authorization via
+      // memberUids), so teacher access here is exactly as compatible
+      // with existing authorization as every other classroom-scoped
+      // collection already is.
+      allow read: if request.auth != null && (
+        uid == request.auth.uid ||
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids
+      );
+
+      // A student may create ONLY their own link (the document ID
+      // must equal their own real, authenticated uid — never a
+      // client-supplied value for someone else), containing ONLY the
+      // three documented fields, with status fixed to 'active' at
+      // creation (a link is never created in any other state), AND
+      // only when the claimed studentId genuinely has an active
+      // membership record in THIS specific programme right now — the
+      // nested .exists() check below reads that directly from the
+      // classroom document's own, already-real membership data,
+      // never trusting the claim on its own.
+      allow create: if request.auth != null &&
+        uid == request.auth.uid &&
+        request.resource.data.keys().hasOnly(['studentId', 'joinedAt', 'status']) &&
+        request.resource.data.studentId is string &&
+        request.resource.data.status == 'active' &&
+        get(/databases/$(database)/documents/classrooms/$(classroomId)).data.learningProgrammes.exists(p,
+          p.id == programmeId &&
+          p.memberships.exists(m, m.studentId == request.resource.data.studentId && m.status == 'active')
+        );
+
+      allow update: if false;
+      allow delete: if false;
+    }
+
     // Legacy, pre-sharing location — migration-only (see
     // services/workspaceService.js). Nothing new is ever written here.
     //
