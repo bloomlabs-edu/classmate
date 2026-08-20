@@ -11,6 +11,7 @@
       "**/node_modules/**",
       "tests/**",
       "docs/**",
+      "firebase-rules-verification/**",
       "CHANGELOG.md",
       "CONTRIBUTING.md",
       "README.md"
@@ -19,7 +20,10 @@
       {
         "source": "**/*.@(js|css)",
         "headers": [
-          { "key": "Cache-Control", "value": "no-cache, max-age=0, must-revalidate" }
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, max-age=0, must-revalidate"
+          }
         ]
       }
     ]
