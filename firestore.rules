@@ -488,6 +488,166 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ---------------------------------------------------------------
+    // PHASE 3 — Student Identity & Learning Circle Data Boundary.
+    // See the architecture design and this Phase's own authorization
+    // (project history) for the full reasoning; summarized here.
+    //
+    // WHY THIS EXISTS: ProgrammeSession mixes every roster student's
+    // own attendance, goals, and observations into one document.
+    // Firestore cannot expose part of a document to a client — a
+    // student can never safely be granted `allow read` on the
+    // canonical session document above without leaking every other
+    // student's own data. This is the minimum, independently-
+    // addressable slice that CAN be safely, narrowly exposed.
+    //
+    // WHY TWO get() HOPS ARE NEEDED TO RESOLVE THE STUDENT'S OWN
+    // MEMBERSHIP LINK: `studentEntries` lives under
+    // `programmeSessions/{sessionId}`, which has no `programmeId` in
+    // its own PATH (only as a FIELD on the session document) — so a
+    // rule here first reads that one session document (safe: keyed
+    // by `sessionId`, a static path variable for this whole match,
+    // never a per-result-varying value) to learn its own
+    // `programmeId`, THEN reads that programme's own
+    // `membershipLinks/{request.auth.uid}` (also safe: a single
+    // document keyed directly by the caller's own known, fixed uid —
+    // never a search, never a list). Both of these are exactly the
+    // kind of get() this rules file has already established are safe
+    // for a single-document evaluation (see membershipLinks' and
+    // programmeSessions' own rule comments); neither is a list
+    // operation, so neither runs into the "cannot prove for every
+    // possible result" limitation documented elsewhere in this file.
+    //
+    // WHY ONE EXCEPTION TO THIS FILE'S "NO CUSTOM FUNCTIONS" STYLE:
+    // every other rule in this file inlines its own get() calls
+    // directly. Here, the SAME two get() calls would otherwise need
+    // to be repeated up to four times across the read/create/update
+    // branches below — a real efficiency and readability cost, not
+    // just a stylistic one. Firestore Rules' own `function` + `let`
+    // support exists specifically for this: compute an intermediate
+    // value once, reuse it. Scoped narrowly to this one match block,
+    // not a rewrite of this file's own broader convention.
+    //
+    // WHAT THIS DOES NOT ESTABLISH: cryptographic proof of a real-
+    // world student's identity — this inherits the exact same trust
+    // ceiling membershipLinks itself already does, no more, no less
+    // (see that rule's own comment above for the full reasoning).
+    match /classrooms/{classroomId}/programmeSessions/{sessionId}/studentEntries/{studentId} {
+      function isTeacherMember() {
+        return request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+      }
+
+      // Resolves this session's own programmeId (one get(), reused
+      // below), then that programme's own membershipLinks entry for
+      // THIS caller's own uid (a second get(), also reused) — true
+      // only if that link's own claimed studentId matches the path
+      // segment being read/written AND that membership is currently
+      // active.
+      function isLinkedActiveStudent() {
+        let sessionProgrammeId = get(/databases/$(database)/documents/classrooms/$(classroomId)/programmeSessions/$(sessionId)).data.programmeId;
+        let link = get(/databases/$(database)/documents/classrooms/$(classroomId)/learningProgrammes/$(sessionProgrammeId)/membershipLinks/$(request.auth.uid));
+        return link.data.studentId == studentId && link.data.status == 'active';
+      }
+
+      // PHASE 3.2 — closes the exact gap Phase 3.1's own review found:
+      // the top-level hasOnly(['goals']) check below says nothing
+      // about what's INSIDE goals.<categoryId>, so a direct,
+      // non-UI write could otherwise set outcome/reflection — fields
+      // the product intends as teacher-only — on a student's own
+      // write. These two functions are what actually close it.
+      //
+      // WHY THE SHAPE CHECK ALLOWS ALL FOUR KEYS, NOT JUST
+      // text/source: traced directly against
+      // models/ProgrammeSession.js's own createProgrammeGoalEntry() —
+      // a BRAND NEW goal, created by recordGoal() (called identically
+      // whether the caller is a student or a teacher picking a new
+      // suggestion), ALWAYS produces all four keys explicitly —
+      // `outcome: null, reflection: ''` are real, explicit defaults
+      // on every legitimate write, never omitted. A rule requiring
+      // hasOnly(['text', 'source']) alone would reject the student's
+      // own ordinary, correct goal-setting flow. The actual boundary
+      // that matters is not WHICH KEYS exist, but WHAT VALUES
+      // outcome/reflection are allowed to hold in a student-authored
+      // write: only their own untouched defaults, never anything
+      // else — which is exactly what a teacher's own
+      // recordGoalOutcome() call is the one and only path that ever
+      // changes.
+      //
+      // WHY create AND update NEED SEPARATE, DIFFERENTLY-SHAPED
+      // CHECKS: for a CREATE, `resource` doesn't exist yet, so there
+      // is nothing to diff against — every category in the freshly-
+      // written goals map is, by definition, part of THIS write. For
+      // an UPDATE, checking the WHOLE resulting goals map would be
+      // wrong — a student editing category B must not be blocked
+      // because a DIFFERENT category (A) already has a real,
+      // teacher-set outcome from before; only the categories THIS
+      // specific write actually changes should ever be checked. A
+      // NESTED diff (on the `goals` map itself, not the whole
+      // document) isolates exactly that. `resource.data.get('goals',
+      // {})` — not direct dot access — specifically so a student
+      // setting their OWN first-ever goal, after a teacher has
+      // already created this document with only `attendance` (no
+      // `goals` key at all yet), doesn't throw trying to diff against
+      // a field that doesn't exist yet.
+      function isValidStudentGoalCreate() {
+        return request.resource.data.goals.keys().all(categoryId,
+          request.resource.data.goals[categoryId].keys().hasOnly(['text', 'source', 'outcome', 'reflection']) &&
+          request.resource.data.goals[categoryId].outcome == null &&
+          request.resource.data.goals[categoryId].reflection == ''
+        );
+      }
+
+      function isValidStudentGoalUpdate() {
+        let priorGoals = resource.data.get('goals', {});
+        let changedCategoryIds = request.resource.data.goals.diff(priorGoals).affectedKeys();
+        return changedCategoryIds.all(categoryId,
+          request.resource.data.goals[categoryId].keys().hasOnly(['text', 'source', 'outcome', 'reflection']) &&
+          request.resource.data.goals[categoryId].outcome == null &&
+          request.resource.data.goals[categoryId].reflection == ''
+        );
+      }
+
+      // Either a teacher (classroom member) or this exact, linked,
+      // currently-active student — never any other student, never an
+      // unauthenticated caller, and never a read of the PARENT
+      // programmeSessions document itself (that remains governed
+      // exclusively by its own rule above, unchanged).
+      allow read: if request.auth != null && (isTeacherMember() || isLinkedActiveStudent());
+
+      // CREATE — the document doesn't exist yet, so there is no
+      // `resource` to diff against; check the proposed document's own
+      // top-level keys directly instead. A teacher may create with
+      // `attendance` and/or `goals` in one write — exactly the same
+      // fields they're already allowed to touch on UPDATE below, so
+      // CREATE isn't more restrictive than UPDATE for no real reason.
+      // A student may create with ONLY `goals` — their own first
+      // goal for this session — never `attendance`, matching this
+      // Phase's own explicit "student cannot modify attendance"
+      // requirement — AND only with the field-ownership shape
+      // isValidStudentGoalCreate() above enforces.
+      allow create: if request.auth != null && (
+        (isTeacherMember() && request.resource.data.keys().hasOnly(['attendance', 'goals'])) ||
+        (isLinkedActiveStudent() && request.resource.data.keys().hasOnly(['goals']) && isValidStudentGoalCreate())
+      );
+
+      // UPDATE — the document already exists; scope each side to only
+      // the field(s) they're ever allowed to touch, using a real diff
+      // against the real, existing resource, so an existing field the
+      // OTHER party already wrote (e.g. a student's own `goals` next
+      // to a teacher-written `attendance`) is never required to be
+      // re-submitted or accidentally clobbered. The student's own
+      // branch is additionally scoped by isValidStudentGoalUpdate()
+      // above — the teacher's own branch is intentionally untouched
+      // by any of this, preserving every existing teacher privilege
+      // exactly as it was.
+      allow update: if request.auth != null && (
+        (isTeacherMember() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['attendance', 'goals'])) ||
+        (isLinkedActiveStudent() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['goals']) && isValidStudentGoalUpdate())
+      );
+
+      allow delete: if false;
+    }
+
     // Legacy, pre-sharing location — migration-only (see
     // services/workspaceService.js). Nothing new is ever written here.
     //

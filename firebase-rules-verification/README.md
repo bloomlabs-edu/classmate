@@ -1,106 +1,134 @@
-# membershipLinks Rule — External Verification Harness
+# Firestore Rules Verification Harness — External Execution Handoff
 
 This directory exists because the environment that authored it has no network
 access — it could not install `firebase-tools`, could not download the
-Firestore emulator binary, and could not run any of this itself. Everything
-here is real, ready-to-run code, prepared for you to execute on a machine
-that *does* have normal network access. Nothing in this directory has been
-executed. See the parent project's own Phase 1.1 report for exactly which
-hosts were checked and blocked, if you want that detail.
+Firestore emulator binary, and could not execute a single test in either file
+here. Everything in this directory is real, ready-to-run code, prepared for
+you to execute on a machine with normal network access. **Nothing here has
+been executed.** Every prior report from this project says so explicitly —
+this handoff exists to close that gap.
 
 **Nothing outside this directory was touched to build this.** The application
 itself, `../firestore.rules`, and the app's own `../tests/` suite are all
 completely unmodified — this harness only *reads* the real `../firestore.rules`
-file; it never copies or edits it.
+file directly; it never copies or edits it. Confirmed by both `.verify.js`
+files' own code (`readFileSync('../firestore.rules', 'utf8')`) and by
+`firebase.json`'s own `"rules": "../firestore.rules"` entry.
 
-## What this tests
+## A. Exact files in this handoff
 
-The `membershipLinks` rule introduced in Phase 1 (see `../firestore.rules`,
-the `classrooms/{classroomId}/learningProgrammes/{programmeId}/membershipLinks/{uid}`
-block). All 13 test cases specified for this phase, run against the real
-Firestore Rules engine via the official
-[`@firebase/rules-unit-testing`](https://firebase.google.com/docs/rules/unit-tests)
-library — not a hand-written reimplementation of the rules language.
+| File | Purpose |
+|---|---|
+| `membershipLinks.rules.verify.js` | 13 tests for the `membershipLinks/{uid}` rule (Phase 1). |
+| `studentEntries.rules.verify.js` | 23 tests for the `studentEntries/{studentId}` rule (Phase 3/3.2), including the field-ownership security fix and the special first-goal-after-attendance edge case (Test 9b). |
+| `package.json` | The two dependencies this harness needs — `@firebase/rules-unit-testing` and `firebase` — completely separate from the main application's own dependency-free convention. |
+| `firebase.json` | A minimal, harness-only emulator config, pointing at the real `../firestore.rules`. Deliberately separate from the app's own `../firebase.json` (which configures hosting/deployment, not this). |
+| `run-verification.sh` / `run-verification.bat` | One simple, self-contained script that installs, starts the emulator, runs both test files, tears down, and returns a non-zero exit code on any asserted failure. Optional — the exact manual commands are documented below too, in case you'd rather run each step yourself. |
 
-**Test 3 is intentionally not asserted pass/fail.** It's the known, open
-question of whether the current rule can be tricked into letting one student
-claim to be a different, real, active student — the test runs, reports the
-actual result to the console either way, and never fails the suite regardless
-of outcome. Don't "fix" this test to make it assert something — that would
-defeat its entire purpose.
+## B. Environment requirements
 
-## A. Files in this directory
+- **Node.js 18+** (this project otherwise uses v22; anything supporting `node:test` and top-level ESM works).
+- **Java 11+** (required by the Firestore emulator binary itself — this sandbox already had OpenJDK 21 available, so this is likely already satisfied on your machine too).
+- **npm**.
+- **Firebase CLI** (`firebase-tools`) — install globally (`npm install -g firebase-tools`) or via `npx`.
+- **Network access** to `registry.npmjs.org` (for `npm install`) and Firebase's own infrastructure (`storage.googleapis.com`, for the emulator binary download on first use).
 
-- `package.json` — the two dependencies this harness needs (not the app itself).
-- `firebase.json` — a minimal, harness-only emulator config, pointing at the real `../firestore.rules`. Deliberately separate from the app's own `../firebase.json` (which configures hosting/deployment, not this).
-- `membershipLinks.rules.verify.js` — the actual 13 tests, using Node's built-in `node:test` (matching the rest of this project's own testing convention — no new test framework introduced).
+**Do not use production Firestore.** The emulator runs entirely locally, in-memory, and is torn down when you're done — nothing here ever reads or writes the real `classmate-302c2` project.
 
-## B. Dependencies required
+## C. Exact commands
 
-- **Node.js** (any version supporting `node:test` and top-level ESM — v18+; this project otherwise uses v22).
-- **Java** (required by the Firestore emulator binary itself — any JRE/JDK 11+; this sandbox already had OpenJDK 21 available, so this is likely already satisfied on most developer machines too).
-- **`firebase-tools`** — the CLI that launches the emulator (install globally, or use `npx` — see below).
-- **`@firebase/rules-unit-testing`** and **`firebase`** — declared in this directory's own `package.json`.
+**IMPORTANT — the exact working directory matters at every step below. All commands in this section assume you start from the repository root (`classroom-tracker/`) unless a `cd` explicitly says otherwise. If you're already inside `firebase-rules-verification/`, do not `cd firebase-rules-verification` again.**
 
-## C. Exact commands to install dependencies
+**Option 1 — the run script** (recommended, does all of the below in one step):
 
-From inside this directory:
+```bash
+cd firebase-rules-verification
+./run-verification.sh
+```
+
+On Windows: `run-verification.bat` instead. Both scripts install dependencies, start the emulator, run both test files in sequence, and stop the emulator afterward — the `.sh` version does this automatically via a cleanup trap; the `.bat` version currently requires you to close the emulator's own window manually when done (a known, documented asymmetry between the two — not silently glossed over).
+
+**Option 2 — manual, step by step:**
 
 ```bash
 cd firebase-rules-verification
 npm install
-```
+npm install -g firebase-tools   # if not already installed
 
-If you don't already have `firebase-tools` installed globally:
+# terminal 1 — from inside firebase-rules-verification/
+firebase emulators:start --only firestore --project classmate-rules-verification
 
-```bash
-npm install -g firebase-tools
-# or, without a global install:
-# npx firebase-tools --version   (confirms npx can fetch it on first use)
-```
-
-## D. Exact command to start the Firestore emulator
-
-From inside this directory (so it picks up this directory's own `firebase.json`, pointing at the real `../firestore.rules`):
-
-```bash
-firebase emulators:start --only firestore --project classmate-membershiplinks-rules-verification
-```
-
-Leave this running in its own terminal. You should see it log that the Firestore emulator is listening on `127.0.0.1:8080` — the same host/port `membershipLinks.rules.verify.js` connects to.
-
-## E. Exact command to run the tests
-
-In a second terminal, from inside this same directory, with the emulator still running:
-
-```bash
+# terminal 2 — also from inside firebase-rules-verification/
 node --test membershipLinks.rules.verify.js
+node --test studentEntries.rules.verify.js
 ```
 
-(Or `npm test`, which runs exactly this.)
+Both options are equivalent; the script exists purely to reduce the chance of a step being skipped or mistyped.
 
-## F. Expected output format
+## D. Emulator startup instructions
 
-Standard Node `node:test` TAP-like output — the same format every test in this project's own `../tests/` directory already produces:
+**Fixed this round — read this if you previously saw `Error: ../firestore.rules is outside of project directory`.** That error came from `firebase-rules-verification/firebase.json`'s own former `"firestore": {"rules": "../firestore.rules"}` entry — the Firebase CLI validates, at startup, that any path referenced there stays inside the directory containing that `firebase.json`, and `../firestore.rules` legitimately fails that check.
 
-```
-▶ 1. own uid + own studentId -> ALLOW
-✔ 1. own uid + own studentId -> ALLOW (Xms)
-▶ 2. own uid attempts to create ANOTHER uid's path -> DENY
-✔ 2. own uid attempts to create ANOTHER uid's path -> DENY (Xms)
-▶ 3. own uid + a DIFFERENT real, active student's studentId -> report actual result, assert nothing
-[TEST 3 RESULT] ALLOWED. This confirms the known, open trust-boundary gap...
-✔ 3. own uid + a DIFFERENT real, active student's studentId -> report actual result, assert nothing (Xms)
-...
-# tests 13
-# pass 13
-# fail 0
+**The fix:** that entry has been removed entirely from `firebase-rules-verification/firebase.json` — it was never actually load-bearing for how these tests get the real rules. Both `.verify.js` files read `../firestore.rules` directly, in Node, via `readFileSync()`, and hand that exact text to `@firebase/rules-unit-testing`'s own `initializeTestEnvironment({ firestore: { rules: <text>, host, port } })` — which installs those rules into the *running* emulator instance at test-setup time, over its own admin connection, entirely independent of whatever `firebase.json` the CLI parsed when the emulator process itself started. The CLI-level `firestore.rules` config key was only ever telling the CLI what to load for itself; it was never what the tests actually run against. Removing it stops the CLI's own validation error without losing anything the tests depend on.
+
+**I could not execute this fix myself to confirm it works** — this sandbox still has no network access to run `firebase emulators:start` at all (see the standing limitation documented in every prior phase's own report). This is a reasoned fix based on how `@firebase/rules-unit-testing` is documented to work, not a verified one. Start the emulator **from inside `firebase-rules-verification/`**, exactly as before:
+
+```bash
+firebase emulators:start --only firestore --project classmate-rules-verification
 ```
 
-**All 13 tests "passing" does NOT mean the security model has no gaps** — it means the rule behaves exactly as the manual trace predicted, including the intentionally-unasserted Test 3, whose actual `[TEST 3 RESULT]` line in the console output is the one piece of genuinely new information this harness produces that manual reading alone couldn't confirm.
+You should see something like `✔ firestore: Firestore Emulator running on 127.0.0.1:8080` — confirm this line specifically before running any test file.
 
-If `membershipLinks.rules.verify.js` instead fails to even *start* (an error before any individual test result appears), that most likely means the rule failed to compile — read the error message directly; it will name the exact line and syntax problem, if there is one. That would be new, important information neither this harness's authoring environment nor the manual trace could produce.
+**If this fix does not work for some reason, here is the alternative this phase's own instructions proposed, as a documented fallback — untested here for the same reason:** run the emulator from the repository root instead, using the *application's own* `firebase.json`/`firestore.rules` (neither of which needs any modification for this — the root `firebase.json` already has a `"firestore": {"rules": "firestore.rules", ...}` entry pointing at a file *inside* its own directory, so the same CLI validation that rejected `../firestore.rules` should accept this without complaint):
 
-## G. Cleanup
+```bash
+cd ..                          # from firebase-rules-verification/, back to classroom-tracker/
+firebase emulators:start --only firestore
+```
 
-`Ctrl+C` the emulator process when done. No persistent state is created outside the emulator's own in-memory instance; nothing here touches a real Firestore project.
+Firebase's own default Firestore emulator port (8080) should apply here even with no explicit `emulators` block in the root `firebase.json` — matching what both test files already expect. If it doesn't, that would be the one case where a root `firebase.json` change might seem necessary — per this phase's own explicit instruction, **stop and report that rather than making the change**, don't decide it yourself in the moment. Whichever way you start the emulator, run the actual test files from a *second* terminal, `cd`'d into `firebase-rules-verification/`, exactly as in Option 2 above — the tests connect by host/port only and don't care which directory the emulator process itself was launched from.
+
+## E. Expected test matrix
+
+**36 tests total across two files** — 13 in `membershipLinks.rules.verify.js`, 23 in `studentEntries.rules.verify.js` (22 numbered tests plus Test 9b, a special edge case). Two are deliberately unasserted (see F) — every other test uses `assertSucceeds`/`assertFails` and will show as a standard Node `node:test` pass/fail.
+
+## F. Security scenarios covered
+
+Per your own required list — every one of these is a real, executable test in `studentEntries.rules.verify.js`:
+
+**Student:** own StudentEntry read (ALLOW) · another student's StudentEntry (DENY) · parent ProgrammeSession (DENY) · valid goal (ALLOW) · goal with outcome (DENY) · goal with reflection (DENY) · later outcome update (DENY) · later reflection update (DENY) · attendance write (DENY) · arbitrary nested field (DENY) · arbitrary top-level field (DENY) · inactive student (DENY) · cross-programme access (DENY).
+
+**Teacher:** StudentEntry read (ALLOW) · attendance write (ALLOW) · outcome edit (ALLOW) · reflection edit (ALLOW).
+
+**Special case (Test 9b):** teacher creates an attendance-only StudentEntry (no `goals` field at all yet) → student adds their first goal via `updateDoc()` → expected ALLOW. This specifically exercises the rule's own `resource.data.get('goals', {})` safe-accessor, added precisely because a naive direct field access would throw on this exact, legitimate scenario.
+
+## G. What constitutes a PASS
+
+A test **passes** when `node --test` reports it as `ok` — meaning its own `assertSucceeds`/`assertFails` call resolved the way the test itself expects. **Two tests are the exception, by design, not a bug:** `membershipLinks.rules.verify.js`'s own Test 3, and `studentEntries.rules.verify.js`'s own Test 22. Neither asserts a specific outcome — both `try`/`catch` the real attempt and `console.log` whichever result actually happens. They will always show as `ok` in the `node --test` output (since they never throw an unhandled assertion failure), but **that "ok" does not mean "the security question is resolved"** — read the console output for the actual `[TEST 3 RESULT]`/`[TEST 22 RESULT]` line to see what the real rules engine actually did. Both are known, already-disclosed, deliberately-deferred limitations (student self-attestation without cryptographic identity proof; category-ID values not validated against programme configuration) — a real ALLOW result for either is expected, not a surprise, and not something to "fix" by editing the rule.
+
+## H. What constitutes a FAIL
+
+Any test **other than** Test 3/Test 22 reporting `not ok` in the `node --test` output. This means the real Firestore Rules engine did not behave the way the code-level review (see the Phase 3/3.1/3.2/3.3 reports) concluded it should. **Do not modify `firestore.rules` to make a failing test pass.** Per Phase 3.3's own explicit instruction, still in force: capture the exact `TEST` / `EXPECTED` / `ACTUAL` / `ERROR` for each failure and report it — a failure here is input for a separately authorized fix phase, not something to patch in the moment.
+
+## I. If compilation fails
+
+If the emulator refuses to start, or errors immediately upon loading `../firestore.rules`, this means the rules file itself did not compile — a different, more fundamental problem than any individual test failing. **Stop immediately.** Capture the exact compiler error message the emulator prints (it will typically name the exact line/construct that failed) and report:
+
+```
+RULE COMPILATION = FAILED
+<exact error text>
+```
+
+Do not interpret this as a test failure, and do not attempt to edit `firestore.rules` to fix it yourself — report it back for a separately authorized fix phase, exactly like any other failure.
+
+## J. No production Firestore
+
+**This harness must never connect to, read from, or write to the real `classmate-302c2` Firestore project, or any other real project.** Every test uses `initializeTestEnvironment()` against a local emulator only, with a synthetic project ID (`classmate-rules-verification`/`classmate-studententries-rules-verification`) that doesn't correspond to any real, deployed project. No real classroom IDs, student IDs, or UIDs appear anywhere in either test file — confirmed by direct inspection of both.
+
+## K. No production files should be modified
+
+**Running this harness — installing its own dependencies, starting the emulator, running the tests — must never modify anything outside this directory.** `../firestore.rules` is only ever *read* (`readFileSync`), never written. If any test fails, the correct response is to report it, not to edit `firestore.rules`, any application source file, or the application's own `package.json`/dependency structure to "make it pass."
+
+## Cleanup
+
+`Ctrl+C` the emulator process (or close its window, on Windows) when done, or let `run-verification.sh`'s own cleanup trap do it for you. No persistent state is created outside the emulator's own in-memory instance; nothing here touches a real Firestore project, ever.
