@@ -15,6 +15,26 @@
  * Nothing about any interaction changed in this extraction — this is
  * the same collapsed-by-default "💡 Suggestions" disclosure and
  * "Edit Goal" toggle established in the prior UX-correction round.
+ *
+ * PHASE 3.7 — every function below now also accepts a `goalWriter`
+ * callback (alongside the existing `persistPatch`), used ONLY when
+ * `session.usesStudentEntries` is true: `(studentId, categoryId,
+ * valueOrPatch, isNewGoal) => Promise`. `isNewGoal` selects a full
+ * 4-key `{text, source, outcome, reflection}` create vs. a partial
+ * update patch (only the keys actually changing) — this file decides
+ * which at each call site, `goalWriter` itself just dispatches to
+ * create-or-update. This file deliberately does NOT import
+ * repositories/firestoreStudentEntryRepository.js directly: which
+ * Firestore instance to write through (the teacher's own default-app
+ * instance, or a student's own per-slot anonymous instance) is a fact
+ * only the CALLER (ui/views/ProgrammeSessionView.js,
+ * ProgrammeGoalsReviewView.js, or
+ * ui/student-portal/views/StudentLearningCircleView.js) actually
+ * knows — this file stays as generic/reusable across teacher and
+ * student contexts as it always has been. For a session with no
+ * `usesStudentEntries` (everything created before this phase),
+ * `goalWriter` is never called at all — behaviour is 100% unchanged,
+ * still `persistPatch(() => buildGoalPatch(...))` exactly as before.
  */
 
 import * as programmeSessionService from '../../services/programmeSessionService.js';
@@ -26,7 +46,7 @@ const OUTCOME_OPTIONS = [
   { value: 'try_again', label: 'Try again' },
 ];
 
-export function buildGoalsSection(programme, session, roster, editable, persistPatch, redraw) {
+export function buildGoalsSection(programme, session, roster, editable, persistPatch, redraw, goalWriter) {
   const section = document.createElement('section');
   section.className = 'profile-section programme-session-view__section';
 
@@ -53,7 +73,7 @@ export function buildGoalsSection(programme, session, roster, editable, persistP
     const relevantCategories = editable ? categories : categories.filter((c) => session.goals[student.id]?.[c.id]);
 
     relevantCategories.forEach((category) => {
-      categoryList.appendChild(buildGoalCategoryRow(programme, session, student, category, editable, persistPatch, redraw));
+      categoryList.appendChild(buildGoalCategoryRow(programme, session, student, category, editable, persistPatch, redraw, goalWriter));
     });
 
     if (relevantCategories.length === 0) {
@@ -70,7 +90,7 @@ export function buildGoalsSection(programme, session, roster, editable, persistP
   return section;
 }
 
-function buildGoalCategoryRow(programme, session, student, category, editable, persistPatch, redraw) {
+function buildGoalCategoryRow(programme, session, student, category, editable, persistPatch, redraw, goalWriter) {
   const row = document.createElement('div');
   row.className = 'programme-session-view__goal-category-row';
 
@@ -82,9 +102,9 @@ function buildGoalCategoryRow(programme, session, student, category, editable, p
   const existingGoal = session.goals[student.id]?.[category.id] || null;
 
   if (existingGoal) {
-    row.appendChild(buildExistingGoalDisplay(programme, session, student, category, existingGoal, editable, persistPatch, redraw));
+    row.appendChild(buildExistingGoalDisplay(programme, session, student, category, existingGoal, editable, persistPatch, redraw, goalWriter));
   } else if (editable) {
-    row.appendChild(buildGoalDisclosure(programme, session, student, category, persistPatch, redraw));
+    row.appendChild(buildGoalDisclosure(programme, session, student, category, persistPatch, redraw, goalWriter));
   } else {
     const noneText = document.createElement('span');
     noneText.className = 'profile-section__meta';
@@ -102,7 +122,7 @@ function buildGoalCategoryRow(programme, session, student, category, editable, p
  * small "💡 Suggestions" toggle; tapping it reveals the existing
  * picker (buildGoalPicker() below) inline, in place.
  */
-export function buildGoalDisclosure(programme, session, student, category, persistPatch, redraw) {
+export function buildGoalDisclosure(programme, session, student, category, persistPatch, redraw, goalWriter) {
   const wrapper = document.createElement('div');
   wrapper.className = 'programme-session-view__goal-disclosure';
 
@@ -113,7 +133,7 @@ export function buildGoalDisclosure(programme, session, student, category, persi
 
   const pickerContainer = document.createElement('div');
   pickerContainer.hidden = true;
-  pickerContainer.appendChild(buildGoalPicker(programme, session, student, category, persistPatch, redraw));
+  pickerContainer.appendChild(buildGoalPicker(programme, session, student, category, persistPatch, redraw, goalWriter));
 
   toggleButton.addEventListener('click', () => {
     pickerContainer.hidden = !pickerContainer.hidden;
@@ -134,9 +154,34 @@ export function buildGoalDisclosure(programme, session, student, category, persi
  * buildExistingGoalDisplay() for replacing one that already exists,
  * or the Student Portal's own equivalent "💡 Get Suggestions" toggle).
  */
-export function buildGoalPicker(programme, session, student, category, persistPatch, redraw) {
+export function buildGoalPicker(programme, session, student, category, persistPatch, redraw, goalWriter) {
   const picker = document.createElement('div');
   picker.className = 'programme-session-view__goal-picker';
+
+  /**
+   * PHASE 3.7 \u2014 shared by both buttons below. `recordGoal()` still
+   * runs first either way, purely to update the in-memory
+   * `session.goals` object the redraw reads from (see this function's
+   * own callers) \u2014 for a `usesStudentEntries` session, the actual
+   * PERSISTENCE happens via `goalWriter`, never `buildGoalPatch()` +
+   * `persistPatch()`. `existedBefore` is captured BEFORE recordGoal()
+   * mutates the in-memory map, since that's the only way to tell
+   * "brand-new goal" (`create`, all four keys) apart from "replacing
+   * an existing one" (`update`, text/source only \u2014 never resetting an
+   * outcome/reflection a teacher may have already recorded).
+   */
+  async function persistGoal({ studentId, categoryId, text, source }) {
+    const existedBefore = Boolean(session.goals[studentId]?.[categoryId]);
+    programmeSessionService.recordGoal(programme, session, { studentId, categoryId, text, source });
+
+    if (session.usesStudentEntries) {
+      const goalValue = session.goals[studentId][categoryId];
+      await goalWriter(studentId, categoryId, existedBefore ? { text: goalValue.text, source: goalValue.source } : goalValue, !existedBefore);
+    } else {
+      await persistPatch(() => programmeSessionService.buildGoalPatch(session, studentId, categoryId));
+    }
+    redraw();
+  }
 
   (category.suggestedGoals || []).forEach((suggestedText) => {
     const optionButton = document.createElement('button');
@@ -144,14 +189,7 @@ export function buildGoalPicker(programme, session, student, category, persistPa
     optionButton.className = 'btn btn--ghost programme-session-view__goal-option';
     optionButton.textContent = suggestedText;
     optionButton.addEventListener('click', async () => {
-      programmeSessionService.recordGoal(programme, session, {
-        studentId: student.id,
-        categoryId: category.id,
-        text: suggestedText,
-        source: 'suggested',
-      });
-      await persistPatch(() => programmeSessionService.buildGoalPatch(session, student.id, category.id));
-      redraw();
+      await persistGoal({ studentId: student.id, categoryId: category.id, text: suggestedText, source: 'suggested' });
     });
     picker.appendChild(optionButton);
   });
@@ -169,14 +207,7 @@ export function buildGoalPicker(programme, session, student, category, persistPa
   customButton.addEventListener('click', async () => {
     const text = customInput.value.trim();
     if (!text) return;
-    programmeSessionService.recordGoal(programme, session, {
-      studentId: student.id,
-      categoryId: category.id,
-      text,
-      source: 'custom',
-    });
-    await persistPatch(() => programmeSessionService.buildGoalPatch(session, student.id, category.id));
-    redraw();
+    await persistGoal({ studentId: student.id, categoryId: category.id, text, source: 'custom' });
   });
   customRow.append(customInput, customButton);
   picker.appendChild(customRow);
@@ -194,7 +225,7 @@ export function buildGoalPicker(programme, session, student, category, persistPa
  * recordGoal() already replaces rather than duplicates a goal for the
  * same student/category (an existing, passing unit test covers this).
  */
-export function buildExistingGoalDisplay(programme, session, student, category, goal, editable, persistPatch, redraw) {
+export function buildExistingGoalDisplay(programme, session, student, category, goal, editable, persistPatch, redraw, goalWriter) {
   const container = document.createElement('div');
 
   const display = document.createElement('div');
@@ -221,7 +252,11 @@ export function buildExistingGoalDisplay(programme, session, student, category, 
     outcomeButton.disabled = !editable;
     outcomeButton.addEventListener('click', async () => {
       programmeSessionService.recordGoalOutcome(session, { studentId: student.id, categoryId: category.id, outcome: value });
-      await persistPatch(() => programmeSessionService.buildGoalPatch(session, student.id, category.id));
+      if (session.usesStudentEntries) {
+        await goalWriter(student.id, category.id, { outcome: value }, false);
+      } else {
+        await persistPatch(() => programmeSessionService.buildGoalPatch(session, student.id, category.id));
+      }
       redraw();
     });
     outcomeGroup.appendChild(outcomeButton);
@@ -245,8 +280,13 @@ export function buildExistingGoalDisplay(programme, session, student, category, 
     saveReflectionButton.className = 'btn btn--text';
     saveReflectionButton.textContent = 'Save Reflection';
     saveReflectionButton.addEventListener('click', async () => {
-      programmeSessionService.recordGoalOutcome(session, { studentId: student.id, categoryId: category.id, reflection: reflectionInput.value.trim() });
-      await persistPatch(() => programmeSessionService.buildGoalPatch(session, student.id, category.id));
+      const reflection = reflectionInput.value.trim();
+      programmeSessionService.recordGoalOutcome(session, { studentId: student.id, categoryId: category.id, reflection });
+      if (session.usesStudentEntries) {
+        await goalWriter(student.id, category.id, { reflection }, false);
+      } else {
+        await persistPatch(() => programmeSessionService.buildGoalPatch(session, student.id, category.id));
+      }
     });
     display.appendChild(saveReflectionButton);
   }
@@ -264,7 +304,7 @@ export function buildExistingGoalDisplay(programme, session, student, category, 
 
     const editPickerContainer = document.createElement('div');
     editPickerContainer.hidden = true;
-    editPickerContainer.appendChild(buildGoalPicker(programme, session, student, category, persistPatch, redraw));
+    editPickerContainer.appendChild(buildGoalPicker(programme, session, student, category, persistPatch, redraw, goalWriter));
 
     editButton.addEventListener('click', () => {
       editPickerContainer.hidden = !editPickerContainer.hidden;

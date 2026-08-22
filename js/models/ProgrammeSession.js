@@ -131,7 +131,6 @@
  * explicitly not being built yet.
  */
 
-import { generateId } from '../utils/idGenerator.js';
 import { getCurrentIsoDate } from '../utils/dateHelpers.js';
 
 export function createProgrammeSession({
@@ -146,14 +145,28 @@ export function createProgrammeSession({
   activities = [],
   componentInstances = {},
   teacherObservations = {},
+  usesStudentEntries = false,
   createdAt,
   updatedAt,
 } = {}) {
   const resolvedCreatedAt = createdAt || getCurrentIsoDate();
+  const resolvedDate = date || resolvedCreatedAt.slice(0, 10);
   return {
-    id: id || generateId(),
+    // PHASE 3.7 — deterministic per-date id (`${programmeId}__${date}`)
+    // for every NEW session, replacing the random UUID this function
+    // used through Phase 3.6. An explicit caller-supplied `id` still
+    // wins outright (never overridden) — this only changes what a
+    // brand-new session defaults to when no id is given, which is the
+    // only way services/programmeSessionService.js's own
+    // buildNewSession()/createAndSaveSession() ever call this. Every
+    // already-persisted session keeps whatever random id it was given
+    // when it was created — this function is never called again for a
+    // session that already exists (getSessionById() reads the stored
+    // document directly), so no existing session's own id is ever
+    // affected by this change.
+    id: id || `${programmeId}__${resolvedDate}`,
     programmeId,
-    date: date || resolvedCreatedAt.slice(0, 10),
+    date: resolvedDate,
     title,
     startedAt,
     endedAt,
@@ -162,6 +175,16 @@ export function createProgrammeSession({
     activities,
     componentInstances,
     teacherObservations,
+    // PHASE 3.7 — true for every brand-new session (set explicitly by
+    // services/programmeSessionService.js's own buildNewSession());
+    // defaults to false here only because this factory always needs
+    // *a* value to return, never because an old, already-persisted
+    // session is ever passed back through this function — a session
+    // created before this phase has no `usesStudentEntries` field on
+    // its own stored document at all, and this factory is never
+    // called again for a session that already exists (see this file's
+    // own header comment on the historical-stability invariant).
+    usesStudentEntries,
     createdAt: resolvedCreatedAt,
     updatedAt: updatedAt || resolvedCreatedAt,
   };

@@ -16,44 +16,42 @@
  * a mirror of them.
  *
  * ==========================================================================
- * KNOWN, CONFIRMED ARCHITECTURAL LIMITATION — READ BEFORE ASSUMING THIS WORKS
+ * PHASE 3.7 — RESOLVES THE ARCHITECTURAL LIMITATION DOCUMENTED HERE
+ * THROUGH PHASE 3.6. READ BEFORE ASSUMING EITHER THE OLD OR THE NEW
+ * BEHAVIOUR APPLIES.
  * ==========================================================================
- * firestore.rules' own `classrooms/{classroomId}/programmeSessions/{sessionId}`
- * block requires `request.auth.uid in classroom.memberUids` for EVERY
- * operation — read, create, and update alike. A student's own device
- * authenticates through services/studentAuthService.js's separate,
- * per-slot ANONYMOUS identity, which is never added to a classroom's
- * own `memberUids` array (that field is exclusively for real,
- * Google-authenticated teacher/owner accounts — confirmed directly by
- * inspection, not assumed). This means every read this file performs
- * against `classrooms/{id}/programmeSessions/*` — including the very
- * first one, resolving today's session — will be REJECTED by Firestore
- * security rules against the real, live project, exactly as it stands
- * today. This is not a bug in this file; it is a genuine, confirmed gap
- * between what this round's own "Student Portal — MUST IMPLEMENT"
- * instruction asks for and what this round's own separate "Do NOT
- * modify Firestore rules" instruction permits fixing. The correct fix —
- * a new, purpose-built rule granting a student's own per-slot identity
- * read (and, if goal-setting is meant to work too, scoped write) access
- * to a session referencing their own studentId, mirroring the
- * denormalized-uid technique classrooms/{id}/studentGoals/* already
- * uses for exactly this same class of problem — is explicitly out of
- * scope this round and must be authorized and implemented separately.
+ * Through Phase 3.6, firestore.rules' own
+ * `classrooms/{classroomId}/programmeSessions/{sessionId}` block
+ * required `request.auth.uid in classroom.memberUids` for every
+ * operation — true for a teacher, never true for a student's own
+ * per-slot anonymous identity (services/studentAuthService.js), so
+ * every read this file performed against that collection — including
+ * resolving "today's session" — was rejected outright.
  *
- * Every function in this file is written correctly and will start
- * working the moment that rule exists, with zero code changes here.
- * Until then, every fetch below is wrapped so a permission-denied
- * rejection degrades to the same graceful "can't load this right now"
- * empty state a genuinely missing session would show — never a raw
- * error, never a crash — but the underlying data will not actually
- * load against a live project today. See this round's own
- * implementation report for the full, explicit callout.
+ * PHASE 3.7 fixes this WITHOUT ever granting a student read access to
+ * the shared, teacher-facing programmeSessions document itself (still
+ * never safe — see the studentEntries rule's own comment for why).
+ * Instead: (1) ensureProgrammeMembershipLink() below creates this
+ * device's own membershipLinks document — the self-attested uid<->
+ * studentId link firestore.rules' own studentEntries/sessionIndex
+ * rules require — before any other Firestore read in this file; (2)
+ * "today's session" is resolved via
+ * services/studentLearningCircleService.js's own
+ * getOwnSessionForDate(), which reads only the lightweight
+ * sessionIndex pointer plus this student's own studentEntries/goals
+ * documents, never the canonical session. This ONLY ever resolves a
+ * session created from this phase onward (`usesStudentEntries: true`
+ * — see services/programmeSessionService.js's own buildNewSession());
+ * a session created before this phase has no sessionIndex entry and
+ * remains exactly as unreadable to a student as it always was — not a
+ * regression, the same documented, accepted limitation carried
+ * forward unchanged for old data.
  */
 
 import * as studentDeviceService from '../../../services/studentDeviceService.js';
 import * as studentPortalDataService from '../../../services/studentPortalDataService.js';
 import * as learningProgrammeService from '../../../services/learningProgrammeService.js';
-import * as programmeSessionService from '../../../services/programmeSessionService.js';
+import * as studentLearningCircleService from '../../../services/studentLearningCircleService.js';
 import { isSessionEditable, summarizeStudentProgress } from '../../components/ProgrammeSessionHelpers.js';
 import { buildGoalPicker } from '../../components/ProgrammeGoalsControls.js';
 import { createSaveIndicatorController } from '../../components/ProgrammeSessionSaveIndicator.js';
@@ -102,6 +100,14 @@ export async function renderStudentLearningCircleView(container, { onBack }) {
       wrapper.appendChild(createEmptyStateElement({ message: "You're not part of a Learning Circle yet." }));
       return;
     }
+
+    // PHASE 3.7 — must happen before ANY read below that depends on
+    // this device's own membershipLinks document (getOwnSessionForDate()
+    // and everything the goal-setting UI does) — see this file's own
+    // header comment. A no-op on every call after the first for this
+    // uid (see firestoreEnrollmentRepository.js's own
+    // ensureLearningProgrammeMembershipLink()).
+    await studentLearningCircleService.ensureProgrammeMembershipLink(classroom.id, programme.id, studentId);
   } catch (error) {
     // See this file's own header comment — a permission-denied
     // rejection against the real project degrades to exactly this
@@ -120,7 +126,7 @@ export async function renderStudentLearningCircleView(container, { onBack }) {
 
   let session = null;
   try {
-    session = await programmeSessionService.findSessionForDate(classroom.id, programme.id, getTodayDateKey());
+    session = await studentLearningCircleService.getOwnSessionForDate(classroom.id, programme.id, getTodayDateKey());
   } catch (error) {
     console.error('[StudentLearningCircleView] Failed to load today\u2019s session:', error);
   }
@@ -164,8 +170,19 @@ export async function renderStudentLearningCircleView(container, { onBack }) {
   goalsHeading.textContent = 'Your goals';
   wrapper.appendChild(goalsHeading);
 
-  const { element: saveIndicator, persistPatch } = createSaveIndicatorController(classroom.id, session);
+  const { element: saveIndicator, persistPatch, persistCustom } = createSaveIndicatorController(classroom.id, session);
   wrapper.appendChild(saveIndicator);
+
+  // PHASE 3.7 — session (from getOwnSessionForDate() above) is always
+  // a usesStudentEntries session — see this file's own header
+  // comment — so buildGoalPicker's own `goalWriter` branch is the
+  // only path this view's goals ever take; `persistPatch` above is
+  // passed through unused for the (never-reached) legacy branch, kept
+  // only because ui/components/ProgrammeGoalsControls.js's shared
+  // function signature still accepts it.
+  function goalWriter(_studentId, categoryId, valueOrPatch, isNewGoal) {
+    return persistCustom(() => studentLearningCircleService.persistOwnGoal(classroom.id, session.id, categoryId, valueOrPatch, isNewGoal));
+  }
 
   const goalsContainer = document.createElement('div');
   wrapper.appendChild(goalsContainer);
@@ -173,7 +190,7 @@ export async function renderStudentLearningCircleView(container, { onBack }) {
   function redrawGoals() {
     goalsContainer.innerHTML = '';
     programme.configuration.goalFramework.categories.forEach((category) => {
-      goalsContainer.appendChild(buildStudentGoalRow(programme, session, studentId, category, editable, persistPatch, redrawGoals));
+      goalsContainer.appendChild(buildStudentGoalRow(programme, session, studentId, category, editable, persistPatch, redrawGoals, goalWriter));
     });
   }
   redrawGoals();
@@ -192,7 +209,7 @@ export async function renderStudentLearningCircleView(container, { onBack }) {
  * Goals review screen; a student's own view stays a simple read +
  * set, matching this round's own mockup exactly.
  */
-function buildStudentGoalRow(programme, session, studentId, category, editable, persistPatch, redraw) {
+function buildStudentGoalRow(programme, session, studentId, category, editable, persistPatch, redraw, goalWriter) {
   const row = document.createElement('div');
   row.className = 'student-learning-circle__goal-row';
 
@@ -226,7 +243,7 @@ function buildStudentGoalRow(programme, session, studentId, category, editable, 
     // The student's own view passes { id: studentId } — the picker
     // only ever reads `.id` off the object it's given, so this needs
     // no full roster-derived student record.
-    pickerContainer.appendChild(buildGoalPicker(programme, session, { id: studentId }, category, persistPatch, redraw));
+    pickerContainer.appendChild(buildGoalPicker(programme, session, { id: studentId }, category, persistPatch, redraw, goalWriter));
 
     toggleButton.addEventListener('click', () => {
       pickerContainer.hidden = !pickerContainer.hidden;
@@ -254,6 +271,16 @@ function buildStudentGoalRow(programme, session, studentId, category, editable, 
  * available, do not invent additional metrics yet" instruction.
  * Collapsed by default, same progressive-disclosure principle as
  * everything else this round touched.
+ *
+ * PHASE 3.7 — reads via
+ * services/studentLearningCircleService.js's own
+ * listOwnSessionSummaries(), not
+ * services/programmeSessionService.js's own listSessionsForProgramme()
+ * (that query requires classroom.memberUids membership — see this
+ * file's own header comment). Only ever covers sessions created from
+ * this phase onward; a student's progress across any older session
+ * simply isn't counted, the same pre-existing, unchanged limitation
+ * "today's session" itself already has.
  */
 function appendViewProgressAction(wrapper, classroom, programme, studentId) {
   const toggleButton = document.createElement('button');
@@ -272,7 +299,7 @@ function appendViewProgressAction(wrapper, classroom, programme, studentId) {
     loaded = true;
     progressContainer.textContent = 'Loading\u2026';
     try {
-      const sessions = await programmeSessionService.listSessionsForProgramme(classroom.id, programme.id);
+      const sessions = await studentLearningCircleService.listOwnSessionSummaries(classroom.id, programme.id);
       const summary = summarizeStudentProgress(sessions, studentId);
       progressContainer.innerHTML = '';
       const lines = [

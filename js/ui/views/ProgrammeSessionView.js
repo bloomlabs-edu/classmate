@@ -90,6 +90,12 @@ export async function renderProgrammeSessionView(
     container.appendChild(createEmptyStateElement({ message: 'This session could not be found.' }));
     return;
   }
+  // PHASE 3.7 — this dashboard only ever READS session.goals (via
+  // countStudentsWithGoals() below, for the stats strip) — it never
+  // writes goals itself (that's ProgrammeGoalsReviewView.js's own
+  // job) — so hydration alone, with no goalWriter, is all this screen
+  // needs. A no-op for a session created before this phase.
+  await programmeSessionService.hydrateSessionGoals(classroom.id, session);
 
   const editable = isSessionEditable(session, programme);
   const roster = resolveSessionRoster(classroom, programme, session, editable);

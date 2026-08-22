@@ -14,10 +14,25 @@
  * classroom document, see models/LearningProgramme.js). This is
  * distinct from ProgrammeSession data, which this view never touches
  * at all.
+ *
+ * PHASE 3.7 EXCEPTION — the membership add/remove flow below also
+ * writes a small, independent Firestore mirror document per changed
+ * student (repositories/firestoreEnrollmentRepository.js's own
+ * setProgrammeMembershipMirror()), directly, alongside the
+ * workspaceService.save() call. This is NOT a second persistence path
+ * for programme configuration itself (the embedded
+ * memberships[] array remains the sole source of truth for that, via
+ * workspaceService.save(), exactly as before) — it is a narrow,
+ * additive security artifact firestore.rules' own membershipLinks
+ * create rule reads via get(), which cannot be derived from the
+ * classroom document alone without an expensive nested array scan
+ * (see that rule's own comment). See the project's own Phase 3.7
+ * authorization for why this one exception exists here.
  */
 
 import * as workspaceService from '../../services/workspaceService.js';
 import * as learningProgrammeService from '../../services/learningProgrammeService.js';
+import * as enrollmentRepository from '../../repositories/firestoreEnrollmentRepository.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { openManageLearningProgrammeMembersModal } from '../components/ManageLearningProgrammeMembersModal.js';
@@ -126,23 +141,49 @@ export function renderLearningProgrammeSettingsView(container, { classroom, prog
       onSave: (desiredActiveStudentIds) => {
         const desiredSet = new Set(desiredActiveStudentIds);
         const currentSet = new Set(activeMembers.map((membership) => membership.studentId));
+        const mirrorWrites = [];
 
         // Add anyone newly selected who wasn't already active —
         // addMembership() itself is a safe no-op for anyone already
         // active (see services/learningProgrammeService.js), so this
         // never risks a duplicate active membership.
         desiredSet.forEach((studentId) => {
-          if (!currentSet.has(studentId)) learningProgrammeService.addMembership(programme, studentId);
+          if (!currentSet.has(studentId)) {
+            const membership = learningProgrammeService.addMembership(programme, studentId);
+            mirrorWrites.push(
+              enrollmentRepository.setProgrammeMembershipMirror(classroom.id, programme.id, studentId, {
+                status: membership.status,
+                joinedAt: membership.joinedAt,
+              })
+            );
+          }
         });
 
         // Mark anyone deselected as left — never deletes their own
         // membership record or touches any historical session (see
         // markMembershipLeft()'s own header comment).
         currentSet.forEach((studentId) => {
-          if (!desiredSet.has(studentId)) learningProgrammeService.markMembershipLeft(programme, studentId);
+          if (!desiredSet.has(studentId)) {
+            const membership = learningProgrammeService.markMembershipLeft(programme, studentId);
+            if (membership) {
+              mirrorWrites.push(
+                enrollmentRepository.setProgrammeMembershipMirror(classroom.id, programme.id, studentId, {
+                  status: membership.status,
+                  joinedAt: membership.joinedAt,
+                })
+              );
+            }
+          }
         });
 
         workspaceService.save(classroom);
+        // Fire-and-forget, matching workspaceService.save()'s own
+        // pattern immediately above — the embedded memberships[]
+        // array (already saved) remains the source of truth
+        // regardless of whether this mirror write succeeds.
+        Promise.all(mirrorWrites).catch((error) => {
+          console.error('[LearningProgrammeSettingsView] Failed to write membership mirror document:', error);
+        });
         rerender();
       },
     });

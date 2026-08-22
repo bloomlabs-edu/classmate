@@ -479,12 +479,77 @@ service cloud.firestore {
         request.resource.data.keys().hasOnly(['studentId', 'joinedAt', 'status']) &&
         request.resource.data.studentId is string &&
         request.resource.data.status == 'active' &&
-        get(/databases/$(database)/documents/classrooms/$(classroomId)).data.learningProgrammes.exists(p,
-          p.id == programmeId &&
-          p.memberships.exists(m, m.studentId == request.resource.data.studentId && m.status == 'active')
+        (
+          // PHASE 3.7 — preferred path: a single get() against the new
+          // direct membership mirror document (see the
+          // learningProgrammes/{programmeId}/memberships/{studentId}
+          // block below). Guarded with exists() first since a
+          // membership that predates this phase, or was never mirrored,
+          // has no document here at all — get() on a missing doc throws
+          // rather than returning a falsy value.
+          (
+            exists(/databases/$(database)/documents/classrooms/$(classroomId)/learningProgrammes/$(programmeId)/memberships/$(request.resource.data.studentId)) &&
+            get(/databases/$(database)/documents/classrooms/$(classroomId)/learningProgrammes/$(programmeId)/memberships/$(request.resource.data.studentId)).data.status == 'active'
+          ) ||
+          // PHASE 1 fallback — kept indefinitely, by explicit Phase 3.7
+          // decision: no backfill/migration is being done this round, so
+          // an already-active membership with no mirror doc yet must keep
+          // working exactly as it always has, via the original nested
+          // .exists() scan over the embedded classroom.learningProgrammes[]
+          // array.
+          get(/databases/$(database)/documents/classrooms/$(classroomId)).data.learningProgrammes.exists(p,
+            p.id == programmeId &&
+            p.memberships.exists(m, m.studentId == request.resource.data.studentId && m.status == 'active')
+          )
         );
 
       allow update: if false;
+      allow delete: if false;
+    }
+
+    // ---------------------------------------------------------------
+    // PHASE 3.7 — direct membership security document: one document
+    // per student mirroring their own current membership status for
+    // this programme. Exists so membershipLinks' own create rule
+    // (above) can resolve "is this claimed studentId genuinely active
+    // in this programme" via a single get(), instead of relying solely
+    // on the nested .exists() array scan over embedded data (that scan
+    // remains supported as a permanent OR fallback — see above — it is
+    // not being replaced or migrated away from this round). Written by
+    // the teacher-facing membership UI any time addMembership()/
+    // markMembershipLeft() changes a membership going forward (see
+    // repositories/firestoreEnrollmentRepository.js's own
+    // setProgrammeMembershipMirror()) — never backfilled for
+    // memberships that already existed before this phase.
+    match /classrooms/{classroomId}/learningProgrammes/{programmeId}/memberships/{studentId} {
+      allow read, create, update: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+
+      allow delete: if false;
+    }
+
+    // ---------------------------------------------------------------
+    // PHASE 3.7 — sessionIndex: a lightweight, non-sensitive per-
+    // session pointer (date only) so the Student Portal can discover
+    // which sessions exist for a programme without ever reading the
+    // shared, teacher-facing programmeSessions document itself (see
+    // the studentEntries block below for why that document can never
+    // safely be exposed to a student directly). Written by
+    // services/programmeSessionService.js's own createAndSaveSession()
+    // for every NEW session only — never backfilled for sessions that
+    // predate this phase (see that file's own header comment).
+    match /classrooms/{classroomId}/learningProgrammes/{programmeId}/sessionIndex/{sessionId} {
+      allow read: if request.auth != null && (
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids ||
+        (
+          exists(/databases/$(database)/documents/classrooms/$(classroomId)/learningProgrammes/$(programmeId)/membershipLinks/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/classrooms/$(classroomId)/learningProgrammes/$(programmeId)/membershipLinks/$(request.auth.uid)).data.status == 'active'
+        )
+      );
+
+      allow create, update: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+
       allow delete: if false;
     }
 
@@ -549,103 +614,80 @@ service cloud.firestore {
         return link.data.studentId == studentId && link.data.status == 'active';
       }
 
-      // PHASE 3.2 — closes the exact gap Phase 3.1's own review found:
-      // the top-level hasOnly(['goals']) check below says nothing
-      // about what's INSIDE goals.<categoryId>, so a direct,
-      // non-UI write could otherwise set outcome/reflection — fields
-      // the product intends as teacher-only — on a student's own
-      // write. These two functions are what actually close it.
-      //
-      // WHY THE SHAPE CHECK ALLOWS ALL FOUR KEYS, NOT JUST
-      // text/source: traced directly against
-      // models/ProgrammeSession.js's own createProgrammeGoalEntry() —
-      // a BRAND NEW goal, created by recordGoal() (called identically
-      // whether the caller is a student or a teacher picking a new
-      // suggestion), ALWAYS produces all four keys explicitly —
-      // `outcome: null, reflection: ''` are real, explicit defaults
-      // on every legitimate write, never omitted. A rule requiring
-      // hasOnly(['text', 'source']) alone would reject the student's
-      // own ordinary, correct goal-setting flow. The actual boundary
-      // that matters is not WHICH KEYS exist, but WHAT VALUES
-      // outcome/reflection are allowed to hold in a student-authored
-      // write: only their own untouched defaults, never anything
-      // else — which is exactly what a teacher's own
-      // recordGoalOutcome() call is the one and only path that ever
-      // changes.
-      //
-      // WHY create AND update NEED SEPARATE, DIFFERENTLY-SHAPED
-      // CHECKS: for a CREATE, `resource` doesn't exist yet, so there
-      // is nothing to diff against — every category in the freshly-
-      // written goals map is, by definition, part of THIS write. For
-      // an UPDATE, checking the WHOLE resulting goals map would be
-      // wrong — a student editing category B must not be blocked
-      // because a DIFFERENT category (A) already has a real,
-      // teacher-set outcome from before; only the categories THIS
-      // specific write actually changes should ever be checked. A
-      // NESTED diff (on the `goals` map itself, not the whole
-      // document) isolates exactly that. `resource.data.get('goals',
-      // {})` — not direct dot access — specifically so a student
-      // setting their OWN first-ever goal, after a teacher has
-      // already created this document with only `attendance` (no
-      // `goals` key at all yet), doesn't throw trying to diff against
-      // a field that doesn't exist yet.
-      function isValidStudentGoalCreate() {
-        return request.resource.data.goals.keys().all(categoryId,
-          request.resource.data.goals[categoryId].keys().hasOnly(['text', 'source', 'outcome', 'reflection']) &&
-          request.resource.data.goals[categoryId].outcome == null &&
-          request.resource.data.goals[categoryId].reflection == ''
-        );
-      }
-
-      function isValidStudentGoalUpdate() {
-        let priorGoals = resource.data.get('goals', {});
-        let changedCategoryIds = request.resource.data.goals.diff(priorGoals).affectedKeys();
-        return changedCategoryIds.all(categoryId,
-          request.resource.data.goals[categoryId].keys().hasOnly(['text', 'source', 'outcome', 'reflection']) &&
-          request.resource.data.goals[categoryId].outcome == null &&
-          request.resource.data.goals[categoryId].reflection == ''
-        );
-      }
-
-      // Either a teacher (classroom member) or this exact, linked,
-      // currently-active student — never any other student, never an
-      // unauthenticated caller, and never a read of the PARENT
-      // programmeSessions document itself (that remains governed
-      // exclusively by its own rule above, unchanged).
+      // PHASE 3.7 — this parent document now owns ONLY `attendance`,
+      // mirrored from the teacher-canonical programmeSessions document
+      // above (see services/programmeSessionService.js's own
+      // saveAttendancePatchWithMirror()). Goals moved OUT of this
+      // document entirely, into the nested goals/{categoryId}
+      // subcollection below — one document per category, exactly the
+      // shape repositories/firestoreStudentEntryRepository.js's own
+      // header comment always described, so a student's own
+      // create/update can be authorized by reading ONE document
+      // directly, never by iterating an arbitrary map the way the
+      // Phase 3.2 isValidStudentGoalCreate()/isValidStudentGoalUpdate()
+      // functions previously had to (removed this round — superseded
+      // by the per-document checks on the nested match below). A
+      // student never writes to this parent document at all —
+      // attendance remains a teacher-only fact, exactly as before.
       allow read: if request.auth != null && (isTeacherMember() || isLinkedActiveStudent());
 
-      // CREATE — the document doesn't exist yet, so there is no
-      // `resource` to diff against; check the proposed document's own
-      // top-level keys directly instead. A teacher may create with
-      // `attendance` and/or `goals` in one write — exactly the same
-      // fields they're already allowed to touch on UPDATE below, so
-      // CREATE isn't more restrictive than UPDATE for no real reason.
-      // A student may create with ONLY `goals` — their own first
-      // goal for this session — never `attendance`, matching this
-      // Phase's own explicit "student cannot modify attendance"
-      // requirement — AND only with the field-ownership shape
-      // isValidStudentGoalCreate() above enforces.
-      allow create: if request.auth != null && (
-        (isTeacherMember() && request.resource.data.keys().hasOnly(['attendance', 'goals'])) ||
-        (isLinkedActiveStudent() && request.resource.data.keys().hasOnly(['goals']) && isValidStudentGoalCreate())
-      );
+      allow create: if request.auth != null &&
+        isTeacherMember() && request.resource.data.keys().hasOnly(['attendance']);
 
-      // UPDATE — the document already exists; scope each side to only
-      // the field(s) they're ever allowed to touch, using a real diff
-      // against the real, existing resource, so an existing field the
-      // OTHER party already wrote (e.g. a student's own `goals` next
-      // to a teacher-written `attendance`) is never required to be
-      // re-submitted or accidentally clobbered. The student's own
-      // branch is additionally scoped by isValidStudentGoalUpdate()
-      // above — the teacher's own branch is intentionally untouched
-      // by any of this, preserving every existing teacher privilege
-      // exactly as it was.
-      allow update: if request.auth != null && (
-        (isTeacherMember() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['attendance', 'goals'])) ||
-        (isLinkedActiveStudent() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['goals']) && isValidStudentGoalUpdate())
-      );
+      allow update: if request.auth != null &&
+        isTeacherMember() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['attendance']);
 
       allow delete: if false;
+
+      // -----------------------------------------------------------
+      // PHASE 3.7 — one goal category, one document. Reuses
+      // isTeacherMember()/isLinkedActiveStudent() from the enclosing
+      // match block above (Firestore Rules resolves functions from
+      // any enclosing match scope, so no redeclaration is needed
+      // here).
+      //
+      // WHY THE SHAPE CHECK ALLOWS ALL FOUR KEYS ON CREATE, NOT JUST
+      // text/source: traced directly against
+      // models/ProgrammeSession.js's own createProgrammeGoalEntry() —
+      // a brand-new goal ALWAYS produces all four keys explicitly
+      // (`outcome: null, reflection: ''` are real, explicit defaults,
+      // never omitted). The boundary that matters is not WHICH KEYS
+      // exist, but WHAT VALUES outcome/reflection hold in a
+      // student-authored write: only their own untouched defaults,
+      // never anything else.
+      //
+      // WHY create AND update NEED SEPARATE, DIFFERENTLY-SHAPED
+      // CHECKS FOR THE STUDENT BRANCH: for a CREATE, `resource`
+      // doesn't exist yet, so the proposed document's own fields are
+      // checked directly. For an UPDATE, only the fields THIS exact
+      // write actually changes matter — scoping the DIFF itself
+      // (never a value-only check) is what stops a student from
+      // smuggling an outcome/reflection change through alongside a
+      // legitimate text/source edit.
+      match /goals/{categoryId} {
+        allow read: if request.auth != null && (isTeacherMember() || isLinkedActiveStudent());
+
+        allow create: if request.auth != null && (
+          (isTeacherMember() && request.resource.data.keys().hasOnly(['text', 'source', 'outcome', 'reflection'])) ||
+          (isLinkedActiveStudent() &&
+            request.resource.data.keys().hasOnly(['text', 'source', 'outcome', 'reflection']) &&
+            request.resource.data.outcome == null &&
+            request.resource.data.reflection == '')
+        );
+
+        // A teacher may change any of the four fields (outcome-
+        // setting, reflection-editing, or replacing text/source via
+        // "Edit Goal"). A student may change ONLY text/source on
+        // their own goal — never outcome/reflection, per this
+        // Phase's own explicit requirement.
+        allow update: if request.auth != null && (
+          isTeacherMember() ||
+          (isLinkedActiveStudent() &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'source']))
+        );
+
+        allow delete: if false;
+      }
     }
 
     // Legacy, pre-sharing location — migration-only (see

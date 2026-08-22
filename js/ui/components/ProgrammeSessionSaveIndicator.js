@@ -67,5 +67,28 @@ export function createSaveIndicatorController(classroomId, session) {
     }
   }
 
-  return { element, persistPatch };
+  /**
+   * PHASE 3.7 — same Saving/Saved/Error UI feedback as persistPatch()
+   * above, for a write that does NOT go through
+   * services/programmeSessionService.js's own saveSessionPatch() at
+   * all (e.g. a student-entries/goals subcollection write via
+   * repositories/firestoreStudentEntryRepository.js). `operation` runs
+   * and persists itself entirely; this wrapper only reports its
+   * outcome, exactly matching persistPatch()'s own never-re-throw
+   * contract.
+   */
+  async function persistCustom(operation) {
+    setStatus('saving');
+    try {
+      await operation();
+      setStatus('saved');
+      return true;
+    } catch (error) {
+      console.error('[ProgrammeSessionSaveIndicator] Failed to save:', error);
+      setStatus('error');
+      return false;
+    }
+  }
+
+  return { element, persistPatch, persistCustom };
 }

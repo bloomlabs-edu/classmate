@@ -42,6 +42,14 @@ function studentAuthLinkDoc(db, classroomId, studentId) {
   return doc(db, 'classrooms', classroomId, 'studentAuthLinks', studentId);
 }
 
+function membershipLinkDoc(db, classroomId, programmeId, uid) {
+  return doc(db, 'classrooms', classroomId, 'learningProgrammes', programmeId, 'membershipLinks', uid);
+}
+
+function membershipMirrorDoc(db, classroomId, programmeId, studentId) {
+  return doc(db, 'classrooms', classroomId, 'learningProgrammes', programmeId, 'memberships', studentId);
+}
+
 /** Called from the Teacher Portal — creates a token for one specific student. */
 export async function createEnrollmentToken(token, { classroomId, studentId, expiresAt }) {
   const db = teacherDb();
@@ -98,6 +106,51 @@ export async function redeemEnrollmentToken(db, token, { classroomId, studentId,
  */
 export async function createStudentAuthLinkDirect(db, classroomId, studentId, uid) {
   await setDoc(studentAuthLinkDoc(db, classroomId, studentId), { uid, linkedAt: new Date().toISOString() });
+}
+
+/**
+ * PHASE 3.7 — creates this device's own membershipLinks/{uid} document
+ * (see firestore.rules' own membershipLinks block for the full
+ * create-time verification this performs server-side), called from
+ * the STUDENT's own per-slot Firestore instance — `db` must be that
+ * instance, exactly like redeemEnrollmentToken()/
+ * createStudentAuthLinkDirect() above, never the teacher's.
+ *
+ * Idempotent by design: services/studentLearningCircleService.js's own
+ * ensureProgrammeMembershipLink() calls this every time a student
+ * opens the Learning Circle, not just once, so a second call for a
+ * uid that already has a link must be a safe no-op rather than a
+ * failed write — the rule's own `allow update: if false` would
+ * otherwise reject a repeat setDoc() to an existing link outright.
+ * The existence check itself is always allowed by the read rule's own
+ * `uid == request.auth.uid` branch, regardless of whether the
+ * document exists yet.
+ */
+export async function ensureLearningProgrammeMembershipLink(db, classroomId, programmeId, studentId, uid) {
+  const ref = membershipLinkDoc(db, classroomId, programmeId, uid);
+  const existing = await getDoc(ref);
+  if (existing.exists()) return;
+  await setDoc(ref, { studentId, joinedAt: new Date().toISOString(), status: 'active' });
+}
+
+/**
+ * PHASE 3.7 — writes the direct membership security document
+ * (`learningProgrammes/{programmeId}/memberships/{studentId}`) that
+ * lets membershipLinks' own create rule resolve active-membership
+ * status via a single get() instead of the nested .exists() array
+ * scan over classroom.learningProgrammes[] (kept as a permanent OR
+ * fallback there — see firestore.rules' own comment). Always called
+ * from the TEACHER's own default-app Firestore instance — this is
+ * teacher-only data, written from the same UI actions
+ * (services/learningProgrammeService.js's own addMembership()/
+ * markMembershipLeft()) that already mutate the embedded array, never
+ * from a student device. Deliberately NOT called retroactively for
+ * memberships that already existed before this phase — see this
+ * project's own Phase 3.7 authorization: no backfill this round.
+ */
+export async function setProgrammeMembershipMirror(classroomId, programmeId, studentId, { status, joinedAt }) {
+  const db = teacherDb();
+  await setDoc(membershipMirrorDoc(db, classroomId, programmeId, studentId), { status, joinedAt });
 }
 
 /** Called by firestoreStudentGoalsRepository.js's own rules-adjacent checks are server-side only — this is for the UI's own, client-side convenience read (e.g. confirming enrollment status), never for authorization. */

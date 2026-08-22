@@ -14,6 +14,7 @@
 
 import * as learningProgrammeService from '../../services/learningProgrammeService.js';
 import * as programmeSessionService from '../../services/programmeSessionService.js';
+import * as studentEntryRepository from '../../repositories/firestoreStudentEntryRepository.js';
 import { isSessionEditable, resolveSessionRoster } from '../components/ProgrammeSessionHelpers.js';
 import { buildGoalsSection } from '../components/ProgrammeGoalsControls.js';
 import { createSaveIndicatorController } from '../components/ProgrammeSessionSaveIndicator.js';
@@ -35,6 +36,11 @@ export async function renderProgrammeGoalsReviewView(container, { classroom, pro
     container.appendChild(createEmptyStateElement({ message: 'This session could not be found.' }));
     return;
   }
+  // PHASE 3.7 — for a usesStudentEntries session, this replaces the
+  // session's own (empty) in-memory `goals` map with the real data
+  // from the secure per-category subcollection before anything below
+  // reads it. A no-op for a session created before this phase.
+  await programmeSessionService.hydrateSessionGoals(classroom.id, session);
 
   const editable = isSessionEditable(session, programme);
   const roster = resolveSessionRoster(classroom, programme, session, editable);
@@ -58,8 +64,21 @@ export async function renderProgrammeGoalsReviewView(container, { classroom, pro
   header.appendChild(titleBlock);
   wrapper.appendChild(header);
 
-  const { element: saveIndicator, persistPatch } = createSaveIndicatorController(classroom.id, session);
+  const { element: saveIndicator, persistPatch, persistCustom } = createSaveIndicatorController(classroom.id, session);
   wrapper.appendChild(saveIndicator);
+
+  // PHASE 3.7 \u2014 only ever invoked by ProgrammeGoalsControls.js for a
+  // usesStudentEntries session (see that file's own header comment);
+  // always uses the TEACHER's own default-app Firestore instance
+  // (`db` omitted -> firestoreStudentEntryRepository.js's own
+  // teacherDb() default), since this is a teacher-only screen.
+  function goalWriter(studentId, categoryId, valueOrPatch, isNewGoal) {
+    return persistCustom(() =>
+      isNewGoal
+        ? studentEntryRepository.createStudentEntryGoal(undefined, classroom.id, session.id, studentId, categoryId, valueOrPatch)
+        : studentEntryRepository.updateStudentEntryGoal(undefined, classroom.id, session.id, studentId, categoryId, valueOrPatch)
+    );
+  }
 
   const sectionContainer = document.createElement('div');
   wrapper.appendChild(sectionContainer);
@@ -74,7 +93,7 @@ export async function renderProgrammeGoalsReviewView(container, { classroom, pro
       );
       return;
     }
-    sectionContainer.appendChild(buildGoalsSection(programme, session, roster, editable, persistPatch, redraw));
+    sectionContainer.appendChild(buildGoalsSection(programme, session, roster, editable, persistPatch, redraw, goalWriter));
   }
 
   redraw();

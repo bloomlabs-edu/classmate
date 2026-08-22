@@ -4,7 +4,7 @@
   "type": "module",
   "description": "Self-contained Firestore Rules Unit Testing harness for the membershipLinks rule (Phase 1 — Membership Identity Foundation). NOT part of the ClassMate application itself, and NOT run by the app's own `node --test` suite (see this directory's own README for exactly why). Copy this whole directory, plus the real ../firestore.rules it reads, to a machine with normal network access, then follow the README.",
   "scripts": {
-    "test": "node --test membershipLinks.rules.verify.js studentEntries.rules.verify.js",
+    "test": "node --test membershipLinks.rules.verify.js studentEntries.rules.verify.js sessionIndex.rules.verify.js programmeMemberships.rules.verify.js",
     "verify": "bash run-verification.sh"
   },
   "devDependencies": {

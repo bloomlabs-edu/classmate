@@ -66,6 +66,24 @@ function programmeSessionDocRef(classroomId, sessionId) {
   return doc(programmeSessionsCollectionRef(classroomId), sessionId);
 }
 
+function sessionIndexDocRef(classroomId, programmeId, sessionId) {
+  return doc(getDb(), 'classrooms', classroomId, 'learningProgrammes', programmeId, 'sessionIndex', sessionId);
+}
+
+/**
+ * PHASE 3.7 — writes the lightweight sessionIndex pointer (date only)
+ * a student device reads to discover which sessions exist for a
+ * programme, without ever reading the shared programmeSessions
+ * document itself (see firestore.rules' own sessionIndex block for
+ * why). Called once, alongside createSession(), only for a brand-new
+ * session — never for an existing one, and never backfilled for a
+ * session that predates this phase (see
+ * services/programmeSessionService.js's own createAndSaveSession()).
+ */
+export async function createSessionIndexEntry(classroomId, programmeId, sessionId, { date }) {
+  await setDoc(sessionIndexDocRef(classroomId, programmeId, sessionId), { date });
+}
+
 /** Persists a newly-created ProgrammeSession — a single small write, matching services/plannerRepository.js's own saveLesson(). */
 export async function createSession(classroomId, session) {
   await setDoc(programmeSessionDocRef(classroomId, session.id), { ...session });

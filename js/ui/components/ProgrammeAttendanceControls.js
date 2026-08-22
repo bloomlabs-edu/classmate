@@ -40,7 +40,21 @@ import {
   getToggledAttendanceStatus,
 } from './ProgrammeSessionHelpers.js';
 
-export function buildAttendanceSection(programme, session, roster, editable, persistPatch) {
+/**
+ * PHASE 3.7 — `persistAttendance(studentId)` (optional) is used ONLY
+ * when `session.usesStudentEntries` is true — it must persist BOTH
+ * the teacher-canonical write AND the studentEntries mirror (see
+ * services/programmeSessionService.js's own
+ * saveAttendancePatchWithMirror()), which needs `classroomId` this
+ * file is never given directly; the caller
+ * (ui/views/ProgrammeAttendanceView.js) closes over it instead, the
+ * same decoupling ui/components/ProgrammeGoalsControls.js's own
+ * `goalWriter` already established. For a session with no
+ * `usesStudentEntries` (everything created before this phase),
+ * `persistAttendance` is never called — behaviour is 100% unchanged,
+ * still `persistPatch(() => buildAttendancePatch(...))`.
+ */
+export function buildAttendanceSection(programme, session, roster, editable, persistPatch, persistAttendance) {
   const section = document.createElement('section');
   section.className = 'profile-section programme-session-view__section';
 
@@ -53,14 +67,14 @@ export function buildAttendanceSection(programme, session, roster, editable, per
   list.className = 'programme-session-view__attendance-list';
 
   roster.forEach(({ student, team }) => {
-    list.appendChild(buildAttendanceRow(programme, session, student, team, editable, persistPatch));
+    list.appendChild(buildAttendanceRow(programme, session, student, team, editable, persistPatch, persistAttendance));
   });
 
   section.appendChild(list);
   return section;
 }
 
-function buildAttendanceRow(programme, session, student, team, editable, persistPatch) {
+function buildAttendanceRow(programme, session, student, team, editable, persistPatch, persistAttendance) {
   const row = document.createElement('div');
   row.className = 'programme-session-view__attendance-row';
   row.appendChild(createStudentNameElement({ student, team, leadingMarker: 'avatar', size: 32 }));
@@ -104,7 +118,11 @@ function buildAttendanceRow(programme, session, student, team, editable, persist
    */
   async function setStatus(status) {
     programmeSessionService.recordAttendance(programme, session, { studentId: student.id, status });
-    await persistPatch(() => programmeSessionService.buildAttendancePatch(session, student.id));
+    if (session.usesStudentEntries) {
+      await persistAttendance(student.id);
+    } else {
+      await persistPatch(() => programmeSessionService.buildAttendancePatch(session, student.id));
+    }
     paintStatus(status);
   }
 
