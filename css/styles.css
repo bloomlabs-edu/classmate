@@ -3158,6 +3158,116 @@ button.wizard-checklist__row:hover {
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
 }
 
+/* Notification-settings bell + popover — deliberately the exact same
+   button/popover/outside-click-to-close shape as the accent-color
+   editor immediately above, not a new interaction pattern. See
+   ui/components/UserBar.js's own createNotificationControl(). */
+.user-bar__notification-control {
+  position: relative;
+}
+/* Circular, soft light-grey treatment (never blue) so the bell reads
+   clearly against the header's own near-black background
+   (--color-chrome-bg) — per explicit design direction. */
+.user-bar__notification-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background-color: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 50%;
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+  color: #e5e7eb;
+  transition: background-color var(--duration-fast, 150ms) var(--ease-standard, ease);
+}
+.user-bar__notification-button:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+}
+/* Open state, keyed off the same aria-expanded attribute the existing
+   toggle logic already sets — no new JS state needed for this. */
+.user-bar__notification-button[aria-expanded="true"] {
+  background-color: rgba(255, 255, 255, 0.16);
+}
+.user-bar__notification-icon {
+  display: block;
+  color: #e5e7eb;
+}
+/* A small dot rather than any text/badge — this is a settings toggle,
+   not an unread count. Only ever shown when the unread badge below
+   isn't (see UserBar.js's own createNotificationControl()), since
+   both occupy the same top-right corner of the bell. */
+.user-bar__notification-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--color-success, #2e9e5b);
+  border: 1px solid var(--color-chrome-bg);
+}
+/* Unread-count badge — see UserBar.js's own createNotificationControl();
+   fed by an optional notificationUnreadCount prop main.js doesn't
+   currently have real data for (no unread store exists yet), so this
+   renders for exactly nobody until a later phase actually provides a
+   count > 0. */
+.user-bar__notification-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 999px;
+  background-color: #e5484d;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  border: 2px solid var(--color-chrome-bg);
+}
+/* Only two-plus-digit counts (10+) get horizontal padding — a single
+   digit already fits the circular min-width/height exactly. */
+.user-bar__notification-badge--wide {
+  padding: 0 4px;
+}
+.user-bar__notification-popover {
+  display: none;
+  flex-direction: column;
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  width: 260px;
+  background-color: var(--color-surface);
+  border-radius: var(--radius-card);
+  box-shadow: var(--elevation-dialog);
+  padding: 0.85rem;
+  gap: 0.6rem;
+  z-index: 20;
+}
+.user-bar__notification-popover--open {
+  display: flex;
+}
+.user-bar__notification-explanation {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--color-muted);
+  line-height: 1.4;
+}
+.user-bar__notification-status {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+}
+
 /*
  * The real spectrum/gradient picker — a hue-tinted square (saturation
  * left-to-right, value/lightness top-to-bottom, via two overlaid CSS

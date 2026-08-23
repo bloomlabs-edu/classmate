@@ -2,9 +2,19 @@
  * ui/components/UserBar.js
  *
  * A small persistent bar (avatar + name + accent-color edit button +
- * a link back to Bloom Labs + Sign Out) shown above every screen once
- * a teacher is signed in — added once here, in main.js, rather than
- * duplicated into every view's own header.
+ * a notification-settings bell + a link back to Bloom Labs + Sign
+ * Out) shown above every screen once a teacher is signed in — added
+ * once here, in main.js, rather than duplicated into every view's own
+ * header.
+ *
+ * The notification bell mirrors the accent-color editor's own
+ * button/popover shape immediately below it. It only ever explains
+ * what enabling browser push notifications does and offers an
+ * Enable/Disable action — the actual permission prompt, token
+ * registration, and Firestore save/remove all live in
+ * services/pushNotificationService.js, called via main.js's own
+ * handleEnableNotifications()/handleDisableNotifications(), matching
+ * this file's own "rendering only" role exactly.
  *
  * The "\u2190 Bloom Labs" link exists purely so a signed-in teacher can
  * get back to the platform landing page (and from there, the Student
@@ -29,7 +39,7 @@ import { ACCENT_COLOR_OPTIONS } from '../../config/accentColorConfig.js';
 import { createSpectrumColorPicker } from './SpectrumColorPicker.js';
 import { createIcon } from './Icon.js';
 
-export function renderUserBar(container, { user, onSignOut, currentAccentColorId, onSelectAccentColor, onSelectCustomAccentColor, onPreviewCustomAccentColor, onBackToLanding }) {
+export function renderUserBar(container, { user, onSignOut, currentAccentColorId, onSelectAccentColor, onSelectCustomAccentColor, onPreviewCustomAccentColor, onBackToLanding, notificationPermissionState, onEnableNotifications, onDisableNotifications, notificationUnreadCount }) {
   container.innerHTML = '';
   if (!user) return;
 
@@ -148,6 +158,12 @@ export function renderUserBar(container, { user, onSignOut, currentAccentColorId
     rightGroup.appendChild(pickerWrapper);
   }
 
+  if (notificationPermissionState && (onEnableNotifications || onDisableNotifications)) {
+    rightGroup.appendChild(
+      createNotificationControl(notificationPermissionState, onEnableNotifications, onDisableNotifications, notificationUnreadCount)
+    );
+  }
+
   if (onBackToLanding) {
     const landingLink = document.createElement('button');
     landingLink.type = 'button';
@@ -168,4 +184,125 @@ export function renderUserBar(container, { user, onSignOut, currentAccentColorId
 
   bar.appendChild(rightGroup);
   container.appendChild(bar);
+}
+
+/**
+ * Bell icon + popover, mirroring the accent-color editor's own
+ * button/popover/outside-click-to-close shape immediately above --
+ * deliberately not a new interaction pattern. Explains what enabling
+ * notifications actually does before offering the action, per explicit
+ * product direction; never shows anything beyond a small "granted"
+ * dot on the bell itself until a teacher opens this popover.
+ *
+ * `unreadCount` is optional and purely presentational here -- there is
+ * no unread-notification store/count anywhere in this app yet (see
+ * services/pushNotificationService.js's own header comment: this is
+ * still Phase 1, registration only), so no caller currently passes a
+ * real value and this renders no badge at all today. Accepting it
+ * now just means a later phase can wire up a real count without
+ * touching this component again.
+ */
+function createNotificationControl(permissionState, onEnable, onDisable, unreadCount) {
+  const count = Math.max(0, Number(unreadCount) || 0);
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'user-bar__notification-control';
+
+  const toggleButton = document.createElement('button');
+  toggleButton.type = 'button';
+  toggleButton.className = 'user-bar__notification-button';
+  toggleButton.setAttribute('aria-label', count > 0 ? `Notification settings, ${count} unread` : 'Notification settings');
+  toggleButton.setAttribute('aria-expanded', 'false');
+  toggleButton.title = 'Notification settings';
+  toggleButton.appendChild(createIcon('bell', { className: 'user-bar__notification-icon', size: 20 }));
+  // The "granted" dot and the unread badge below both occupy the same
+  // top-right corner of the bell -- only ever show one at a time, and
+  // the badge (an actual count needing attention) wins.
+  if (permissionState === 'granted' && count === 0) {
+    const dot = document.createElement('span');
+    dot.className = 'user-bar__notification-dot';
+    dot.setAttribute('aria-hidden', 'true');
+    toggleButton.appendChild(dot);
+  }
+
+  const popover = document.createElement('div');
+  popover.className = 'user-bar__notification-popover';
+  popover.setAttribute('role', 'group');
+  popover.setAttribute('aria-label', 'Notification settings');
+
+  const explanation = document.createElement('p');
+  explanation.className = 'user-bar__notification-explanation';
+  explanation.textContent =
+    'Get a browser notification when something in ClassMate needs your attention — even when this tab isn’t open. Nothing is sent automatically today; this only turns on the ability to receive one later.';
+  popover.appendChild(explanation);
+
+  const status = document.createElement('p');
+  status.className = 'user-bar__notification-status';
+  if (permissionState === 'unsupported') {
+    status.textContent = 'Notifications aren’t supported in this browser.';
+  } else if (permissionState === 'granted') {
+    status.textContent = 'Notifications are enabled on this device.';
+  } else if (permissionState === 'denied') {
+    status.textContent = 'Notifications are blocked for this site — allow them from your browser’s site settings, then reopen this.';
+  } else {
+    status.textContent = 'Notifications are not enabled on this device yet.';
+  }
+  popover.appendChild(status);
+
+  if (permissionState === 'granted' && onDisable) {
+    const disableButton = document.createElement('button');
+    disableButton.type = 'button';
+    disableButton.className = 'btn btn--text';
+    disableButton.textContent = 'Turn off notifications';
+    disableButton.addEventListener('click', () => {
+      closePopover();
+      onDisable();
+    });
+    popover.appendChild(disableButton);
+  } else if (permissionState !== 'denied' && permissionState !== 'unsupported' && onEnable) {
+    const enableButton = document.createElement('button');
+    enableButton.type = 'button';
+    enableButton.className = 'btn btn--secondary';
+    enableButton.textContent = 'Enable notifications';
+    enableButton.addEventListener('click', () => {
+      closePopover();
+      onEnable();
+    });
+    popover.appendChild(enableButton);
+  }
+
+  function closePopover() {
+    popover.classList.remove('user-bar__notification-popover--open');
+    toggleButton.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', handleOutsideClick);
+  }
+
+  function handleOutsideClick(event) {
+    if (!wrapper.contains(event.target)) closePopover();
+  }
+
+  toggleButton.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const isOpen = popover.classList.toggle('user-bar__notification-popover--open');
+    toggleButton.setAttribute('aria-expanded', String(isOpen));
+    if (isOpen) {
+      setTimeout(() => document.addEventListener('click', handleOutsideClick), 0);
+    } else {
+      document.removeEventListener('click', handleOutsideClick);
+    }
+  });
+
+  // Positioned on `wrapper`, not `toggleButton` -- overlaps the
+  // button's own top-right corner (see .user-bar__notification-badge)
+  // without needing the button itself to know about it.
+  if (count > 0) {
+    const badge = document.createElement('span');
+    badge.className = 'user-bar__notification-badge' + (count > 9 ? ' user-bar__notification-badge--wide' : '');
+    badge.textContent = count > 99 ? '99+' : String(count);
+    badge.setAttribute('aria-hidden', 'true');
+    wrapper.appendChild(badge);
+  }
+
+  wrapper.append(toggleButton, popover);
+  return wrapper;
 }

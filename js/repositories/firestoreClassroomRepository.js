@@ -6,10 +6,12 @@
  * knows the document path shapes:
  *   classrooms/{classroomId}                  — one shared document per classroom
  *   users/{uid}/classroomRefs/{classroomId}    — a lightweight pointer, not a copy
- *   users/{uid}                                — per-account flags (migration) and
+ *   users/{uid}                                — per-account flags (migration),
  *                                                 `recentNotebooks` (Continue Working —
- *                                                 see services/continueWorkingService.js;
- *                                                 personal to the teacher, never the classroom)
+ *                                                 see services/continueWorkingService.js),
+ *                                                 and `fcmTokens` (browser push registration —
+ *                                                 see services/pushNotificationService.js);
+ *                                                 personal to the teacher, never the classroom
  *   teachers/{uid}/classrooms/{classroomId}    — legacy, pre-sharing location (read/delete only, for migration)
  *
  * services/workspaceService.js talks to this only through the
@@ -32,7 +34,9 @@ import {
   doc,
   getDoc,
   setDoc,
+  updateDoc,
   deleteDoc,
+  deleteField,
   onSnapshot,
   getDocs,
   writeBatch,
@@ -451,6 +455,25 @@ class FirestoreClassroomRepository extends ClassroomRepository {
 
   async setAccentColorPreference(uid, colorId) {
     await setDoc(this._userDoc(uid), { accentColor: colorId }, { merge: true });
+  }
+
+  /**
+   * Adds/updates one entry in this teacher's own users/{uid}.fcmTokens
+   * map -- keyed by the token itself (not an array), so re-registering
+   * the same browser/device just overwrites its own entry instead of
+   * accumulating duplicates, and multiple devices can each hold their
+   * own entry without clobbering each other. setDoc's own {merge:true}
+   * performs a deep merge into the existing fcmTokens map, so sibling
+   * tokens (other devices) are left untouched — see
+   * services/pushNotificationService.js's own header comment.
+   */
+  async saveFcmToken(uid, token, metadata) {
+    await setDoc(this._userDoc(uid), { fcmTokens: { [token]: metadata } }, { merge: true });
+  }
+
+  /** Removes exactly one token entry via Firestore's own dot-notation field path + deleteField() sentinel — never a read-modify-write of the whole fcmTokens map, and never touches any other device's own entry. */
+  async removeFcmToken(uid, token) {
+    await updateDoc(this._userDoc(uid), { [`fcmTokens.${token}`]: deleteField() });
   }
 }
 

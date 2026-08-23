@@ -23,6 +23,8 @@ import * as authService from './services/authService.js';
 import * as accentColorService from './services/accentColorService.js';
 import * as classSessionService from './services/classSessionService.js';
 import * as accentColorPreferenceService from './services/accentColorPreferenceService.js';
+import * as pushNotificationService from './services/pushNotificationService.js';
+import { showToast } from './ui/components/Toast.js';
 import { ClassroomValidationError } from './services/classroomService.js';
 import * as router from './ui/router.js';
 import { renderWelcomeView } from './ui/views/WelcomeView.js';
@@ -84,6 +86,13 @@ let userBarContainer = null;
 let currentUser = null;
 let workspaceLoading = false;
 let currentAccentColorId = 'ocean';
+// Read synchronously, once, at module load -- Notification.permission
+// is a plain browser property, not something that needs an async
+// Firestore round-trip the way currentAccentColorId does. Updated
+// (and UserBar re-rendered) only from handleEnableNotifications()/
+// handleDisableNotifications() below, after the browser's own native
+// permission prompt has actually been answered.
+let notificationPermissionState = pushNotificationService.getPermissionState();
 
 function handleSelectAccentColor(colorId) {
   currentAccentColorId = colorId;
@@ -96,6 +105,59 @@ function handleSelectAccentColor(colorId) {
     currentAccentColorId,
     onSelectAccentColor: handleSelectAccentColor,
     onSelectCustomAccentColor: handleSelectCustomAccentColor,
+    notificationPermissionState,
+    onEnableNotifications: handleEnableNotifications,
+    onDisableNotifications: handleDisableNotifications,
+  });
+}
+
+/**
+ * Only ever called from a direct "Enable notifications" click (see
+ * ui/components/UserBar.js) -- this is the one call in the whole app
+ * that can show the browser's native permission prompt, and it only
+ * runs when a teacher explicitly asks for it, never automatically at
+ * sign-in.
+ */
+async function handleEnableNotifications() {
+  const result = await pushNotificationService.enableForCurrentUser(currentUser?.uid);
+  notificationPermissionState = pushNotificationService.getPermissionState();
+  if (result.success) {
+    showToast('Notifications enabled');
+  } else if (result.reason === 'not-configured') {
+    showToast('Notifications are not set up for this app yet.');
+  } else if (result.reason === 'permission-denied') {
+    showToast('Notifications were blocked. Allow them again from your browser’s site settings.');
+  } else {
+    showToast('Something went wrong enabling notifications.');
+  }
+  renderUserBar(userBarContainer, {
+    user: currentUser,
+    onSignOut: handleSignOut,
+    onBackToLanding: () => router.navigate('/'),
+    currentAccentColorId,
+    onSelectAccentColor: handleSelectAccentColor,
+    onSelectCustomAccentColor: handleSelectCustomAccentColor,
+    notificationPermissionState,
+    onEnableNotifications: handleEnableNotifications,
+    onDisableNotifications: handleDisableNotifications,
+  });
+}
+
+/** Reverses handleEnableNotifications() above for this browser -- removes this device's own token from FCM and from users/{uid}.fcmTokens. */
+async function handleDisableNotifications() {
+  const result = await pushNotificationService.disableForCurrentUser(currentUser?.uid);
+  notificationPermissionState = pushNotificationService.getPermissionState();
+  showToast(result.success ? 'Notifications turned off' : 'Something went wrong turning off notifications.');
+  renderUserBar(userBarContainer, {
+    user: currentUser,
+    onSignOut: handleSignOut,
+    onBackToLanding: () => router.navigate('/'),
+    currentAccentColorId,
+    onSelectAccentColor: handleSelectAccentColor,
+    onSelectCustomAccentColor: handleSelectCustomAccentColor,
+    notificationPermissionState,
+    onEnableNotifications: handleEnableNotifications,
+    onDisableNotifications: handleDisableNotifications,
   });
 }
 
@@ -423,6 +485,9 @@ function renderRoute(route, reason = 'unspecified') {
     onSelectAccentColor: handleSelectAccentColor,
     onSelectCustomAccentColor: handleSelectCustomAccentColor,
     onPreviewCustomAccentColor: handlePreviewCustomAccentColor,
+    notificationPermissionState,
+    onEnableNotifications: handleEnableNotifications,
+    onDisableNotifications: handleDisableNotifications,
   });
 
   if (workspaceLoading) {
@@ -756,10 +821,31 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+/**
+ * Registers the app's own service-worker.js exactly once per page
+ * load -- init() itself only ever runs once, so no extra guard is
+ * needed here. Registered as a module worker ({ type: 'module' })
+ * specifically so service-worker.js can `import` the same Firebase
+ * SDK/config every other file in this app already uses for its own
+ * FCM background-message handling (see that file's own header
+ * comment) rather than duplicating those values into a second,
+ * classic-script service worker. Fire-and-forget: a registration
+ * failure (e.g. an unsupported browser) should never block the rest
+ * of the app from loading, so this only logs, never throws upward.
+ */
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.register('/service-worker.js', { type: 'module' }).catch((error) => {
+    console.error('[main] Service worker registration failed:', error);
+  });
+}
+
 function init() {
   try {
     appContainer = document.getElementById('app');
     userBarContainer = document.getElementById('user-bar');
+
+    registerServiceWorker();
 
     // Registered once — renderRoute() itself checks auth/loading state on
     // every call, so this doesn't need to be re-attached on sign-in/out.
@@ -814,6 +900,9 @@ function init() {
             onSelectAccentColor: handleSelectAccentColor,
             onSelectCustomAccentColor: handleSelectCustomAccentColor,
             onPreviewCustomAccentColor: handlePreviewCustomAccentColor,
+            notificationPermissionState,
+            onEnableNotifications: handleEnableNotifications,
+            onDisableNotifications: handleDisableNotifications,
           });
         });
 

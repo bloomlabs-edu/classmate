@@ -29,3 +29,21 @@ export const firebaseConfig = {
   appId: "1:918151236425:web:780d571a0415bd0b592898",
   measurementId: "G-GY32VNWDTF"
 };
+
+/**
+ * Web Push certificate ("VAPID key pair") PUBLIC key -- used by
+ * services/pushNotificationService.js's own getToken() call to
+ * register this browser for Firebase Cloud Messaging web push.
+ * Generate this in Firebase Console -> Project Settings -> Cloud
+ * Messaging tab -> "Web configuration" section -> Web Push
+ * certificates -> "Generate key pair" (only needed once per
+ * project). Paste the resulting "Key pair" value below.
+ *
+ * This is the PUBLIC half of the pair -- safe to ship in the browser,
+ * same trust model as the config object above. Firebase never exposes
+ * the private half to any client; it stays entirely on Google's own
+ * servers. Do not paste anything here other than that one public key
+ * string from the console -- there is nothing secret to protect, but
+ * also nothing else valid to put here.
+ */
+export const vapidKey = "BF-u75n5RBgyGyPOWx-gY33KXAMy3XsCNTqQdr9-dR_vWK0fT_LarlW7SJk_EO02xatVESAwDPcpnlhOYKEnEls";

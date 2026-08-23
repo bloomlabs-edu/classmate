@@ -22,6 +22,11 @@
  *      domain you're serving this app from (localhost is included by
  *      default for local testing).
  *   7. Firestore Database \u2192 Rules \u2192 paste firestore.rules \u2192 Publish.
+ *   8. Only needed for browser push notifications (see
+ *      services/pushNotificationService.js): Project Settings \u2192
+ *      Cloud Messaging tab \u2192 "Web configuration" \u2192 Web Push
+ *      certificates \u2192 "Generate key pair", then paste that key
+ *      below as vapidKey.
  */
 
 export const firebaseConfig = {
@@ -32,3 +37,6 @@ export const firebaseConfig = {
   messagingSenderId: 'YOUR_SENDER_ID',
   appId: 'YOUR_APP_ID',
 };
+
+/** See setup step 8 above. */
+export const vapidKey = 'YOUR_VAPID_PUBLIC_KEY';
