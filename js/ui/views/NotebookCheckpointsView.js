@@ -22,11 +22,43 @@
  * submitted + incomplete / submitted late) is rendered through the
  * same chip language a teacher already knows from the Notebook
  * Tracker roster, not an invented, unrelated visual system.
+ *
+ * RENDER ARCHITECTURE — deliberately NOT "wipe container.innerHTML and
+ * rebuild everything on every state change," which this file used to
+ * do. The header, "+ Add Checkpoint" button, and three persistent
+ * slots (form / grid / cell editor) are built exactly ONCE, on mount.
+ * Every handler afterward updates only the slot(s) its own action
+ * actually affects:
+ *   - Opening/closing a cell editor, or opening/canceling/toggling the
+ *     create/edit-checkpoint form, touches ONLY that slot's own
+ *     content — the grid (and its scroll position) is never touched.
+ *   - Quick-marking submitted, quick review, and saving a cell's
+ *     details patch ONLY that one <td> (plus its column's own stat
+ *     boxes) in place via updateCellAndColumn() — never a grid
+ *     rebuild, so the scroll container is never destroyed for these.
+ *   - Only genuinely structural changes (create/edit/delete/reorder a
+ *     checkpoint, or a fresh server-confirmed classroom via
+ *     workspaceCoordinator below) rebuild the grid via refreshGrid() —
+ *     for exactly these cases, refreshGrid() captures and restores
+ *     the scroll container's own scrollTop across the rebuild, since
+ *     a full rebuild is genuinely unavoidable here (the set of
+ *     checkpoints/students/columns itself may have changed), but
+ *     losing scroll position to it is not.
+ *
+ * Registers with services/workspaceCoordinator.js as this classroom's
+ * active workspace (mirroring ui/views/SeatingView.js's own exact
+ * pattern) so a Firestore-confirmed snapshot of a save updates the
+ * grid in place instead of falling through to workspaceService.js's
+ * coarser onChange-triggers-renderRoute() path, which would otherwise
+ * tear down and remount this entire view (losing scroll position AND
+ * any open form/cell editor) every time this classroom's document
+ * changes on the server — including from this teacher's own save.
  */
 
 import * as checkpointService from '../../services/checkpointService.js';
 import * as notebookConfigService from '../../services/notebookConfigService.js';
 import * as workspaceService from '../../services/workspaceService.js';
+import * as workspaceCoordinator from '../../services/workspaceCoordinator.js';
 import { getClassroomStudents } from '../../services/assessmentService.js';
 import { formatDate, getTodayDateKey } from '../../utils/dateHelpers.js';
 import { createBackButton } from '../components/BackButton.js';
@@ -44,161 +76,275 @@ import { createEmptyStateElement } from '../components/EmptyState.js';
 /** Exported so other views (e.g. ui/student-portal/views/StudentNotebooksView.js's own Checkpoints section) render the exact same status language and colors as this grid, rather than duplicating the lookup into a second status model. */
 export function getCellMeta(checkpoint, record) {
   if (!record || record.submissionStatus === 'not_submitted') {
-    return { label: 'Not submitted', chipClass: 'gray', icon: '\u26aa' };
+    return { label: 'Not submitted', chipClass: 'gray', icon: '⚪' };
   }
   const late = checkpointService.isLate(checkpoint, record);
   if (record.reviewStatus === 'complete') {
     return late
-      ? { label: 'Submitted late \u00b7 Complete', chipClass: 'orange', icon: '\ud83d\udfe0' }
-      : { label: 'Submitted \u00b7 Complete', chipClass: 'green', icon: '\ud83d\udfe2' };
+      ? { label: 'Submitted late · Complete', chipClass: 'orange', icon: '🟠' }
+      : { label: 'Submitted · Complete', chipClass: 'green', icon: '🟢' };
   }
   if (record.reviewStatus === 'incomplete') {
     return late
-      ? { label: 'Submitted late \u00b7 Incomplete', chipClass: 'red', icon: '\ud83d\udd34' }
-      : { label: 'Submitted \u00b7 Incomplete', chipClass: 'red', icon: '\ud83d\udd34' };
+      ? { label: 'Submitted late · Incomplete', chipClass: 'red', icon: '🔴' }
+      : { label: 'Submitted · Incomplete', chipClass: 'red', icon: '🔴' };
   }
   return late
-    ? { label: 'Submitted late \u00b7 Not reviewed', chipClass: 'amber', icon: '\ud83d\udfe1' }
-    : { label: 'Submitted \u00b7 Not reviewed', chipClass: 'purple', icon: '\ud83d\udcc4' };
+    ? { label: 'Submitted late · Not reviewed', chipClass: 'amber', icon: '🟡' }
+    : { label: 'Submitted · Not reviewed', chipClass: 'purple', icon: '📄' };
 }
 
 export function renderNotebookCheckpointsView(container, { classroom, subjectId, notebookTypeId, onBack }) {
+  // Replaced wholesale by resyncFromServer() below whenever
+  // workspaceCoordinator delivers a fresh, server-confirmed classroom
+  // — every handler below reads THIS variable at call time (never a
+  // captured value from an earlier render), so nothing here ever acts
+  // on a stale object once a sync has landed.
+  let currentClassroom = classroom;
   let editingCheckpointId = null; // null | 'new' | an existing checkpoint's own id — the header create/edit form
   let openCellFor = null; // null | { checkpointId, studentId } — the one open cell editor at a time
 
-  function rerender() {
-    render(container, classroom, subjectId, notebookTypeId, editingCheckpointId, openCellFor, {
-      onBack,
-      onStartCreate: () => {
-        editingCheckpointId = 'new';
-        rerender();
-      },
-      onStartEdit: (checkpointId) => {
-        editingCheckpointId = checkpointId;
-        rerender();
-      },
-      onCancelEdit: () => {
-        editingCheckpointId = null;
-        rerender();
-      },
-      onSaveCheckpoint: (fields) => {
-        if (editingCheckpointId === 'new') {
-          checkpointService.createNewCheckpoint(classroom, { subjectId, notebookTypeId, ...fields });
-        } else {
-          const checkpoint = checkpointService.getCheckpointById(classroom, editingCheckpointId);
-          checkpointService.updateCheckpoint(checkpoint, fields);
-        }
-        editingCheckpointId = null;
-        persistAndRerender();
-      },
-      onDeleteCheckpoint: (checkpointId, title) => {
-        const confirmed = window.confirm(`Delete "${title}"? This removes every student's own record for it too. This cannot be undone.`);
-        if (!confirmed) return;
-        checkpointService.deleteCheckpoint(classroom, checkpointId);
-        persistAndRerender();
-      },
-      onMoveCheckpoint: (checkpointId, direction) => {
-        const ordered = checkpointService.listCheckpointsForNotebook(classroom, subjectId, notebookTypeId);
-        const index = ordered.findIndex((c) => c.id === checkpointId);
-        const targetIndex = index + direction;
-        if (targetIndex < 0 || targetIndex >= ordered.length) return;
-        const reordered = [...ordered];
-        [reordered[index], reordered[targetIndex]] = [reordered[targetIndex], reordered[index]];
-        checkpointService.reorderCheckpoints(classroom, subjectId, notebookTypeId, reordered.map((c) => c.id));
-        persistAndRerender();
-      },
-      onOpenCell: (checkpointId, studentId) => {
-        openCellFor = { checkpointId, studentId };
-        rerender();
-      },
-      onQuickMarkSubmitted: (checkpointId, studentId) => {
-        const checkpoint = checkpointService.getCheckpointById(classroom, checkpointId);
-        checkpointService.setSubmission(checkpoint, studentId, { status: 'submitted', submittedDate: getTodayDateKey() });
-        persistAndRerender();
-      },
-      onQuickReview: (checkpointId, studentId, status) => {
-        const checkpoint = checkpointService.getCheckpointById(classroom, checkpointId);
-        checkpointService.setReview(checkpoint, studentId, { status, reviewedDate: getTodayDateKey() });
-        persistAndRerender();
-      },
-      onCloseCell: () => {
-        openCellFor = null;
-        rerender();
-      },
-      onSaveCell: (checkpointId, studentId, submission, review, teacherNote) => {
-        const checkpoint = checkpointService.getCheckpointById(classroom, checkpointId);
-        checkpointService.setSubmission(checkpoint, studentId, submission);
-        checkpointService.setReview(checkpoint, studentId, review);
-        checkpointService.setTeacherNote(checkpoint, studentId, teacherNote);
-        openCellFor = null;
-        persistAndRerender();
-      },
-    });
-  }
-
-  async function persistAndRerender() {
-    workspaceService.save(classroom);
-    rerender();
-  }
-
-  rerender();
-}
-
-function render(container, classroom, subjectId, notebookTypeId, editingCheckpointId, openCellFor, handlers) {
   container.innerHTML = '';
-
-  const subject = notebookConfigService.getSubjectById(classroom, subjectId);
-  const notebookType = notebookConfigService.getNotebookTypeById(classroom, notebookTypeId);
 
   const wrapper = document.createElement('div');
   wrapper.className = 'notebook-checkpoints';
 
   const header = document.createElement('header');
   header.className = 'tracker-header';
-  header.appendChild(createBackButton(handlers.onBack));
-  const title = document.createElement('h1');
-  title.className = 'tracker-header__title';
-  title.textContent = `${subject?.name || '(Subject removed)'} \u00b7 ${notebookType?.name || '(Type removed)'} \u2014 Checkpoints`;
-  header.appendChild(title);
+  header.appendChild(
+    createBackButton(() => {
+      workspaceCoordinator.unregisterActiveWorkspace(currentClassroom.id);
+      onBack();
+    })
+  );
+  const titleEl = document.createElement('h1');
+  titleEl.className = 'tracker-header__title';
+  header.appendChild(titleEl);
   wrapper.appendChild(header);
+
+  function refreshTitle() {
+    const subject = notebookConfigService.getSubjectById(currentClassroom, subjectId);
+    const notebookType = notebookConfigService.getNotebookTypeById(currentClassroom, notebookTypeId);
+    titleEl.textContent = `${subject?.name || '(Subject removed)'} · ${notebookType?.name || '(Type removed)'} — Checkpoints`;
+  }
 
   const content = document.createElement('div');
   content.className = 'notebook-checkpoints__content';
-
-  const checkpoints = checkpointService.listCheckpointsForNotebook(classroom, subjectId, notebookTypeId);
-  const students = [...getClassroomStudents(classroom)].sort((a, b) => a.name.localeCompare(b.name));
 
   const addButton = document.createElement('button');
   addButton.type = 'button';
   addButton.className = 'btn btn--primary notebook-checkpoints__add-button';
   addButton.textContent = '+ Add Checkpoint';
-  addButton.addEventListener('click', handlers.onStartCreate);
+  addButton.addEventListener('click', () => {
+    editingCheckpointId = 'new';
+    refreshForm();
+  });
   content.appendChild(addButton);
 
-  if (editingCheckpointId) {
-    const checkpoint = editingCheckpointId === 'new' ? null : checkpointService.getCheckpointById(classroom, editingCheckpointId);
-    content.appendChild(renderCheckpointForm(checkpoint, handlers));
-  }
+  // Three persistent slots — never replaced wholesale themselves, only
+  // their own contents. This is what lets each kind of update touch
+  // only what it actually needs to.
+  const formSlot = document.createElement('div');
+  content.appendChild(formSlot);
 
-  if (students.length === 0) {
-    content.appendChild(createEmptyStateElement({ message: 'No students on this roster yet.' }));
-  } else if (checkpoints.length === 0) {
-    content.appendChild(renderEmptyCheckpointsInstructionalCue());
-    content.appendChild(renderEmptyCheckpointsGrid(students, handlers));
-  } else {
-    content.appendChild(renderGrid(classroom, checkpoints, students, handlers));
-  }
+  const gridSlot = document.createElement('div');
+  content.appendChild(gridSlot);
 
-  if (openCellFor) {
-    const checkpoint = checkpointService.getCheckpointById(classroom, openCellFor.checkpointId);
-    const student = students.find((s) => s.id === openCellFor.studentId);
-    if (checkpoint && student) {
-      content.appendChild(renderCellEditor(checkpoint, student, handlers));
-    }
-  }
+  const cellEditorSlot = document.createElement('div');
+  content.appendChild(cellEditorSlot);
 
   wrapper.appendChild(content);
   container.appendChild(wrapper);
+
+  function getSortedStudents() {
+    return [...getClassroomStudents(currentClassroom)].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  function persistClassroom() {
+    workspaceService.save(currentClassroom);
+  }
+
+  const handlers = {
+    onStartCreate: () => {
+      editingCheckpointId = 'new';
+      refreshForm();
+    },
+    onStartEdit: (checkpointId) => {
+      editingCheckpointId = checkpointId;
+      refreshForm();
+    },
+    onCancelEdit: () => {
+      editingCheckpointId = null;
+      refreshForm();
+    },
+    onSaveCheckpoint: (fields) => {
+      if (editingCheckpointId === 'new') {
+        checkpointService.createNewCheckpoint(currentClassroom, { subjectId, notebookTypeId, ...fields });
+      } else {
+        const checkpoint = checkpointService.getCheckpointById(currentClassroom, editingCheckpointId);
+        checkpointService.updateCheckpoint(checkpoint, fields);
+      }
+      editingCheckpointId = null;
+      refreshForm();
+      persistClassroom();
+      refreshGrid(); // structural change (a column was added/edited) — genuine full grid rebuild, scroll preserved
+    },
+    onDeleteCheckpoint: (checkpointId, title) => {
+      const confirmed = window.confirm(`Delete "${title}"? This removes every student's own record for it too. This cannot be undone.`);
+      if (!confirmed) return;
+      checkpointService.deleteCheckpoint(currentClassroom, checkpointId);
+      persistClassroom();
+      refreshGrid(); // structural change (a column was removed)
+    },
+    onMoveCheckpoint: (checkpointId, direction) => {
+      const ordered = checkpointService.listCheckpointsForNotebook(currentClassroom, subjectId, notebookTypeId);
+      const index = ordered.findIndex((c) => c.id === checkpointId);
+      const targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= ordered.length) return;
+      const reordered = [...ordered];
+      [reordered[index], reordered[targetIndex]] = [reordered[targetIndex], reordered[index]];
+      checkpointService.reorderCheckpoints(currentClassroom, subjectId, notebookTypeId, reordered.map((c) => c.id));
+      persistClassroom();
+      refreshGrid(); // structural change (column order changed)
+    },
+    onOpenCell: (checkpointId, studentId) => {
+      openCellFor = { checkpointId, studentId };
+      refreshCellEditor(); // overlay only — grid/scroll untouched
+    },
+    onQuickMarkSubmitted: (checkpointId, studentId) => {
+      const checkpoint = checkpointService.getCheckpointById(currentClassroom, checkpointId);
+      checkpointService.setSubmission(checkpoint, studentId, { status: 'submitted', submittedDate: getTodayDateKey() });
+      persistClassroom();
+      updateCellAndColumn(checkpointId, studentId); // one <td> + its column's stat boxes — no grid rebuild
+    },
+    onQuickReview: (checkpointId, studentId, status) => {
+      const checkpoint = checkpointService.getCheckpointById(currentClassroom, checkpointId);
+      checkpointService.setReview(checkpoint, studentId, { status, reviewedDate: getTodayDateKey() });
+      persistClassroom();
+      updateCellAndColumn(checkpointId, studentId);
+    },
+    onCloseCell: () => {
+      openCellFor = null;
+      refreshCellEditor();
+    },
+    onSaveCell: (checkpointId, studentId, submission, review, teacherNote) => {
+      const checkpoint = checkpointService.getCheckpointById(currentClassroom, checkpointId);
+      checkpointService.setSubmission(checkpoint, studentId, submission);
+      checkpointService.setReview(checkpoint, studentId, review);
+      checkpointService.setTeacherNote(checkpoint, studentId, teacherNote);
+      openCellFor = null;
+      persistClassroom();
+      refreshCellEditor();
+      updateCellAndColumn(checkpointId, studentId);
+    },
+  };
+
+  function refreshForm() {
+    formSlot.innerHTML = '';
+    if (editingCheckpointId) {
+      const checkpoint = editingCheckpointId === 'new' ? null : checkpointService.getCheckpointById(currentClassroom, editingCheckpointId);
+      formSlot.appendChild(renderCheckpointForm(checkpoint, handlers));
+    }
+  }
+
+  function refreshCellEditor() {
+    cellEditorSlot.innerHTML = '';
+    if (openCellFor) {
+      const checkpoint = checkpointService.getCheckpointById(currentClassroom, openCellFor.checkpointId);
+      const student = getSortedStudents().find((s) => s.id === openCellFor.studentId);
+      if (checkpoint && student) {
+        cellEditorSlot.appendChild(renderCellEditor(checkpoint, student, handlers));
+      }
+    }
+  }
+
+  /**
+   * The one full-grid rebuild path — used only where a full rebuild is
+   * genuinely unavoidable (see this file's own header comment):
+   * checkpoint create/edit/delete/reorder, and a fresh
+   * workspaceCoordinator sync. Captures the scroll container's own
+   * scrollTop before tearing it down and restores it on the new one
+   * after, so the one case that DOES need a rebuild still doesn't cost
+   * the teacher their place in a long roster.
+   */
+  function refreshGrid() {
+    const previousScrollTop = gridSlot.querySelector('.assessment-gradebook__scroll')?.scrollTop ?? 0;
+
+    gridSlot.innerHTML = '';
+
+    const checkpoints = checkpointService.listCheckpointsForNotebook(currentClassroom, subjectId, notebookTypeId);
+    const students = getSortedStudents();
+
+    if (students.length === 0) {
+      gridSlot.appendChild(createEmptyStateElement({ message: 'No students on this roster yet.' }));
+    } else if (checkpoints.length === 0) {
+      gridSlot.appendChild(renderEmptyCheckpointsInstructionalCue());
+      gridSlot.appendChild(renderEmptyCheckpointsGrid(students, handlers));
+    } else {
+      gridSlot.appendChild(renderGrid(checkpoints, students, handlers));
+    }
+
+    const scrollEl = gridSlot.querySelector('.assessment-gradebook__scroll');
+    if (scrollEl) scrollEl.scrollTop = previousScrollTop;
+  }
+
+  /**
+   * The targeted alternative to refreshGrid() for a single cell's own
+   * status changing (quick mark, quick review, cell editor save) —
+   * finds and replaces only that <td>'s own content, plus its
+   * column's own stat boxes (Submitted/Complete counts, which those
+   * three actions can change), via the exact same data-checkpoint-id/
+   * data-student-id attributes renderGrid() stamps onto each cell and
+   * column header below. Falls back to refreshGrid() only if the grid
+   * itself doesn't exist yet in the DOM (e.g. this was the very first
+   * checkpoint action while still showing the pre-first-checkpoint
+   * empty grid) — a state refreshGrid() alone can resolve correctly.
+   */
+  function updateCellAndColumn(checkpointId, studentId) {
+    const scrollEl = gridSlot.querySelector('.assessment-gradebook__scroll');
+    const checkpoint = checkpointService.getCheckpointById(currentClassroom, checkpointId);
+    if (!scrollEl || !checkpoint) {
+      refreshGrid();
+      return;
+    }
+
+    const students = getSortedStudents();
+    const student = students.find((s) => s.id === studentId);
+    const cell = scrollEl.querySelector(`td[data-checkpoint-id="${checkpointId}"][data-student-id="${studentId}"]`);
+    if (cell && student) {
+      cell.innerHTML = '';
+      populateCheckpointCell(cell, checkpoint, student, handlers);
+    }
+
+    const statsEl = scrollEl.querySelector(`th[data-checkpoint-id="${checkpointId}"] .notebook-checkpoints__column-stats`);
+    if (statsEl) {
+      const summary = checkpointService.getCheckpointSummary(checkpoint, students);
+      statsEl.innerHTML = '';
+      statsEl.appendChild(createColumnStatBox(summary.submittedCount, students.length, 'Submitted'));
+      statsEl.appendChild(createColumnStatBox(summary.completeCount, students.length, 'Complete'));
+    }
+  }
+
+  // Initial mount — the only point where every slot is populated together.
+  refreshTitle();
+  refreshForm();
+  refreshGrid();
+  refreshCellEditor();
+
+  // Registered last, once this workspace actually has something showing
+  // — mirrors ui/views/SeatingView.js's own exact registration shape.
+  // A fresh, server-confirmed classroom only ever refreshes the title
+  // and the grid: both are safe to rebuild unconditionally (the title
+  // is inexpensive, and refreshGrid() preserves scroll). Deliberately
+  // does NOT refresh an open form or cell editor here — either would
+  // discard a teacher's own in-progress, unsaved edits inside that
+  // overlay, which would be a strictly worse regression than the
+  // scroll-reset bug this change exists to fix.
+  workspaceCoordinator.registerActiveWorkspace(currentClassroom.id, (freshClassroom) => {
+    currentClassroom = freshClassroom;
+    refreshTitle();
+    refreshGrid();
+  });
 }
 
 /**
@@ -211,7 +357,7 @@ function renderEmptyCheckpointsInstructionalCue() {
   cue.className = 'notebook-checkpoints__empty-cue';
   const icon = document.createElement('span');
   icon.className = 'notebook-checkpoints__empty-cue-icon';
-  icon.textContent = '\ud83d\udca1';
+  icon.textContent = '💡';
   const text = document.createElement('div');
   const title = document.createElement('p');
   title.className = 'notebook-checkpoints__empty-cue-title';
@@ -257,7 +403,7 @@ function renderEmptyCheckpointsGrid(students, handlers) {
   placeholderButton.type = 'button';
   placeholderButton.className = 'notebook-checkpoints__empty-column-button';
   const placeholderIcon = document.createElement('span');
-  placeholderIcon.textContent = '\u270e';
+  placeholderIcon.textContent = '✎';
   const placeholderLabel = document.createElement('span');
   placeholderLabel.textContent = 'Enter unit name / checkpoint';
   placeholderButton.append(placeholderIcon, placeholderLabel);
@@ -278,7 +424,7 @@ function renderEmptyCheckpointsGrid(students, handlers) {
 
     const placeholderCell = document.createElement('td');
     placeholderCell.className = 'notebook-checkpoints__cell notebook-checkpoints__cell--gray';
-    placeholderCell.textContent = '\u2014';
+    placeholderCell.textContent = '—';
     row.appendChild(placeholderCell);
 
     tbody.appendChild(row);
@@ -303,7 +449,89 @@ function createColumnStatBox(count, total, label) {
   return box;
 }
 
-function renderGrid(classroom, checkpoints, students, handlers) {
+/**
+ * Builds one checkpoint cell's own contents (status button + whichever
+ * quick actions apply) directly into `cell` — extracted from
+ * renderGrid()'s own per-cell loop so updateCellAndColumn() (see
+ * renderNotebookCheckpointsView() above) can rebuild exactly one cell
+ * in place, identically to how a full grid build renders it. `cell`
+ * itself (the <td>, including its own data-checkpoint-id/
+ * data-student-id attributes and status-color class) is owned by the
+ * caller — this only ever populates its children.
+ */
+function populateCheckpointCell(cell, checkpoint, student, handlers) {
+  const record = checkpointService.getRecordForStudent(checkpoint, student.id);
+  const meta = getCellMeta(checkpoint, record);
+
+  cell.className = `notebook-checkpoints__cell notebook-checkpoints__cell--${meta.chipClass}`;
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'notebook-checkpoints__cell-button';
+  button.setAttribute('aria-label', `${student.name} — ${checkpoint.title}: ${meta.label}`);
+  const iconEl = document.createElement('span');
+  iconEl.textContent = meta.icon;
+  const labelEl = document.createElement('span');
+  labelEl.className = 'notebook-checkpoints__cell-label';
+  labelEl.textContent = meta.label;
+  button.append(iconEl, labelEl);
+  button.addEventListener('click', () => handlers.onOpenCell(checkpoint.id, student.id));
+  cell.appendChild(button);
+
+  // One-tap quick action, only while not yet submitted — mirrors
+  // WorkRequestRosterView.js's own established "Mark Submitted"
+  // one-tap pattern directly, reused rather than inventing a new
+  // interaction, per explicit product instruction. Defaults the
+  // submission date to today; a teacher needing a different
+  // (historical) date still opens the full editor via the button
+  // above, which remains fully editable exactly as before.
+  if (!record || record.submissionStatus === 'not_submitted') {
+    const quickMarkButton = document.createElement('button');
+    quickMarkButton.type = 'button';
+    quickMarkButton.className = 'notebook-checkpoints__cell-quick-mark';
+    quickMarkButton.textContent = '✓ Mark Submitted';
+    quickMarkButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      handlers.onQuickMarkSubmitted(checkpoint.id, student.id);
+    });
+    cell.appendChild(quickMarkButton);
+  }
+
+  // Quick review actions, only once submitted but not yet
+  // reviewed — the exact friction point identified by inspection:
+  // reviewing previously always required opening the full editor,
+  // even for the common one-tap decision. Mirrors the same
+  // one-tap-then-persist pattern as Mark Submitted above. The
+  // full editor (opened via the main cell button) remains the
+  // only path for a review date correction or a note, unchanged.
+  if (record && record.submissionStatus === 'submitted' && record.reviewStatus === 'not_reviewed') {
+    const quickActions = document.createElement('div');
+    quickActions.className = 'notebook-checkpoints__cell-quick-review';
+
+    const quickCompleteButton = document.createElement('button');
+    quickCompleteButton.type = 'button';
+    quickCompleteButton.className = 'notebook-checkpoints__cell-quick-review-button notebook-checkpoints__cell-quick-review-button--complete';
+    quickCompleteButton.textContent = '✓ Complete';
+    quickCompleteButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      handlers.onQuickReview(checkpoint.id, student.id, 'complete');
+    });
+
+    const quickIncompleteButton = document.createElement('button');
+    quickIncompleteButton.type = 'button';
+    quickIncompleteButton.className = 'notebook-checkpoints__cell-quick-review-button notebook-checkpoints__cell-quick-review-button--incomplete';
+    quickIncompleteButton.textContent = '⚠ Incomplete';
+    quickIncompleteButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      handlers.onQuickReview(checkpoint.id, student.id, 'incomplete');
+    });
+
+    quickActions.append(quickCompleteButton, quickIncompleteButton);
+    cell.appendChild(quickActions);
+  }
+}
+
+function renderGrid(checkpoints, students, handlers) {
   const scroll = document.createElement('div');
   scroll.className = 'assessment-gradebook__scroll';
 
@@ -321,6 +549,10 @@ function renderGrid(classroom, checkpoints, students, handlers) {
   checkpoints.forEach((checkpoint, index) => {
     const th = document.createElement('th');
     th.className = 'notebook-checkpoints__column-header';
+    // Lookup key for updateCellAndColumn()'s targeted stat-box update
+    // (see renderNotebookCheckpointsView() above) — never read for
+    // anything else.
+    th.dataset.checkpointId = checkpoint.id;
 
     const titleRow = document.createElement('div');
     titleRow.className = 'notebook-checkpoints__column-title-row';
@@ -332,7 +564,7 @@ function renderGrid(classroom, checkpoints, students, handlers) {
     const editButton = document.createElement('button');
     editButton.type = 'button';
     editButton.className = 'notebook-checkpoints__column-action';
-    editButton.textContent = '\u270e';
+    editButton.textContent = '✎';
     editButton.title = 'Edit checkpoint';
     editButton.addEventListener('click', () => handlers.onStartEdit(checkpoint.id));
     titleRow.appendChild(editButton);
@@ -364,7 +596,7 @@ function renderGrid(classroom, checkpoints, students, handlers) {
     const moveLeftButton = document.createElement('button');
     moveLeftButton.type = 'button';
     moveLeftButton.className = 'notebook-checkpoints__column-action';
-    moveLeftButton.textContent = '\u2190';
+    moveLeftButton.textContent = '←';
     moveLeftButton.title = 'Move left';
     moveLeftButton.disabled = index === 0;
     moveLeftButton.addEventListener('click', () => handlers.onMoveCheckpoint(checkpoint.id, -1));
@@ -373,7 +605,7 @@ function renderGrid(classroom, checkpoints, students, handlers) {
     const moveRightButton = document.createElement('button');
     moveRightButton.type = 'button';
     moveRightButton.className = 'notebook-checkpoints__column-action';
-    moveRightButton.textContent = '\u2192';
+    moveRightButton.textContent = '→';
     moveRightButton.title = 'Move right';
     moveRightButton.disabled = index === checkpoints.length - 1;
     moveRightButton.addEventListener('click', () => handlers.onMoveCheckpoint(checkpoint.id, 1));
@@ -382,7 +614,7 @@ function renderGrid(classroom, checkpoints, students, handlers) {
     const deleteButton = document.createElement('button');
     deleteButton.type = 'button';
     deleteButton.className = 'notebook-checkpoints__column-action notebook-checkpoints__column-action--danger';
-    deleteButton.textContent = '\ud83d\uddd1';
+    deleteButton.textContent = '🗑';
     deleteButton.title = 'Delete checkpoint';
     deleteButton.addEventListener('click', () => handlers.onDeleteCheckpoint(checkpoint.id, checkpoint.title));
     actionsRow.appendChild(deleteButton);
@@ -403,76 +635,13 @@ function renderGrid(classroom, checkpoints, students, handlers) {
     row.appendChild(nameCell);
 
     checkpoints.forEach((checkpoint) => {
-      const record = checkpointService.getRecordForStudent(checkpoint, student.id);
-      const meta = getCellMeta(checkpoint, record);
-
       const cell = document.createElement('td');
-      cell.className = `notebook-checkpoints__cell notebook-checkpoints__cell--${meta.chipClass}`;
-
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'notebook-checkpoints__cell-button';
-      button.setAttribute('aria-label', `${student.name} \u2014 ${checkpoint.title}: ${meta.label}`);
-      const iconEl = document.createElement('span');
-      iconEl.textContent = meta.icon;
-      const labelEl = document.createElement('span');
-      labelEl.className = 'notebook-checkpoints__cell-label';
-      labelEl.textContent = meta.label;
-      button.append(iconEl, labelEl);
-      button.addEventListener('click', () => handlers.onOpenCell(checkpoint.id, student.id));
-      cell.appendChild(button);
-
-      // One-tap quick action, only while not yet submitted — mirrors
-      // WorkRequestRosterView.js's own established "Mark Submitted"
-      // one-tap pattern directly, reused rather than inventing a new
-      // interaction, per explicit product instruction. Defaults the
-      // submission date to today; a teacher needing a different
-      // (historical) date still opens the full editor via the button
-      // above, which remains fully editable exactly as before.
-      if (!record || record.submissionStatus === 'not_submitted') {
-        const quickMarkButton = document.createElement('button');
-        quickMarkButton.type = 'button';
-        quickMarkButton.className = 'notebook-checkpoints__cell-quick-mark';
-        quickMarkButton.textContent = '\u2713 Mark Submitted';
-        quickMarkButton.addEventListener('click', (event) => {
-          event.stopPropagation();
-          handlers.onQuickMarkSubmitted(checkpoint.id, student.id);
-        });
-        cell.appendChild(quickMarkButton);
-      }
-
-      // Quick review actions, only once submitted but not yet
-      // reviewed — the exact friction point identified by inspection:
-      // reviewing previously always required opening the full editor,
-      // even for the common one-tap decision. Mirrors the same
-      // one-tap-then-persist pattern as Mark Submitted above. The
-      // full editor (opened via the main cell button) remains the
-      // only path for a review date correction or a note, unchanged.
-      if (record && record.submissionStatus === 'submitted' && record.reviewStatus === 'not_reviewed') {
-        const quickActions = document.createElement('div');
-        quickActions.className = 'notebook-checkpoints__cell-quick-review';
-
-        const quickCompleteButton = document.createElement('button');
-        quickCompleteButton.type = 'button';
-        quickCompleteButton.className = 'notebook-checkpoints__cell-quick-review-button notebook-checkpoints__cell-quick-review-button--complete';
-        quickCompleteButton.textContent = '\u2713 Complete';
-        quickCompleteButton.addEventListener('click', (event) => {
-          event.stopPropagation();
-          handlers.onQuickReview(checkpoint.id, student.id, 'complete');
-        });
-
-        const quickIncompleteButton = document.createElement('button');
-        quickIncompleteButton.type = 'button';
-        quickIncompleteButton.className = 'notebook-checkpoints__cell-quick-review-button notebook-checkpoints__cell-quick-review-button--incomplete';
-        quickIncompleteButton.textContent = '\u26a0 Incomplete';
-        quickIncompleteButton.addEventListener('click', (event) => {
-          event.stopPropagation();
-          handlers.onQuickReview(checkpoint.id, student.id, 'incomplete');
-        });
-
-        quickActions.append(quickCompleteButton, quickIncompleteButton);
-        cell.appendChild(quickActions);
-      }
+      // Lookup keys for updateCellAndColumn()'s targeted single-cell
+      // update (see renderNotebookCheckpointsView() above) — never
+      // read for anything else.
+      cell.dataset.checkpointId = checkpoint.id;
+      cell.dataset.studentId = student.id;
+      populateCheckpointCell(cell, checkpoint, student, handlers);
       row.appendChild(cell);
     });
 
@@ -589,7 +758,7 @@ function renderCellEditor(checkpoint, student, handlers) {
 
   function refreshLateNotice() {
     const wouldBeLate = checkpoint.dueDate && submissionSelect.value === 'submitted' && submittedDateInput.value > checkpoint.dueDate;
-    lateNotice.textContent = wouldBeLate ? `\u26a0\ufe0f Submitted late (due ${formatDate(checkpoint.dueDate)})` : '';
+    lateNotice.textContent = wouldBeLate ? `⚠️ Submitted late (due ${formatDate(checkpoint.dueDate)})` : '';
   }
   refreshLateNotice();
   submittedDateInput.addEventListener('input', refreshLateNotice);
