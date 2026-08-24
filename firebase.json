@@ -11,6 +11,7 @@
       "**/node_modules/**",
       "tests/**",
       "docs/**",
+      "firebase-rules-verification/**",
       "CHANGELOG.md",
       "CONTRIBUTING.md",
       "README.md"
