@@ -93,14 +93,19 @@ export function getCellMeta(checkpoint, record) {
   }
   const late = checkpointService.isLate(checkpoint, record);
   if (record.reviewStatus === 'complete') {
+    // `late` only ever changes the label here — Complete is green
+    // regardless of timing (see this function's own header comment on
+    // the intended status hierarchy: Complete is always green,
+    // Incomplete is always orange; lateness is a text detail on top of
+    // that, never a color change on its own).
     return late
-      ? { label: 'Submitted late · Complete', chipClass: 'orange', icon: 'check-circle-2' }
+      ? { label: 'Submitted late · Complete', chipClass: 'green', icon: 'check-circle-2' }
       : { label: 'Submitted · Complete', chipClass: 'green', icon: 'check-circle-2' };
   }
   if (record.reviewStatus === 'incomplete') {
     return late
-      ? { label: 'Submitted late · Incomplete', chipClass: 'red', icon: 'alert-triangle' }
-      : { label: 'Submitted · Incomplete', chipClass: 'red', icon: 'alert-triangle' };
+      ? { label: 'Submitted late · Incomplete', chipClass: 'orange', icon: 'alert-triangle' }
+      : { label: 'Submitted · Incomplete', chipClass: 'orange', icon: 'alert-triangle' };
   }
   return late
     ? { label: 'Submitted late · Not Reviewed', chipClass: 'purple', icon: 'circle-dot' }
@@ -279,13 +284,21 @@ export function renderNotebookCheckpointsView(container, { classroom, subjectId,
    * The one full-grid rebuild path — used only where a full rebuild is
    * genuinely unavoidable (see this file's own header comment):
    * checkpoint create/edit/delete/reorder, and a fresh
-   * workspaceCoordinator sync. Captures the scroll container's own
-   * scrollTop before tearing it down and restores it on the new one
-   * after, so the one case that DOES need a rebuild still doesn't cost
-   * the teacher their place in a long roster.
+   * workspaceCoordinator sync (which, per that registration's own
+   * comment above, is also what actually runs after every quick
+   * action's own persistClassroom() write echoes back). Captures the
+   * scroll container's own scrollTop AND scrollLeft before tearing it
+   * down, and restores both on the new one after — the container this
+   * app scrolls is .assessment-gradebook__scroll itself (it, not
+   * window, carries both the vertical roster scroll and the horizontal
+   * checkpoint-column scroll), so a rebuild that only preserved
+   * scrollTop would still snap a teacher who'd scrolled right back to
+   * the leftmost column on every one of these actions.
    */
   function refreshGrid() {
-    const previousScrollTop = gridSlot.querySelector('.assessment-gradebook__scroll')?.scrollTop ?? 0;
+    const previousScrollEl = gridSlot.querySelector('.assessment-gradebook__scroll');
+    const previousScrollTop = previousScrollEl?.scrollTop ?? 0;
+    const previousScrollLeft = previousScrollEl?.scrollLeft ?? 0;
 
     gridSlot.innerHTML = '';
 
@@ -302,7 +315,10 @@ export function renderNotebookCheckpointsView(container, { classroom, subjectId,
     }
 
     const scrollEl = gridSlot.querySelector('.assessment-gradebook__scroll');
-    if (scrollEl) scrollEl.scrollTop = previousScrollTop;
+    if (scrollEl) {
+      scrollEl.scrollTop = previousScrollTop;
+      scrollEl.scrollLeft = previousScrollLeft;
+    }
   }
 
   /**
@@ -349,11 +365,19 @@ export function renderNotebookCheckpointsView(container, { classroom, subjectId,
   // — mirrors ui/views/SeatingView.js's own exact registration shape.
   // A fresh, server-confirmed classroom only ever refreshes the title
   // and the grid: both are safe to rebuild unconditionally (the title
-  // is inexpensive, and refreshGrid() preserves scroll). Deliberately
-  // does NOT refresh an open form or cell editor here — either would
-  // discard a teacher's own in-progress, unsaved edits inside that
-  // overlay, which would be a strictly worse regression than the
-  // scroll-reset bug this change exists to fix.
+  // is inexpensive, and refreshGrid() preserves scroll — both axes,
+  // see refreshGrid() itself). Deliberately does NOT refresh an open
+  // form or cell editor here — either would discard a teacher's own
+  // in-progress, unsaved edits inside that overlay, which would be a
+  // strictly worse regression than the scroll-reset bug this change
+  // exists to fix. This registration is also why a quick action
+  // (Mark Submitted, a quick review, a cell save) can still trigger a
+  // full refreshGrid() even though its own handler above only ever
+  // calls the targeted updateCellAndColumn() directly: persistClassroom()'s
+  // own write comes back through here as a fresh server-confirmed
+  // snapshot and rebuilds the grid — which is exactly why refreshGrid()'s
+  // own scroll preservation has to cover the horizontally-scrolling
+  // container's scrollLeft too, not just its scrollTop.
   workspaceCoordinator.registerActiveWorkspace(currentClassroom.id, (freshClassroom) => {
     currentClassroom = freshClassroom;
     refreshTitle();
@@ -635,7 +659,14 @@ function populateCheckpointCell(cell, checkpoint, student, handlers) {
   const meta = getCellMeta(checkpoint, record);
   const isNotSubmitted = !record || record.submissionStatus === 'not_submitted';
   const isAwaitingReview = record && record.submissionStatus === 'submitted' && record.reviewStatus === 'not_reviewed';
-  const isCompleteOnTime = meta.chipClass === 'green'; // getCellMeta() only ever produces 'green' for on-time Submitted · Complete
+  // Checked directly against the record rather than `meta.chipClass`
+  // — getCellMeta() now returns the same 'green' chipClass for BOTH
+  // on-time and late Complete (Complete is always green; `late` only
+  // ever changes the label), so chipClass alone can no longer tell
+  // this cell's own on-time-only tint (see this function's own header
+  // comment: "Submitted · Complete on time → light green") apart from
+  // a late Complete.
+  const isCompleteOnTime = record && record.reviewStatus === 'complete' && !checkpointService.isLate(checkpoint, record);
 
   cell.className = 'notebook-checkpoints__cell';
   if (isNotSubmitted) cell.classList.add('notebook-checkpoints__cell--tint-red');

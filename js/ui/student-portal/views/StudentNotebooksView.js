@@ -181,7 +181,7 @@ function renderCheckpointPanel(panel, notebook) {
   legend.className = 'student-notebook-tabs__legend';
   [
     { label: 'Complete', chipClass: 'green' },
-    { label: 'Incomplete', chipClass: 'red' },
+    { label: 'Incomplete', chipClass: 'orange' },
     { label: 'Not submitted', chipClass: 'purple' },
   ].forEach(({ label, chipClass }) => {
     const item = document.createElement('span');
