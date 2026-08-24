@@ -108,5 +108,5 @@ test('firebase.json: is valid, parseable JSON, and references both firestore.rul
 test('firebase.json: hosting configuration is untouched by this change', () => {
   const data = readJson('firebase.json');
   assert.equal(data.hosting.public, '.');
-  assert.deepEqual(data.hosting.ignore, ['firebase.json', '**/.*', '**/node_modules/**', 'tests/**', 'docs/**', 'CHANGELOG.md', 'CONTRIBUTING.md', 'README.md']);
+  assert.deepEqual(data.hosting.ignore, ['firebase.json', '**/.*', '**/node_modules/**', 'tests/**', 'docs/**', 'firebase-rules-verification/**', 'CHANGELOG.md', 'CONTRIBUTING.md', 'README.md']);
 });

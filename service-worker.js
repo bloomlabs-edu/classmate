@@ -75,6 +75,22 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
+  // Same-origin only. Every Firebase call this app makes (Auth's
+  // identitytoolkit/securetoken requests, Firestore's own real-time
+  // WebChannel stream and writes, FCM) is cross-origin from this app's
+  // own classmate-302c2.web.app origin, same as Google Fonts. Letting
+  // any of those fall through to this handler's cache-then-network
+  // logic below risks serving a stale cached Auth/Firestore response
+  // instead of live data, or wrapping a long-lived real-time stream in
+  // logic this handler was never designed for. Leaving them
+  // unintercepted (no respondWith() at all — the browser handles the
+  // request exactly as if no service worker existed) is what actually
+  // guarantees Firebase Auth, Firestore reads/writes, and real-time
+  // listeners can't be affected by this file at all. Only this app's
+  // own static shell (HTML/CSS/JS/manifest/icons, all served from this
+  // same origin) is ever cached below.
+  if (new URL(event.request.url).origin !== self.location.origin) return;
+
   event.respondWith(
     caches.match(event.request).then((cached) => {
       const networkFetch = fetch(event.request)
