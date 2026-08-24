@@ -230,3 +230,8 @@ export async function getGoalForStudent(classroomId, cycleId, categoryId, studen
 export async function approveGoal(classroomId, goalId) {
   await goalsRepository.approveGoal(classroomId, goalId);
 }
+
+/** Teacher-side — the alternative to approveGoal() above: asks the student to revise this goal, attaching feedback text they'll see on their own Goal Tracker screen. See firestoreStudentGoalsRepository.js's own requestChanges() header comment for the full data-shape reasoning. */
+export async function requestGoalChanges(classroomId, goalId, feedbackText) {
+  await goalsRepository.requestChanges(classroomId, goalId, feedbackText);
+}

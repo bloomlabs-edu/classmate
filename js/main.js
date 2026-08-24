@@ -53,6 +53,8 @@ import { renderCurriculumManagementView } from './ui/views/CurriculumManagementV
 import { renderLearningManagementView } from './ui/views/LearningManagementView.js';
 import { renderAssessmentManagementView } from './ui/views/AssessmentManagementView.js';
 import { renderGoalManagementView } from './ui/views/GoalManagementView.js';
+import { renderGoalDashboardView } from './ui/views/GoalDashboardView.js';
+import * as goalService from './services/goalService.js';
 import { renderFeedModerationView } from './ui/views/FeedModerationView.js';
 import { renderScoreboardArchiveView } from './ui/views/ScoreboardArchiveView.js';
 import { renderTrackerView } from './ui/views/TrackerView.js';
@@ -567,10 +569,19 @@ function renderRoute(route, reason = 'unspecified') {
         onNavigate: (path) => router.navigate(path),
       });
     } else if (route.name === 'goalManagement') {
-      renderGoalManagementView(appContainer, {
-        classroom,
-        onBack: () => router.navigate(`/classroom/${classroom.id}`),
-      });
+      // /goals now opens the Goal Dashboard directly once an active
+      // Goal Cycle exists -- the "Open Goal Dashboard" intermediate
+      // landing page is redundant once there's an actual dashboard to
+      // show. GoalManagementView.js's own home step (create a Goal
+      // Cycle) is still needed, and still reached from here, for the
+      // one case a dashboard genuinely can't exist yet: no active
+      // cycle at all.
+      const onBackToClassroom = () => router.navigate(`/classroom/${classroom.id}`);
+      if (goalService.getActiveCycle(classroom)) {
+        renderGoalDashboardView(appContainer, { classroom, onBack: onBackToClassroom });
+      } else {
+        renderGoalManagementView(appContainer, { classroom, onBack: onBackToClassroom });
+      }
     } else if (route.name === 'learningManagement') {
       renderLearningManagementView(appContainer, {
         classrooms: [classroom],
@@ -710,12 +721,33 @@ function renderRoute(route, reason = 'unspecified') {
         onFinish: () => router.navigate(`/classroom/${classroom.id}`),
       });
     } else if (route.name === 'studentProfile') {
+      // BUG FIX — `onBack` used to always go to the classroom
+      // dashboard, regardless of where the profile was actually
+      // opened from. Reuses this router's own existing, already-
+      // working query-string support (see ui/router.js's own
+      // parseHash() — `route.query` is parsed there today, just not
+      // consumed by any route until now) rather than inventing a new
+      // navigation mechanism: a caller that wants Back to return
+      // somewhere specific appends `?returnTo=<encoded path>` to the
+      // URL it navigates to; this route reads it back if present, and
+      // falls through to the exact same dashboard behavior as before
+      // when it's absent — every other entry point (Assessment
+      // Management, WorkRequest roster, Student Access, etc.) doesn't
+      // pass `returnTo` at all, so its own Back behavior is completely
+      // unchanged.
+      //
+      // onNavigateTab also carries `returnTo` forward when present —
+      // without this, switching tabs while on the profile would
+      // silently drop the return context before the user even
+      // reaches Back, since navigating to a new hash without the
+      // query string loses it.
+      const returnToQuery = route.query?.returnTo ? `?returnTo=${encodeURIComponent(route.query.returnTo)}` : '';
       renderStudentProfileView(appContainer, {
         classroom,
         studentId: route.studentId,
         tab: route.tab,
-        onBack: () => router.navigate(`/classroom/${classroom.id}`),
-        onNavigateTab: (tab) => router.navigate(`/classroom/${classroom.id}/student/${route.studentId}/${tab}`),
+        onBack: () => router.navigate(route.query?.returnTo || `/classroom/${classroom.id}`),
+        onNavigateTab: (tab) => router.navigate(`/classroom/${classroom.id}/student/${route.studentId}/${tab}${returnToQuery}`),
         onOpenStudentAccess: () => router.navigate(`/classroom/${classroom.id}/student-access`),
       });
     } else if (route.name === 'studentAccess') {
@@ -767,6 +799,14 @@ function renderRoute(route, reason = 'unspecified') {
         subjectId: route.subjectId,
         notebookTypeId: route.notebookTypeId,
         onBack: () => router.navigate(`/classroom/${classroom.id}/notebooks`),
+        // BUG FIX — carries this exact Notebook Checkpoints route back
+        // through the student profile's own `returnTo` query param
+        // (see the studentProfile route's own comment above) so its
+        // Back button returns here specifically, not the dashboard.
+        onSelectStudent: (studentId) => {
+          const returnTo = `/classroom/${classroom.id}/notebooks/${route.subjectId}/${route.notebookTypeId}/checkpoints`;
+          router.navigate(`/classroom/${classroom.id}/student/${studentId}?returnTo=${encodeURIComponent(returnTo)}`);
+        },
       });
     }
     return;

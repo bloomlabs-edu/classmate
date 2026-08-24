@@ -186,3 +186,28 @@ export async function approveGoal(classroomId, goalId) {
   const db = teacherDb();
   await updateDoc(goalDoc(db, classroomId, goalId), { status: 'approved' });
 }
+
+/**
+ * Teacher-only -- the alternative outcome to approveGoal() above: asks
+ * the student to revise their goal instead of approving it as-is.
+ * Sets status to 'changes_requested' (a new, third status alongside
+ * 'pending_approval'/'approved' -- see models/Goal.js's own header
+ * comment, though this collection's real documents no longer flow
+ * through that model) and attaches teacherFeedback -- the smallest
+ * extension to the existing document shape that carries what the
+ * student needs to see (see firestore.rules's own studentGoals allow
+ * update, branch 3, which is scoped to touch exactly these two
+ * fields). The student's own resubmission (submitGoal() above) is
+ * completely unaffected: it already writes status back to
+ * 'pending_approval' unconditionally on every submit, regardless of
+ * the goal's prior status, and setDoc()'s own full-document
+ * replacement semantics already clear this feedback naturally once
+ * the student has acted on it and a fresh review cycle begins.
+ */
+export async function requestChanges(classroomId, goalId, feedbackText) {
+  const db = teacherDb();
+  await updateDoc(goalDoc(db, classroomId, goalId), {
+    status: 'changes_requested',
+    teacherFeedback: { text: feedbackText, createdAt: new Date().toISOString() },
+  });
+}

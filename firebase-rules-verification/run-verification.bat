@@ -45,33 +45,21 @@ echo Waiting for the emulator to become ready...
 timeout /t 8 /nobreak >nul
 
 echo.
-echo === 3. Running membershipLinks.rules.verify.js (20 tests) ===
+echo === 3. Running membershipLinks.rules.verify.js (13 tests) ===
 call node --test membershipLinks.rules.verify.js
 set MEMBERSHIP_EXIT=%ERRORLEVEL%
 
 echo.
-echo === 4. Running studentEntries.rules.verify.js (26 tests) ===
+echo === 4. Running studentEntries.rules.verify.js (23 tests) ===
 call node --test studentEntries.rules.verify.js
 set STUDENT_ENTRY_EXIT=%ERRORLEVEL%
 
 echo.
-echo === 5. Running sessionIndex.rules.verify.js (8 tests) ===
-call node --test sessionIndex.rules.verify.js
-set SESSION_INDEX_EXIT=%ERRORLEVEL%
-
-echo.
-echo === 6. Running programmeMemberships.rules.verify.js (8 tests) ===
-call node --test programmeMemberships.rules.verify.js
-set PROGRAMME_MEMBERSHIPS_EXIT=%ERRORLEVEL%
-
-echo.
 echo === Summary ===
-echo membershipLinks.rules.verify.js exit code:       %MEMBERSHIP_EXIT%
-echo studentEntries.rules.verify.js exit code:        %STUDENT_ENTRY_EXIT%
-echo sessionIndex.rules.verify.js exit code:          %SESSION_INDEX_EXIT%
-echo programmeMemberships.rules.verify.js exit code:  %PROGRAMME_MEMBERSHIPS_EXIT%
+echo membershipLinks.rules.verify.js exit code: %MEMBERSHIP_EXIT%
+echo studentEntries.rules.verify.js exit code:  %STUDENT_ENTRY_EXIT%
 echo.
-echo Remember: Test 3 (membershipLinks) and Test 26 (studentEntries) are
+echo Remember: Test 3 (membershipLinks) and Test 22 (studentEntries) are
 echo deliberately unasserted - they report their own actual result via
 echo console.log above, and never cause a non-zero exit on their own.
 echo.
@@ -81,6 +69,4 @@ echo separately-started background process on Windows.
 
 if not "%MEMBERSHIP_EXIT%"=="0" exit /b 1
 if not "%STUDENT_ENTRY_EXIT%"=="0" exit /b 1
-if not "%SESSION_INDEX_EXIT%"=="0" exit /b 1
-if not "%PROGRAMME_MEMBERSHIPS_EXIT%"=="0" exit /b 1
 exit /b 0

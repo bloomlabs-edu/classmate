@@ -16,10 +16,25 @@
 # is Hosting-only by design, and firebase.json was MISSING a
 # "firestore" key at the time — that gap has since been closed;
 # firebase.json now has firestore.rules configured, confirmed present
-# in this repo). The "Deploy Firestore rules" step below runs the
-# Firebase CLI directly using the same service account already
-# authorized for this project, so rules and hosting code can never
-# drift out of sync again on a normal merge.
+# in this repo). The "Deploy Firestore rules and indexes" step below
+# runs the Firebase CLI directly using the same service account
+# already authorized for this project, so rules and hosting code can
+# never drift out of sync again on a normal merge.
+#
+# PHASE 1.6 UPDATE: this step's own `--only` target was
+# `firestore:rules` alone, which deploys firestore.rules but never
+# firestore.indexes.json — a real gap discovered by this project's own
+# Phase 1.5 Learning Programmes live-readiness audit (the two
+# composite indexes ProgrammeSession's own list queries require would
+# never reach a real Firestore project through this pipeline, even
+# after firestore.indexes.json was created and wired into
+# firebase.json). Now deploys both named sub-resources explicitly —
+# `firestore:rules,firestore:indexes` — so a future new subcollection
+# needing its own composite index doesn't silently repeat this same
+# gap. Deliberately the explicit comma-separated form, not the bare
+# `--only firestore` shorthand, so exactly what this step deploys
+# stays legible without needing to know what that shorthand expands
+# to.
 
 name: Deploy to Firebase Hosting on merge
 on:
@@ -37,7 +52,7 @@ jobs:
           firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_CLASSMATE_302C2 }}'
           channelId: live
           projectId: classmate-302c2
-      - name: Deploy Firestore rules
+      - name: Deploy Firestore rules and indexes
         # THE ACTUAL FIX for a prior deployment failure at this exact
         # step: the previous version of this step used a third-party
         # community action (w9jds/firebase-action@master — floating on
@@ -58,4 +73,4 @@ jobs:
           npm install -g firebase-tools
           echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_CLASSMATE_302C2 }}' > "$RUNNER_TEMP/firebase-service-account.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
-          firebase deploy --only firestore:rules --project classmate-302c2
+          firebase deploy --only firestore:rules,firestore:indexes --project classmate-302c2

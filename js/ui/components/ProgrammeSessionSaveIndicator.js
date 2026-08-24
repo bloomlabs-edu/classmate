@@ -28,9 +28,17 @@
  * branch on it — see ui/views/ProgrammeSessionView.js's own "BUG FIX"
  * history for why a full section rebuild must never depend on this
  * value at all (a local, in-memory redraw is always safe regardless).
+ *
+ * PHASE 3 — persistPatch() now takes the full save OPERATION (an
+ * async callback that performs whatever Firestore write is actually
+ * needed), not a patch-builder this function then saves itself. This
+ * generalization exists specifically because attendance saves for a
+ * `usesStudentEntries` session need an atomic two-document batch
+ * (services/programmeSessionService.js's own saveAttendancePatch()),
+ * not the plain single-document update every other caller still
+ * uses — the indicator itself doesn't need to know or care which
+ * kind of save a given caller is actually performing.
  */
-
-import * as programmeSessionService from '../../services/programmeSessionService.js';
 
 export function createSaveIndicatorController(classroomId, session) {
   const element = document.createElement('div');
@@ -53,11 +61,10 @@ export function createSaveIndicatorController(classroomId, session) {
     element.appendChild(text);
   }
 
-  async function persistPatch(buildPatch) {
+  async function persistPatch(saveOperation) {
     setStatus('saving');
     try {
-      const patch = buildPatch();
-      await programmeSessionService.saveSessionPatch(classroomId, session.id, patch);
+      await saveOperation();
       setStatus('saved');
       return true;
     } catch (error) {
@@ -67,28 +74,5 @@ export function createSaveIndicatorController(classroomId, session) {
     }
   }
 
-  /**
-   * PHASE 3.7 — same Saving/Saved/Error UI feedback as persistPatch()
-   * above, for a write that does NOT go through
-   * services/programmeSessionService.js's own saveSessionPatch() at
-   * all (e.g. a student-entries/goals subcollection write via
-   * repositories/firestoreStudentEntryRepository.js). `operation` runs
-   * and persists itself entirely; this wrapper only reports its
-   * outcome, exactly matching persistPatch()'s own never-re-throw
-   * contract.
-   */
-  async function persistCustom(operation) {
-    setStatus('saving');
-    try {
-      await operation();
-      setStatus('saved');
-      return true;
-    } catch (error) {
-      console.error('[ProgrammeSessionSaveIndicator] Failed to save:', error);
-      setStatus('error');
-      return false;
-    }
-  }
-
-  return { element, persistPatch, persistCustom };
+  return { element, persistPatch };
 }

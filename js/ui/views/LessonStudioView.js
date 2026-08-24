@@ -53,6 +53,7 @@ import * as learningRecordTeacherService from '../../services/learningRecordTeac
 import * as resourceService from '../../services/resourceService.js';
 import * as curriculumLibraryService from '../../services/curriculumLibraryService.js';
 import { getResourceTypeIcon } from '../../config/resourceTypeConfig.js';
+import { logEvent } from '../../services/analyticsEventService.js';
 import { createIcon } from '../components/Icon.js';
 import { renderReadingEditorView } from './ReadingEditorView.js';
 
@@ -182,6 +183,7 @@ export function renderLessonStudioView(container, { classroom, onBack, onOpenMan
           });
         },
         onOpenLesson: (resource) => {
+          logEvent('lesson_opened', { classroomId: classroom.id });
           renderReadingEditorView(container, {
             classroom,
             resource,

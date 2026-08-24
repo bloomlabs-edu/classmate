@@ -7,14 +7,34 @@
  * and an "Edit Goal" action — never the suggestion library by
  * default, matching this project's own explicit "Teacher Mode must
  * never show the suggestion library automatically" direction. The
- * interaction itself is unchanged from the prior UX-correction round;
- * this file only hosts it on its own focused screen instead of
+ * interaction itself is unchanged from an earlier UX-correction
+ * round; this file only hosts it on its own focused screen instead of
  * sharing space with three other sections.
+ *
+ * PHASE 3 — for a session with `usesStudentEntries: true`, goals are
+ * canonical in StudentEntry documents, not `session.goals` at all.
+ * Rather than rewrite ui/components/ProgrammeGoalsControls.js to know
+ * about two different read/write targets, this view HYDRATES
+ * `session.goals` in memory from the real StudentEntry documents at
+ * load time (a one-time, one-screen copy, never written back to the
+ * ProgrammeSession document itself), and supplies a `saveGoal`
+ * callback that redirects the actual write to
+ * services/programmeSessionService.js's own StudentEntry-aware
+ * saveGoalPatch(). The shared UI components stay completely unaware
+ * that their data ultimately lives somewhere else — they read and
+ * mutate `session.goals` exactly as they always have.
+ *
+ * Fetching every roster student's own StudentEntry for this one
+ * session is a genuine LIST read
+ * (firestoreStudentEntryRepository.js's own listStudentEntriesForSession()) —
+ * safe specifically because this is the teacher's own call, whose
+ * rule condition is classroom-membership-keyed (provably safe for a
+ * list operation), never the student's own single-document-only
+ * read path.
  */
 
 import * as learningProgrammeService from '../../services/learningProgrammeService.js';
 import * as programmeSessionService from '../../services/programmeSessionService.js';
-import * as studentEntryRepository from '../../repositories/firestoreStudentEntryRepository.js';
 import { isSessionEditable, resolveSessionRoster } from '../components/ProgrammeSessionHelpers.js';
 import { buildGoalsSection } from '../components/ProgrammeGoalsControls.js';
 import { createSaveIndicatorController } from '../components/ProgrammeSessionSaveIndicator.js';
@@ -36,11 +56,23 @@ export async function renderProgrammeGoalsReviewView(container, { classroom, pro
     container.appendChild(createEmptyStateElement({ message: 'This session could not be found.' }));
     return;
   }
-  // PHASE 3.7 — for a usesStudentEntries session, this replaces the
-  // session's own (empty) in-memory `goals` map with the real data
-  // from the secure per-category subcollection before anything below
-  // reads it. A no-op for a session created before this phase.
-  await programmeSessionService.hydrateSessionGoals(classroom.id, session);
+
+  // PHASE 3 — hydrate session.goals from the real StudentEntry
+  // documents, for a session that actually uses them. Every existing
+  // UI function below continues to read/mutate `session.goals`
+  // exactly as it always has; only where those bytes actually came
+  // from, and where they're actually written back to, has changed.
+  if (session.usesStudentEntries) {
+    const programmeSessionRepository = await import('../../services/programmeSessionRepository.js');
+    const firestoreStudentEntryRepository = await import('../../repositories/firestoreStudentEntryRepository.js');
+    const entriesByStudentId = await firestoreStudentEntryRepository.listStudentEntriesForSession(programmeSessionRepository.getDb(), {
+      classroomId: classroom.id,
+      sessionId: session.id,
+    });
+    Object.entries(entriesByStudentId).forEach(([studentId, entry]) => {
+      session.goals[studentId] = entry.goals || {};
+    });
+  }
 
   const editable = isSessionEditable(session, programme);
   const roster = resolveSessionRoster(classroom, programme, session, editable);
@@ -64,24 +96,20 @@ export async function renderProgrammeGoalsReviewView(container, { classroom, pro
   header.appendChild(titleBlock);
   wrapper.appendChild(header);
 
-  const { element: saveIndicator, persistPatch, persistCustom } = createSaveIndicatorController(classroom.id, session);
+  const { element: saveIndicator, persistPatch } = createSaveIndicatorController(classroom.id, session);
   wrapper.appendChild(saveIndicator);
-
-  // PHASE 3.7 \u2014 only ever invoked by ProgrammeGoalsControls.js for a
-  // usesStudentEntries session (see that file's own header comment);
-  // always uses the TEACHER's own default-app Firestore instance
-  // (`db` omitted -> firestoreStudentEntryRepository.js's own
-  // teacherDb() default), since this is a teacher-only screen.
-  function goalWriter(studentId, categoryId, valueOrPatch, isNewGoal) {
-    return persistCustom(() =>
-      isNewGoal
-        ? studentEntryRepository.createStudentEntryGoal(undefined, classroom.id, session.id, studentId, categoryId, valueOrPatch)
-        : studentEntryRepository.updateStudentEntryGoal(undefined, classroom.id, session.id, studentId, categoryId, valueOrPatch)
-    );
-  }
 
   const sectionContainer = document.createElement('div');
   wrapper.appendChild(sectionContainer);
+
+  // The teacher's own save target — StudentEntry-aware internally
+  // (services/programmeSessionService.js's own saveGoalPatch()
+  // branches on session.usesStudentEntries); this view and
+  // ProgrammeGoalsControls.js never need to know which document a
+  // given session's own goals actually end up in.
+  function saveGoal(studentId, categoryId) {
+    return programmeSessionService.saveGoalPatch(classroom.id, session, studentId, categoryId);
+  }
 
   function redraw() {
     sectionContainer.innerHTML = '';
@@ -93,7 +121,7 @@ export async function renderProgrammeGoalsReviewView(container, { classroom, pro
       );
       return;
     }
-    sectionContainer.appendChild(buildGoalsSection(programme, session, roster, editable, persistPatch, redraw, goalWriter));
+    sectionContainer.appendChild(buildGoalsSection(programme, session, roster, editable, persistPatch, redraw, saveGoal));
   }
 
   redraw();

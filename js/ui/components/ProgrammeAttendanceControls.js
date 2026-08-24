@@ -22,13 +22,28 @@
  * swipe gesture at all, and reproducing that machinery would be
  * unnecessary scope growth.
  *
- * PRESENT-BY-DEFAULT IS DISPLAY-ONLY, PER EXPLICIT PRODUCT DECISION —
- * see ui/components/ProgrammeSessionHelpers.js's own
- * getEffectiveAttendanceStatus()/hasRecordedAttendance() header
- * comments for the full reasoning (unchanged this round): no
- * attendance record is ever created just by opening or viewing a
- * session, and a read-only historical row never fabricates a status
- * for a student who was never actually recorded.
+ * PRESENT-BY-DEFAULT IS DISPLAY-ONLY — no attendance record is ever
+ * created just by opening or viewing a session; tapping is always
+ * what writes one (see ui/components/ProgrammeSessionHelpers.js's own
+ * getEffectiveAttendanceStatus() header comment). That principle is
+ * unchanged. What DID change this round: a historical row no longer
+ * special-cases an unrecorded student as "Not recorded" — it shows
+ * Present, the same as an editable row would. That's not a weakening
+ * of the "never fabricate" principle; it's the fix for a real bug
+ * this row's own OLD logic was quietly relying on. The historical
+ * roster used to be built from a since-removed function
+ * (getSessionParticipantIds()) that derived its membership from the
+ * union of explicit attendance/goal/observation keys — which meant
+ * every student who reached this row in a historical view already
+ * had SOME kind of explicit record; "Not recorded" was a real,
+ * accurate label for a genuinely unusual case (e.g. a goal was set
+ * but attendance never was). Now that the roster is built from actual
+ * programme membership on that date (learningProgrammeService's own
+ * getMembersOnDate()), an unrecorded student reaching this row is the
+ * ORDINARY case — the 9 out of 12 students nobody needed to touch
+ * because they were simply, unremarkably present — and showing them
+ * as Present is the correct, intended reading of "Present is the
+ * default," not a fabrication of anything.
  */
 
 import * as programmeSessionService from '../../services/programmeSessionService.js';
@@ -36,25 +51,10 @@ import { createStudentNameElement } from './StudentNameElement.js';
 import {
   ATTENDANCE_STATUS_META,
   getEffectiveAttendanceStatus,
-  hasRecordedAttendance,
   getToggledAttendanceStatus,
 } from './ProgrammeSessionHelpers.js';
 
-/**
- * PHASE 3.7 — `persistAttendance(studentId)` (optional) is used ONLY
- * when `session.usesStudentEntries` is true — it must persist BOTH
- * the teacher-canonical write AND the studentEntries mirror (see
- * services/programmeSessionService.js's own
- * saveAttendancePatchWithMirror()), which needs `classroomId` this
- * file is never given directly; the caller
- * (ui/views/ProgrammeAttendanceView.js) closes over it instead, the
- * same decoupling ui/components/ProgrammeGoalsControls.js's own
- * `goalWriter` already established. For a session with no
- * `usesStudentEntries` (everything created before this phase),
- * `persistAttendance` is never called — behaviour is 100% unchanged,
- * still `persistPatch(() => buildAttendancePatch(...))`.
- */
-export function buildAttendanceSection(programme, session, roster, editable, persistPatch, persistAttendance) {
+export function buildAttendanceSection(classroomId, programme, session, roster, editable, persistPatch) {
   const section = document.createElement('section');
   section.className = 'profile-section programme-session-view__section';
 
@@ -67,32 +67,20 @@ export function buildAttendanceSection(programme, session, roster, editable, per
   list.className = 'programme-session-view__attendance-list';
 
   roster.forEach(({ student, team }) => {
-    list.appendChild(buildAttendanceRow(programme, session, student, team, editable, persistPatch, persistAttendance));
+    list.appendChild(buildAttendanceRow(classroomId, programme, session, student, team, editable, persistPatch));
   });
 
   section.appendChild(list);
   return section;
 }
 
-function buildAttendanceRow(programme, session, student, team, editable, persistPatch, persistAttendance) {
+function buildAttendanceRow(classroomId, programme, session, student, team, editable, persistPatch) {
   const row = document.createElement('div');
   row.className = 'programme-session-view__attendance-row';
   row.appendChild(createStudentNameElement({ student, team, leadingMarker: 'avatar', size: 32 }));
 
   const controls = document.createElement('div');
   controls.className = 'programme-session-view__attendance-controls';
-
-  // A read-only (past) session with no actual recorded entry shows
-  // an explicit "Not recorded" note, never the editable session's own
-  // Present-by-default display convention.
-  if (!editable && !hasRecordedAttendance(session, student.id)) {
-    const notRecorded = document.createElement('span');
-    notRecorded.className = 'profile-section__meta';
-    notRecorded.textContent = 'Not recorded';
-    controls.appendChild(notRecorded);
-    row.appendChild(controls);
-    return row;
-  }
 
   const statusButton = document.createElement('button');
   statusButton.type = 'button';
@@ -118,11 +106,7 @@ function buildAttendanceRow(programme, session, student, team, editable, persist
    */
   async function setStatus(status) {
     programmeSessionService.recordAttendance(programme, session, { studentId: student.id, status });
-    if (session.usesStudentEntries) {
-      await persistAttendance(student.id);
-    } else {
-      await persistPatch(() => programmeSessionService.buildAttendancePatch(session, student.id));
-    }
+    await persistPatch(() => programmeSessionService.saveAttendancePatch(classroomId, session, student.id));
     paintStatus(status);
   }
 

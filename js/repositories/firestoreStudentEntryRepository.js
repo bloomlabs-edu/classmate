@@ -1,93 +1,97 @@
 /**
- * Firestore access for the Learning Circle per-student security boundary.
+ * repositories/firestoreStudentEntryRepository.js
  *
- * Paths:
- * classrooms/{classroomId}/programmeSessions/{sessionId}/studentEntries/{studentId}
- * classrooms/{classroomId}/programmeSessions/{sessionId}/studentEntries/{studentId}/goals/{categoryId}
+ * PHASE 3 — Student Identity & Learning Circle Data Boundary.
  *
- * The parent entry owns attendance. Each goal category is its own document so
- * Firestore Rules can authorize one category without iterating an arbitrary map.
+ * Mirrors repositories/firestoreMembershipLinkRepository.js's own,
+ * already-proven convention exactly: `db` is the first parameter,
+ * resolved by the CALLER, never by this file. This is what lets the
+ * SAME repository serve both contexts this phase's own §4 requires
+ * be kept clearly separate — a teacher's own call passes the default
+ * app instance (via services/programmeSessionRepository.js's own
+ * getDb()); a student's own call passes their per-slot instance (via
+ * services/studentAuthService.js's getFirestoreForSlot()). Neither
+ * context is hardcoded here.
+ *
+ * Four operations only, deliberately:
+ *   - a single-document get() (used by both teacher and student)
+ *   - a plain, unfiltered collection read of every studentEntries
+ *     document under one session (teacher's own Goals Review need —
+ *     safe as a list read specifically because the teacher's own
+ *     rule condition is classroomId-keyed, the same structurally-safe
+ *     pattern already established for programmeSessions/studentGoals'
+ *     own teacher-check branches; NEVER used by the student's own
+ *     code, which only ever performs single, known-path getDoc()s —
+ *     see this phase's own explicit "do not introduce list queries
+ *     for studentEntries" instruction, which is about the STUDENT's
+ *     own reads specifically, not the teacher's already-broader
+ *     access)
+ *   - a batched write pairing a ProgrammeSession update with a
+ *     StudentEntry mirror-or-merge (teacher's own attendance path)
+ *   - a merge-write to one student's own goals (student's own path,
+ *     and also the teacher's own goal-review/edit path for a
+ *     `usesStudentEntries` session)
  */
 
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  setDoc,
-  updateDoc,
-  query,
-  orderBy,
-} from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
-import { getFirestore } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
-import { getFirebaseApp } from '../services/firebaseApp.js';
+import { collection, doc, setDoc, getDoc, getDocs, writeBatch } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 
-function teacherDb() {
-  return getFirestore(getFirebaseApp());
+function studentEntriesCollectionRef(db, classroomId, sessionId) {
+  return collection(db, 'classrooms', classroomId, 'programmeSessions', sessionId, 'studentEntries');
 }
 
-function entryDoc(db, classroomId, sessionId, studentId) {
-  return doc(db, 'classrooms', classroomId, 'programmeSessions', sessionId, 'studentEntries', studentId);
+function studentEntryDocRef(db, classroomId, sessionId, studentId) {
+  return doc(studentEntriesCollectionRef(db, classroomId, sessionId), studentId);
 }
 
-function goalsCollection(db, classroomId, sessionId, studentId) {
-  return collection(entryDoc(db, classroomId, sessionId, studentId), 'goals');
-}
-
-function goalDoc(db, classroomId, sessionId, studentId, categoryId) {
-  return doc(goalsCollection(db, classroomId, sessionId, studentId), categoryId);
-}
-
-/** `db` defaults to the teacher's own default-app Firestore instance (matching listAllStudentEntries()/listAllStudentGoals() below) — every current caller of this function is teacher-side (services/programmeSessionService.js's own createAndSaveSession()/saveAttendancePatchWithMirror()), so it is never called with a student's own per-slot instance. */
-export function createTeacherStudentEntry(db = teacherDb(), classroomId, sessionId, studentId) {
-  return setDoc(entryDoc(db, classroomId, sessionId, studentId), { attendance: null });
-}
-
-/** This is the one function in this file called from BOTH sides: the student's own per-slot instance (services/studentLearningCircleService.js's own setOwnGoal(), passing its real `db` explicitly) for a brand-new goal, and the teacher's own default-app instance (ui/components/ProgrammeGoalsControls.js's own goalWriter, passing `undefined` on purpose) when a teacher picks a suggested goal on a student's behalf. `db || teacherDb()` (not a default parameter) so an explicit falsy student `db` is never silently swapped for the teacher's. */
-export function createStudentEntryGoal(db, classroomId, sessionId, studentId, categoryId, goal) {
-  return setDoc(goalDoc(db || teacherDb(), classroomId, sessionId, studentId, categoryId), goal);
-}
-
-/** Teacher-only partial edit of an already-recorded goal's own `outcome`/`reflection` (see firestore.rules' own studentEntries/{studentId}/goals/{categoryId} update rule) — distinct from createStudentEntryGoal()'s full setDoc(), which is the student's own create-a-new-goal path. */
-export function updateStudentEntryGoal(db = teacherDb(), classroomId, sessionId, studentId, categoryId, patch) {
-  return updateDoc(goalDoc(db, classroomId, sessionId, studentId, categoryId), patch);
-}
-
-/** `db` defaults the same way createTeacherStudentEntry() above does — see that function's own comment. */
-export function updateTeacherStudentEntry(db = teacherDb(), classroomId, sessionId, studentId, patch) {
-  return updateDoc(entryDoc(db, classroomId, sessionId, studentId), patch);
-}
-
-export async function getStudentEntry(db, classroomId, sessionId, studentId) {
-  const snapshot = await getDoc(entryDoc(db, classroomId, sessionId, studentId));
+/** One student's own entry for one session, or `null` if it doesn't exist yet (nothing has ever been written for them). */
+export async function getStudentEntry(db, { classroomId, sessionId, studentId }) {
+  const snapshot = await getDoc(studentEntryDocRef(db, classroomId, sessionId, studentId));
   return snapshot.exists() ? snapshot.data() : null;
 }
 
-export async function getStudentGoal(db, classroomId, sessionId, studentId, categoryId) {
-  const snapshot = await getDoc(goalDoc(db, classroomId, sessionId, studentId, categoryId));
-  return snapshot.exists() ? snapshot.data() : null;
+/**
+ * Every studentEntries document under one session, as a plain
+ * `{ [studentId]: entry }` map — the teacher's own Goals Review need
+ * for a `usesStudentEntries` session. A flat, unfiltered read of the
+ * whole (small — one document per roster student, never more)
+ * subcollection; no `where()`/`orderBy()` needed, since the
+ * subcollection's own path already scopes it to exactly one session.
+ */
+export async function listStudentEntriesForSession(db, { classroomId, sessionId }) {
+  const snapshot = await getDocs(studentEntriesCollectionRef(db, classroomId, sessionId));
+  const entriesByStudentId = {};
+  snapshot.docs.forEach((docSnapshot) => {
+    entriesByStudentId[docSnapshot.id] = docSnapshot.data();
+  });
+  return entriesByStudentId;
 }
 
-export async function listStudentGoals(db, classroomId, sessionId, studentId) {
-  const snapshot = await getDocs(goalsCollection(db, classroomId, sessionId, studentId));
-  return snapshot.docs.map((item) => ({ categoryId: item.id, ...item.data() }));
+/**
+ * The teacher's own attendance write, atomic across both documents —
+ * the canonical ProgrammeSession update AND the StudentEntry mirror,
+ * in one batch, so there is never a moment where one exists without
+ * the other having been attempted too. Uses `set(..., {merge: true})`
+ * for the StudentEntry side specifically because that document may
+ * not exist yet (a session with no goals set for this student at
+ * all) — merge-set is Firestore's own create-or-update primitive,
+ * and merges recursively, so an existing `goals` field is never
+ * clobbered by an attendance-only write.
+ */
+export async function saveAttendanceWithStudentEntryMirror(db, { classroomId, sessionId, studentId, sessionPatch, studentEntryAttendance }) {
+  const batch = writeBatch(db);
+  batch.update(doc(collection(db, 'classrooms', classroomId, 'programmeSessions'), sessionId), sessionPatch);
+  batch.set(studentEntryDocRef(db, classroomId, sessionId, studentId), { attendance: studentEntryAttendance }, { merge: true });
+  await batch.commit();
 }
 
-/** Teacher-side hydration for new sessions: reconstruct the session's legacy in-memory goals map from the secure per-category documents. */
-export async function listAllStudentEntries(db = teacherDb(), classroomId, sessionId) {
-  const entriesRef = collection(db, 'classrooms', classroomId, 'programmeSessions', sessionId, 'studentEntries');
-  const snapshot = await getDocs(entriesRef);
-  return snapshot.docs.map((item) => ({ studentId: item.id, ...item.data() }));
-}
-
-export async function listAllStudentGoals(db = teacherDb(), classroomId, sessionId) {
-  const entries = await listAllStudentEntries(db, classroomId, sessionId);
-  const result = {};
-  await Promise.all(entries.map(async ({ studentId }) => {
-    const goals = await listStudentGoals(db, classroomId, sessionId, studentId);
-    if (goals.length > 0) {
-      result[studentId] = Object.fromEntries(goals.map(({ categoryId, ...goal }) => [categoryId, goal]));
-    }
-  }));
-  return result;
+/**
+ * Writes one student's own goal for one category into their own
+ * StudentEntry — a merge-set for exactly the same create-or-update
+ * reason as above. Used by both the student's own goal-setting call
+ * AND the teacher's own goal-review/edit call for a
+ * `usesStudentEntries` session — the rule (not this function)
+ * distinguishes who's allowed to do this and for which studentId.
+ */
+export async function mergeStudentEntryGoal(db, { classroomId, sessionId, studentId, categoryId, goal }) {
+  await setDoc(studentEntryDocRef(db, classroomId, sessionId, studentId), { goals: { [categoryId]: goal } }, { merge: true });
 }

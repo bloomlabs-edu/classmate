@@ -53,7 +53,20 @@ import { getFirebaseApp } from './firebaseApp.js';
 
 let db = null;
 
-function getDb() {
+/**
+ * PHASE 3 — exported so services/programmeSessionService.js's own
+ * teacher-context calls (saveAttendancePatch()'s StudentEntry mirror,
+ * saveGoalPatch()'s StudentEntry write for a usesStudentEntries
+ * session) can pass the SAME Firestore instance this file already
+ * uses into repositories/firestoreStudentEntryRepository.js's own
+ * batch/merge functions — a writeBatch() must be created from one
+ * specific db instance, and both halves of that batch (the
+ * ProgrammeSession update and the StudentEntry mirror) need to be the
+ * same instance. Never called by student-context code, which always
+ * resolves its own, different (per-slot) instance instead — see
+ * services/studentAuthService.js's own getFirestoreForSlot().
+ */
+export function getDb() {
   if (!db) db = getFirestore(getFirebaseApp());
   return db;
 }
@@ -64,24 +77,6 @@ function programmeSessionsCollectionRef(classroomId) {
 
 function programmeSessionDocRef(classroomId, sessionId) {
   return doc(programmeSessionsCollectionRef(classroomId), sessionId);
-}
-
-function sessionIndexDocRef(classroomId, programmeId, sessionId) {
-  return doc(getDb(), 'classrooms', classroomId, 'learningProgrammes', programmeId, 'sessionIndex', sessionId);
-}
-
-/**
- * PHASE 3.7 — writes the lightweight sessionIndex pointer (date only)
- * a student device reads to discover which sessions exist for a
- * programme, without ever reading the shared programmeSessions
- * document itself (see firestore.rules' own sessionIndex block for
- * why). Called once, alongside createSession(), only for a brand-new
- * session — never for an existing one, and never backfilled for a
- * session that predates this phase (see
- * services/programmeSessionService.js's own createAndSaveSession()).
- */
-export async function createSessionIndexEntry(classroomId, programmeId, sessionId, { date }) {
-  await setDoc(sessionIndexDocRef(classroomId, programmeId, sessionId), { date });
 }
 
 /** Persists a newly-created ProgrammeSession — a single small write, matching services/plannerRepository.js's own saveLesson(). */

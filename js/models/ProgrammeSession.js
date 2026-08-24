@@ -131,6 +131,7 @@
  * explicitly not being built yet.
  */
 
+import { generateId } from '../utils/idGenerator.js';
 import { getCurrentIsoDate } from '../utils/dateHelpers.js';
 
 export function createProgrammeSession({
@@ -150,23 +151,10 @@ export function createProgrammeSession({
   updatedAt,
 } = {}) {
   const resolvedCreatedAt = createdAt || getCurrentIsoDate();
-  const resolvedDate = date || resolvedCreatedAt.slice(0, 10);
   return {
-    // PHASE 3.7 — deterministic per-date id (`${programmeId}__${date}`)
-    // for every NEW session, replacing the random UUID this function
-    // used through Phase 3.6. An explicit caller-supplied `id` still
-    // wins outright (never overridden) — this only changes what a
-    // brand-new session defaults to when no id is given, which is the
-    // only way services/programmeSessionService.js's own
-    // buildNewSession()/createAndSaveSession() ever call this. Every
-    // already-persisted session keeps whatever random id it was given
-    // when it was created — this function is never called again for a
-    // session that already exists (getSessionById() reads the stored
-    // document directly), so no existing session's own id is ever
-    // affected by this change.
-    id: id || `${programmeId}__${resolvedDate}`,
+    id: id || generateId(),
     programmeId,
-    date: resolvedDate,
+    date: date || resolvedCreatedAt.slice(0, 10),
     title,
     startedAt,
     endedAt,
@@ -175,15 +163,20 @@ export function createProgrammeSession({
     activities,
     componentInstances,
     teacherObservations,
-    // PHASE 3.7 — true for every brand-new session (set explicitly by
-    // services/programmeSessionService.js's own buildNewSession());
-    // defaults to false here only because this factory always needs
-    // *a* value to return, never because an old, already-persisted
-    // session is ever passed back through this function — a session
-    // created before this phase has no `usesStudentEntries` field on
-    // its own stored document at all, and this factory is never
-    // called again for a session that already exists (see this file's
-    // own header comment on the historical-stability invariant).
+    // PHASE 3 — the explicit, permanent old/new session boundary.
+    // Set once, at creation, never changed afterward. `false` (the
+    // default) for every session that already existed before this
+    // field was introduced, and for any session object built without
+    // explicitly opting in — `true` only for a session
+    // services/programmeSessionService.js's own buildNewSession()
+    // deliberately creates going forward. Everything downstream
+    // (attendance mirroring, which document goals are canonical in)
+    // branches on THIS field, never on "does a studentEntries
+    // document happen to exist" — an explicit flag, not an inference,
+    // per this phase's own explicit "do not silently mix old and new
+    // semantics" instruction. Immutable in practice: nothing in this
+    // codebase ever assigns to `session.usesStudentEntries` after
+    // this factory runs.
     usesStudentEntries,
     createdAt: resolvedCreatedAt,
     updatedAt: updatedAt || resolvedCreatedAt,

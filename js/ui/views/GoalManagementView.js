@@ -25,8 +25,14 @@ import { createBackButton } from '../components/BackButton.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { renderGoalDashboardView } from './GoalDashboardView.js';
 
-export function renderGoalManagementView(container, { classroom, onBack }) {
-  let mode = 'home';
+export function renderGoalManagementView(container, { classroom, onBack, initialMode = 'home' }) {
+  // initialMode lets a caller that already knows exactly which step
+  // it wants (see ui/views/GoalDashboardView.js's own "Manage Goals"
+  // button, which opens straight into 'manage') skip 'home' entirely
+  // -- onCloseManageGoals below returns to onBack directly in that
+  // case, rather than falling back to a 'home' screen the caller
+  // never showed in the first place.
+  let mode = initialMode;
 
   function rerender() {
     render(container, mode, { classroom }, handlers);
@@ -64,6 +70,10 @@ export function renderGoalManagementView(container, { classroom, onBack }) {
       rerender();
     },
     onCloseManageGoals: () => {
+      if (initialMode === 'manage') {
+        onBack();
+        return;
+      }
       mode = 'home';
       rerender();
     },

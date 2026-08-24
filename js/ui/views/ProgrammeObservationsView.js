@@ -132,7 +132,7 @@ export async function renderProgrammeObservationsView(container, { classroom, pr
           roster,
           onSave: async ({ studentId, note }) => {
             programmeSessionService.recordTeacherObservation(programme, session, { studentId, note });
-            await persistPatch(() => programmeSessionService.buildTeacherObservationPatch(session, studentId));
+            await persistPatch(() => programmeSessionService.saveSessionPatch(classroom.id, session.id, programmeSessionService.buildTeacherObservationPatch(session, studentId)));
             redraw();
           },
         });

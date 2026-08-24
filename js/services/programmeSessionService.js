@@ -159,6 +159,37 @@ function ensureStudentHasMembership(programme, studentId) {
 }
 
 /**
+ * PHASE 3 — a deterministic, computable session id for the
+ * StudentEntry architecture, replacing the old, opaque
+ * `generateId()` a session would otherwise get.
+ *
+ * WHY THIS EXISTS — a gap in what this phase's own instructions
+ * explicitly said, that had to be resolved to satisfy what they DID
+ * explicitly require: "Student Portal should perform known-document
+ * reads... not any query intended to discover student identity." A
+ * random session id makes that impossible to satisfy even in
+ * principle — before a student's device can ever perform a known-
+ * path getDoc() on its own StudentEntry, it first has to know WHICH
+ * sessionId today's session actually has, and the only way to learn
+ * an opaque, random id is to query for it (exactly the
+ * `listSessionsForProgramme()` list read a student must never be
+ * granted). Making the id itself computable from `programmeId` +
+ * `date` — values a student's own device already has, from data it's
+ * already allowed to read — removes the need for that query
+ * entirely: the student computes the same id the teacher's own
+ * session creation already produced, and performs a single, known-
+ * path get() directly against it.
+ *
+ * Deliberately NOT applied to sessions that don't use the
+ * StudentEntry architecture — an old session keeps its original,
+ * already-assigned opaque id forever; this only affects how a
+ * genuinely NEW session's own id is chosen at creation.
+ */
+export function computeDeterministicSessionId(programmeId, date) {
+  return `${programmeId}_${date}`;
+}
+
+/**
  * Builds a new, in-memory ProgrammeSession for an existing, non-
  * archived programme — pure, does not touch Firestore. Exported
  * separately from createAndSaveSession() below so tests can exercise
@@ -173,44 +204,20 @@ export function buildNewSession(classroom, { programmeId, date, title } = {}) {
   const programme = ensureProgrammeExists(classroom, programmeId);
   ensureProgrammeCanStartNewSession(programme);
 
-  // PHASE 3.7 — every brand-new session uses the studentEntries
-  // architecture (deterministic id, per-student StudentEntry docs,
-  // sessionIndex entry — see createAndSaveSession() below). An
-  // already-persisted session's own `usesStudentEntries` (present or,
-  // for anything created before this phase, entirely absent) is never
-  // touched by this function — it only ever constructs a NEW session.
-  return createProgrammeSession({ programmeId, date, title, usesStudentEntries: true });
+  // PHASE 3 — every genuinely new session opts into the StudentEntry
+  // architecture explicitly, here, once, at the moment of creation.
+  // See models/ProgrammeSession.js's own createProgrammeSession()
+  // header comment for why this is a real, permanent field rather
+  // than something inferred later from whether a studentEntries
+  // document happens to exist.
+  return createProgrammeSession({ id: computeDeterministicSessionId(programmeId, date), programmeId, date, title, usesStudentEntries: true });
 }
 
-/**
- * Builds a new session and persists it in one step — the one place
- * "construct" and "save" meet, matching services/plannerService.js's
- * own generateAndSaveLessons(). PHASE 3.7 — for a `usesStudentEntries`
- * session (every new one, per buildNewSession() above), also creates
- * one StudentEntry per currently active programme member and the
- * session's own sessionIndex pointer, so the Student Portal can
- * discover and read this session from the moment it exists. Neither
- * of these two extra writes ever runs for, or retroactively touches,
- * a session created before this phase.
- */
+/** Builds a new session and persists it in one step — the one place "construct" and "save" meet, matching services/plannerService.js's own generateAndSaveLessons(). */
 export async function createAndSaveSession(classroom, { programmeId, date, title } = {}) {
   const session = buildNewSession(classroom, { programmeId, date, title });
   const programmeSessionRepository = await import('./programmeSessionRepository.js');
   await programmeSessionRepository.createSession(classroom.id, session);
-
-  if (session.usesStudentEntries) {
-    const studentEntryRepository = await import('../repositories/firestoreStudentEntryRepository.js');
-    const activeMembers = learningProgrammeService.getActiveMembers(
-      learningProgrammeService.getLearningProgrammeById(classroom, programmeId)
-    );
-    await Promise.all(
-      activeMembers.map((membership) =>
-        studentEntryRepository.createTeacherStudentEntry(undefined, classroom.id, session.id, membership.studentId)
-      )
-    );
-    await programmeSessionRepository.createSessionIndexEntry(classroom.id, programmeId, session.id, { date: session.date });
-  }
-
   return session;
 }
 
@@ -222,43 +229,6 @@ export async function getSessionById(classroomId, sessionId) {
 export async function listSessionsForProgramme(classroomId, programmeId) {
   const programmeSessionRepository = await import('./programmeSessionRepository.js');
   return programmeSessionRepository.listSessionsForProgramme(classroomId, programmeId);
-}
-
-/**
- * PHASE 3.7 — TEACHER-SIDE ONLY (requires reading every student's own
- * goals, which only a classroom member is authorized to do — see
- * firestore.rules' own studentEntries/goals block; a student calling
- * this against another student's data would be rejected). For a
- * `usesStudentEntries` session, replaces this in-memory session's own
- * `goals` map with a fresh reconstruction from the secure per-category
- * studentEntries/{studentId}/goals/{categoryId} documents — the actual
- * source of truth for such a session (see
- * repositories/firestoreStudentEntryRepository.js's own
- * listAllStudentGoals() header comment: "Teacher-side hydration for
- * new sessions"). Every existing screen that reads
- * `session.goals[studentId][categoryId]`
- * (ui/components/ProgrammeGoalsControls.js and its callers) keeps
- * working completely unchanged after this call — deliberately placed
- * here, not in ui/components/ProgrammeSessionHelpers.js, so that
- * file's own explicit "pure, DOM-free, testable without a browser"
- * invariant (see its own header comment) is never broken by an async
- * Firestore dependency; this file already dynamically imports
- * Firestore-touching repositories for exactly this reason (see this
- * file's own header comment). A no-op for a session with no
- * `usesStudentEntries` (every session created before this phase) —
- * its own already-embedded `goals` map is left exactly as read from
- * Firestore.
- *
- * The Student Portal's own StudentLearningCircleView.js does NOT use
- * this function — it has no authorization to read every student's own
- * goals, only its own (see
- * services/studentLearningCircleService.js's own getOwnGoals()).
- */
-export async function hydrateSessionGoals(classroomId, session) {
-  if (!session.usesStudentEntries) return session;
-  const studentEntryRepository = await import('../repositories/firestoreStudentEntryRepository.js');
-  session.goals = await studentEntryRepository.listAllStudentGoals(undefined, classroomId, session.id);
-  return session;
 }
 
 /**
@@ -558,41 +528,86 @@ export async function saveSessionPatch(classroomId, sessionId, patch) {
 }
 
 /**
- * PHASE 3.7 — persists one student's just-recorded attendance the
- * SAME way saveSessionPatch(buildAttendancePatch(...)) always has
- * (the teacher-facing programmeSessions document remains the sole
- * canonical copy — this call is never skipped), then, ONLY for a
- * `usesStudentEntries` session, additionally mirrors that same status
- * into that student's own studentEntries/{studentId} document, which
- * is the one place a student's own device is actually allowed to read
- * it from (see firestore.rules' own studentEntries block). The mirror
- * write is best-effort in the same spirit as
- * ui/components/ProgrammeSessionSaveIndicator.js's own persistPatch()
- * — if it fails, the canonical write already succeeded and the
- * in-memory session already reflects the change; only the student's
- * own read of it would lag, not the teacher's own record. A session
- * without `usesStudentEntries` (everything created before this phase)
- * never attempts this second write at all.
+ * PHASE 3 — the teacher's own attendance save, now StudentEntry-aware.
+ * For a `usesStudentEntries` session, this is an atomic batch: the
+ * canonical ProgrammeSession patch AND the StudentEntry mirror,
+ * together (see repositories/firestoreStudentEntryRepository.js's own
+ * saveAttendanceWithStudentEntryMirror() header comment for why this
+ * must be atomic). For an OLDER session, this is byte-for-byte the
+ * same single-document update it always was — old sessions are never
+ * touched by anything StudentEntry-related. Teacher-context only —
+ * resolves the default Firestore instance itself; never called with
+ * a student's own per-slot instance.
  */
-export async function saveAttendancePatchWithMirror(classroomId, session, studentId) {
-  await saveSessionPatch(classroomId, session.id, buildAttendancePatch(session, studentId));
-
-  if (session.usesStudentEntries) {
-    try {
-      const studentEntryRepository = await import('../repositories/firestoreStudentEntryRepository.js');
-      await studentEntryRepository.updateTeacherStudentEntry(undefined, classroomId, session.id, studentId, {
-        attendance: session.attendance[studentId],
-      });
-    } catch (error) {
-      // The canonical write above already succeeded — a mirror
-      // failure (e.g. this student has no studentEntries document yet
-      // because they joined the programme after this session was
-      // created, so createAndSaveSession()'s own per-active-member
-      // loop never ran for them) must never surface as a save failure
-      // to the teacher for data that already saved correctly. Only
-      // this one student's own device-side read lags; nothing about
-      // the canonical record is lost or incorrect.
-      console.error('[programmeSessionService] Attendance mirror write failed (canonical save already succeeded):', error);
-    }
+export async function saveAttendancePatch(classroomId, session, studentId) {
+  const sessionPatch = buildAttendancePatch(session, studentId);
+  if (!session.usesStudentEntries) {
+    await saveSessionPatch(classroomId, session.id, sessionPatch);
+    return;
   }
+  const programmeSessionRepository = await import('./programmeSessionRepository.js');
+  const firestoreStudentEntryRepository = await import('../repositories/firestoreStudentEntryRepository.js');
+  await firestoreStudentEntryRepository.saveAttendanceWithStudentEntryMirror(programmeSessionRepository.getDb(), {
+    classroomId,
+    sessionId: session.id,
+    studentId,
+    sessionPatch,
+    studentEntryAttendance: session.attendance[studentId] ?? null,
+  });
+}
+
+/**
+ * PHASE 3 — the teacher's own goal save (Edit Goal, outcome,
+ * reflection), now StudentEntry-aware. For a `usesStudentEntries`
+ * session, goals are canonical in StudentEntry, not
+ * `ProgrammeSession.goals` — the write goes there instead. For an
+ * OLDER session, this is byte-for-byte the same
+ * saveSessionPatch(buildGoalPatch(...)) call it always was.
+ *
+ * The caller (ui/components/ProgrammeGoalsControls.js, unchanged
+ * internally) still mutates `session.goals[studentId][categoryId]`
+ * in memory first, via the same, unchanged recordGoal()/
+ * recordGoalOutcome() — this function only decides WHERE that
+ * already-mutated value gets persisted to, and for a
+ * `usesStudentEntries` session, that in-memory value was itself
+ * populated by hydrating from StudentEntry documents at load time
+ * (see ui/views/ProgrammeGoalsReviewView.js's own loading logic) —
+ * so the existing UI code needs no shape-level changes at all, only
+ * a different eventual persistence target, decided entirely here.
+ */
+export async function saveGoalPatch(classroomId, session, studentId, categoryId) {
+  if (!session.usesStudentEntries) {
+    await saveSessionPatch(classroomId, session.id, buildGoalPatch(session, studentId, categoryId));
+    return;
+  }
+  const programmeSessionRepository = await import('./programmeSessionRepository.js');
+  const firestoreStudentEntryRepository = await import('../repositories/firestoreStudentEntryRepository.js');
+  await firestoreStudentEntryRepository.mergeStudentEntryGoal(programmeSessionRepository.getDb(), {
+    classroomId,
+    sessionId: session.id,
+    studentId,
+    categoryId,
+    goal: session.goals[studentId][categoryId],
+  });
+}
+
+/**
+ * PHASE 3 — the STUDENT's own goal write. Deliberately takes `db` as
+ * an explicit parameter, unlike saveAttendancePatch()/saveGoalPatch()
+ * above — the caller (ui/student-portal/views/StudentLearningCircleView.js)
+ * resolves its own per-slot Firestore instance
+ * (services/studentAuthService.js's own getFirestoreForSlot()) and
+ * supplies it here, exactly the separation this phase's own §4
+ * requires between teacher and student Firebase contexts. No
+ * `usesStudentEntries` branch is needed here at all — a student can
+ * only ever reach a session through this function via a path that
+ * already requires a `usesStudentEntries` session (see
+ * StudentLearningCircleView.js's own session-discovery logic); no
+ * student-facing UI ever attempts to write to an older session's
+ * `session.goals` at all, since no such write path ever existed for
+ * students before this phase.
+ */
+export async function saveStudentOwnGoalPatch(db, { classroomId, sessionId, studentId, categoryId, goal }) {
+  const firestoreStudentEntryRepository = await import('../repositories/firestoreStudentEntryRepository.js');
+  await firestoreStudentEntryRepository.mergeStudentEntryGoal(db, { classroomId, sessionId, studentId, categoryId, goal });
 }

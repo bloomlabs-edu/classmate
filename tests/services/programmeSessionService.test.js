@@ -40,6 +40,46 @@ test('buildNewSession: creates a session referencing a real programme', () => {
   assert.equal(session.title, "Today's Circle");
 });
 
+// ---------------------------------------------------------------------
+// PHASE 3 — Student Identity & Learning Circle Data Boundary
+// ---------------------------------------------------------------------
+
+test('computeDeterministicSessionId: is deterministic — the same programmeId + date always produces the same id', () => {
+  const first = programmeSessionService.computeDeterministicSessionId('programme-1', '2026-08-19');
+  const second = programmeSessionService.computeDeterministicSessionId('programme-1', '2026-08-19');
+  assert.equal(first, second);
+});
+
+test('computeDeterministicSessionId: different dates produce different ids', () => {
+  const day1 = programmeSessionService.computeDeterministicSessionId('programme-1', '2026-08-19');
+  const day2 = programmeSessionService.computeDeterministicSessionId('programme-1', '2026-08-20');
+  assert.notEqual(day1, day2);
+});
+
+test('computeDeterministicSessionId: different programmes produce different ids for the same date', () => {
+  const a = programmeSessionService.computeDeterministicSessionId('programme-A', '2026-08-19');
+  const b = programmeSessionService.computeDeterministicSessionId('programme-B', '2026-08-19');
+  assert.notEqual(a, b);
+});
+
+test('buildNewSession: opts every genuinely new session into usesStudentEntries', () => {
+  const { classroom, programme } = makeClassroomWithProgramme();
+  const session = programmeSessionService.buildNewSession(classroom, { programmeId: programme.id, date: '2026-08-19' });
+  assert.equal(session.usesStudentEntries, true);
+});
+
+test('buildNewSession: assigns the deterministic id, matching computeDeterministicSessionId exactly', () => {
+  const { classroom, programme } = makeClassroomWithProgramme();
+  const session = programmeSessionService.buildNewSession(classroom, { programmeId: programme.id, date: '2026-08-19' });
+  assert.equal(session.id, programmeSessionService.computeDeterministicSessionId(programme.id, '2026-08-19'));
+});
+
+test('ProgrammeSession model: usesStudentEntries defaults to false when not explicitly opted in — the old-session default', async () => {
+  const { createProgrammeSession } = await import('../../js/models/ProgrammeSession.js');
+  const session = createProgrammeSession({ programmeId: 'programme-1', date: '2020-01-01' });
+  assert.equal(session.usesStudentEntries, false);
+});
+
 test('buildNewSession: refuses to create a session for a programme that does not exist', () => {
   const classroom = createClassroom({ id: 'classroom-1', schoolName: 'Test School', gradeSection: 'Grade 8A' });
   assert.throws(() => programmeSessionService.buildNewSession(classroom, { programmeId: 'ghost-programme' }), /no Learning Programme/);
@@ -541,6 +581,78 @@ test('MEMBERSHIP: wasStudentMemberOn remains true for a date before a student le
 
   assert.equal(learningProgrammeService.wasStudentMemberOn(programme, 'student-1', '2026-08-05'), true, 'still a member on a date within their own membership span');
   assert.equal(learningProgrammeService.wasStudentMemberOn(programme, 'student-1', '2026-08-15'), false, 'no longer a member on a date after they left');
+});
+
+// ---------------------------------------------------------------------
+// ATTENDANCE ROSTER BUG FIX — getMembersOnDate(), the correct
+// replacement for the removed, buggy getSessionParticipantIds(). See
+// ui/components/ProgrammeSessionHelpers.js's own resolveSessionRoster()
+// header comment for the full bug this fixes: the old historical
+// roster was derived from the union of explicit attendance/goal/
+// observation record keys, which silently excluded any student who
+// was simply, unremarkably present that day (since "Present is the
+// default" means an untouched student writes no record at all).
+// ---------------------------------------------------------------------
+
+test('getMembersOnDate: includes a member with no attendance/goal/observation record — the core bug this fixes', () => {
+  const { programme } = makeClassroomWithProgramme();
+  // Explicit, fixed joinedAt dates — not relying on "today", so this
+  // test can never drift with real calendar time the way an earlier,
+  // pre-existing test elsewhere in this file already does (flagged,
+  // not fixed, in every prior round's own report — out of scope for
+  // this round's own explicit "do not proceed to other work").
+  learningProgrammeService.getActiveMembership(programme, 'student-1').joinedAt = '2026-01-01T00:00:00.000Z';
+  learningProgrammeService.getActiveMembership(programme, 'student-2').joinedAt = '2026-01-01T00:00:00.000Z';
+  const result = learningProgrammeService.getMembersOnDate(programme, '2026-08-19');
+  assert.ok(result.includes('student-1'));
+  assert.ok(result.includes('student-2'));
+});
+
+test('getMembersOnDate: excludes a student who joined after the given date', () => {
+  const { programme } = makeClassroomWithProgramme();
+  learningProgrammeService.addMembership(programme, 'student-late-joiner', '2026-09-01T00:00:00.000Z');
+  const result = learningProgrammeService.getMembersOnDate(programme, '2026-08-19');
+  assert.equal(result.includes('student-late-joiner'), false);
+});
+
+test('getMembersOnDate: excludes a student who left before the given date', () => {
+  const { programme } = makeClassroomWithProgramme();
+  const membership = learningProgrammeService.getActiveMembership(programme, 'student-1');
+  membership.joinedAt = '2026-01-01T00:00:00.000Z';
+  learningProgrammeService.markMembershipLeft(programme, 'student-1', '2026-06-01T00:00:00.000Z');
+  const result = learningProgrammeService.getMembersOnDate(programme, '2026-08-19');
+  assert.equal(result.includes('student-1'), false);
+});
+
+test('getMembersOnDate: includes a student who left AFTER the given date (still a member at the time)', () => {
+  const { programme } = makeClassroomWithProgramme();
+  const membership = learningProgrammeService.getActiveMembership(programme, 'student-1');
+  membership.joinedAt = '2026-01-01T00:00:00.000Z';
+  learningProgrammeService.markMembershipLeft(programme, 'student-1', '2026-12-01T00:00:00.000Z');
+  const result = learningProgrammeService.getMembersOnDate(programme, '2026-08-19');
+  assert.equal(result.includes('student-1'), true);
+});
+
+test('getMembersOnDate: never returns a student twice, even if they have more than one membership record', () => {
+  const { programme } = makeClassroomWithProgramme();
+  // Simulate a rejoin: leave, then join again — two membership
+  // records for the same studentId, both potentially matching if
+  // their date ranges were ever mishandled.
+  const membership = learningProgrammeService.getActiveMembership(programme, 'student-1');
+  membership.joinedAt = '2026-01-01T00:00:00.000Z';
+  learningProgrammeService.markMembershipLeft(programme, 'student-1', '2026-03-01T00:00:00.000Z');
+  learningProgrammeService.addMembership(programme, 'student-1', '2026-08-01T00:00:00.000Z');
+  const result = learningProgrammeService.getMembersOnDate(programme, '2026-08-19');
+  assert.equal(result.filter((id) => id === 'student-1').length, 1);
+});
+
+test('getMembersOnDate: returns an empty array for a programme with no memberships at all', () => {
+  const classroom = createClassroom({ id: 'classroom-empty', schoolName: 'S', gradeSection: 'G' });
+  const programme = learningProgrammeService.createNewLearningProgramme(classroom, {
+    name: 'Empty Circle',
+    configuration: buildEnglishLiteracyCircleConfiguration(),
+  });
+  assert.deepEqual(learningProgrammeService.getMembersOnDate(programme, '2026-08-19'), []);
 });
 
 test('MEMBERSHIP: a historical session referencing a now-departed student remains fully interpretable', () => {

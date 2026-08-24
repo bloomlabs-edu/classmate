@@ -4,22 +4,31 @@
  * Real, executed unit tests against
  * ui/components/ProgrammeSessionHelpers.js's own pure, DOM-free
  * decision functions. This file used to test
- * ui/views/ProgrammeSessionView.js directly, before this round's own
- * redesign extracted these functions into their own shared module
- * (now used by four screens, not one) — renamed to match. Everything
- * DOM-building in any of those four screens builds real
- * document.createElement() nodes, which this sandbox cannot exercise
- * without introducing a DOM library this project has never depended
- * on — these pure functions were deliberately extracted and exported
- * specifically so the actual decisions they encode stay genuinely
- * testable without one.
+ * ui/views/ProgrammeSessionView.js directly, before an earlier
+ * round's own redesign extracted these functions into their own
+ * shared module (now used by four screens, not one) — renamed to
+ * match. Everything DOM-building in any of those four screens builds
+ * real document.createElement() nodes, which this sandbox cannot
+ * exercise without introducing a DOM library this project has never
+ * depended on — these pure functions were deliberately extracted and
+ * exported specifically so the actual decisions they encode stay
+ * genuinely testable without one.
+ *
+ * getSessionParticipantIds() no longer exists — this round removed it
+ * entirely (see resolveSessionRoster()'s own header comment in
+ * ProgrammeSessionHelpers.js for the full bug it caused). Its own
+ * former tests below are replaced with tests for
+ * learningProgrammeService.getMembersOnDate(), the correct
+ * replacement, which already lives in and is tested alongside that
+ * service's own test file — see
+ * tests/services/learningProgrammeService.test.js.
  */
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   isSessionEditable,
-  getSessionParticipantIds,
+  resolveSessionRoster,
   getEffectiveAttendanceStatus,
   getToggledAttendanceStatus,
   hasRecordedAttendance,
@@ -55,32 +64,93 @@ test('isSessionEditable: false for a past session on an archived programme', () 
   assert.equal(isSessionEditable(session, programme), false);
 });
 
-test('getSessionParticipantIds: returns the union of attendance/goals/teacherObservations keys', () => {
-  const session = {
-    attendance: { 'student-1': { status: 'present' } },
-    goals: { 'student-2': { 'cat-1': { text: 'x' } } },
-    teacherObservations: { 'student-3': [{ note: 'x' }] },
-  };
-  const ids = getSessionParticipantIds(session).sort();
-  assert.deepEqual(ids, ['student-1', 'student-2', 'student-3']);
-});
+// ---------------------------------------------------------------------
+// ATTENDANCE ROSTER BUG FIX — resolveSessionRoster() for a historical
+// session must include every genuine member on that date, regardless
+// of whether any attendance/goal/observation record exists for them.
+// This is the actual bug this round fixed; these tests exist
+// specifically to pin it down so it can't silently regress.
+// ---------------------------------------------------------------------
 
-test('getSessionParticipantIds: deduplicates a student appearing in more than one map', () => {
+function buildTestClassroom(studentIds) {
+  return {
+    teams: [
+      {
+        id: 'team-1',
+        students: studentIds.map((id) => ({ id, name: id })),
+      },
+    ],
+  };
+}
+
+function buildTestProgramme(memberships) {
+  return {
+    memberships,
+  };
+}
+
+test('resolveSessionRoster (historical): includes a member with NO attendance/goal/observation record at all — the core bug this round fixed', () => {
+  const classroom = buildTestClassroom(['student-present', 'student-absent']);
+  const programme = buildTestProgramme([
+    { studentId: 'student-present', joinedAt: '2020-01-01T00:00:00.000Z', leftAt: null, status: 'active' },
+    { studentId: 'student-absent', joinedAt: '2020-01-01T00:00:00.000Z', leftAt: null, status: 'active' },
+  ]);
   const session = {
-    attendance: { 'student-1': { status: 'present' } },
-    goals: { 'student-1': { 'cat-1': { text: 'x' } } },
+    date: '2026-08-19',
+    attendance: { 'student-absent': { status: 'absent', recordedAt: '2026-08-19T09:00:00.000Z' } },
+    goals: {},
     teacherObservations: {},
   };
-  assert.deepEqual(getSessionParticipantIds(session), ['student-1']);
+  const roster = resolveSessionRoster(classroom, programme, session, false);
+  const rosterIds = roster.map((r) => r.student.id).sort();
+  assert.deepEqual(rosterIds, ['student-absent', 'student-present'], 'the untouched, default-present student must still appear');
 });
 
-test('getSessionParticipantIds: returns an empty array for a session with no recorded data', () => {
-  const session = { attendance: {}, goals: {}, teacherObservations: {} };
-  assert.deepEqual(getSessionParticipantIds(session), []);
+test('resolveSessionRoster (historical): reproduces the exact 19 August scenario — 12 members, 9 untouched, 3 explicitly absent', () => {
+  const presentIds = Array.from({ length: 9 }, (_, i) => `present-${i}`);
+  const absentIds = Array.from({ length: 3 }, (_, i) => `absent-${i}`);
+  const classroom = buildTestClassroom([...presentIds, ...absentIds]);
+  const programme = buildTestProgramme(
+    [...presentIds, ...absentIds].map((studentId) => ({ studentId, joinedAt: '2020-01-01T00:00:00.000Z', leftAt: null, status: 'active' }))
+  );
+  const session = {
+    date: '2026-08-19',
+    attendance: Object.fromEntries(absentIds.map((id) => [id, { status: 'absent', recordedAt: '2026-08-19T09:00:00.000Z' }])),
+    goals: {},
+    teacherObservations: {},
+  };
+  const roster = resolveSessionRoster(classroom, programme, session, false);
+  assert.equal(roster.length, 12, 'all 12 real members must appear, not just the 3 with an explicit record');
 });
 
-test('getSessionParticipantIds: tolerates missing fields entirely (defaults to empty)', () => {
-  assert.deepEqual(getSessionParticipantIds({}), []);
+test('resolveSessionRoster (historical): a student who joined AFTER the session date is correctly excluded', () => {
+  const classroom = buildTestClassroom(['student-old', 'student-new']);
+  const programme = buildTestProgramme([
+    { studentId: 'student-old', joinedAt: '2020-01-01T00:00:00.000Z', leftAt: null, status: 'active' },
+    { studentId: 'student-new', joinedAt: '2026-09-01T00:00:00.000Z', leftAt: null, status: 'active' },
+  ]);
+  const session = { date: '2026-08-19', attendance: {}, goals: {}, teacherObservations: {} };
+  const roster = resolveSessionRoster(classroom, programme, session, false);
+  assert.deepEqual(roster.map((r) => r.student.id), ['student-old']);
+});
+
+test('resolveSessionRoster (historical): a student who left BEFORE the session date is correctly excluded', () => {
+  const classroom = buildTestClassroom(['student-current', 'student-departed']);
+  const programme = buildTestProgramme([
+    { studentId: 'student-current', joinedAt: '2020-01-01T00:00:00.000Z', leftAt: null, status: 'active' },
+    { studentId: 'student-departed', joinedAt: '2020-01-01T00:00:00.000Z', leftAt: '2026-01-01T00:00:00.000Z', status: 'left' },
+  ]);
+  const session = { date: '2026-08-19', attendance: {}, goals: {}, teacherObservations: {} };
+  const roster = resolveSessionRoster(classroom, programme, session, false);
+  assert.deepEqual(roster.map((r) => r.student.id), ['student-current']);
+});
+
+test('resolveSessionRoster (editable): unaffected by this round\'s fix — still uses current active membership, unchanged', () => {
+  const classroom = buildTestClassroom(['student-1']);
+  const programme = buildTestProgramme([{ studentId: 'student-1', joinedAt: '2020-01-01T00:00:00.000Z', leftAt: null, status: 'active' }]);
+  const session = { date: getTodayDateKey(), attendance: {}, goals: {}, teacherObservations: {} };
+  const roster = resolveSessionRoster(classroom, programme, session, true);
+  assert.deepEqual(roster.map((r) => r.student.id), ['student-1']);
 });
 
 // ---------------------------------------------------------------------
@@ -137,15 +207,17 @@ test('hasRecordedAttendance: true once any status is explicitly recorded', () =>
   assert.equal(hasRecordedAttendance(session, 'student-1'), true);
 });
 
-test('hasRecordedAttendance: distinguishes "never touched" from "explicitly present" — a historical read-only row must not silently default', () => {
+test('hasRecordedAttendance: distinguishes "never touched" from "explicitly present" — the function itself still correctly makes this distinction, even though no current caller in this file uses it for that purpose anymore (see this file\'s own header comment)', () => {
   const untouched = { attendance: {} };
   const explicitlyPresent = { attendance: { 'student-1': { status: 'present' } } };
   assert.equal(hasRecordedAttendance(untouched, 'student-1'), false);
   assert.equal(hasRecordedAttendance(explicitlyPresent, 'student-1'), true);
-  // Both would show the same *effective* status if asked, which is
-  // exactly why hasRecordedAttendance() — not getEffectiveAttendanceStatus()
-  // — must be the check a read-only view uses before deciding whether
-  // to show a real status or "Not recorded".
+  // Both show the same *effective* status regardless — this pins down
+  // that hasRecordedAttendance() and getEffectiveAttendanceStatus()
+  // remain two genuinely different questions ("was this explicitly
+  // recorded" vs. "what should this display as"), even though this
+  // round's own fix means only the second one still drives what a
+  // historical attendance row actually shows.
   assert.equal(getEffectiveAttendanceStatus(untouched, 'student-1'), getEffectiveAttendanceStatus(explicitlyPresent, 'student-1'));
 });
 
@@ -153,25 +225,25 @@ test('hasRecordedAttendance: distinguishes "never touched" from "explicitly pres
 // LEARNING CIRCLE REDESIGN — stats-strip counting functions
 // ---------------------------------------------------------------------
 
-test('countAttendanceByStatus: editable session — every roster member counts, unset defaults to present', () => {
+test('countAttendanceByStatus: every roster member counts, unset defaults to present', () => {
   const session = { attendance: { s1: { status: 'absent' } } };
   const roster = [{ student: { id: 's1' } }, { student: { id: 's2' } }, { student: { id: 's3' } }];
-  const counts = countAttendanceByStatus(session, roster, true);
+  const counts = countAttendanceByStatus(session, roster);
   assert.deepEqual(counts, { present: 2, absent: 1, late: 0 });
 });
 
-test('countAttendanceByStatus: editable session — counts always sum to roster size', () => {
+test('countAttendanceByStatus: counts always sum to roster size', () => {
   const session = { attendance: { s1: { status: 'late' }, s2: { status: 'absent' } } };
   const roster = [{ student: { id: 's1' } }, { student: { id: 's2' } }, { student: { id: 's3' } }, { student: { id: 's4' } }];
-  const counts = countAttendanceByStatus(session, roster, true);
+  const counts = countAttendanceByStatus(session, roster);
   assert.equal(counts.present + counts.absent + counts.late, roster.length);
 });
 
-test('countAttendanceByStatus: read-only (historical) session — an unrecorded roster member counts toward nothing', () => {
-  const session = { attendance: { s1: { status: 'present' } } };
-  const roster = [{ student: { id: 's1' } }, { student: { id: 's2' } }];
-  const counts = countAttendanceByStatus(session, roster, false);
-  assert.deepEqual(counts, { present: 1, absent: 0, late: 0 }, 's2 was never recorded and must not be counted as present');
+test('countAttendanceByStatus: ATTENDANCE ROSTER BUG FIX — an unrecorded roster member now counts as present, even for a historical (already-corrected) roster, matching "9 Present, 3 Absent" for the 19 August scenario', () => {
+  const session = { attendance: { s1: { status: 'absent' } } };
+  const roster = [{ student: { id: 's1' } }, { student: { id: 's2' } }, { student: { id: 's3' } }];
+  const counts = countAttendanceByStatus(session, roster);
+  assert.deepEqual(counts, { present: 2, absent: 1, late: 0 }, 's2/s3 have no explicit record and must count as present, not be silently excluded');
 });
 
 test('countStudentsWithGoals: counts roster students with at least one goal, regardless of category count', () => {

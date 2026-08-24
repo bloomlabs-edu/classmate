@@ -26,36 +26,41 @@ export function isSessionEditable(session, programme) {
 }
 
 /**
- * Every student this session's own data already mentions — the
- * union of attendance/goal/observation keys — used for the read-only
- * roster of a past session (see models/ProgrammeSession.js's own
- * header comment for why no separate participant-roster field is
- * stored: a session's own recorded data IS its roster).
- */
-export function getSessionParticipantIds(session) {
-  const ids = new Set([
-    ...Object.keys(session.attendance || {}),
-    ...Object.keys(session.goals || {}),
-    ...Object.keys(session.teacherObservations || {}),
-  ]);
-  return Array.from(ids);
-}
-
-/**
  * The roster any Learning Circle screen actually works with: for an
  * editable (today's) session, every currently active member — a
- * teacher (or, per this round, a student themselves) needs to see
- * everyone, including a student with no entry yet. For a read-only
- * (past) session, only students the session's own data already
- * mentions — never the programme's CURRENT membership list, which
- * could have changed since. Returns `{ student, team }` pairs,
- * matching every other roster-wide view in this app.
+ * teacher (or, per an earlier round, a student themselves) needs to
+ * see everyone, including a student with no entry yet. For a
+ * read-only (past) session, every student who was genuinely a
+ * programme member ON THAT SESSION'S OWN DATE — via
+ * learningProgrammeService.getMembersOnDate(), which correctly
+ * accounts for membership changing over time (a student who joined
+ * after this date, or left before it, is correctly excluded; one who
+ * was a member at the time is correctly included regardless of
+ * whether anything happened to be recorded for them).
+ *
+ * CORRECTED THIS ROUND — this used to call a since-removed
+ * getSessionParticipantIds(session), which derived the historical
+ * roster from the union of attendance/goal/observation record KEYS.
+ * Given "Present is the default attendance state" (an explicit,
+ * unchanged product requirement — an untouched student writes NO
+ * attendance record at all), that approach silently excluded every
+ * student who was simply, unremarkably present that day: only a
+ * student who was explicitly touched (most commonly, marked absent)
+ * ever had a record to be included by. The bug's own visible
+ * signature was exactly this: an explicitly-absent student would
+ * appear in a historical session's roster; an untouched, actually-
+ * present student would not. Membership-on-date has nothing to do
+ * with which fields happen to have explicit sub-records, and doesn't
+ * have this failure mode.
+ *
+ * Returns `{ student, team }` pairs, matching every other roster-wide
+ * view in this app.
  */
 export function resolveSessionRoster(classroom, programme, session, editable) {
   const allStudentsById = new Map(classroom.teams.flatMap((team) => team.students.map((student) => [student.id, { student, team }])));
   const rosterStudentIds = editable
     ? learningProgrammeService.getActiveMembers(programme).map((m) => m.studentId)
-    : getSessionParticipantIds(session);
+    : learningProgrammeService.getMembersOnDate(programme, session.date);
   return rosterStudentIds.map((studentId) => allStudentsById.get(studentId)).filter(Boolean);
 }
 
@@ -82,7 +87,23 @@ export function getEffectiveAttendanceStatus(session, studentId) {
   return session.attendance[studentId]?.status || 'present';
 }
 
-/** Whether this student has an actual, explicit attendance entry in this session, as opposed to never having been recorded at all. */
+/**
+ * Whether this student has an actual, explicit attendance entry in
+ * this session, as opposed to never having been recorded at all.
+ *
+ * Left entirely unchanged this round, per explicit instruction — but
+ * worth noting plainly: after this round's roster/stats fixes, this
+ * function has no remaining internal caller in this file (the two
+ * places that used to call it — the historical "Not recorded" row
+ * display in ProgrammeAttendanceControls.js, and this file's own
+ * countAttendanceByStatus()) both moved to treating an unrecorded
+ * student as Present, uniformly, once the roster itself is correctly
+ * scoped to genuine membership-on-date. Still exported and still
+ * correct as a standalone primitive — kept available deliberately,
+ * not left behind by oversight, in case a future need for this exact
+ * distinction (explicitly recorded vs. defaulted) comes up again in a
+ * different context.
+ */
 export function hasRecordedAttendance(session, studentId) {
   return Boolean(session.attendance[studentId]);
 }
@@ -93,22 +114,28 @@ export function getToggledAttendanceStatus(currentStatus) {
 }
 
 /**
- * The stats-strip's own attendance tally. For an EDITABLE (today's)
- * session, every roster member counts toward some bucket, defaulting
- * an unrecorded student to Present — so the three counts always sum
- * to the roster size, matching "9 Present · 2 Absent · 1 Late" for a
- * 12-student class. For a READ-ONLY (historical) session, only
- * students with an actual recorded entry are counted at all — an
- * unrecorded roster member contributes to none of the three buckets,
- * exactly matching this project's own "historical data is a record of
- * what happened, never inferred" principle (see
- * hasRecordedAttendance()'s own header comment); totals may not sum
- * to roster.length in that case, and that's correct, not a bug.
+ * The stats-strip's own attendance tally. Every roster member counts
+ * toward some bucket, defaulting an unrecorded student to Present —
+ * so the three counts always sum to the roster size, matching
+ * "9 Present · 2 Absent · 1 Late" for a 12-student class.
+ *
+ * CORRECTED THIS ROUND, alongside resolveSessionRoster()'s own fix
+ * above — this function used to skip counting an unrecorded student
+ * at all for a read-only (historical) session, which was the exact
+ * same bug in a different place: given the OLD, buggy historical
+ * roster (getSessionParticipantIds(), since removed) already excluded
+ * unrecorded students entirely, this function's own skip-guard was
+ * layering a second exclusion on top of the first. Now that the
+ * roster itself is correctly scoped to genuine membership-on-date
+ * (see resolveSessionRoster()), every roster member — editable
+ * session or historical — is a real, confirmed participant, and
+ * "no record means Present" is simply this product's own explicit,
+ * unchanged default, applying uniformly rather than only for today's
+ * own session.
  */
-export function countAttendanceByStatus(session, roster, editable) {
+export function countAttendanceByStatus(session, roster) {
   const counts = { present: 0, absent: 0, late: 0 };
   roster.forEach(({ student }) => {
-    if (!editable && !hasRecordedAttendance(session, student.id)) return;
     const status = getEffectiveAttendanceStatus(session, student.id);
     counts[status] = (counts[status] || 0) + 1;
   });
@@ -132,7 +159,7 @@ export function countActivities(session) {
   return session.activities.length;
 }
 
-/** Total observation entries across every student the session mentions — not scoped to the current roster, matching getSessionParticipantIds()'s own convention of reading directly from whatever the session's own data already contains. */
+/** Total observation entries across every student the session mentions — not scoped to the current roster, reading directly from whatever the session's own data already contains. */
 export function countObservations(session) {
   return Object.values(session.teacherObservations || {}).reduce((sum, entries) => sum + entries.length, 0);
 }

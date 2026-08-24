@@ -33,7 +33,6 @@
 import * as workspaceService from '../../services/workspaceService.js';
 import * as learningProgrammeService from '../../services/learningProgrammeService.js';
 import * as programmeSessionService from '../../services/programmeSessionService.js';
-import * as enrollmentRepository from '../../repositories/firestoreEnrollmentRepository.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { openCreateLearningProgrammeModal } from '../components/CreateLearningProgrammeModal.js';
@@ -66,22 +65,8 @@ export async function renderLearningProgrammesListView(container, { classroom, o
           description,
           configuration,
         });
-        // PHASE 3.7 — mirrors each new membership into its own
-        // security document, fire-and-forget alongside
-        // workspaceService.save() — see
-        // ui/views/LearningProgrammeSettingsView.js's own header
-        // comment for why this exception exists here.
-        const mirrorWrites = studentIds.map((studentId) => {
-          const membership = learningProgrammeService.addMembership(programme, studentId);
-          return enrollmentRepository.setProgrammeMembershipMirror(classroom.id, programme.id, studentId, {
-            status: membership.status,
-            joinedAt: membership.joinedAt,
-          });
-        });
+        studentIds.forEach((studentId) => learningProgrammeService.addMembership(programme, studentId));
         workspaceService.save(classroom);
-        Promise.all(mirrorWrites).catch((error) => {
-          console.error('[LearningProgrammesListView] Failed to write membership mirror document:', error);
-        });
         closeModal();
         renderLearningProgrammesListView(container, { classroom, onBack, onSelectProgramme });
       },

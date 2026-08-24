@@ -90,12 +90,6 @@ export async function renderProgrammeSessionView(
     container.appendChild(createEmptyStateElement({ message: 'This session could not be found.' }));
     return;
   }
-  // PHASE 3.7 — this dashboard only ever READS session.goals (via
-  // countStudentsWithGoals() below, for the stats strip) — it never
-  // writes goals itself (that's ProgrammeGoalsReviewView.js's own
-  // job) — so hydration alone, with no goalWriter, is all this screen
-  // needs. A no-op for a session created before this phase.
-  await programmeSessionService.hydrateSessionGoals(classroom.id, session);
 
   const editable = isSessionEditable(session, programme);
   const roster = resolveSessionRoster(classroom, programme, session, editable);
@@ -115,7 +109,7 @@ export async function renderProgrammeSessionView(
         message: editable ? 'No active members yet \u2014 add students from Settings to begin.' : 'No students were recorded in this session.',
       })
     );
-    wrapper.appendChild(buildActivitiesBlock(session, editable, persistPatch, () => renderProgrammeSessionView(container, { classroom, programmeId, sessionId, onBack, onOpenAttendance, onOpenGoals, onOpenObservations })));
+    wrapper.appendChild(buildActivitiesBlock(classroom.id, session, editable, persistPatch, () => renderProgrammeSessionView(container, { classroom, programmeId, sessionId, onBack, onOpenAttendance, onOpenGoals, onOpenObservations })));
     container.appendChild(wrapper);
     return;
   }
@@ -126,12 +120,12 @@ export async function renderProgrammeSessionView(
   blocks.appendChild(buildAttendanceBlock(session, roster, editable, () => onOpenAttendance(session.id)));
   blocks.appendChild(buildGoalsBlock(session, roster, editable, () => onOpenGoals(session.id)));
   blocks.appendChild(
-    buildActivitiesBlock(session, editable, persistPatch, () =>
+    buildActivitiesBlock(classroom.id, session, editable, persistPatch, () =>
       renderProgrammeSessionView(container, { classroom, programmeId, sessionId, onBack, onOpenAttendance, onOpenGoals, onOpenObservations })
     )
   );
   blocks.appendChild(
-    buildObservationsBlock(programme, session, roster, editable, persistPatch, () => onOpenObservations(session.id), () =>
+    buildObservationsBlock(classroom.id, programme, session, roster, editable, persistPatch, () => onOpenObservations(session.id), () =>
       renderProgrammeSessionView(container, { classroom, programmeId, sessionId, onBack, onOpenAttendance, onOpenGoals, onOpenObservations })
     )
   );
@@ -163,15 +157,21 @@ function buildHeader(programme, session, roster, editable, onBack) {
 }
 
 /**
- * The compact "TODAY" stats strip — plain text, matching
- * `.profile-section__meta`'s own existing typography rather than a
- * heavier KPI-card treatment, per this project's own explicit "keep
- * it compact, like a dashboard summary, not another section"
- * direction. Shows only real, already-available data — no invented
- * statistics: attendance counts, a goal-coverage count, an activity
- * count, and a Topic line only when `session.title` is actually set
- * (no new field, no new UI to set it this round — see this file's
- * own header comment).
+ * The compact "TODAY" stats strip — a small row of number+label pairs
+ * (Students · Present · Absent · Goals), matching the round's own
+ * request for something "visually compact and scannable, especially
+ * on mobile" — plain sentence lines (this file's own prior version)
+ * read fine but don't scan at a glance the way a quick row of digits
+ * does. Deliberately NOT the heavier `.kpi-card` treatment used
+ * elsewhere in this app (WeeklySnapshotWidget.js) — that's still
+ * heavier than a dashboard summary line needs to be; this is a new,
+ * lighter, narrowly-scoped layout in between the two.
+ *
+ * Only the four figures the round's own example calls out get the
+ * prominent number treatment; Activities/Observations/Topic — useful
+ * but secondary — stay as a smaller line underneath, so the primary
+ * row doesn't get crowded on a narrow phone. Shows only real,
+ * already-available data — no invented statistics.
  */
 function buildStatsStrip(session, roster, editable) {
   const strip = document.createElement('div');
@@ -182,15 +182,33 @@ function buildStatsStrip(session, roster, editable) {
   label.textContent = 'TODAY';
   strip.appendChild(label);
 
-  const counts = countAttendanceByStatus(session, roster, editable);
-  const attendanceLine = document.createElement('p');
-  attendanceLine.className = 'programme-session-view__stats-strip-line';
-  attendanceLine.textContent = `${counts.present} Present \u00b7 ${counts.absent} Absent \u00b7 ${counts.late} Late`;
-  strip.appendChild(attendanceLine);
-
+  const counts = countAttendanceByStatus(session, roster);
   const goalsWithCount = countStudentsWithGoals(session, roster);
+
+  const statRow = document.createElement('div');
+  statRow.className = 'programme-session-view__stats-row';
+  [
+    { value: roster.length, label: 'Students' },
+    { value: counts.present, label: 'Present' },
+    { value: counts.absent, label: 'Absent' },
+    { value: goalsWithCount, label: 'Goals' },
+  ].forEach(({ value, label: statLabel }) => {
+    const item = document.createElement('div');
+    item.className = 'programme-session-view__stat-item';
+    const num = document.createElement('span');
+    num.className = 'programme-session-view__stat-number';
+    num.textContent = String(value);
+    const lbl = document.createElement('span');
+    lbl.className = 'programme-session-view__stat-label';
+    lbl.textContent = statLabel;
+    item.append(num, lbl);
+    statRow.appendChild(item);
+  });
+  strip.appendChild(statRow);
+
   const activitiesCount = countActivities(session);
-  const secondLineParts = [`${goalsWithCount} Goal${goalsWithCount === 1 ? '' : 's'}`, `${activitiesCount} Activit${activitiesCount === 1 ? 'y' : 'ies'}`];
+  const secondLineParts = [`${activitiesCount} Activit${activitiesCount === 1 ? 'y' : 'ies'}`];
+  if (counts.late > 0) secondLineParts.unshift(`${counts.late} Late`);
   if (session.title) secondLineParts.push(`Topic: ${session.title}`);
   const secondLine = document.createElement('p');
   secondLine.className = 'programme-session-view__stats-strip-line';
@@ -228,7 +246,7 @@ function buildSummaryBlock({ heading, summaryLines, actionLabel, onAction }) {
 }
 
 function buildAttendanceBlock(session, roster, editable, onOpen) {
-  const counts = countAttendanceByStatus(session, roster, editable);
+  const counts = countAttendanceByStatus(session, roster);
   return buildSummaryBlock({
     heading: 'ATTENDANCE',
     summaryLines: [`${roster.length} students \u00b7 ${counts.present} present \u00b7 ${counts.absent} absent \u00b7 ${counts.late} late`],
@@ -259,7 +277,7 @@ function buildGoalsBlock(session, roster, editable, onOpen) {
  * field this feature has always had, inline, in place — never a
  * permanently visible input.
  */
-function buildActivitiesBlock(session, editable, persistPatch, redraw) {
+function buildActivitiesBlock(classroomId, session, editable, persistPatch, redraw) {
   const block = document.createElement('div');
   block.className = 'programme-session-view__block programme-session-view__block--activities';
 
@@ -274,38 +292,47 @@ function buildActivitiesBlock(session, editable, persistPatch, redraw) {
     noneNote.textContent = 'No activities recorded yet.';
     block.appendChild(noneNote);
   } else {
-    const chipList = document.createElement('div');
-    chipList.className = 'programme-session-view__activity-chip-list';
+    const cardGrid = document.createElement('div');
+    cardGrid.className = 'programme-session-view__activity-card-grid';
     session.activities.forEach((activity, index) => {
-      chipList.appendChild(buildActivityChip(session, activity, index, editable, persistPatch, redraw));
+      cardGrid.appendChild(buildActivityCard(classroomId, session, activity, index, editable, persistPatch, redraw));
     });
-    block.appendChild(chipList);
+    block.appendChild(cardGrid);
   }
 
   if (editable) {
-    block.appendChild(buildAddActivityDisclosure(session, persistPatch, redraw));
+    block.appendChild(buildAddActivityDisclosure(classroomId, session, persistPatch, redraw));
   }
 
   return block;
 }
 
-function buildActivityChip(session, activity, index, editable, persistPatch, redraw) {
-  const chip = document.createElement('div');
-  chip.className = 'programme-session-view__activity-chip';
+/**
+ * One activity as a proper card — icon, prominent name, secondary
+ * notes text on their own line (not squashed into one string the way
+ * the prior small-pill version did), and an explicit "⋮" reusing
+ * ui/components/OverflowMenu.js directly. Removal asks for a
+ * lightweight confirmation first via `window.confirm()` — the exact
+ * pattern already established throughout this app for a standalone
+ * object's own destructive action (see e.g. FeedPostCard.js,
+ * GoalManagementView.js, StudentProfileView.js's own remove-student
+ * confirmation) — not a new mechanism invented for this one case.
+ */
+function buildActivityCard(classroomId, session, activity, index, editable, persistPatch, redraw) {
+  const card = document.createElement('div');
+  card.className = 'programme-session-view__activity-card';
+
+  const topRow = document.createElement('div');
+  topRow.className = 'programme-session-view__activity-card-top-row';
 
   const icon = document.createElement('span');
-  icon.className = 'programme-session-view__activity-chip-icon';
+  icon.className = 'programme-session-view__activity-card-icon';
   icon.setAttribute('aria-hidden', 'true');
   icon.textContent = ACTIVITY_ICON_BY_NAME[activity.name] || DEFAULT_ACTIVITY_ICON;
-  chip.appendChild(icon);
-
-  const label = document.createElement('span');
-  label.className = 'programme-session-view__activity-chip-label';
-  label.textContent = activity.notes ? `${activity.name} \u2014 ${activity.notes}` : activity.name;
-  chip.appendChild(label);
+  topRow.appendChild(icon);
 
   if (editable) {
-    chip.appendChild(
+    topRow.appendChild(
       createOverflowMenu({
         ariaLabel: `Actions for ${activity.name}`,
         actions: [
@@ -313,8 +340,9 @@ function buildActivityChip(session, activity, index, editable, persistPatch, red
             label: 'Remove',
             danger: true,
             onClick: async () => {
+              if (!window.confirm(`Remove "${activity.name}" from this session?`)) return;
               programmeSessionService.removeActivity(session, index);
-              await persistPatch(() => programmeSessionService.buildActivitiesPatch(session));
+              await persistPatch(() => programmeSessionService.saveSessionPatch(classroomId, session.id, programmeSessionService.buildActivitiesPatch(session)));
               redraw();
             },
           },
@@ -323,11 +351,25 @@ function buildActivityChip(session, activity, index, editable, persistPatch, red
     );
   }
 
-  return chip;
+  card.appendChild(topRow);
+
+  const name = document.createElement('p');
+  name.className = 'programme-session-view__activity-card-name';
+  name.textContent = activity.name;
+  card.appendChild(name);
+
+  if (activity.notes) {
+    const notes = document.createElement('p');
+    notes.className = 'programme-session-view__activity-card-notes';
+    notes.textContent = activity.notes;
+    card.appendChild(notes);
+  }
+
+  return card;
 }
 
 /** Collapsed by default — see this file's own header comment for why no add-input may sit permanently visible. Reveals the same quick-suggestion buttons + custom-text field this feature has always had. */
-function buildAddActivityDisclosure(session, persistPatch, redraw) {
+function buildAddActivityDisclosure(classroomId, session, persistPatch, redraw) {
   const wrapper = document.createElement('div');
   wrapper.className = 'programme-session-view__add-activity-disclosure';
 
@@ -347,7 +389,7 @@ function buildAddActivityDisclosure(session, persistPatch, redraw) {
     quickButton.textContent = name;
     quickButton.addEventListener('click', async () => {
       programmeSessionService.recordActivity(session, { name });
-      await persistPatch(() => programmeSessionService.buildActivitiesPatch(session));
+      await persistPatch(() => programmeSessionService.saveSessionPatch(classroomId, session.id, programmeSessionService.buildActivitiesPatch(session)));
       redraw();
     });
     revealContainer.appendChild(quickButton);
@@ -365,7 +407,7 @@ function buildAddActivityDisclosure(session, persistPatch, redraw) {
     const name = customInput.value.trim();
     if (!name) return;
     programmeSessionService.recordActivity(session, { name });
-    await persistPatch(() => programmeSessionService.buildActivitiesPatch(session));
+    await persistPatch(() => programmeSessionService.saveSessionPatch(classroomId, session.id, programmeSessionService.buildActivitiesPatch(session)));
     redraw();
   });
   revealContainer.append(customInput, addButton);
@@ -386,7 +428,7 @@ function buildAddActivityDisclosure(session, persistPatch, redraw) {
  * full list first. Opens ui/components/AddObservationModal.js — never
  * a permanently visible input on this page.
  */
-function buildObservationsBlock(programme, session, roster, editable, persistPatch, onOpen, redraw) {
+function buildObservationsBlock(classroomId, programme, session, roster, editable, persistPatch, onOpen, redraw) {
   const block = document.createElement('div');
   block.className = 'programme-session-view__block';
 
@@ -418,7 +460,7 @@ function buildObservationsBlock(programme, session, roster, editable, persistPat
         roster,
         onSave: async ({ studentId, note }) => {
           programmeSessionService.recordTeacherObservation(programme, session, { studentId, note });
-          await persistPatch(() => programmeSessionService.buildTeacherObservationPatch(session, studentId));
+          await persistPatch(() => programmeSessionService.saveSessionPatch(classroomId, session.id, programmeSessionService.buildTeacherObservationPatch(session, studentId)));
           redraw();
         },
       });

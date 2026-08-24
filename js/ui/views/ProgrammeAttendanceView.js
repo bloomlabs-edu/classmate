@@ -38,13 +38,6 @@ export async function renderProgrammeAttendanceView(container, { classroom, prog
     container.appendChild(createEmptyStateElement({ message: 'This session could not be found.' }));
     return;
   }
-  // PHASE 3.7 — a read-only (past) session's own roster is derived
-  // from getSessionParticipantIds(), which unions attendance/goals/
-  // teacherObservations keys (see ProgrammeSessionHelpers.js) — for a
-  // usesStudentEntries session, `goals` only resolves correctly once
-  // hydrated from the subcollection. A no-op for a session created
-  // before this phase.
-  await programmeSessionService.hydrateSessionGoals(classroom.id, session);
 
   const editable = isSessionEditable(session, programme);
   const roster = resolveSessionRoster(classroom, programme, session, editable);
@@ -68,16 +61,8 @@ export async function renderProgrammeAttendanceView(container, { classroom, prog
   header.appendChild(titleBlock);
   wrapper.appendChild(header);
 
-  const { element: saveIndicator, persistPatch, persistCustom } = createSaveIndicatorController(classroom.id, session);
+  const { element: saveIndicator, persistPatch } = createSaveIndicatorController(classroom.id, session);
   wrapper.appendChild(saveIndicator);
-
-  // PHASE 3.7 \u2014 only ever invoked by ProgrammeAttendanceControls.js
-  // for a usesStudentEntries session (see that file's own header
-  // comment) \u2014 persists both the teacher-canonical write and the
-  // studentEntries mirror in one call.
-  function persistAttendance(studentId) {
-    return persistCustom(() => programmeSessionService.saveAttendancePatchWithMirror(classroom.id, session, studentId));
-  }
 
   if (roster.length === 0) {
     wrapper.appendChild(
@@ -86,7 +71,7 @@ export async function renderProgrammeAttendanceView(container, { classroom, prog
       })
     );
   } else {
-    wrapper.appendChild(buildAttendanceSection(programme, session, roster, editable, persistPatch, persistAttendance));
+    wrapper.appendChild(buildAttendanceSection(classroom.id, programme, session, roster, editable, persistPatch));
   }
 
   container.appendChild(wrapper);

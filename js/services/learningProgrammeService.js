@@ -256,6 +256,35 @@ export function wasStudentMemberOn(programme, studentId, date) {
 }
 
 /**
+ * HISTORICAL ROSTER FIX — every student who was genuinely a member of
+ * this programme on a specific historical date, regardless of
+ * whether any attendance/goal/observation record exists for them.
+ *
+ * This is the correct replacement for the old, buggy
+ * getSessionParticipantIds() (removed from
+ * ui/components/ProgrammeSessionHelpers.js as part of this same fix):
+ * that function derived a historical session's own roster from the
+ * union of explicit attendance/goal/observation record keys — which
+ * silently excluded any student who was simply, unremarkably PRESENT
+ * that day, since "Present by default" deliberately writes no record
+ * at all. The bug's own signature: a student explicitly marked
+ * ABSENT (which DOES write a record) would appear in historical
+ * views, while a student who was actually present (and therefore
+ * generated no record) would vanish entirely.
+ *
+ * Deduplicates by studentId — not by returning raw membership
+ * records — specifically so a student who happens to have more than
+ * one membership record overlapping this date (e.g. a rejoin whose
+ * dates overlap an existing record, which addMembership() already
+ * guards against under normal use, but which this function doesn't
+ * assume) can never appear twice in the same roster.
+ */
+export function getMembersOnDate(programme, date) {
+  const uniqueStudentIds = new Set(programme.memberships.map((membership) => membership.studentId));
+  return Array.from(uniqueStudentIds).filter((studentId) => wasStudentMemberOn(programme, studentId, date));
+}
+
+/**
  * Adds a new membership for this student — a no-op (returns the
  * existing record) if they already have an active one, so calling
  * this twice in a row can never produce two simultaneous active

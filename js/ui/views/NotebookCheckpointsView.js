@@ -63,6 +63,8 @@ import { getClassroomStudents } from '../../services/assessmentService.js';
 import { formatDate, getTodayDateKey } from '../../utils/dateHelpers.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
+import { createIcon } from '../components/Icon.js';
+import { createOverflowMenu } from '../components/OverflowMenu.js';
 
 /**
  * Cell status metadata — deliberately mirrors
@@ -73,28 +75,39 @@ import { createEmptyStateElement } from '../components/EmptyState.js';
  * and includes several statuses — needs_correction, resubmitted,
  * absent — that don't exist in this simpler, two-dimensional model).
  */
-/** Exported so other views (e.g. ui/student-portal/views/StudentNotebooksView.js's own Checkpoints section) render the exact same status language and colors as this grid, rather than duplicating the lookup into a second status model. */
+/**
+ * Exported so other views (e.g.
+ * ui/student-portal/views/StudentNotebooksView.js's own Checkpoints
+ * section) render the exact same status language, icon, and color as
+ * this grid, rather than duplicating the lookup into a second status
+ * model.
+ *
+ * `icon` is a name from ui/components/Icon.js's own SVG set — never
+ * an emoji, per this design system's own convention. chipClass drives
+ * both the cell's background tint (see the .notebook-checkpoints__cell--*
+ * rules) and the icon's own color via currentColor.
+ */
 export function getCellMeta(checkpoint, record) {
   if (!record || record.submissionStatus === 'not_submitted') {
-    return { label: 'Not submitted', chipClass: 'gray', icon: '⚪' };
+    return { label: 'Not Submitted', chipClass: 'red', icon: 'x-circle' };
   }
   const late = checkpointService.isLate(checkpoint, record);
   if (record.reviewStatus === 'complete') {
     return late
-      ? { label: 'Submitted late · Complete', chipClass: 'orange', icon: '🟠' }
-      : { label: 'Submitted · Complete', chipClass: 'green', icon: '🟢' };
+      ? { label: 'Submitted late · Complete', chipClass: 'orange', icon: 'check-circle-2' }
+      : { label: 'Submitted · Complete', chipClass: 'green', icon: 'check-circle-2' };
   }
   if (record.reviewStatus === 'incomplete') {
     return late
-      ? { label: 'Submitted late · Incomplete', chipClass: 'red', icon: '🔴' }
-      : { label: 'Submitted · Incomplete', chipClass: 'red', icon: '🔴' };
+      ? { label: 'Submitted late · Incomplete', chipClass: 'red', icon: 'alert-triangle' }
+      : { label: 'Submitted · Incomplete', chipClass: 'red', icon: 'alert-triangle' };
   }
   return late
-    ? { label: 'Submitted late · Not reviewed', chipClass: 'amber', icon: '🟡' }
-    : { label: 'Submitted · Not reviewed', chipClass: 'purple', icon: '📄' };
+    ? { label: 'Submitted late · Not Reviewed', chipClass: 'purple', icon: 'circle-dot' }
+    : { label: 'Not Reviewed', chipClass: 'purple', icon: 'circle-dot' };
 }
 
-export function renderNotebookCheckpointsView(container, { classroom, subjectId, notebookTypeId, onBack }) {
+export function renderNotebookCheckpointsView(container, { classroom, subjectId, notebookTypeId, onBack, onSelectStudent }) {
   // Replaced wholesale by resyncFromServer() below whenever
   // workspaceCoordinator delivers a fresh, server-confirmed classroom
   // — every handler below reads THIS variable at call time (never a
@@ -237,6 +250,10 @@ export function renderNotebookCheckpointsView(container, { classroom, subjectId,
       refreshCellEditor();
       updateCellAndColumn(checkpointId, studentId);
     },
+    // Reuses the existing app-wide student-profile navigation prop
+    // (identical to GoalDashboardView.js's own handlers.onSelectStudent)
+    // — no new route or navigation mechanism introduced here.
+    onSelectStudent,
   };
 
   function refreshForm() {
@@ -318,10 +335,7 @@ export function renderNotebookCheckpointsView(container, { classroom, subjectId,
 
     const statsEl = scrollEl.querySelector(`th[data-checkpoint-id="${checkpointId}"] .notebook-checkpoints__column-stats`);
     if (statsEl) {
-      const summary = checkpointService.getCheckpointSummary(checkpoint, students);
-      statsEl.innerHTML = '';
-      statsEl.appendChild(createColumnStatBox(summary.submittedCount, students.length, 'Submitted'));
-      statsEl.appendChild(createColumnStatBox(summary.completeCount, students.length, 'Complete'));
+      statsEl.replaceWith(buildColumnStats(checkpoint, students));
     }
   }
 
@@ -419,7 +433,7 @@ function renderEmptyCheckpointsGrid(students, handlers) {
     const row = document.createElement('tr');
     const nameCell = document.createElement('td');
     nameCell.className = 'assessment-gradebook__name-cell';
-    nameCell.textContent = student.name;
+    populateStudentNameCell(nameCell, student, handlers);
     row.appendChild(nameCell);
 
     const placeholderCell = document.createElement('td');
@@ -450,51 +464,241 @@ function createColumnStatBox(count, total, label) {
 }
 
 /**
- * Builds one checkpoint cell's own contents (status button + whichever
+ * The Submitted/Complete stat boxes plus a subtle Submitted-progress
+ * bar underneath — one self-contained unit, returned fresh each call,
+ * so updateCellAndColumn() (see renderNotebookCheckpointsView() above)
+ * can swap the whole thing out via replaceWith() after a quick-mark/
+ * quick-review/cell-save action changes these counts, without
+ * touching anything else in the column header.
+ */
+function buildColumnStats(checkpoint, students) {
+  const summary = checkpointService.getCheckpointSummary(checkpoint, students);
+
+  const statsEl = document.createElement('div');
+  statsEl.className = 'notebook-checkpoints__column-stats';
+
+  const boxesRow = document.createElement('div');
+  boxesRow.className = 'notebook-checkpoints__column-stat-boxes';
+  boxesRow.appendChild(createColumnStatBox(summary.submittedCount, students.length, 'Submitted'));
+  boxesRow.appendChild(createColumnStatBox(summary.completeCount, students.length, 'Complete'));
+  statsEl.appendChild(boxesRow);
+
+  const percentSubmitted = students.length > 0 ? Math.round((summary.submittedCount / students.length) * 100) : 0;
+  const progress = document.createElement('div');
+  progress.className = 'notebook-checkpoints__column-progress';
+  progress.setAttribute('role', 'progressbar');
+  progress.setAttribute('aria-valuenow', String(percentSubmitted));
+  progress.setAttribute('aria-valuemin', '0');
+  progress.setAttribute('aria-valuemax', '100');
+  progress.setAttribute('aria-label', `${summary.submittedCount} of ${students.length} submitted`);
+  const progressFill = document.createElement('div');
+  progressFill.className = 'notebook-checkpoints__column-progress-fill';
+  progressFill.style.width = `${percentSubmitted}%`;
+  progress.appendChild(progressFill);
+  statsEl.appendChild(progress);
+
+  return statsEl;
+}
+
+/**
+ * The compact "unit card" a checkpoint column header now renders as —
+ * a code (its position in this Notebook, U01/U02/…, not a stored
+ * field: computed purely from display order so no data-model change
+ * was needed), the title (strongest hierarchy), the given/due date
+ * (small, muted), then buildColumnStats() above. Edit/Move/Delete —
+ * every existing column action, unchanged in behavior — now live
+ * under one compact overflow menu (ui/components/OverflowMenu.js,
+ * this app's existing platform-wide pattern for exactly this kind of
+ * per-item management menu) instead of four always-visible buttons.
+ * Move Left/Move Right are simply omitted at the first/last position
+ * rather than shown disabled — OverflowMenu's own action list has no
+ * disabled-item concept, and omission reads at least as clearly here.
+ */
+function buildUnitCard(checkpoint, index, checkpoints, students, handlers) {
+  const card = document.createElement('div');
+  card.className = 'notebook-checkpoints__unit-card';
+
+  const topRow = document.createElement('div');
+  topRow.className = 'notebook-checkpoints__unit-card-top';
+
+  const code = document.createElement('span');
+  code.className = 'notebook-checkpoints__unit-code';
+  code.textContent = `U${String(index + 1).padStart(2, '0')}`;
+  topRow.appendChild(code);
+
+  const menuActions = [{ label: 'Edit checkpoint', onClick: () => handlers.onStartEdit(checkpoint.id) }];
+  if (index > 0) {
+    menuActions.push({ label: 'Move left', onClick: () => handlers.onMoveCheckpoint(checkpoint.id, -1) });
+  }
+  if (index < checkpoints.length - 1) {
+    menuActions.push({ label: 'Move right', onClick: () => handlers.onMoveCheckpoint(checkpoint.id, 1) });
+  }
+  menuActions.push({
+    label: 'Delete checkpoint',
+    danger: true,
+    onClick: () => handlers.onDeleteCheckpoint(checkpoint.id, checkpoint.title),
+  });
+  topRow.appendChild(createOverflowMenu({ actions: menuActions, ariaLabel: `${checkpoint.title} actions` }));
+  card.appendChild(topRow);
+
+  // .unit-title is an additive, uniquely-named modifier (never applied
+  // by ui/views/GoalDashboardView.js, which reuses only the base
+  // .column-title class for its own, differently-shaped header) that
+  // clamps the title to a fixed-height, 2-line region so every unit
+  // card in a row shares identical geometry regardless of title
+  // length, without altering GoalDashboardView's own title rendering.
+  const titleEl = document.createElement('span');
+  titleEl.className = 'notebook-checkpoints__column-title notebook-checkpoints__unit-title';
+  titleEl.textContent = checkpoint.title;
+  card.appendChild(titleEl);
+
+  const metaLine = document.createElement('span');
+  metaLine.className = 'notebook-checkpoints__column-meta';
+  metaLine.textContent = checkpoint.dueDate ? `Due ${formatDate(checkpoint.dueDate)}` : `Given ${formatDate(checkpoint.givenDate)}`;
+  card.appendChild(metaLine);
+
+  card.appendChild(buildColumnStats(checkpoint, students));
+
+  return card;
+}
+
+/**
+ * The student name cell — a plain, non-interactive wrapper (avatar +
+ * name) where ONLY the name itself is the clickable element, wired to
+ * this view's own onSelectStudent prop, which is the exact same
+ * `router.navigate(\`/classroom/${classroom.id}/student/${studentId}\`)`
+ * mechanism every other roster screen already uses (see
+ * ui/views/GoalDashboardView.js's own handlers.onSelectStudent) — not
+ * a new route or navigation path. Per explicit design direction, the
+ * avatar is decorative only and must NOT be part of the click target
+ * (the whole row is deliberately not one big button) — it mirrors
+ * this app's own existing "single-letter fallback avatar" convention
+ * (see ui/components/UserBar.js's own .user-bar__avatar--fallback)
+ * rather than inventing a new avatar system. No visible instructional
+ * hint text — the name's own interactive styling is the only
+ * affordance.
+ */
+function populateStudentNameCell(nameCell, student, handlers) {
+  nameCell.innerHTML = '';
+
+  const wrapper = document.createElement('span');
+  wrapper.className = 'notebook-checkpoints__student';
+
+  const avatar = document.createElement('span');
+  avatar.className = 'notebook-checkpoints__student-avatar';
+  avatar.textContent = (student.name || '?').charAt(0).toUpperCase();
+  avatar.setAttribute('aria-hidden', 'true');
+
+  const nameButton = document.createElement('button');
+  nameButton.type = 'button';
+  nameButton.className = 'notebook-checkpoints__student-name';
+  nameButton.textContent = student.name;
+  nameButton.setAttribute('aria-label', `View ${student.name}'s profile`);
+  nameButton.addEventListener('click', () => handlers.onSelectStudent(student.id));
+
+  wrapper.append(avatar, nameButton);
+  nameCell.appendChild(wrapper);
+}
+
+/**
+ * Builds one checkpoint cell's own contents (status row + whichever
  * quick actions apply) directly into `cell` — extracted from
  * renderGrid()'s own per-cell loop so updateCellAndColumn() (see
  * renderNotebookCheckpointsView() above) can rebuild exactly one cell
  * in place, identically to how a full grid build renders it. `cell`
  * itself (the <td>, including its own data-checkpoint-id/
- * data-student-id attributes and status-color class) is owned by the
- * caller — this only ever populates its children.
+ * data-student-id attributes) is owned by the caller — this only
+ * ever populates its children.
+ *
+ * Per explicit design direction, the cell's own background stays a
+ * very light, secondary tint (Not Submitted → light red, Submitted ·
+ * Complete on time → light green; every other status stays neutral
+ * white) — the circular icon badge remains the primary status
+ * signal. These two tint classes are new and exclusive to this
+ * view's own cells (never the shared .cell--red/--green base classes
+ * ui/views/GoalDashboardView.js itself reuses), so that other
+ * screen's look is entirely unaffected.
+ *
+ * DOM is three stacked zones inside one .cell-content wrapper (icon+
+ * label are one clickable control, since opening the full editor is
+ * still triggered from tapping either of them; the action zone is
+ * always rendered, even empty, so its presence/absence never shifts
+ * the icon's or label's own vertical position — every cell in a row
+ * stays aligned regardless of which cells have a "Mark Submitted" /
+ * quick-review control beneath them):
+ *   .cell-content
+ *     .cell-row (button — icon-zone + label-zone; opens the full editor)
+ *     .cell-action-zone (Mark Submitted / quick-review, or empty)
  */
 function populateCheckpointCell(cell, checkpoint, student, handlers) {
   const record = checkpointService.getRecordForStudent(checkpoint, student.id);
   const meta = getCellMeta(checkpoint, record);
+  const isNotSubmitted = !record || record.submissionStatus === 'not_submitted';
+  const isAwaitingReview = record && record.submissionStatus === 'submitted' && record.reviewStatus === 'not_reviewed';
+  const isCompleteOnTime = meta.chipClass === 'green'; // getCellMeta() only ever produces 'green' for on-time Submitted · Complete
 
-  cell.className = `notebook-checkpoints__cell notebook-checkpoints__cell--${meta.chipClass}`;
+  cell.className = 'notebook-checkpoints__cell';
+  if (isNotSubmitted) cell.classList.add('notebook-checkpoints__cell--tint-red');
+  if (isCompleteOnTime) cell.classList.add('notebook-checkpoints__cell--tint-green');
 
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'notebook-checkpoints__cell-button';
-  button.setAttribute('aria-label', `${student.name} — ${checkpoint.title}: ${meta.label}`);
-  const iconEl = document.createElement('span');
-  iconEl.textContent = meta.icon;
+  const content = document.createElement('div');
+  content.className = 'notebook-checkpoints__cell-content';
+
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'notebook-checkpoints__cell-row';
+  row.setAttribute('aria-label', `${student.name} — ${checkpoint.title}: ${meta.label}`);
+  row.addEventListener('click', () => handlers.onOpenCell(checkpoint.id, student.id));
+
+  // getCellMeta()'s own icon names ('x-circle', 'check-circle-2') carry
+  // their OWN outline circle — composed correctly for a plain inline
+  // chip, but wrong here: layered inside this badge's own solid-color
+  // circle, that inner outline rendered as a second, visually
+  // competing ring (a "circle inside a circle"). Swapping to the
+  // equivalent glyph-only icon (no circle of its own) for this badge's
+  // rendering ONLY — never changing what getCellMeta() itself returns,
+  // since ui/student-portal/views/StudentNotebooksView.js imports and
+  // renders that exact same meta.icon value independently — fixes the
+  // composition at its source rather than papering over it with more
+  // CSS layered on top.
+  const badgeIconName = meta.icon === 'x-circle' ? 'x' : meta.icon === 'check-circle-2' ? 'check' : meta.icon;
+
+  const statusIcon = document.createElement('span');
+  statusIcon.className = `notebook-checkpoints__status-icon notebook-checkpoints__status-icon--${meta.chipClass}`;
+  statusIcon.appendChild(createIcon(badgeIconName, { size: 16, strokeWidth: 2.5 }));
+  row.appendChild(statusIcon);
+
   const labelEl = document.createElement('span');
   labelEl.className = 'notebook-checkpoints__cell-label';
   labelEl.textContent = meta.label;
-  button.append(iconEl, labelEl);
-  button.addEventListener('click', () => handlers.onOpenCell(checkpoint.id, student.id));
-  cell.appendChild(button);
+  row.appendChild(labelEl);
 
-  // One-tap quick action, only while not yet submitted — mirrors
-  // WorkRequestRosterView.js's own established "Mark Submitted"
-  // one-tap pattern directly, reused rather than inventing a new
-  // interaction, per explicit product instruction. Defaults the
-  // submission date to today; a teacher needing a different
-  // (historical) date still opens the full editor via the button
-  // above, which remains fully editable exactly as before.
-  if (!record || record.submissionStatus === 'not_submitted') {
+  content.appendChild(row);
+
+  // Always rendered, even when empty, so the action zone's own
+  // presence/height never moves the icon or label above it — see
+  // this function's own header comment.
+  const actionZone = document.createElement('div');
+  actionZone.className = 'notebook-checkpoints__cell-action-zone';
+
+  // "Mark Submitted" quick action, per explicit product direction: a
+  // "Not Submitted" cell's own common-case action is a separate,
+  // explicit control below the row (not merged into the row's own
+  // tap, which always opens the full editor uniformly). Defaults
+  // the submission date to today; a teacher needing a different
+  // (historical) date uses the row above to open the full editor.
+  if (isNotSubmitted) {
     const quickMarkButton = document.createElement('button');
     quickMarkButton.type = 'button';
     quickMarkButton.className = 'notebook-checkpoints__cell-quick-mark';
-    quickMarkButton.textContent = '✓ Mark Submitted';
+    quickMarkButton.appendChild(createIcon('check', { size: 12 }));
+    quickMarkButton.append('Mark Submitted');
+    quickMarkButton.setAttribute('aria-label', `${student.name} — ${checkpoint.title}: mark submitted`);
     quickMarkButton.addEventListener('click', (event) => {
       event.stopPropagation();
       handlers.onQuickMarkSubmitted(checkpoint.id, student.id);
     });
-    cell.appendChild(quickMarkButton);
+    actionZone.appendChild(quickMarkButton);
   }
 
   // Quick review actions, only once submitted but not yet
@@ -504,14 +708,15 @@ function populateCheckpointCell(cell, checkpoint, student, handlers) {
   // one-tap-then-persist pattern as Mark Submitted above. The
   // full editor (opened via the main cell button) remains the
   // only path for a review date correction or a note, unchanged.
-  if (record && record.submissionStatus === 'submitted' && record.reviewStatus === 'not_reviewed') {
+  if (isAwaitingReview) {
     const quickActions = document.createElement('div');
     quickActions.className = 'notebook-checkpoints__cell-quick-review';
 
     const quickCompleteButton = document.createElement('button');
     quickCompleteButton.type = 'button';
     quickCompleteButton.className = 'notebook-checkpoints__cell-quick-review-button notebook-checkpoints__cell-quick-review-button--complete';
-    quickCompleteButton.textContent = '✓ Complete';
+    quickCompleteButton.appendChild(createIcon('check', { size: 12 }));
+    quickCompleteButton.append('Complete');
     quickCompleteButton.addEventListener('click', (event) => {
       event.stopPropagation();
       handlers.onQuickReview(checkpoint.id, student.id, 'complete');
@@ -520,15 +725,19 @@ function populateCheckpointCell(cell, checkpoint, student, handlers) {
     const quickIncompleteButton = document.createElement('button');
     quickIncompleteButton.type = 'button';
     quickIncompleteButton.className = 'notebook-checkpoints__cell-quick-review-button notebook-checkpoints__cell-quick-review-button--incomplete';
-    quickIncompleteButton.textContent = '⚠ Incomplete';
+    quickIncompleteButton.appendChild(createIcon('alert-triangle', { size: 12 }));
+    quickIncompleteButton.append('Incomplete');
     quickIncompleteButton.addEventListener('click', (event) => {
       event.stopPropagation();
       handlers.onQuickReview(checkpoint.id, student.id, 'incomplete');
     });
 
     quickActions.append(quickCompleteButton, quickIncompleteButton);
-    cell.appendChild(quickActions);
+    actionZone.appendChild(quickActions);
   }
+
+  content.appendChild(actionZone);
+  cell.appendChild(content);
 }
 
 function renderGrid(checkpoints, students, handlers) {
@@ -553,73 +762,7 @@ function renderGrid(checkpoints, students, handlers) {
     // (see renderNotebookCheckpointsView() above) — never read for
     // anything else.
     th.dataset.checkpointId = checkpoint.id;
-
-    const titleRow = document.createElement('div');
-    titleRow.className = 'notebook-checkpoints__column-title-row';
-    const titleEl = document.createElement('span');
-    titleEl.className = 'notebook-checkpoints__column-title';
-    titleEl.textContent = checkpoint.title;
-    titleRow.appendChild(titleEl);
-
-    const editButton = document.createElement('button');
-    editButton.type = 'button';
-    editButton.className = 'notebook-checkpoints__column-action';
-    editButton.textContent = '✎';
-    editButton.title = 'Edit checkpoint';
-    editButton.addEventListener('click', () => handlers.onStartEdit(checkpoint.id));
-    titleRow.appendChild(editButton);
-    th.appendChild(titleRow);
-
-    const metaLine = document.createElement('span');
-    metaLine.className = 'notebook-checkpoints__column-meta';
-    metaLine.textContent = checkpoint.dueDate ? `Due ${formatDate(checkpoint.dueDate)}` : `Given ${formatDate(checkpoint.givenDate)}`;
-    th.appendChild(metaLine);
-
-    // Per-column stat boxes — Submitted/Complete only, per explicit
-    // design decision to make the header easier to scan. Reuses the
-    // exact same getCheckpointSummary() call and full return shape
-    // unchanged (still computes incompleteCount/notSubmittedCount/
-    // lateCount internally, since other things — e.g. cell status,
-    // isLate() — still need them); this is purely a change to which
-    // already-computed fields the header displays, not a change to
-    // the underlying calculation or data model at all.
-    const summary = checkpointService.getCheckpointSummary(checkpoint, students);
-    const statsEl = document.createElement('div');
-    statsEl.className = 'notebook-checkpoints__column-stats';
-    statsEl.appendChild(createColumnStatBox(summary.submittedCount, students.length, 'Submitted'));
-    statsEl.appendChild(createColumnStatBox(summary.completeCount, students.length, 'Complete'));
-    th.appendChild(statsEl);
-
-    const actionsRow = document.createElement('div');
-    actionsRow.className = 'notebook-checkpoints__column-actions';
-
-    const moveLeftButton = document.createElement('button');
-    moveLeftButton.type = 'button';
-    moveLeftButton.className = 'notebook-checkpoints__column-action';
-    moveLeftButton.textContent = '←';
-    moveLeftButton.title = 'Move left';
-    moveLeftButton.disabled = index === 0;
-    moveLeftButton.addEventListener('click', () => handlers.onMoveCheckpoint(checkpoint.id, -1));
-    actionsRow.appendChild(moveLeftButton);
-
-    const moveRightButton = document.createElement('button');
-    moveRightButton.type = 'button';
-    moveRightButton.className = 'notebook-checkpoints__column-action';
-    moveRightButton.textContent = '→';
-    moveRightButton.title = 'Move right';
-    moveRightButton.disabled = index === checkpoints.length - 1;
-    moveRightButton.addEventListener('click', () => handlers.onMoveCheckpoint(checkpoint.id, 1));
-    actionsRow.appendChild(moveRightButton);
-
-    const deleteButton = document.createElement('button');
-    deleteButton.type = 'button';
-    deleteButton.className = 'notebook-checkpoints__column-action notebook-checkpoints__column-action--danger';
-    deleteButton.textContent = '🗑';
-    deleteButton.title = 'Delete checkpoint';
-    deleteButton.addEventListener('click', () => handlers.onDeleteCheckpoint(checkpoint.id, checkpoint.title));
-    actionsRow.appendChild(deleteButton);
-
-    th.appendChild(actionsRow);
+    th.appendChild(buildUnitCard(checkpoint, index, checkpoints, students, handlers));
     headerRow.appendChild(th);
   });
 
@@ -631,7 +774,7 @@ function renderGrid(checkpoints, students, handlers) {
     const row = document.createElement('tr');
     const nameCell = document.createElement('td');
     nameCell.className = 'assessment-gradebook__name-cell';
-    nameCell.textContent = student.name;
+    populateStudentNameCell(nameCell, student, handlers);
     row.appendChild(nameCell);
 
     checkpoints.forEach((checkpoint) => {

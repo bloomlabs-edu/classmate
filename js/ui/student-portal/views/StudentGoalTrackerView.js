@@ -376,6 +376,33 @@ function renderCategoryCard(category, handlers) {
     return card;
   }
 
+  if (category.goal.status === 'changes_requested') {
+    // The teacher asked for a revision instead of approving --
+    // shows their feedback, then immediately reuses the exact same
+    // entry form the "no goal yet" case above already uses (prefilled
+    // with the existing text, via the same drafts mechanism), rather
+    // than the locked "Submitted" presentation pending_approval gets
+    // above -- there's nothing "done" about this state, so it doesn't
+    // read as done. Resubmitting goes through the exact same
+    // onSubmitGoal()/submitGoalForCurrentStudent() path as any other
+    // submission, which already writes status back to
+    // 'pending_approval' unconditionally -- no new handler needed.
+    const feedbackBlock = document.createElement('div');
+    feedbackBlock.className = 'student-goal-card__feedback';
+    const feedbackLabel = document.createElement('p');
+    feedbackLabel.className = 'student-goal-card__feedback-label';
+    feedbackLabel.textContent = 'Your teacher suggested changes:';
+    feedbackBlock.appendChild(feedbackLabel);
+    const feedbackText = document.createElement('p');
+    feedbackText.className = 'student-goal-card__feedback-text';
+    feedbackText.textContent = category.goal.teacherFeedback?.text || '';
+    feedbackBlock.appendChild(feedbackText);
+    card.appendChild(feedbackBlock);
+
+    card.appendChild(renderGoalEntryForm(category, handlers, handlers.drafts[category.categoryId] ?? category.goal.text));
+    return card;
+  }
+
   // Approved — locked text, daily toggle, live stats. Per explicit
   // product decision (models/Goal.js's own header comment), editing
   // an approved goal is a deliberately deferred future feature, not

@@ -7683,6 +7683,164 @@ button.wizard-checklist__row:hover {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
 }
 
+/* Goal Dashboard -- category matrix, restyled to match
+   ui/views/NotebookCheckpointsView.js's own current visual language
+   (compact category header card, three-zone status cells: icon-zone
+   top, muted label middle, action button bottom) using goal-dashboard__*
+   classes exclusive to this screen throughout, rather than reusing
+   NotebookCheckpointsView.js's own -status-icon/-cell-content/etc.
+   classes directly -- so this screen stays independently maintainable
+   from that one. See ui/views/GoalDashboardView.js's own
+   populateGoalCell()/renderCategoryMatrix(). */
+.goal-dashboard__category-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  border-left: 3px solid rgba(124, 92, 214, 0.6);
+  border-radius: var(--radius-control);
+  background-color: #FBFAFE;
+  padding: 0.5rem 0.6rem;
+}
+.goal-dashboard__category-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-ink);
+  white-space: normal;
+  line-height: 1.25;
+}
+
+/* The <td>'s own single child -- a fixed, top-anchored three-zone flex
+   column, mirroring NotebookCheckpointsView.js's own .cell-content
+   fix so a "Review" action's presence/absence never shifts the icon
+   or label above it, keeping every cell in a row aligned. */
+.goal-dashboard__cell {
+  padding: 0.35rem !important;
+  vertical-align: top;
+  border-radius: var(--radius-control);
+}
+.goal-dashboard__cell-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.goal-dashboard__cell-row {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 14px 0.35rem 0.3rem;
+}
+/* Circular status-icon badge -- the primary visual focal point, a
+   solid-color treatment rather than a light wash, per explicit design
+   direction. */
+.goal-dashboard__status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  color: #fff;
+}
+.goal-dashboard__status-icon--gray { background-color: #78909c; }
+.goal-dashboard__status-icon--amber { background-color: #D99A3D; }
+.goal-dashboard__status-icon--green { background-color: #4FAF78; }
+.goal-dashboard__status-icon--red { background-color: #D95C5C; }
+/* Secondary metadata, deliberately receding behind the icon above. */
+.goal-dashboard__cell-label {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-muted);
+  text-align: center;
+  white-space: normal;
+  line-height: 1.3;
+}
+/* Always rendered (even empty) directly below .cell-row, so its own
+   presence/height never shifts the icon or label above it. Collapses
+   to ~0 height when empty (no forced min-height), so a completed/not-
+   completed cell with no action stays compact rather than showing a
+   visible placeholder. */
+.goal-dashboard__cell-action-zone {
+  padding: 8px 0.35rem 10px;
+}
+/* Tertiary action -- visually subordinate to the status icon above,
+   same pill-shaped visual language as
+   NotebookCheckpointsView.js's own quick-action buttons, in this
+   cell's own amber tone. */
+.goal-dashboard__cell-quick-review {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 28px;
+  border: 1px solid rgba(217, 154, 61, 0.5);
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 0 0.4rem;
+  cursor: pointer;
+  background: var(--color-surface, #fff);
+  color: #9a6a1f;
+  white-space: nowrap;
+}
+.goal-dashboard__cell-quick-review:hover {
+  background: rgba(217, 154, 61, 0.12);
+}
+/* Very subtle background tints -- significantly lighter than the
+   status-icon badges above, so the badge itself remains the dominant
+   signal (per explicit design direction, never a saturated full-cell
+   color). */
+.goal-dashboard__cell--gray { background-color: rgba(120, 144, 156, 0.05); }
+.goal-dashboard__cell--amber { background-color: rgba(217, 154, 61, 0.06); }
+.goal-dashboard__cell--green { background-color: rgba(79, 175, 120, 0.05); }
+.goal-dashboard__cell--red { background-color: rgba(217, 92, 92, 0.05); }
+
+/* The individual goal review screen's own action row (Approve /
+   Suggest Changes) and, once revealed, the Suggest Changes feedback
+   editor's own Cancel/Send Suggestions row -- see
+   renderReviewGoalStep()/renderSuggestChangesForm() in
+   ui/views/GoalDashboardView.js. Reuses the existing .btn/.btn--primary/
+   .btn--secondary/.btn--text button system directly; no new button
+   style needed -- .btn--primary (Approve) reads as the primary,
+   positive action, .btn--secondary (Suggest Changes) deliberately
+   quieter, per explicit design direction that the two must not read
+   as equally weighted. */
+.goal-dashboard__review-actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+.goal-dashboard__feedback-form {
+  margin-top: 0.5rem;
+}
+.goal-dashboard__feedback-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--color-muted);
+  margin: 0 0 0.35rem;
+}
+.goal-dashboard__feedback-textarea {
+  display: block;
+  width: 100%;
+  min-height: 90px;
+  resize: vertical;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: 0.6rem 0.7rem;
+  font: inherit;
+  font-size: 0.95rem;
+  color: var(--color-ink);
+  background: var(--color-surface, #fff);
+  box-sizing: border-box;
+  margin-bottom: 0.75rem;
+}
+.goal-dashboard__feedback-textarea:focus {
+  outline: none;
+  border-color: var(--color-primary, #2e7d9e);
+}
+
 /* "My Goals" navigation card — see
    ui/student-portal/views/StudentJourneyView.js */
 .student-home__goals-link {
@@ -7846,6 +8004,30 @@ button.wizard-checklist__row:hover {
   color: #227a46;
   font-weight: var(--font-weight-bold);
   font-size: 0.85rem;
+}
+/* The teacher's own "Suggest Changes" feedback -- shown above the
+   revise/resubmit entry form when a goal's status is
+   'changes_requested' (see StudentGoalTrackerView.js's own
+   renderCategoryCard()). Amber-toned to match the teacher-side Goal
+   Dashboard's own amber "Awaiting approval"/review-related tone,
+   without reusing that screen's own goal-dashboard__* classes here. */
+.student-goal-card__feedback {
+  background-color: rgba(217, 154, 61, 0.08);
+  border: 1px solid rgba(217, 154, 61, 0.35);
+  border-radius: var(--radius-control);
+  padding: 0.6rem 0.75rem;
+  margin: 0 0 0.75rem;
+}
+.student-goal-card__feedback-label {
+  margin: 0 0 0.2rem;
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-bold);
+  color: #9a6a1f;
+}
+.student-goal-card__feedback-text {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--color-ink);
 }
 .student-goal-card__toggle {
   display: flex;
@@ -9348,33 +9530,102 @@ button.wizard-checklist__row:hover {
 }
 
 .notebook-checkpoints__column-header {
-  min-width: 170px;
+  min-width: 190px;
   vertical-align: top;
-  padding: 0.4rem 0.5rem !important;
+  padding: 0.4rem !important;
 }
+
+/* Compact "unit card" — a subtle left violet accent strip (this
+   app's own existing notebook/violet chip color, reused as a top-
+   accent identity, not a new hue), a small unit code, the title with
+   real weight, and a muted date underneath. */
+.notebook-checkpoints__unit-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  border-left: 3px solid rgba(124, 92, 214, 0.6);
+  border-radius: var(--radius-control);
+  background-color: #FBFAFE;
+  padding: 0.5rem 0.6rem;
+}
+.notebook-checkpoints__unit-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.3rem;
+}
+/* Kept for ui/views/GoalDashboardView.js, which reuses this exact
+   class for its own, unrelated checkpoint-style grid header (see that
+   file's own header comment) — NotebookCheckpointsView.js itself no
+   longer builds an element with this class (superseded by
+   .unit-card-top above), but this must stay defined and unchanged so
+   that other view's layout isn't affected by this restyle. */
 .notebook-checkpoints__column-title-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.3rem;
 }
+.notebook-checkpoints__unit-code {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #6D5AC4;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
 .notebook-checkpoints__column-title {
-  font-weight: 600;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-ink);
   white-space: normal;
+  line-height: 1.25;
+}
+/* Additive-only modifier, paired with .column-title above (never
+   replacing it), so every unit card's title region occupies the same
+   fixed 2-line height regardless of the checkpoint's own title length
+   — the geometry a short-titled card and a long-titled card share
+   identically. Never applied by ui/views/GoalDashboardView.js, which
+   uses only the base .column-title class above unmodified. */
+.notebook-checkpoints__unit-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 2.5em;
 }
 .notebook-checkpoints__column-meta {
   display: block;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: 400;
   color: var(--color-muted);
-  margin-top: 0.15rem;
 }
+/* Subtle, inline statistics rather than bordered stat "cards" — the
+   6/21-style numbers read quietly, never competing with the check/X
+   icons in the grid below, which carry the primary status signal. */
 .notebook-checkpoints__column-stats {
   display: flex;
-  gap: 0.35rem;
-  margin-top: 0.4rem;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.35rem;
 }
+/* Strict 2-column grid, per explicit design direction, so both stat
+   boxes in every column header always share identical dimensions
+   (never a flex-wrap fallback that could stack or resize them
+   unevenly). This wrapper class is exclusive to
+   NotebookCheckpointsView.js — ui/views/GoalDashboardView.js renders
+   a single .column-stat-box directly, with no wrapper of this kind. */
+.notebook-checkpoints__column-stat-boxes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+/* UNCHANGED from before this restyle (deliberately) — ui/views/
+   GoalDashboardView.js reuses these exact 3 classes directly for its
+   own, unrelated grid, so their own look must stay exactly as it was.
+   NotebookCheckpointsView.js's own use of them (inside the new
+   .column-stat-boxes wrapper above) inherits this same box style,
+   which already satisfies "restrained borders/backgrounds, small
+   labels" — no separate definition was needed for this view. */
 .notebook-checkpoints__column-stat-box {
   display: flex;
   flex-direction: column;
@@ -9402,79 +9653,176 @@ button.wizard-checklist__row:hover {
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
-.notebook-checkpoints__column-actions {
-  display: flex;
-  gap: 0.2rem;
-  margin-top: 0.3rem;
+/* Very subtle Submitted-progress indicator — a hairline track one
+   step off the card's own background, filled with the same violet
+   accent the card's own left strip already uses, so it reads as
+   "more of the same information," never a second competing system. */
+.notebook-checkpoints__column-progress {
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background-color: rgba(124, 92, 214, 0.15);
+  overflow: hidden;
 }
-.notebook-checkpoints__column-action {
-  background: none;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  font-size: 0.8rem;
-  padding: 0.1rem 0.35rem;
-  cursor: pointer;
+.notebook-checkpoints__column-progress-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background-color: rgba(124, 92, 214, 0.6);
+  transition: width var(--duration-fast, 150ms) var(--ease-standard, ease);
 }
-.notebook-checkpoints__column-action:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-.notebook-checkpoints__column-action--danger {
-  color: #c62828;
-  border-color: rgba(229, 57, 53, 0.35);
+/* The column's own overflow menu (Edit/Move/Delete) reuses
+   ui/components/OverflowMenu.js's platform-wide .overflow-menu
+   markup — only this trigger's placement/size is column-specific. */
+.notebook-checkpoints__unit-card-top .overflow-menu__trigger {
+  padding: 0 0.2rem;
+  font-size: 0.9rem;
+  color: var(--color-muted);
+  border-radius: var(--radius-control);
 }
 
 .notebook-checkpoints__cell {
-  padding: 0.3rem !important;
+  padding: 0.35rem !important;
   text-align: center;
+  border-radius: var(--radius-control);
 }
+/* Kept, unmodified, exclusively for ui/views/GoalDashboardView.js's
+   own reviewButton, which still uses this exact class —
+   NotebookCheckpointsView.js's own cells now use .cell-row below
+   instead. */
 .notebook-checkpoints__cell-button {
   width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.1rem;
+  gap: 0.2rem;
   background: none;
   border: none;
   cursor: pointer;
-  padding: 0.2rem;
-  border-radius: 6px;
+  padding: 0.25rem;
+  border-radius: var(--radius-control);
   font-size: 0.78rem;
   white-space: normal;
 }
 .notebook-checkpoints__cell-button:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: rgba(0, 0, 0, 0.05);
 }
-.notebook-checkpoints__cell-label {
-  font-size: 0.7rem;
-  color: var(--color-muted);
+/* The <td>'s own single child — a fixed, top-anchored three-zone flex
+   column (icon+label row, then the action zone) filling the cell's
+   full rendered height. This is what keeps the icon's own vertical
+   position identical across every cell in a row regardless of
+   whether that particular cell has a "Mark Submitted"/quick-review
+   control beneath it — vertical-align on the shared .cell class
+   itself is deliberately left untouched (see that class's own
+   comment: ui/views/GoalDashboardView.js reuses it directly), so
+   this alignment fix lives entirely in this new, exclusive wrapper
+   instead of anything shared. */
+.notebook-checkpoints__cell-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
-.notebook-checkpoints__cell-quick-mark {
-  display: block;
+/* Icon-zone + label-zone, stacked vertically and top-anchored (12-16px
+   top padding) rather than centered in the whole cell, per explicit
+   design direction — the icon is this cell's own strongest visual
+   element and must sit near the top, not floating mid-cell. The whole
+   row still opens the full cell editor uniformly for every status;
+   "Mark Submitted" and quick-review actions live in the action zone
+   below (see .cell-action-zone / .cell-quick-mark / .cell-quick-review
+   below), never merged into this row's own tap. */
+.notebook-checkpoints__cell-row {
   width: 100%;
-  margin-top: 0.15rem;
-  background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  font-size: 0.68rem;
-  padding: 0.15rem 0.3rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7rem;
+  background: none;
+  border: none;
   cursor: pointer;
-  color: #2e7d9e;
+  padding: 14px 0.35rem 0.3rem;
+  border-radius: var(--radius-control);
+}
+.notebook-checkpoints__cell-row:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+/* The circular status-icon badge — a strong, solid-color treatment
+   (never a light wash) so status reads clearly without the cell's
+   own background needing to carry it. Fixed size regardless of
+   label length, per the explicit alignment requirement. */
+.notebook-checkpoints__status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  color: #fff;
+}
+.notebook-checkpoints__status-icon--gray { background-color: #78909c; }
+.notebook-checkpoints__status-icon--purple { background-color: #6D5AC4; }
+/* Softer, pastel-leaning red/green per explicit design direction —
+   these should read as calm, friendly status badges rather than
+   saturated warning/error colors; the white glyph stays fully
+   legible against both. */
+.notebook-checkpoints__status-icon--green { background-color: #4FAF78; }
+.notebook-checkpoints__status-icon--orange { background-color: #b7691a; }
+.notebook-checkpoints__status-icon--red { background-color: #D95C5C; }
+/* Secondary metadata, deliberately receding behind the icon above —
+   centered beneath it now that the row is a vertical stack, not a
+   horizontal line. */
+.notebook-checkpoints__cell-label {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-muted);
+  text-align: center;
+  white-space: normal;
+  line-height: 1.3;
+}
+/* Always rendered (even empty) directly below .cell-row, so its own
+   presence/height never shifts the icon or label above it — see
+   populateCheckpointCell()'s own header comment in
+   NotebookCheckpointsView.js. Collapses to ~0 height when empty
+   (no forced min-height), so an already-reviewed cell with no action
+   button stays compact rather than showing a visible placeholder. */
+.notebook-checkpoints__cell-action-zone {
+  padding: 8px 0.35rem 10px;
+}
+/* Tertiary action — visually subordinate to the status icon above:
+   white background, thin light-green border, green text, pill shape. */
+.notebook-checkpoints__cell-quick-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  width: 100%;
+  height: 28px;
+  border: 1px solid rgba(46, 158, 91, 0.4);
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 0 0.4rem;
+  cursor: pointer;
+  background: var(--color-surface, #fff);
+  color: #227a46;
+  white-space: nowrap;
 }
 .notebook-checkpoints__cell-quick-mark:hover {
-  background: rgba(46, 125, 158, 0.08);
+  background: rgba(46, 158, 91, 0.12);
 }
 .notebook-checkpoints__cell-quick-review {
   display: flex;
-  gap: 0.2rem;
-  margin-top: 0.15rem;
+  gap: 0.25rem;
 }
 .notebook-checkpoints__cell-quick-review-button {
   flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
   border: 1px solid;
-  border-radius: 6px;
+  border-radius: var(--radius-pill);
   font-size: 0.65rem;
-  padding: 0.15rem 0.2rem;
+  font-weight: 600;
+  padding: 0.2rem 0.3rem;
   cursor: pointer;
   background: var(--color-surface, #fff);
   white-space: nowrap;
@@ -9484,22 +9832,101 @@ button.wizard-checklist__row:hover {
   color: #227a46;
 }
 .notebook-checkpoints__cell-quick-review-button--complete:hover {
-  background: rgba(46, 158, 91, 0.1);
+  background: rgba(46, 158, 91, 0.12);
 }
 .notebook-checkpoints__cell-quick-review-button--incomplete {
   border-color: rgba(229, 57, 53, 0.4);
   color: #c62828;
 }
 .notebook-checkpoints__cell-quick-review-button--incomplete:hover {
-  background: rgba(229, 57, 53, 0.1);
+  background: rgba(229, 57, 53, 0.12);
 }
 
+/* These 6 background tints are kept exactly as they were before this
+   restyle, unmodified — ui/views/GoalDashboardView.js reuses 4 of
+   them (gray/amber/green/red) directly for its own, unrelated grid
+   and depends on the tint itself to carry meaning there.
+   NotebookCheckpointsView.js's own cells no longer add any of these
+   --chipClass suffixes to their own <td> (per explicit design
+   direction, this view's own cells stay a plain neutral surface —
+   status is carried entirely by the .status-icon badge above), so
+   these rules now apply only within GoalDashboardView's own markup. */
 .notebook-checkpoints__cell--gray { background-color: rgba(120, 144, 156, 0.08); }
 .notebook-checkpoints__cell--amber { background-color: rgba(183, 121, 31, 0.08); }
 .notebook-checkpoints__cell--purple { background-color: rgba(124, 92, 214, 0.08); }
 .notebook-checkpoints__cell--green { background-color: rgba(46, 158, 91, 0.08); }
 .notebook-checkpoints__cell--orange { background-color: rgba(224, 123, 19, 0.08); }
 .notebook-checkpoints__cell--red { background-color: rgba(229, 57, 53, 0.08); }
+
+/* New, exclusive to this view's own cells — a very light, secondary
+   background tint (Not Submitted / on-time Submitted · Complete
+   only), deliberately never reusing the .cell--red/--green classes
+   directly above, which ui/views/GoalDashboardView.js's own,
+   unrelated grid depends on for its own tint values. The circular
+   .status-icon badge remains the primary status signal; this tint is
+   secondary and intentionally subtle (5% alpha, mostly white). */
+.notebook-checkpoints__cell--tint-red { background-color: rgba(229, 57, 53, 0.05); }
+.notebook-checkpoints__cell--tint-green { background-color: rgba(46, 158, 91, 0.05); }
+
+/* A plain, non-interactive wrapper (avatar + name) — per explicit
+   design direction, the avatar must NOT be part of the click target,
+   so this row itself is deliberately not a button; only
+   .student-name below is. */
+.notebook-checkpoints__student {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+}
+/* This app's existing "interactive blue" text token (see its own
+   definition comment in this file), reused here rather than
+   inventing a new link color — the student's name is the click
+   target, so it reads as interactive the same way this token already
+   does elsewhere in the app. No separate instructional hint text —
+   the name's own color/underline-on-hover is the only affordance,
+   per explicit product direction. Button-reset properties (no
+   border/background/padding of its own) so it reads as plain text
+   until hovered, wired to onSelectStudent. */
+.notebook-checkpoints__student-name {
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary-strong);
+  line-height: 1.2;
+  cursor: pointer;
+  text-align: left;
+}
+.notebook-checkpoints__student-name:hover {
+  text-decoration: underline;
+}
+/* Subtle initial-letter avatar before each student's name — mirrors
+   ui/components/UserBar.js's own existing fallback-avatar convention;
+   never more visually prominent than the name itself. */
+.notebook-checkpoints__student-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background-color: var(--color-bg);
+  color: var(--color-muted);
+  font-size: 0.65rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+/* Scoped to this table specifically (never the shared
+   .assessment-gradebook__name-cell rule, which Assessment Management
+   also uses) so the avatar+name pair aligns on one line, and every
+   row's name cell aligns consistently, without touching that
+   unrelated screen. */
+.notebook-checkpoints__table .assessment-gradebook__name-cell {
+  display: flex;
+  align-items: center;
+}
 
 /* Checkpoint create/edit form */
 .notebook-checkpoints__form {
@@ -11125,6 +11552,34 @@ button.wizard-checklist__row:hover {
   margin: 0.15rem 0;
   font-weight: var(--font-weight-medium);
 }
+/* Phase 2A UX refinement — a compact row of number+label pairs
+   (Students · Present · Absent · Goals), specifically for "visually
+   compact and scannable, especially on mobile" — a plain sentence
+   line reads fine but doesn't scan at a glance the way a quick row
+   of digits does. Wraps naturally on a narrow phone rather than
+   overflowing, via flex-wrap. */
+.programme-session-view__stats-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.1rem;
+  margin: 0.5rem 0 0.35rem;
+}
+.programme-session-view__stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 3.5rem;
+}
+.programme-session-view__stat-number {
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-black);
+  line-height: 1.1;
+}
+.programme-session-view__stat-label {
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+  letter-spacing: 0.02em;
+}
 
 /* The four destination blocks — reuses .primary-modules's own
    auto-fit/minmax grid mechanics (see ui/views/DashboardView.js) so
@@ -11169,33 +11624,47 @@ button.wizard-checklist__row:hover {
   }
 }
 
-/* Activity chips — real, clickable UI objects (icon + label + an
-   overflow menu), never plain embedded text. Reuses
-   ui/components/OverflowMenu.js's own existing `.overflow-menu`
-   markup directly for the "⋮" trigger; only the chip shell itself is
-   new. */
-.programme-session-view__activity-chip-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
+/* Phase 2A UX refinement — activities as proper cards, not small
+   pills with the name and notes squashed into one string. Icon +
+   an explicit "⋮" (reusing ui/components/OverflowMenu.js's own
+   `.overflow-menu` markup directly) on the top row; the activity's
+   own name prominent; notes, when present, secondary and on their
+   own line — real visual hierarchy, not embedded text. Reuses the
+   same auto-fit grid mechanics as the four destination blocks
+   themselves, so this reflows from a multi-column grid down to a
+   single column on a narrow phone with no extra media query. */
+.programme-session-view__activity-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
   margin-bottom: 0.85rem;
 }
-.programme-session-view__activity-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.5rem 0.7rem;
-  border-radius: var(--radius-pill);
-  background-color: var(--color-bg);
+.programme-session-view__activity-card {
   border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background-color: var(--color-bg);
+  padding: 0.85rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.programme-session-view__activity-card-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.programme-session-view__activity-card-icon {
+  font-size: 1.4rem;
+}
+.programme-session-view__activity-card-name {
+  margin: 0;
+  font-weight: var(--font-weight-black);
+  font-size: var(--text-base);
+}
+.programme-session-view__activity-card-notes {
+  margin: 0;
   font-size: var(--text-sm);
-  min-height: 44px; /* touch-target minimum — sessions are often run from a phone */
-}
-.programme-session-view__activity-chip-icon {
-  font-size: 1.1rem;
-}
-.programme-session-view__activity-chip-label {
-  font-weight: var(--font-weight-medium);
+  color: var(--color-muted);
 }
 
 /* "+ Add Activity" — collapsed by default; the revealed row below
