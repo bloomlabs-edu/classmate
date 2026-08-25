@@ -4775,9 +4775,13 @@ button.wizard-checklist__row:hover {
   align-items: center;
   /* Was flex-end (a single item, the back-link, pushed right) — now
      space-between so the notification bell (see
-     ui/student-portal/components/StudentNotificationBell.js) sits on
-     the left without needing a wrapper group of its own; the back-link
-     itself is completely unchanged. */
+     ui/student-portal/components/StudentNotificationBell.js) has its
+     own slot without needing a wrapper group of its own. Home lands in
+     the left slot and the bell in the right one purely from DOM order
+     (see StudentPortalShell.js's own renderStudentPortalShell() —
+     Home is appended first, the bell second) — this file has no
+     breakpoint of its own for the topbar, so that same left/right
+     hierarchy holds at every width, phone and desktop alike. */
   justify-content: space-between;
   padding: 0.75rem 1.5rem 0;
 }

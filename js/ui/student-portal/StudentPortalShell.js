@@ -47,6 +47,20 @@ export function renderStudentPortalShell(container, { activeSection, onNavigateS
   const topBar = document.createElement('div');
   topBar.className = 'student-portal__topbar';
 
+  // Home first, so it lands in the topbar's own left slot (see
+  // .student-portal__topbar's own justify-content: space-between) —
+  // the bell (appended second, below) takes the right slot. Consistent
+  // at every width: this shell has no responsive breakpoint of its own
+  // for the topbar at all, so this ordering is the whole layout, on
+  // phone and desktop alike.
+  const backLink = document.createElement('button');
+  backLink.type = 'button';
+  backLink.className = 'student-portal__back-link';
+  backLink.appendChild(createIcon('arrow-left'));
+  backLink.append('Home');
+  backLink.addEventListener('click', onBackToLanding);
+  topBar.appendChild(backLink);
+
   // Only rendered once a caller actually passes bell data (main.js only
   // does this once a profile/classroom is actually active — see this
   // file's own header comment on why nothing here should know that
@@ -62,14 +76,6 @@ export function renderStudentPortalShell(container, { activeSection, onNavigateS
     });
     topBar.appendChild(bellContainer);
   }
-
-  const backLink = document.createElement('button');
-  backLink.type = 'button';
-  backLink.className = 'student-portal__back-link';
-  backLink.appendChild(createIcon('arrow-left'));
-  backLink.append('Home');
-  backLink.addEventListener('click', onBackToLanding);
-  topBar.appendChild(backLink);
 
   const nav = document.createElement('nav');
   nav.className = 'student-portal__nav';
