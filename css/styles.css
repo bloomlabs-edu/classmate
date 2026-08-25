@@ -4862,13 +4862,16 @@ button.wizard-checklist__row:hover {
      own renderStudentPortalShell()); a popover still expanding
      rightward (left: 0) from a point already near the viewport's own
      right edge overflowed it. right: 0 expands leftward instead,
-     staying inside the viewport. width caps at 260px like before but
-     never beyond the actual viewport (minus a small margin on each
-     side) — guarantees no horizontal overflow on any phone width,
-     without introducing page-level horizontal scrolling. */
+     staying inside the viewport on desktop, where there's always
+     plenty of room to the bell's own left for a fixed-width panel.
+     box-sizing: border-box so the padding below is included in this
+     260px, not added on top of it (the app has a global `* {
+     box-sizing: border-box }` reset already, but this is pinned
+     explicitly here too since a positioned/sized element like this
+     one shouldn't depend on that staying true elsewhere). */
   right: 0;
   width: 260px;
-  max-width: calc(100vw - 2rem);
+  box-sizing: border-box;
   background-color: #ffffff;
   border-radius: var(--radius-card);
   box-shadow: var(--elevation-dialog);
@@ -4878,6 +4881,37 @@ button.wizard-checklist__row:hover {
 }
 .student-notification-bell__popover--open {
   display: flex;
+}
+/* Narrow screens: `right: 0` above is an offset from `.student-
+   notification-bell`'s OWN box (see that rule's own position:
+   relative) — a ~36px button, not the actual viewport — so a width
+   derived purely from `100vw` (the previous approach here) still
+   assumed that tiny box's right edge always sits exactly one fixed
+   topbar padding away from the real viewport edge. That assumption
+   held in ordinary testing, but isn't something CSS actually
+   guarantees (mobile browsers are inconsistent about what counts
+   toward `100vw` once the address bar/toolbar is factored in), so a
+   width computed from it isn't a real, structural guarantee against
+   overflow either.
+   Below this width, switch entirely to `position: fixed` — its
+   containing block is the real viewport itself, not this component's
+   own small positioned ancestor (confirmed no ancestor here sets a
+   transform/filter/contain that would change that) — with `left` AND
+   `right` insets, so the panel's width is *derived from* two
+   viewport-relative margins rather than asserted independently of
+   them. That is structurally incapable of extending past either edge,
+   regardless of where the bell itself sits. `top` is a fixed value
+   matching this panel's own already-measured position immediately
+   below the topbar at this width, so it still reads as "beneath the
+   bell," not as a generic corner sheet. */
+@media (max-width: 520px) {
+  .student-notification-bell__popover {
+    position: fixed;
+    top: 3.5rem;
+    left: 1rem;
+    right: 1rem;
+    width: auto;
+  }
 }
 .student-notification-bell__heading {
   margin: 0;

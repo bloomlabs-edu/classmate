@@ -24,6 +24,45 @@ import { createIcon } from '../../components/Icon.js';
 import { formatRelativeTimestamp } from '../../../utils/dateHelpers.js';
 
 /**
+ * Whether the popover is currently open — module-level, not local to
+ * one call of renderStudentNotificationBell(), because this component
+ * has no DOM of its own that survives between calls: main.js's own
+ * onLiveUpdateCallback (see studentPortalDataService.js's
+ * startClassroomSubscription()) re-renders the ENTIRE Student Portal
+ * shell — tearing down and rebuilding this bell from scratch — on
+ * every read-state snapshot, including the very one markEventsRead()
+ * itself produces. Without this surviving somewhere outside the DOM
+ * this function keeps recreating, a just-opened popover would look
+ * like it "closed itself" the moment its own dwell-to-read write round-
+ * trips back through that subscription — which is exactly the bug this
+ * fixes. Read at the top of a fresh render to decide whether to render
+ * already-open; written only by this file's own toggle/close paths
+ * below, never by the read-state write path itself.
+ */
+let isPopoverOpenState = false;
+
+/**
+ * The outside-click listener currently registered on `document`, if
+ * any — tracked at module level for the same reason isPopoverOpenState
+ * is: a fresh render creates a brand-new handleOutsideClick closure
+ * every time, so without this, silently reopening on a rebuild (see
+ * isPopoverOpenState's own comment) would add a NEW listener each time
+ * without ever removing the previous instance's own (that instance is
+ * simply discarded, never calling its own closePopover(), since
+ * marking events read never closes the panel any more). Cleared
+ * exactly on the same two paths that ever add one.
+ */
+let activeOutsideClickListener = null;
+
+function replaceOutsideClickListener(handler) {
+  if (activeOutsideClickListener) {
+    document.removeEventListener('click', activeOutsideClickListener);
+  }
+  activeOutsideClickListener = handler;
+  if (handler) document.addEventListener('click', handler);
+}
+
+/**
  * `events` — the bell's own recent list, each already carrying
  * `isUnread` (see studentPortalDataService.js's own
  * getRecentEventsForBell()) — this component never computes read/unread
@@ -83,8 +122,16 @@ export function renderStudentNotificationBell(container, { unreadCount, events =
       const itemButton = document.createElement('button');
       itemButton.type = 'button';
       itemButton.className = 'student-notification-bell__item-button';
+      // Deliberately does NOT close the popover first — marking this
+      // one event read must not visibly close the whole panel any more
+      // than the dwell-based bulk read below does (see this file's own
+      // isPopoverOpenState comment for why a read-marking write
+      // reopens, rather than closes, on the re-render it triggers). If
+      // onOpenEvent actually navigates (an event with a detail route —
+      // see config/studentEventNavigation.js), that navigation is its
+      // own, separate reason the panel stops being visible; this click
+      // handler doesn't need to force it.
       itemButton.addEventListener('click', () => {
-        closePopover();
         onOpenEvent?.(event);
       });
 
@@ -137,10 +184,16 @@ export function renderStudentNotificationBell(container, { unreadCount, events =
     autoMarkReadTimeoutId = null;
   }
 
+  // The only two closes this component ever performs on its own —
+  // the user re-toggling the bell, or clicking outside the panel (see
+  // toggleButton's own click handler and handleOutsideClick below).
+  // Marking events read (individually or via the dwell timer) never
+  // calls this — see isPopoverOpenState's own comment above.
   function closePopover() {
+    isPopoverOpenState = false;
     popover.classList.remove('student-notification-bell__popover--open');
     toggleButton.setAttribute('aria-expanded', 'false');
-    document.removeEventListener('click', handleOutsideClick);
+    replaceOutsideClickListener(null);
     cancelAutoMarkRead();
   }
 
@@ -151,16 +204,42 @@ export function renderStudentNotificationBell(container, { unreadCount, events =
   toggleButton.addEventListener('click', (event) => {
     event.stopPropagation();
     const isOpen = popover.classList.toggle('student-notification-bell__popover--open');
+    isPopoverOpenState = isOpen;
     toggleButton.setAttribute('aria-expanded', String(isOpen));
     if (isOpen) {
-      setTimeout(() => document.addEventListener('click', handleOutsideClick), 0);
+      setTimeout(() => replaceOutsideClickListener(handleOutsideClick), 0);
       scheduleAutoMarkRead();
     } else {
-      document.removeEventListener('click', handleOutsideClick);
+      replaceOutsideClickListener(null);
       cancelAutoMarkRead();
     }
   });
 
   wrapper.appendChild(popover);
   container.appendChild(wrapper);
+
+  // Re-render while the popover was already open (this render's own
+  // container was just torn down and rebuilt from under an open panel
+  // — see isPopoverOpenState's own comment above) — reflect that
+  // immediately, WITHOUT going through the click handler above: no
+  // fresh click actually happened, so no new auto-mark-read timer
+  // should start (events already showing here have already been
+  // through that once). The listener attachment itself is STILL
+  // deferred to the next tick, same as toggleButton's own open path
+  // below — this render can be triggered synchronously from inside a
+  // live click's own bubble phase (an item's own onOpenEvent call,
+  // via markEventRead()'s read-state round trip, rebuilds this bell
+  // WHILE that same click event is still bubbling toward `document`);
+  // attaching immediately would let that still-bubbling click, whose
+  // target is now a detached element from the previous instance,
+  // immediately look like an "outside" click against the new wrapper
+  // and close the panel right back. Goes through
+  // replaceOutsideClickListener() too, so the previous, now-orphaned
+  // instance's own listener is swapped out rather than left stacked
+  // alongside this one.
+  if (isPopoverOpenState) {
+    popover.classList.add('student-notification-bell__popover--open');
+    toggleButton.setAttribute('aria-expanded', 'true');
+    setTimeout(() => replaceOutsideClickListener(handleOutsideClick), 0);
+  }
 }
