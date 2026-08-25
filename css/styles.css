@@ -4857,8 +4857,18 @@ button.wizard-checklist__row:hover {
   flex-direction: column;
   position: absolute;
   top: calc(100% + 0.5rem);
-  left: 0;
+  /* Anchored to the bell's own right edge, not left — the bell itself
+     sits at the top-RIGHT of the topbar (see StudentPortalShell.js's
+     own renderStudentPortalShell()); a popover still expanding
+     rightward (left: 0) from a point already near the viewport's own
+     right edge overflowed it. right: 0 expands leftward instead,
+     staying inside the viewport. width caps at 260px like before but
+     never beyond the actual viewport (minus a small margin on each
+     side) — guarantees no horizontal overflow on any phone width,
+     without introducing page-level horizontal scrolling. */
+  right: 0;
   width: 260px;
+  max-width: calc(100vw - 2rem);
   background-color: #ffffff;
   border-radius: var(--radius-card);
   box-shadow: var(--elevation-dialog);
@@ -4916,6 +4926,11 @@ button.wizard-checklist__row:hover {
 .student-notification-bell__item-message {
   font-size: 0.78rem;
   color: var(--color-muted);
+}
+.student-notification-bell__item-timestamp {
+  font-size: 0.7rem;
+  color: var(--color-muted);
+  opacity: 0.8;
 }
 .student-notification-bell__item--unread {
   position: relative;

@@ -26,6 +26,66 @@ export function isSameDay(dateA, dateB) {
 }
 
 /**
+ * A compact, human-readable timestamp for a moment that already
+ * happened — built for the notification bells (see
+ * ui/student-portal/components/StudentNotificationBell.js,
+ * ui/components/UserBar.js) but generic: takes the same ISO string
+ * every `createdAt` field in this app already stores (see
+ * getCurrentIsoDate() above) and returns one of, in order:
+ *
+ *   - "Just now"           — under a minute old
+ *   - "N min ago"           — under an hour old
+ *   - "N hr ago"            — under 6 hours old AND still today
+ *   - "Today · h:mm AM/PM"  — today, but past the "hr ago" window
+ *   - "Yesterday · h:mm AM/PM"
+ *   - "Mon D · h:mm AM/PM"  — anything older
+ *
+ * The 6-hour cutoff between "N hr ago" and "Today · ..." is a
+ * judgment call, not a further-specified product rule — same-day
+ * alone can't distinguish them (anything today is under 24h old by
+ * definition), so *some* cutoff has to exist; 6 hours keeps "2 hr
+ * ago" reading naturally while still leaving "Today · ..." doing real
+ * work for the rest of the day. Easy to retune later — it's the one
+ * number in this function, not spread across branches.
+ *
+ * All of this is computed in the CALLER's own local time zone
+ * (`new Date()`/`toLocaleTimeString()` with no explicit `timeZone`
+ * option) — never UTC — matching "use the user's local time" exactly.
+ * Never stores or reads anything beyond the one ISO string passed in;
+ * no new field, no change to how createdAt itself is written or
+ * shaped anywhere.
+ */
+export function formatRelativeTimestamp(isoString) {
+  const then = new Date(isoString);
+  if (Number.isNaN(then.getTime())) return '';
+
+  const now = new Date();
+  const diffMs = now - then;
+  const diffMinutes = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+
+  if (diffMinutes < 1) return 'Just now';
+  if (diffMinutes < 60) return `${diffMinutes} min ago`;
+
+  const sameDayAsNow = isSameDay(then, now);
+  if (diffHours < 6 && sameDayAsNow) return `${diffHours} hr ago`;
+
+  // en-US specifically here (not this file's own usual en-IN, see
+  // formatDate() above) — the requested format is explicitly
+  // "Aug 24 · 3:45 PM" (month before day, uppercase AM/PM), which is
+  // en-US's own convention, not en-IN's ("24 Aug", lowercase "pm").
+  const time = then.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  if (sameDayAsNow) return `Today · ${time}`;
+
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (isSameDay(then, yesterday)) return `Yesterday · ${time}`;
+
+  const datePart = then.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${datePart} · ${time}`;
+}
+
+/**
  * A plain "YYYY-MM-DD" string in local time — the date-key format
  * Notebook Tracker uses (see services/notebookService.js). Deliberately
  * not a full ISO timestamp: the notebook register only ever needs a

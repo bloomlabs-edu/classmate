@@ -21,6 +21,7 @@
  */
 
 import { createIcon } from '../../components/Icon.js';
+import { formatRelativeTimestamp } from '../../../utils/dateHelpers.js';
 
 /**
  * `events` — the bell's own recent list, each already carrying
@@ -96,6 +97,14 @@ export function renderStudentNotificationBell(container, { unreadCount, events =
       message.className = 'student-notification-bell__item-message';
       message.textContent = event.message;
       itemButton.appendChild(message);
+
+      // Reuses the event's own existing createdAt — no new stored
+      // field, no change to the data model (see
+      // utils/dateHelpers.js's own formatRelativeTimestamp()).
+      const timestamp = document.createElement('span');
+      timestamp.className = 'student-notification-bell__item-timestamp';
+      timestamp.textContent = formatRelativeTimestamp(event.createdAt);
+      itemButton.appendChild(timestamp);
 
       item.appendChild(itemButton);
       list.appendChild(item);
