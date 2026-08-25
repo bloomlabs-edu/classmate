@@ -59,6 +59,8 @@ import * as checkpointService from '../../services/checkpointService.js';
 import * as notebookConfigService from '../../services/notebookConfigService.js';
 import * as workspaceService from '../../services/workspaceService.js';
 import * as workspaceCoordinator from '../../services/workspaceCoordinator.js';
+import * as notificationService from '../../services/notificationService.js';
+import { NOTIFICATION_CATEGORIES } from '../../config/notificationCategories.js';
 import { getClassroomStudents } from '../../services/assessmentService.js';
 import { formatDate, getTodayDateKey } from '../../utils/dateHelpers.js';
 import { createBackButton } from '../components/BackButton.js';
@@ -112,7 +114,7 @@ export function getCellMeta(checkpoint, record) {
     : { label: 'Not Reviewed', chipClass: 'purple', icon: 'circle-dot' };
 }
 
-export function renderNotebookCheckpointsView(container, { classroom, subjectId, notebookTypeId, onBack, onSelectStudent }) {
+export function renderNotebookCheckpointsView(container, { classroom, currentUser, subjectId, notebookTypeId, onBack, onSelectStudent }) {
   // Replaced wholesale by resyncFromServer() below whenever
   // workspaceCoordinator delivers a fresh, server-confirmed classroom
   // — every handler below reads THIS variable at call time (never a
@@ -182,6 +184,37 @@ export function renderNotebookCheckpointsView(container, { classroom, subjectId,
     workspaceService.save(currentClassroom);
   }
 
+  /**
+   * The MVP's one checkpoint-side notification publisher — fires only
+   * when a review outcome actually becomes 'incomplete' (a submission
+   * that needs a teacher's own follow-up, per this app's own existing
+   * status hierarchy — see getCellMeta() above), never for 'complete'
+   * or 'not_reviewed'. Called from onQuickReview/onSaveCell below,
+   * after persistClassroom() — mirrors this file's own established
+   * "call a side effect from the handler, never from inside
+   * checkpointService.js's own pure data functions" split (see this
+   * file's own header comment). Does not compare against the
+   * student's own previous status first, so re-saving an
+   * already-Incomplete review re-fires this — an accepted MVP
+   * limitation, not a bug: avoiding it would mean tracking previous
+   * status somewhere new, which is more machinery than this milestone
+   * calls for.
+   */
+  function notifyIfIncomplete(checkpointId, studentId, status) {
+    if (status !== 'incomplete') return;
+    const checkpoint = checkpointService.getCheckpointById(currentClassroom, checkpointId);
+    const student = getSortedStudents().find((s) => s.id === studentId);
+    if (!checkpoint || !student) return;
+    notificationService.publishNotification(currentClassroom.id, {
+      type: 'checkpoint_incomplete',
+      category: NOTIFICATION_CATEGORIES.CHECKPOINTS,
+      title: 'Checkpoint marked Incomplete',
+      message: `${student.name}’s “${checkpoint.title}” was marked Incomplete.`,
+      payload: { studentId, checkpointId },
+      createdByUid: currentUser?.uid,
+    });
+  }
+
   const handlers = {
     onStartCreate: () => {
       editingCheckpointId = 'new';
@@ -239,6 +272,7 @@ export function renderNotebookCheckpointsView(container, { classroom, subjectId,
       const checkpoint = checkpointService.getCheckpointById(currentClassroom, checkpointId);
       checkpointService.setReview(checkpoint, studentId, { status, reviewedDate: getTodayDateKey() });
       persistClassroom();
+      notifyIfIncomplete(checkpointId, studentId, status);
       updateCellAndColumn(checkpointId, studentId);
     },
     onCloseCell: () => {
@@ -252,6 +286,7 @@ export function renderNotebookCheckpointsView(container, { classroom, subjectId,
       checkpointService.setTeacherNote(checkpoint, studentId, teacherNote);
       openCellFor = null;
       persistClassroom();
+      notifyIfIncomplete(checkpointId, studentId, review.status);
       refreshCellEditor();
       updateCellAndColumn(checkpointId, studentId);
     },

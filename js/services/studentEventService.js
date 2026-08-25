@@ -8,9 +8,23 @@
  * through getEventsForStudent() (via services/studentPortalDataService.js,
  * this app's own single Student Portal data-access rule — nothing in
  * ui/student-portal/ should ever import this file directly).
+ *
+ * STAGE 1 ADDITION (notification architecture audit, Section E) — this
+ * file now also owns the student-facing notification BELL's own read
+ * state: classrooms/{classroomId}/studentEventReadState/{studentUid}
+ * (see repositories/firestoreStudentEventReadStateRepository.js's own
+ * header comment for why that's a separate collection rather than a
+ * field on the event/classroom itself). Event CONTENT below is
+ * completely unchanged — publishEvent()/getEventsForStudent() do
+ * exactly what they always did; nothing about "Your Updates" is
+ * touched by any of this. This is purely additive: which of a
+ * student's own already-existing events they've personally seen.
  */
 
 import { createStudentEvent } from '../models/StudentEvent.js';
+import * as studentDeviceService from './studentDeviceService.js';
+import * as studentAuthService from './studentAuthService.js';
+import * as readStateRepository from '../repositories/firestoreStudentEventReadStateRepository.js';
 
 /**
  * Publishes one event for one student. Call this only after the
@@ -116,4 +130,89 @@ export function getEventCopyForViewer(event, viewer = 'self') {
 
   const buildNeutralCopy = NEUTRAL_EVENT_COPY[viewer][event.type];
   return buildNeutralCopy ? buildNeutralCopy(event) : { title: event.title, message: event.message };
+}
+
+// --- Stage 1: notification bell read state ---
+
+/** Pure — how many of these events aren't in readEventIds yet. Takes plain data (never touches Firestore itself), matching this file's own existing style for everything above. */
+export function countUnread(events, readEventIds) {
+  const readSet = new Set(readEventIds || []);
+  return events.filter((event) => !readSet.has(event.id)).length;
+}
+
+/**
+ * Resolves the currently-active student profile's own per-slot
+ * Firestore instance + real (if anonymous) uid — the same
+ * classroomId/slotIndex/uid resolution
+ * services/feedService.js's createPostAsCurrentStudent() and
+ * services/studentGoalsService.js's submitGoalForCurrentStudent()
+ * already each do independently; kept local to this file rather than
+ * extracted, matching how those two files also don't share it today.
+ */
+async function resolveActiveStudentContext() {
+  const activeProfile = studentDeviceService.getActiveProfile();
+  if (!activeProfile) return null;
+
+  const slotIndex = studentDeviceService.getSlotForStudent(activeProfile.studentId);
+  if (slotIndex === null) return null;
+
+  const db = studentAuthService.getFirestoreForSlot(slotIndex);
+  const uid = await studentAuthService.ensureAnonymousSignIn(slotIndex);
+  return { classroomId: activeProfile.classroomId, db, uid };
+}
+
+/** Marks one event read for the current student — writes through their own per-slot Firestore instance, matching submitGoalForCurrentStudent()'s own established convention exactly. Returns true on success; false (never throws) if there's no active profile or the write was rejected. */
+export async function markEventReadForCurrentStudent(eventId) {
+  const context = await resolveActiveStudentContext();
+  if (!context) return false;
+
+  try {
+    await readStateRepository.markEventRead(context.db, context.classroomId, context.uid, eventId);
+    return true;
+  } catch (error) {
+    console.error('[studentEventService] markEventReadForCurrentStudent() failed:', error);
+    return false;
+  }
+}
+
+/** Marks several events read in one write — the bell's own "dwell in the open popover" behavior calls this instead of N individual markEventReadForCurrentStudent() calls. */
+export async function markEventsReadForCurrentStudent(eventIds) {
+  if (!eventIds || eventIds.length === 0) return true;
+
+  const context = await resolveActiveStudentContext();
+  if (!context) return false;
+
+  try {
+    await readStateRepository.markEventsRead(context.db, context.classroomId, context.uid, eventIds);
+    return true;
+  } catch (error) {
+    console.error('[studentEventService] markEventsReadForCurrentStudent() failed:', error);
+    return false;
+  }
+}
+
+/**
+ * Live-subscribes to the current student's own read state. Resolving
+ * the active profile's own uid is async (ensureAnonymousSignIn), but
+ * every other subscription in this app returns its own unsubscribe
+ * function synchronously — this does too, via a small guard: if
+ * unsubscribe() is called before the async resolution above finishes,
+ * `cancelled` stops the subscription from ever starting at all, rather
+ * than leaking a listener nothing can reach anymore.
+ */
+export function subscribeToReadStateForCurrentStudent(onChange, onError) {
+  let unsubscribe = null;
+  let cancelled = false;
+
+  resolveActiveStudentContext()
+    .then((context) => {
+      if (!context || cancelled) return;
+      unsubscribe = readStateRepository.subscribeToReadState(context.db, context.classroomId, context.uid, onChange, onError);
+    })
+    .catch((error) => onError?.(error));
+
+  return () => {
+    cancelled = true;
+    unsubscribe?.();
+  };
 }

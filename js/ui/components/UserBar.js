@@ -39,7 +39,7 @@ import { ACCENT_COLOR_OPTIONS } from '../../config/accentColorConfig.js';
 import { createSpectrumColorPicker } from './SpectrumColorPicker.js';
 import { createIcon } from './Icon.js';
 
-export function renderUserBar(container, { user, onSignOut, currentAccentColorId, onSelectAccentColor, onSelectCustomAccentColor, onPreviewCustomAccentColor, onBackToLanding, notificationPermissionState, onEnableNotifications, onDisableNotifications, notificationUnreadCount }) {
+export function renderUserBar(container, { user, onSignOut, currentAccentColorId, onSelectAccentColor, onSelectCustomAccentColor, onPreviewCustomAccentColor, onBackToLanding, notificationPermissionState, onEnableNotifications, onDisableNotifications, notificationUnreadCount, notifications, hasClassroomContext, onOpenNotification, onNotificationsViewed }) {
   container.innerHTML = '';
   if (!user) return;
 
@@ -160,7 +160,17 @@ export function renderUserBar(container, { user, onSignOut, currentAccentColorId
 
   if (notificationPermissionState && (onEnableNotifications || onDisableNotifications)) {
     rightGroup.appendChild(
-      createNotificationControl(notificationPermissionState, onEnableNotifications, onDisableNotifications, notificationUnreadCount)
+      createNotificationControl({
+        permissionState: notificationPermissionState,
+        onEnable: onEnableNotifications,
+        onDisable: onDisableNotifications,
+        unreadCount: notificationUnreadCount,
+        notifications,
+        hasClassroomContext,
+        onOpenNotification,
+        onNotificationsViewed,
+        currentUserUid: user.uid,
+      })
     );
   }
 
@@ -194,15 +204,23 @@ export function renderUserBar(container, { user, onSignOut, currentAccentColorId
  * product direction; never shows anything beyond a small "granted"
  * dot on the bell itself until a teacher opens this popover.
  *
- * `unreadCount` is optional and purely presentational here -- there is
- * no unread-notification store/count anywhere in this app yet (see
- * services/pushNotificationService.js's own header comment: this is
- * still Phase 1, registration only), so no caller currently passes a
- * real value and this renders no badge at all today. Accepting it
- * now just means a later phase can wire up a real count without
- * touching this component again.
+ * `unreadCount`/`notifications`/`onOpenNotification`/`onNotificationsViewed`
+ * back the actual in-app notification list (see
+ * services/notificationService.js) -- added on top of this control's
+ * own pre-existing push-permission settings below, per explicit
+ * product direction to keep the two visually separate (a divider)
+ * rather than merging them into one section: "manage whether this
+ * device can receive a push" and "what actually happened recently"
+ * are different concerns that happen to share one bell/popover, not
+ * one feature.
+ *
+ * `hasClassroomContext` distinguishes "genuinely zero notifications"
+ * from "not subscribed to any classroom right now" (see main.js's own
+ * manageNotificationSubscription()) -- both otherwise look identical
+ * (an empty `notifications` array), but only the first one should ever
+ * say "No notifications yet."
  */
-function createNotificationControl(permissionState, onEnable, onDisable, unreadCount) {
+function createNotificationControl({ permissionState, onEnable, onDisable, unreadCount, notifications = [], hasClassroomContext, onOpenNotification, onNotificationsViewed, currentUserUid }) {
   const count = Math.max(0, Number(unreadCount) || 0);
 
   const wrapper = document.createElement('div');
@@ -217,8 +235,15 @@ function createNotificationControl(permissionState, onEnable, onDisable, unreadC
   toggleButton.appendChild(createIcon('bell', { className: 'user-bar__notification-icon', size: 20 }));
   // The "granted" dot and the unread badge below both occupy the same
   // top-right corner of the bell -- only ever show one at a time, and
-  // the badge (an actual count needing attention) wins.
-  if (permissionState === 'granted' && count === 0) {
+  // the badge (an actual count needing attention) wins. Additionally
+  // suppressed entirely once the real notification list is wired in
+  // (onOpenNotification present) -- otherwise this dot, which means
+  // only "push is enabled on this device" and has nothing to do with
+  // unread notifications, reads as a false "you have something new"
+  // signal sitting in the exact corner the real unread badge now
+  // owns. Once this control's own real unread count exists, it should
+  // be the only thing that can ever occupy this corner.
+  if (permissionState === 'granted' && count === 0 && !onOpenNotification) {
     const dot = document.createElement('span');
     dot.className = 'user-bar__notification-dot';
     dot.setAttribute('aria-hidden', 'true');
@@ -228,7 +253,71 @@ function createNotificationControl(permissionState, onEnable, onDisable, unreadC
   const popover = document.createElement('div');
   popover.className = 'user-bar__notification-popover';
   popover.setAttribute('role', 'group');
-  popover.setAttribute('aria-label', 'Notification settings');
+  popover.setAttribute('aria-label', 'Notifications');
+
+  // The actual in-app notification list — kept above, and visually
+  // separated by a divider from, the push-permission settings below
+  // (unchanged from before this feature). Only rendered at all once a
+  // caller actually passes onOpenNotification (main.js only does this
+  // once a classroom is open, since notifications are classroom-scoped
+  // — see that file's own manageNotificationSubscription()), so this
+  // control still degrades to exactly its old, settings-only shape
+  // anywhere a classroom isn't in scope (e.g. Curriculum Management).
+  if (onOpenNotification) {
+    const listHeading = document.createElement('p');
+    listHeading.className = 'user-bar__notification-list-heading';
+    listHeading.textContent = 'Recent';
+    popover.appendChild(listHeading);
+
+    if (notifications.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'user-bar__notification-empty';
+      // Notifications are classroom-scoped (see main.js's own
+      // manageNotificationSubscription()) -- an empty list here only
+      // ever means "nothing for the currently open classroom," never
+      // "you have zero notifications anywhere." hasClassroomContext
+      // is what actually distinguishes those two states; without it,
+      // Home/Curriculum Management (no classroom subscribed at all)
+      // would wrongly claim there's nothing to see.
+      empty.textContent = hasClassroomContext ? 'No notifications yet.' : 'Open a classroom to see notifications.';
+      popover.appendChild(empty);
+    } else {
+      const list = document.createElement('ul');
+      list.className = 'user-bar__notification-list';
+      notifications.forEach((notification) => {
+        const isUnread = !(notification.readBy || []).includes(currentUserUid);
+
+        const item = document.createElement('li');
+        item.className = 'user-bar__notification-item' + (isUnread ? ' user-bar__notification-item--unread' : '');
+
+        const itemButton = document.createElement('button');
+        itemButton.type = 'button';
+        itemButton.className = 'user-bar__notification-item-button';
+        itemButton.addEventListener('click', () => {
+          closePopover();
+          onOpenNotification(notification);
+        });
+
+        const title = document.createElement('span');
+        title.className = 'user-bar__notification-item-title';
+        title.textContent = notification.title;
+        itemButton.appendChild(title);
+
+        const message = document.createElement('span');
+        message.className = 'user-bar__notification-item-message';
+        message.textContent = notification.message;
+        itemButton.appendChild(message);
+
+        item.appendChild(itemButton);
+        list.appendChild(item);
+      });
+      popover.appendChild(list);
+    }
+
+    const divider = document.createElement('hr');
+    divider.className = 'user-bar__notification-divider';
+    popover.appendChild(divider);
+  }
 
   const explanation = document.createElement('p');
   explanation.className = 'user-bar__notification-explanation';
@@ -271,10 +360,40 @@ function createNotificationControl(permissionState, onEnable, onDisable, unreadC
     popover.appendChild(enableButton);
   }
 
+  // Standard "opened and left open" read behavior, per explicit
+  // product direction: once the popover has been open for a short
+  // dwell time WITH actual notifications showing, mark them read
+  // automatically, the same way most apps' own notification panels do
+  // -- clicking one individually (see onOpenNotification above) stays
+  // available as an immediate alternative, never replaced by this.
+  // Guarded on notifications.length > 0 so opening an empty popover
+  // (nothing to view, or hasClassroomContext false -- see this
+  // function's own header comment) never marks anything read.
+  // Cancelled on every close path below so a quick open-then-close
+  // never fires this against content the teacher didn't actually
+  // dwell on.
+  let autoMarkReadTimeoutId = null;
+  const AUTO_MARK_READ_DELAY_MS = 1500;
+
+  function scheduleAutoMarkRead() {
+    if (!onNotificationsViewed || notifications.length === 0) return;
+    autoMarkReadTimeoutId = setTimeout(() => {
+      autoMarkReadTimeoutId = null;
+      onNotificationsViewed(notifications);
+    }, AUTO_MARK_READ_DELAY_MS);
+  }
+
+  function cancelAutoMarkRead() {
+    if (autoMarkReadTimeoutId === null) return;
+    clearTimeout(autoMarkReadTimeoutId);
+    autoMarkReadTimeoutId = null;
+  }
+
   function closePopover() {
     popover.classList.remove('user-bar__notification-popover--open');
     toggleButton.setAttribute('aria-expanded', 'false');
     document.removeEventListener('click', handleOutsideClick);
+    cancelAutoMarkRead();
   }
 
   function handleOutsideClick(event) {
@@ -287,8 +406,10 @@ function createNotificationControl(permissionState, onEnable, onDisable, unreadC
     toggleButton.setAttribute('aria-expanded', String(isOpen));
     if (isOpen) {
       setTimeout(() => document.addEventListener('click', handleOutsideClick), 0);
+      scheduleAutoMarkRead();
     } else {
       document.removeEventListener('click', handleOutsideClick);
+      cancelAutoMarkRead();
     }
   });
 

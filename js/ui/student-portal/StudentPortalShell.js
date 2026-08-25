@@ -29,6 +29,7 @@
  */
 
 import { createIcon } from '../components/Icon.js';
+import { renderStudentNotificationBell } from './components/StudentNotificationBell.js';
 
 const SECTIONS = [
   { id: 'journey', icon: 'graduation-cap', label: 'Journey' },
@@ -37,7 +38,7 @@ const SECTIONS = [
   { id: 'profile', icon: 'user', label: 'Profile' },
 ];
 
-export function renderStudentPortalShell(container, { activeSection, onNavigateSection, renderSectionContent, onBackToLanding }) {
+export function renderStudentPortalShell(container, { activeSection, onNavigateSection, renderSectionContent, onBackToLanding, notificationUnreadCount, notificationEvents, onOpenNotificationEvent, onNotificationEventsViewed }) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
@@ -45,6 +46,22 @@ export function renderStudentPortalShell(container, { activeSection, onNavigateS
 
   const topBar = document.createElement('div');
   topBar.className = 'student-portal__topbar';
+
+  // Only rendered once a caller actually passes bell data (main.js only
+  // does this once a profile/classroom is actually active — see this
+  // file's own header comment on why nothing here should know that
+  // detail itself), so this shell still degrades to exactly its old,
+  // bell-less shape for any state that somehow renders it without one.
+  if (onOpenNotificationEvent) {
+    const bellContainer = document.createElement('div');
+    renderStudentNotificationBell(bellContainer, {
+      unreadCount: notificationUnreadCount,
+      events: notificationEvents,
+      onOpenEvent: onOpenNotificationEvent,
+      onEventsViewed: onNotificationEventsViewed,
+    });
+    topBar.appendChild(bellContainer);
+  }
 
   const backLink = document.createElement('button');
   backLink.type = 'button';

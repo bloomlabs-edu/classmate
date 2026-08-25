@@ -31,6 +31,8 @@ import { firestoreClassroomRepository as repository } from '../repositories/fire
 import * as classroomService from './classroomService.js';
 import * as memberService from './memberService.js';
 import { MEMBER_ROLES } from '../config/memberRoles.js';
+import * as notificationService from './notificationService.js';
+import { NOTIFICATION_CATEGORIES } from '../config/notificationCategories.js';
 import { logPersistenceEvent } from './persistenceLogger.js';
 import * as workspaceCoordinator from './workspaceCoordinator.js';
 
@@ -557,6 +559,25 @@ export async function joinClassroomByCode(code, uid, displayName) {
     role: MEMBER_ROLES.TEACHER,
     displayName: displayName || 'Teacher',
     joinedAt: new Date().toISOString(),
+  });
+
+  // Fire-and-forget, matching this file's own established convention
+  // for exactly this kind of non-critical side effect (see
+  // createJoinCodeMapping()/createStudentJoinCodeMapping() below) —
+  // publishNotification() itself never throws (see
+  // notificationService.js's own header comment), so a failure here
+  // can never turn an already-successful join into a reported failure.
+  // Called only after addSelfAsTeacher() above has actually committed,
+  // so this uid is already present in memberUids by the time
+  // firestore.rules evaluates this create — see that rule's own
+  // comment on this collection.
+  notificationService.publishNotification(classroomId, {
+    type: 'member_joined',
+    category: NOTIFICATION_CATEGORIES.CLASSROOM,
+    title: 'New co-teacher joined',
+    message: `${displayName || 'A teacher'} joined this classroom.`,
+    payload: {},
+    createdByUid: uid,
   });
 
   return { success: true, classroomId };

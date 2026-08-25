@@ -288,6 +288,30 @@ service cloud.firestore {
     }
 
     // ---------------------------------------------------------------
+    // Student notification read state (Stage 1 of the notification
+    // architecture audit — see that audit's own Section F)
+    // ---------------------------------------------------------------
+    //
+    // classroom.studentEvents itself (the event CONTENT) is untouched
+    // by this block — still teacher-owned, still written only via a
+    // full classroom-document update gated on memberUids above, same
+    // as it always has been. This collection holds ONLY which of a
+    // student's own events they've already seen — the one piece of
+    // this feature a student genuinely needs to write themselves, and
+    // the one piece that's safe for them to: unlike a teacher
+    // notification's createdByUid/content, "have I personally looked
+    // at my own event yet" carries no trust implication for anyone
+    // else in the classroom. Deliberately NOT gated on memberUids (a
+    // student's own identity structurally can never satisfy that) and
+    // NOT modeled on feedPosts'/studentGoals' own uid == request.auth.uid
+    // create checks either — this is simpler than either: the exact
+    // same "your own uid, nothing else" shape users/{uid} already uses
+    // globally, just scoped per classroom instead.
+    match /classrooms/{classroomId}/studentEventReadState/{studentUid} {
+      allow read, write: if request.auth != null && request.auth.uid == studentUid;
+    }
+
+    // ---------------------------------------------------------------
     // Class Feed
     // ---------------------------------------------------------------
     //
@@ -366,6 +390,58 @@ service cloud.firestore {
         request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
 
       allow update, delete: if false;
+    }
+
+    // In-app teacher notifications (see models/Notification.js,
+    // services/notificationService.js) — the teacher-facing
+    // counterpart to studentEvents above, but its own dedicated
+    // collection rather than a flat array on the classroom document
+    // (see Notification.js's own header comment for why), which is
+    // exactly why this needs a rule of its own here that studentEvents
+    // never did.
+    //
+    // Deliberately NOT modeled on feedPosts' own create rule (any
+    // authenticated identity whose own uid matches a `uid` field) —
+    // that rule exists to let a STUDENT's own lower-trust, anonymous
+    // identity author a feed post. A teacher notification must never
+    // be creatable by that same lower-trust identity: a student's
+    // per-slot anonymous auth uid is never added to any classroom's
+    // memberUids (only real, Google-authenticated co-teachers reach
+    // memberUids, via addSelfAsTeacher() — see the "Join a Classroom"
+    // section above), so gating create on membership alone already
+    // excludes every student identity by construction, with no need
+    // for a separate, more complex allow-list of safe (type, payload)
+    // combinations. This is a deliberate, narrower trust boundary than
+    // feedPosts' own, per explicit product decision for this feature.
+    match /classrooms/{classroomId}/notifications/{notificationId} {
+      allow read: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+
+      // createdByUid must be the caller's own real uid — never a
+      // value the client can set to impersonate a different teacher —
+      // and only an existing member of this exact classroom may
+      // create one at all.
+      allow create: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids &&
+        request.resource.data.createdByUid == request.auth.uid;
+
+      // Any member may mark it read for themselves — ONLY readBy,
+      // mirroring feedPosts' own reactorUids update rule exactly (see
+      // that rule's own comment above on why this isn't further
+      // restricted to "only adds your own uid": Firestore rules can't
+      // cheaply prove that without significantly more complex logic,
+      // and the worst case here is exactly as low-stakes as it is
+      // there — a member could mark another member's own notification
+      // read for them, a cosmetic annoyance, not a privacy or security
+      // issue).
+      allow update: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']);
+
+      // Immutable log otherwise — same posture as scoreboardArchives
+      // above: a notification is never edited or deleted, only read
+      // and marked read.
+      allow delete: if false;
     }
 
     // Learning Programmes — ProgrammeSession history (see

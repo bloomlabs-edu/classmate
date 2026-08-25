@@ -38,6 +38,8 @@ import {
   getDocs,
   query,
   orderBy,
+  limit,
+  onSnapshot,
   getFirestore,
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 import { getFirebaseApp } from '../services/firebaseApp.js';
@@ -97,6 +99,33 @@ export async function createPost(db, { classroomId, studentId, uid, authorName, 
 export async function listPosts(db, classroomId) {
   const snapshot = await getDocs(query(postsCollection(db, classroomId), orderBy('createdAt', 'desc')));
   return snapshot.docs.map((d) => d.data());
+}
+
+/**
+ * Live-subscribes to this classroom's own most recent posts, delivering
+ * the raw docChanges() (each `{ type, post }`, `type` being Firestore's
+ * own 'added' | 'modified' | 'removed') on every update — mirrors
+ * repositories/firestoreClassroomRepository.js's own onSnapshot-based
+ * subscribeToClassroom()/subscribeToClassroomRefs() convention exactly
+ * (returns the unsubscribe function directly), extended only to expose
+ * docChanges() instead of the full result set, since that's what a
+ * caller watching for genuinely NEW posts (as opposed to the full
+ * current list — see listPosts() above for that) actually needs.
+ *
+ * This is deliberately a thin, purpose-agnostic primitive: it says
+ * nothing about "new since when," "student-authored only," or
+ * notifications — see services/feedService.js's own
+ * subscribeToNewStudentPostsForClassroom() for the caller that adds
+ * that meaning on top. Kept here, not there, so the actual Firestore
+ * query/listener mechanics for this collection live in exactly one
+ * place, same as every other read/write this file already owns.
+ */
+export function subscribeToPostChanges(db, classroomId, onChanges, onError) {
+  return onSnapshot(
+    query(postsCollection(db, classroomId), orderBy('createdAt', 'desc'), limit(20)),
+    (snapshot) => onChanges(snapshot.docChanges().map((change) => ({ type: change.type, post: change.doc.data() }))),
+    (error) => onError?.(error)
+  );
 }
 
 /** A student's own reaction toggle — adds or removes exactly their own uid, nothing else on the document. */

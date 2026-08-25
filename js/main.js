@@ -24,6 +24,8 @@ import * as accentColorService from './services/accentColorService.js';
 import * as classSessionService from './services/classSessionService.js';
 import * as accentColorPreferenceService from './services/accentColorPreferenceService.js';
 import * as pushNotificationService from './services/pushNotificationService.js';
+import * as notificationService from './services/notificationService.js';
+import * as feedService from './services/feedService.js';
 import { showToast } from './ui/components/Toast.js';
 import { ClassroomValidationError } from './services/classroomService.js';
 import * as router from './ui/router.js';
@@ -34,6 +36,7 @@ import { renderStudentDeviceFlow } from './ui/student-portal/onboarding/StudentD
 import { renderStudentManageProfilesView } from './ui/student-portal/views/StudentManageProfilesView.js';
 import * as studentDeviceService from './services/studentDeviceService.js';
 import * as studentPortalDataService from './services/studentPortalDataService.js';
+import { getEventDetailRoute } from './config/studentEventNavigation.js';
 import { renderStudentJourneyView } from './ui/student-portal/views/StudentJourneyView.js';
 import { renderStudentAssessmentResultsView } from './ui/student-portal/views/StudentAssessmentResultsView.js';
 import { renderStudentGoalTrackerView } from './ui/student-portal/views/StudentGoalTrackerView.js';
@@ -96,6 +99,28 @@ let currentAccentColorId = 'ocean';
 // permission prompt has actually been answered.
 let notificationPermissionState = pushNotificationService.getPermissionState();
 
+// In-app notifications — classroom-scoped, unlike
+// notificationPermissionState above (a per-device browser setting), so
+// this only ever holds data for whichever classroom the current route
+// is actually showing (see manageNotificationSubscription() below) —
+// empty the rest of the time, so the bell never shows a stale list
+// from a previously open classroom.
+let notifications = [];
+let notificationUnreadCount = 0;
+let notificationsUnsubscribe = null;
+let notificationsClassroomId = null;
+
+// The separate "detect a new student Feed post while this classroom is
+// open" listener (see feedService.js's own
+// subscribeToNewStudentPostsForClassroom()) — its own lifecycle,
+// tracked independently of notificationsClassroomId/notificationsUnsubscribe
+// above, since it's a different Firestore query against a different
+// collection (feedPosts, not notifications) serving a different
+// purpose (WRITING a notification as a side effect of a new post,
+// rather than reading the notifications list itself for the bell).
+let feedPostSubscriptionUnsubscribe = null;
+let feedPostSubscriptionClassroomId = null;
+
 function handleSelectAccentColor(colorId) {
   currentAccentColorId = colorId;
   accentColorService.applyAccentColor(colorId); // optimistic — applies immediately, doesn't wait on the save below
@@ -110,6 +135,11 @@ function handleSelectAccentColor(colorId) {
     notificationPermissionState,
     onEnableNotifications: handleEnableNotifications,
     onDisableNotifications: handleDisableNotifications,
+    notificationUnreadCount,
+    notifications,
+    hasClassroomContext: !!notificationsClassroomId,
+    onOpenNotification: handleOpenNotification,
+    onNotificationsViewed: handleNotificationsViewed,
   });
 }
 
@@ -142,6 +172,11 @@ async function handleEnableNotifications() {
     notificationPermissionState,
     onEnableNotifications: handleEnableNotifications,
     onDisableNotifications: handleDisableNotifications,
+    notificationUnreadCount,
+    notifications,
+    hasClassroomContext: !!notificationsClassroomId,
+    onOpenNotification: handleOpenNotification,
+    onNotificationsViewed: handleNotificationsViewed,
   });
 }
 
@@ -160,7 +195,148 @@ async function handleDisableNotifications() {
     notificationPermissionState,
     onEnableNotifications: handleEnableNotifications,
     onDisableNotifications: handleDisableNotifications,
+    notificationUnreadCount,
+    notifications,
+    hasClassroomContext: !!notificationsClassroomId,
+    onOpenNotification: handleOpenNotification,
+    onNotificationsViewed: handleNotificationsViewed,
   });
+}
+
+/**
+ * Starts/stops the live in-app notifications subscription for
+ * whichever classroom (if any) the current route is actually showing —
+ * called once near the top of renderRoute() with route.classroomId,
+ * using the router's own already-parsed value directly rather than
+ * waiting for workspaceService.getClassroomById() to resolve, so this
+ * doesn't need its own separate classroom-loaded gate. A no-op if the
+ * classroom hasn't actually changed since the last call (true for most
+ * navigations within the same classroom), so this never tears down and
+ * restarts the listener on every single in-classroom navigation —
+ * mirrors workspaceCoordinator.js's own "only act on a genuine change"
+ * shape.
+ */
+function manageNotificationSubscription(classroomId) {
+  if (classroomId === notificationsClassroomId) return;
+
+  notificationsUnsubscribe?.();
+  notificationsUnsubscribe = null;
+  notificationsClassroomId = classroomId;
+  notifications = [];
+  notificationUnreadCount = 0;
+
+  if (!classroomId) return;
+
+  notificationsUnsubscribe = notificationService.subscribeToNotifications(
+    classroomId,
+    (updated) => {
+      notifications = updated;
+      notificationUnreadCount = notificationService.countUnread(updated, currentUser?.uid);
+      renderUserBar(userBarContainer, {
+        user: currentUser,
+        onSignOut: handleSignOut,
+        onBackToLanding: () => router.navigate('/'),
+        currentAccentColorId,
+        onSelectAccentColor: handleSelectAccentColor,
+        onSelectCustomAccentColor: handleSelectCustomAccentColor,
+        onPreviewCustomAccentColor: handlePreviewCustomAccentColor,
+        notificationPermissionState,
+        onEnableNotifications: handleEnableNotifications,
+        onDisableNotifications: handleDisableNotifications,
+        notificationUnreadCount,
+        notifications,
+        hasClassroomContext: !!notificationsClassroomId,
+        onOpenNotification: handleOpenNotification,
+        onNotificationsViewed: handleNotificationsViewed,
+      });
+    },
+    (error) => console.error('[main] Notifications subscription failed:', error)
+  );
+}
+
+/**
+ * Starts/stops the "detect a new student Feed post while this
+ * classroom is open" listener (see feedService.js's own
+ * subscribeToNewStudentPostsForClassroom()) — same "no-op if the
+ * classroom hasn't actually changed, otherwise unsubscribe the old one
+ * and start fresh" shape as manageNotificationSubscription() above,
+ * kept as its own separate function/tracked classroomId rather than
+ * folded into that one, since this is a different Firestore listener
+ * (feedPosts, not notifications) serving a different purpose (writing
+ * a notification as a side effect, not reading the notifications list
+ * for the bell) — conflating the two would make either one harder to
+ * reason about on its own.
+ *
+ * Requires currentUser?.uid (see subscribeToNewStudentPostsForClassroom()'s
+ * own createdByUid requirement) — the caller (renderRoute() below)
+ * only ever passes a real classroomId through when currentUser is
+ * already known, so by the time classroomId here is truthy,
+ * currentUser.uid always is too.
+ */
+function manageFeedPostSubscription(classroomId) {
+  if (classroomId === feedPostSubscriptionClassroomId) return;
+
+  feedPostSubscriptionUnsubscribe?.();
+  feedPostSubscriptionUnsubscribe = null;
+  feedPostSubscriptionClassroomId = classroomId;
+
+  if (!classroomId) return;
+
+  feedPostSubscriptionUnsubscribe = feedService.subscribeToNewStudentPostsForClassroom(classroomId, currentUser.uid);
+}
+
+/**
+ * A notification's own click handling: marks it read for this teacher
+ * only (every other classroom member's own read state is untouched —
+ * see firestore.rules's own update rule for this collection), then
+ * navigates to whatever it's actually about, if anything. Reuses the
+ * exact same student-profile route every other roster screen already
+ * navigates to (see e.g. GoalDashboardView.js's own
+ * handlers.onSelectStudent) — not a new destination. A notification
+ * with no studentId in its own payload (e.g. "a co-teacher joined")
+ * simply has nowhere to navigate; marking it read is this click's only
+ * effect.
+ *
+ * A feed_post_created notification's own payload.postId isn't used
+ * for a deep link yet — this app has no per-post scroll-to/highlight
+ * destination today, so this navigates to the same classroom-wide Feed
+ * route ui/router.js's own 'feed' route already resolves
+ * (see js/ui/views/FeedModerationView.js) rather than inventing one.
+ * postId is still stored (see services/feedService.js's own
+ * createPostAsTeacher()) so a future, more specific destination can
+ * use it without a payload shape change.
+ */
+function handleOpenNotification(notification) {
+  if (currentUser?.uid) {
+    notificationService.markNotificationRead(notification.classroomId, notification.id, currentUser.uid);
+  }
+  if (notification.payload?.studentId) {
+    router.navigate(`/classroom/${notification.classroomId}/student/${notification.payload.studentId}`);
+  } else if (notification.payload?.postId) {
+    router.navigate(`/classroom/${notification.classroomId}/feed`);
+  }
+}
+
+/**
+ * Standard "opened and left open" read behavior (see UserBar.js's own
+ * scheduleAutoMarkRead()) — called once the popover has actually been
+ * open for a short dwell time with real notifications showing. Marks
+ * only the ones this teacher hasn't already read (an item clicked
+ * individually during that same dwell window is already read by the
+ * time this fires, via handleOpenNotification above; re-marking it is
+ * harmless, but skipping it here avoids a redundant write). Every
+ * `notification` passed in shares the same classroomId — this list
+ * only ever comes from the one active classroom subscription (see
+ * manageNotificationSubscription()) — so there's no cross-classroom
+ * mixing to worry about here.
+ */
+function handleNotificationsViewed(notifications) {
+  if (!currentUser?.uid) return;
+  notifications
+    .filter((notification) => !(notification.readBy || []).includes(currentUser.uid))
+    .forEach((notification) => {
+      notificationService.markNotificationRead(notification.classroomId, notification.id, currentUser.uid);
+    });
 }
 
 /**
@@ -321,7 +497,31 @@ function renderLoadingScreen(container) {
   container.appendChild(wrapper);
 }
 
-function renderStudentPortalMain(route) {
+/**
+ * A student notification's own click handling — mirrors main.js's own
+ * handleOpenNotification() (the teacher equivalent) in shape, not
+ * code: marks it read immediately for this student, then navigates to
+ * its own detail screen if it has one. Reuses
+ * config/studentEventNavigation.js's own getEventDetailRoute() — the
+ * exact same mapping ui/student-portal/views/StudentJourneyView.js's
+ * "Your Updates" timeline cards already use for their own click-
+ * through (see that file's own renderEventCard()) — not a new
+ * destination or a second lookup. An event type with no entry there
+ * (star_awarded, badge_awarded — see that file's own header comment)
+ * is correctly non-interactive beyond being marked read.
+ */
+function handleOpenStudentNotificationEvent(event) {
+  studentPortalDataService.markEventRead(event.id);
+  const detail = getEventDetailRoute(event);
+  if (detail) router.navigate(detail.path);
+}
+
+/** Standard "opened and left open" read behavior for the student bell — see ui/student-portal/components/StudentNotificationBell.js's own scheduleAutoMarkRead(). Marks every currently-shown event read at once. */
+function handleStudentNotificationEventsViewed(events) {
+  studentPortalDataService.markEventsRead(events.map((event) => event.id));
+}
+
+async function renderStudentPortalMain(route) {
   // The real Milestone 1A behavior: whenever the Student Portal
   // renders (including right after a profile switch navigates
   // somewhere), ensure the currently-active profile's own slot is
@@ -334,6 +534,18 @@ function renderStudentPortalMain(route) {
     console.error('[studentAuthService] Failed to sign in the active profile\u2019s own slot:', error);
   });
 
+  // STAGE 1 ADDITION (notification architecture audit, Section E) \u2014
+  // the student bell's own data, resolved before the shell renders
+  // (matching ui/student-portal/views/StudentJourneyView.js's own
+  // Promise.all-then-render shape) rather than patched in afterward,
+  // since ui/student-portal/StudentPortalShell.js builds the bell
+  // inline as part of one synchronous rebuild, same as every other
+  // piece of its own chrome.
+  const [notificationUnreadCount, notificationEvents] = await Promise.all([
+    studentPortalDataService.getUnreadEventCount(),
+    studentPortalDataService.getRecentEventsForBell(),
+  ]);
+
   renderStudentPortalShell(appContainer, {
     activeSection: route.section,
     onNavigateSection: (section) => router.navigate(`/student/${section}`),
@@ -341,6 +553,10 @@ function renderStudentPortalMain(route) {
       studentPortalDataService.stopClassroomSubscription();
       router.navigate('/');
     },
+    notificationUnreadCount,
+    notificationEvents,
+    onOpenNotificationEvent: handleOpenStudentNotificationEvent,
+    onNotificationEventsViewed: handleStudentNotificationEventsViewed,
     renderSectionContent: (content) => {
       if (route.section === 'team' && route.param) {
         renderStudentTeamDetailView(content, {
@@ -430,6 +646,21 @@ function renderStudentPortalMain(route) {
 function renderRoute(route, reason = 'unspecified') {
   logPersistenceEvent(`renderRoute() called`, { reason, routeName: route?.name });
 
+  // Notifications are classroom-scoped (see notificationService.js's
+  // own header comment) — route.classroomId is undefined for every
+  // non-classroom route (landing, Home, Student Portal, Curriculum
+  // Management), which correctly tears the subscription down there.
+  manageNotificationSubscription(route.classroomId ?? null);
+
+  // Same classroom-scoping as above, but additionally requires
+  // currentUser?.uid — this listener performs its own Firestore WRITE
+  // (see manageFeedPostSubscription()'s own header comment), which
+  // needs a real teacher uid to attribute it to; a signed-out state
+  // (currentUser null) can still resolve to a classroom route
+  // momentarily during the auth gate below, and must never hold this
+  // listener open regardless of what route.classroomId says.
+  manageFeedPostSubscription(currentUser?.uid ? (route.classroomId ?? null) : null);
+
   // Bloom Labs platform-level routes — deliberately checked before the
   // auth gate below. Neither of these is part of Classroom Tracker's
   // own flow; they sit one layer above it (and above Student Portal,
@@ -490,6 +721,11 @@ function renderRoute(route, reason = 'unspecified') {
     notificationPermissionState,
     onEnableNotifications: handleEnableNotifications,
     onDisableNotifications: handleDisableNotifications,
+    notificationUnreadCount,
+    notifications,
+    hasClassroomContext: !!notificationsClassroomId,
+    onOpenNotification: handleOpenNotification,
+    onNotificationsViewed: handleNotificationsViewed,
   });
 
   if (workspaceLoading) {
@@ -796,6 +1032,7 @@ function renderRoute(route, reason = 'unspecified') {
     } else if (route.name === 'notebookCheckpoints') {
       renderNotebookCheckpointsView(appContainer, {
         classroom,
+        currentUser,
         subjectId: route.subjectId,
         notebookTypeId: route.notebookTypeId,
         onBack: () => router.navigate(`/classroom/${classroom.id}/notebooks`),
@@ -943,6 +1180,11 @@ function init() {
             notificationPermissionState,
             onEnableNotifications: handleEnableNotifications,
             onDisableNotifications: handleDisableNotifications,
+            notificationUnreadCount,
+            notifications,
+            hasClassroomContext: !!notificationsClassroomId,
+            onOpenNotification: handleOpenNotification,
+            onNotificationsViewed: handleNotificationsViewed,
           });
         });
 

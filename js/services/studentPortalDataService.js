@@ -59,6 +59,16 @@ let liveClassroom = null;
 let unsubscribeFromLiveClassroom = null;
 let onLiveUpdateCallback = null;
 
+// STAGE 1 ADDITION (notification architecture audit, Section E) — the
+// student notification bell's own live read state, started/stopped
+// alongside the classroom subscription above rather than as a third,
+// separately-tracked lifecycle: both only ever make sense for exactly
+// "the classroom this profile's Student Portal session is currently
+// showing," so they share that same start/stop moment. See
+// services/studentEventService.js's own subscribeToReadStateForCurrentStudent().
+let liveReadState = { readEventIds: [] };
+let unsubscribeFromReadState = null;
+
 /**
  * Starts (or reuses) the live subscription for `classroomId` — a
  * no-op if already subscribed to this exact classroom (idempotent, so
@@ -76,6 +86,21 @@ export function startClassroomSubscription(classroomId, onUpdate) {
 
   stopClassroomSubscription();
   subscribedClassroomId = classroomId;
+
+  // Started alongside the classroom subscription below, not awaited by
+  // it — a student's own read state has nothing to do with whether the
+  // classroom's own first snapshot has arrived yet (see this file's
+  // own Promise below, which resolves purely on that). Every update
+  // here also triggers onLiveUpdateCallback, same as a classroom
+  // snapshot does, so the bell's own badge stays live without needing
+  // its own separate render trigger.
+  unsubscribeFromReadState = studentEventService.subscribeToReadStateForCurrentStudent(
+    (readState) => {
+      liveReadState = readState;
+      onLiveUpdateCallback?.();
+    },
+    (error) => console.error('[studentPortalDataService] Read-state subscription failed:', error)
+  );
 
   return new Promise((resolve) => {
     let isFirstSnapshot = true;
@@ -126,6 +151,10 @@ export function stopClassroomSubscription() {
   unsubscribeFromLiveClassroom = null;
   subscribedClassroomId = null;
   liveClassroom = null;
+
+  unsubscribeFromReadState?.();
+  unsubscribeFromReadState = null;
+  liveReadState = { readEventIds: [] };
 }
 
 /**
@@ -327,6 +356,42 @@ export async function getEventFeed() {
   console.log('[EventFeedDiagnostic] Events remaining after filtering for this student:', events.length);
 
   return events;
+}
+
+// --- Stage 1: notification bell (see ui/student-portal/components/StudentNotificationBell.js) ---
+// Deliberately separate from getEventFeed() above, which stays exactly
+// as it was — the always-visible "Your Updates" timeline has no
+// concept of unread/read at all and must keep not needing one.
+
+const BELL_RECENT_LIMIT = 20;
+
+/** The current student's own unread StudentEvent count — live, backed by the exact same two subscriptions startClassroomSubscription() above already maintains (classroom content + read state). */
+export async function getUnreadEventCount() {
+  const found = await loadCurrentStudentAndClassroom();
+  if (!found) return 0;
+
+  const events = studentEventService.getEventsForStudent(found.classroom, found.student.id);
+  return studentEventService.countUnread(events, liveReadState.readEventIds);
+}
+
+/** The bell popover's own recent list — the same events getEventFeed() would return, capped and each annotated with isUnread, computed against the same live read state getUnreadEventCount() above uses. Never affects, and is never affected by, "Your Updates" itself. */
+export async function getRecentEventsForBell() {
+  const found = await loadCurrentStudentAndClassroom();
+  if (!found) return [];
+
+  const events = studentEventService.getEventsForStudent(found.classroom, found.student.id).slice(0, BELL_RECENT_LIMIT);
+  const readSet = new Set(liveReadState.readEventIds);
+  return events.map((event) => ({ ...event, isUnread: !readSet.has(event.id) }));
+}
+
+/** Marks one event read for the current student — see studentEventService.js's own markEventReadForCurrentStudent(). */
+export async function markEventRead(eventId) {
+  return studentEventService.markEventReadForCurrentStudent(eventId);
+}
+
+/** Marks several events read at once — the bell's own dwell-to-read behavior. */
+export async function markEventsRead(eventIds) {
+  return studentEventService.markEventsReadForCurrentStudent(eventIds);
 }
 
 /**
