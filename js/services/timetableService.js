@@ -195,6 +195,67 @@ export function getOtherFutureSlotsForSubject(classroom, { subjectId, afterDateK
 }
 
 /**
+ * Validates a draft period structure before it's saved back onto
+ * classroom.timetable.periods (see ui/views/TimetableView.js's own
+ * Manage Timetable flow) — the same three checks Phase S's product
+ * spec calls out: a malformed time range, two periods overlapping in
+ * time, and a duplicate period number. Pure and side-effect free, so
+ * the editing UI can validate on every keystroke without touching the
+ * real classroom object. Does not check for a missing subject — an
+ * empty (weekday, periodNumber) cell is an existing, valid "no class
+ * that period" state (see getSlot()'s own doc comment), not an error;
+ * only the Manage Timetable UI's own "add a period" step requires a
+ * subject to be chosen before that new row is added to the draft.
+ */
+export function validateTimetableDraft(periods) {
+  const errors = [];
+
+  const seenPeriodNumbers = new Set();
+  for (const period of periods) {
+    if (seenPeriodNumbers.has(period.periodNumber)) {
+      errors.push({ type: 'duplicatePeriod', periodNumber: period.periodNumber, message: `Period ${period.periodNumber} is listed more than once.` });
+    }
+    seenPeriodNumbers.add(period.periodNumber);
+
+    const start = parseTimeToMinutes(period.startTime);
+    const end = parseTimeToMinutes(period.endTime);
+    if (start === null || end === null || end <= start) {
+      errors.push({ type: 'invalidTime', periodNumber: period.periodNumber, message: `Period ${period.periodNumber}'s end time must be after its start time.` });
+    }
+  }
+
+  const sorted = [...periods]
+    .filter((period) => {
+      const start = parseTimeToMinutes(period.startTime);
+      const end = parseTimeToMinutes(period.endTime);
+      return start !== null && end !== null && end > start;
+    })
+    .sort((a, b) => parseTimeToMinutes(a.startTime) - parseTimeToMinutes(b.startTime));
+
+  for (let i = 1; i < sorted.length; i += 1) {
+    const previous = sorted[i - 1];
+    const current = sorted[i];
+    if (parseTimeToMinutes(current.startTime) < parseTimeToMinutes(previous.endTime)) {
+      errors.push({
+        type: 'overlappingPeriods',
+        periodNumber: current.periodNumber,
+        message: `Period ${previous.periodNumber} (${previous.startTime}–${previous.endTime}) overlaps Period ${current.periodNumber} (${current.startTime}–${current.endTime}).`,
+      });
+    }
+  }
+
+  return { errors, valid: errors.length === 0 };
+}
+
+/** "HH:mm" -> minutes since midnight, or null if malformed — used by validateTimetableDraft() above, which (unlike minutesBetween()) must tolerate not-yet-valid draft input without throwing. */
+function parseTimeToMinutes(time) {
+  if (typeof time !== 'string' || !/^\d{1,2}:\d{2}$/.test(time)) return null;
+  const [hour, minute] = time.split(':').map(Number);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return hour * 60 + minute;
+}
+
+/**
  * Suggests where a concept could be carried to: the very next future
  * same-subject Teaching Slot as the PRIMARY suggestion (what "Move to
  * next Science period" resolves to), plus up to `otherLimit` further

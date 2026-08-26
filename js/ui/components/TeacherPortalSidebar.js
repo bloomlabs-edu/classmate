@@ -28,9 +28,11 @@
  *     no separate teacher-facing Learning Circle screen, only the
  *     Programme itself, which a teacher already manages from there.
  *
- * Timetable is visually emphasized (a small star marker) per the
- * product decision that it's the star working surface of this whole
- * workspace — everything else here is otherwise visually equal.
+ * Every nav item renders with equal visual weight — the `starred`
+ * flag below is generic, reusable infrastructure (see renderNavList())
+ * but nothing currently sets it; Timetable's earlier star marker was a
+ * development/reference-only marker, removed per explicit product
+ * decision (Phase S), not a design feature to preserve or replace.
  */
 
 import { createIcon } from './Icon.js';
@@ -38,7 +40,7 @@ import * as router from '../router.js';
 
 const NAV_ITEMS = [
   { id: 'home', label: 'Home', icon: 'home', path: (classroomId) => `/classroom/${classroomId}` },
-  { id: 'timetable', label: 'Timetable', icon: 'calendar', path: (classroomId) => `/classroom/${classroomId}/timetable`, starred: true },
+  { id: 'timetable', label: 'Timetable', icon: 'calendar', path: (classroomId) => `/classroom/${classroomId}/timetable` },
   { id: 'students', label: 'Students', icon: 'users', path: (classroomId) => `/classroom/${classroomId}/class-mode` },
   { id: 'goals', label: 'Goals & Progress', icon: 'award', path: (classroomId) => `/classroom/${classroomId}/goals` },
   { id: 'notebooks', label: 'Notebooks', icon: 'book-open', path: (classroomId) => `/classroom/${classroomId}/notebooks` },

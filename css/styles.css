@@ -12559,6 +12559,19 @@ button.wizard-checklist__row:hover {
   padding: var(--space-5);
 }
 
+.timetable-view__header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.timetable-view__manage-button {
+  flex-shrink: 0;
+  margin-top: var(--space-1);
+}
+
 .timetable-view__title-row {
   display: flex;
   align-items: center;
@@ -13207,6 +13220,180 @@ button.wizard-checklist__row:hover {
   .period-detail-panel {
     width: 100%;
   }
+}
+
+/* ---------------------------------------------------------------------
+   Manage Timetable overlay (ui/views/TimetableView.js's own
+   openManageTimetableFlow()) — reuses .carry-forward-overlay's own
+   fixed-backdrop/centered-box shell (same element gets both classes),
+   just a wider box to fit a real weekly grid.
+   --------------------------------------------------------------------- */
+
+.manage-timetable-overlay__box {
+  width: 940px;
+  max-width: calc(100vw - var(--space-5));
+  max-height: calc(100vh - var(--space-6));
+  overflow-y: auto;
+}
+
+.manage-timetable-overlay__heading {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: var(--font-weight-black);
+}
+
+.manage-timetable-overlay__hint {
+  margin: 0 0 var(--space-2);
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+.manage-timetable-overlay__errors {
+  background: color-mix(in srgb, var(--color-danger) 8%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--color-danger) 30%, var(--color-border));
+  border-radius: var(--radius-control);
+  padding: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.manage-timetable-overlay__errors p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-danger);
+}
+
+.manage-timetable-overlay__errors p + p {
+  margin-top: var(--space-1);
+}
+
+.manage-timetable__time-inputs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+
+.manage-timetable__time-inputs input[type='time'] {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: var(--space-1) var(--space-2);
+  font-size: 0.8rem;
+  color: var(--color-ink);
+  background: var(--color-surface);
+  width: 6.5rem;
+}
+
+.manage-timetable__time-inputs span {
+  color: var(--color-muted);
+  font-size: 0.8rem;
+}
+
+.manage-timetable__subject-select {
+  width: 100%;
+  min-width: 128px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: var(--space-2);
+  font-size: 0.8rem;
+  color: var(--color-ink);
+  background: var(--color-surface);
+}
+
+.manage-timetable-grid {
+  min-width: 900px;
+}
+
+.manage-timetable__remove-period {
+  color: var(--color-muted);
+}
+
+.manage-timetable__remove-period:hover:not(:disabled) {
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 10%, var(--color-surface));
+}
+
+.manage-timetable__add-period {
+  margin-top: var(--space-3);
+}
+
+/* Desktop grid */
+
+.manage-timetable-grid-wrapper {
+  overflow-x: auto;
+}
+
+.manage-timetable-grid {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.manage-timetable-grid th {
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: var(--space-2);
+  text-align: left;
+}
+
+.manage-timetable-grid td {
+  padding: var(--space-2);
+  border-top: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.manage-timetable-grid__time-cell {
+  white-space: nowrap;
+}
+
+/* Mobile day-first editor */
+
+.manage-timetable-mobile__day-selector {
+  display: flex;
+  gap: var(--space-1);
+  overflow-x: auto;
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-1);
+}
+
+.manage-timetable-mobile__day-selector button {
+  flex-shrink: 0;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-3);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.manage-timetable-mobile__day-button--active {
+  border-color: var(--color-primary-deep);
+  color: var(--color-primary-deep);
+  background: color-mix(in srgb, var(--color-primary-deep) 8%, var(--color-surface));
+}
+
+.manage-timetable-mobile__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.manage-timetable-mobile__card {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.manage-timetable-mobile__card-footer {
+  display: flex;
+  justify-content: flex-end;
 }
 
 /* ---------------------------------------------------------------------

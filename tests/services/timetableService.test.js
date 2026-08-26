@@ -161,3 +161,111 @@ test('suggestCarryForwardTargets: no future occurrence -> primary null, others e
   assert.equal(primary, null);
   assert.deepEqual(others, []);
 });
+
+// ---------------------------------------------------------------------
+// Phase S — validateTimetableDraft() (Manage Timetable)
+// ---------------------------------------------------------------------
+
+test('validateTimetableDraft: a well-formed, non-overlapping set of periods is valid', () => {
+  const { valid, errors } = timetableService.validateTimetableDraft([
+    { periodNumber: 1, startTime: '09:00', endTime: '09:40' },
+    { periodNumber: 2, startTime: '10:15', endTime: '10:55' },
+    { periodNumber: 3, startTime: '11:30', endTime: '12:10' },
+  ]);
+  assert.equal(valid, true);
+  assert.deepEqual(errors, []);
+});
+
+test('validateTimetableDraft: an empty draft (no periods yet) is valid', () => {
+  const { valid, errors } = timetableService.validateTimetableDraft([]);
+  assert.equal(valid, true);
+  assert.deepEqual(errors, []);
+});
+
+test('validateTimetableDraft: end time at or before start time is invalid', () => {
+  const { valid, errors } = timetableService.validateTimetableDraft([
+    { periodNumber: 1, startTime: '09:40', endTime: '09:00' },
+  ]);
+  assert.equal(valid, false);
+  assert.equal(errors.some((e) => e.type === 'invalidTime' && e.periodNumber === 1), true);
+});
+
+test('validateTimetableDraft: equal start and end time is invalid (zero-length period)', () => {
+  const { valid, errors } = timetableService.validateTimetableDraft([
+    { periodNumber: 1, startTime: '09:00', endTime: '09:00' },
+  ]);
+  assert.equal(valid, false);
+  assert.equal(errors.some((e) => e.type === 'invalidTime'), true);
+});
+
+test('validateTimetableDraft: malformed time strings are invalid, not thrown', () => {
+  const { valid, errors } = timetableService.validateTimetableDraft([
+    { periodNumber: 1, startTime: 'nine am', endTime: '09:40' },
+  ]);
+  assert.equal(valid, false);
+  assert.equal(errors.some((e) => e.type === 'invalidTime'), true);
+});
+
+test('validateTimetableDraft: two periods with overlapping time ranges are invalid', () => {
+  const { valid, errors } = timetableService.validateTimetableDraft([
+    { periodNumber: 1, startTime: '09:00', endTime: '10:00' },
+    { periodNumber: 2, startTime: '09:30', endTime: '10:30' },
+  ]);
+  assert.equal(valid, false);
+  assert.equal(errors.some((e) => e.type === 'overlappingPeriods'), true);
+});
+
+test('validateTimetableDraft: back-to-back periods (one ends exactly when the next starts) do NOT overlap', () => {
+  const { valid, errors } = timetableService.validateTimetableDraft([
+    { periodNumber: 1, startTime: '09:00', endTime: '09:40' },
+    { periodNumber: 2, startTime: '09:40', endTime: '10:20' },
+  ]);
+  assert.equal(valid, true);
+  assert.deepEqual(errors, []);
+});
+
+test('validateTimetableDraft: overlap is still detected regardless of input order (sorts before comparing)', () => {
+  const { valid, errors } = timetableService.validateTimetableDraft([
+    { periodNumber: 2, startTime: '09:30', endTime: '10:30' },
+    { periodNumber: 1, startTime: '09:00', endTime: '10:00' },
+  ]);
+  assert.equal(valid, false);
+  assert.equal(errors.some((e) => e.type === 'overlappingPeriods'), true);
+});
+
+test('validateTimetableDraft: the same period number listed twice is invalid', () => {
+  const { valid, errors } = timetableService.validateTimetableDraft([
+    { periodNumber: 1, startTime: '09:00', endTime: '09:40' },
+    { periodNumber: 1, startTime: '11:00', endTime: '11:40' },
+  ]);
+  assert.equal(valid, false);
+  assert.equal(errors.some((e) => e.type === 'duplicatePeriod' && e.periodNumber === 1), true);
+});
+
+// ---------------------------------------------------------------------
+// Phase S — recurring-pattern edits must never rewrite historical Lessons
+// ---------------------------------------------------------------------
+
+test('buildTeachingSlotId: a past date+period keeps the same id after the recurring pattern changes — historical Lessons are keyed by date, never by the current recurring subject', () => {
+  const classroom = classroomWithPattern();
+  const idBefore = timetableService.buildTeachingSlotId(classroom.id, '2026-08-24', 2); // Monday, Period 2 (Mathematics)
+
+  // Editing the recurring pattern for that exact weekday/period...
+  timetableService.upsertSlot(classroom, { weekday: 1, periodNumber: 2, subjectId: 'english' });
+
+  const idAfter = timetableService.buildTeachingSlotId(classroom.id, '2026-08-24', 2);
+  assert.equal(idBefore, idAfter); // ...never changes the id a Lesson for that real date is stored under.
+});
+
+test('getConcreteSlotsForDateRange: a past date reflects whatever subject the recurring pattern says NOW — the pattern has no memory of what it said before, which is exactly why historical protection lives in the Lesson’s own stored data, not in the pattern', () => {
+  const classroom = classroomWithPattern();
+  const before = timetableService.getConcreteSlotsForDateRange(classroom, '2026-08-24', '2026-08-24'); // Monday
+  assert.equal(before.find((s) => s.periodNumber === 2).subjectId, 'mathematics');
+
+  timetableService.upsertSlot(classroom, { weekday: 1, periodNumber: 2, subjectId: 'english' });
+
+  const after = timetableService.getConcreteSlotsForDateRange(classroom, '2026-08-24', '2026-08-24');
+  assert.equal(after.find((s) => s.periodNumber === 2).subjectId, 'english');
+  // A real Lesson document already attached to that Monday's teachingSlotId is untouched by this
+  // change (see the buildTeachingSlotId test above) — only this on-demand grid label changed.
+});

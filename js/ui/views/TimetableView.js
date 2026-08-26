@@ -41,6 +41,8 @@ import * as plannerRepository from '../../services/plannerRepository.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
 import * as workspaceService from '../../services/workspaceService.js';
 import * as resourceService from '../../services/resourceService.js';
+import * as subjectIdentityService from '../../services/subjectIdentityService.js';
+import { createTimetablePeriod, createTimetableSlot } from '../../models/Timetable.js';
 import { hydrateConceptRecordsForConcepts } from '../../services/conceptRecordHydrationService.js';
 import { getFeedbackEligibleConceptIds } from '../../models/Lesson.js';
 import { getTimetableSubjectColor } from '../../config/timetableSubjectColors.js';
@@ -163,19 +165,40 @@ export async function renderTimetableView(container, { classroom }) {
     const header = document.createElement('div');
     header.className = 'timetable-view__header';
 
+    const headerRow = document.createElement('div');
+    headerRow.className = 'timetable-view__header-row';
+
+    const titleBlock = document.createElement('div');
     const titleRow = document.createElement('div');
     titleRow.className = 'timetable-view__title-row';
     titleRow.appendChild(createIcon('calendar', { size: 24 }));
     const title = document.createElement('h1');
     title.textContent = 'Timetable';
     titleRow.appendChild(title);
-    header.appendChild(titleRow);
+    titleBlock.appendChild(titleRow);
 
     const subtitle = document.createElement('p');
     subtitle.className = 'timetable-view__subtitle';
     subtitle.textContent = 'Plan your teaching. Track what happens. Improve learning.';
-    header.appendChild(subtitle);
+    titleBlock.appendChild(subtitle);
 
+    headerRow.appendChild(titleBlock);
+
+    // Secondary, restrained action — the recurring SCHEDULE (which
+    // subject is taught when) is a distinct concern from this page's
+    // own teaching/monitoring workflow (see openManageTimetableFlow()'s
+    // own header comment). Deliberately .btn--ghost, matching the same
+    // non-dominant weight already used for Cancel/secondary actions
+    // elsewhere in this file, per explicit product instruction that
+    // this must never compete with the Timetable page's own primary content.
+    const manageButton = document.createElement('button');
+    manageButton.type = 'button';
+    manageButton.className = 'btn btn--ghost timetable-view__manage-button';
+    manageButton.textContent = 'Manage timetable';
+    manageButton.addEventListener('click', () => openManageTimetableFlow());
+    headerRow.appendChild(manageButton);
+
+    header.appendChild(headerRow);
     return header;
   }
 
@@ -1097,6 +1120,352 @@ export async function renderTimetableView(container, { classroom }) {
     renderBox();
   }
 
+  /**
+   * Phase S — Manage Timetable: editing the RECURRING weekly pattern
+   * (which subject each weekday/period is, and what time each period
+   * runs) — a distinct concern from this page's own teaching/
+   * monitoring workflow (see this file's own header comment on the
+   * WEEKLY PERIOD -> SUBJECT -> LESSON PLAN chain, which this flow
+   * only ever edits at the SUBJECT layer, never below it).
+   *
+   * Reuses the existing architecture exactly: classroom.timetable
+   * (models/Timetable.js) already lives directly on the classroom
+   * object, mutated via timetableService's own setPeriods()/
+   * getSlotsForWeekday() and persisted via workspaceService's own
+   * explicit-save path (saveExplicitly()) — no new collection, no new
+   * repository method. Nothing here writes to the real classroom
+   * object until Save succeeds; Cancel discards the whole draft.
+   *
+   * Historical Lessons are structurally protected without any extra
+   * code: a Lesson is keyed by buildTeachingSlotId(classroomId,
+   * dateKey, periodNumber) — a real date, never the recurring
+   * pattern's current subject for that weekday — so editing the
+   * pattern here can never retarget or rewrite an already-attached
+   * Lesson (see tests/services/timetableService.test.js's own Phase S
+   * tests for this exact invariant).
+   *
+   * Subjects are chosen only from subjectIdentityService's canonical
+   * registry — the same shared list Curriculum Management / Learning
+   * Management already offer — never free text, so a period's
+   * subjectId always lines up with the rest of the app's own subject
+   * identity system.
+   *
+   * SCOPE NOTE, disclosed rather than silently decided: a period with
+   * no subject assigned on any day is a legitimate, pre-existing state
+   * ("no class that period" — see timetableService.getSlot()'s own doc
+   * comment) — this flow does not force every cell to be filled before
+   * saving. "Add period" immediately exposes a subject selector for the
+   * currently-viewed day right on the new row, satisfying the product
+   * requirement that adding a period lets the teacher specify a subject
+   * at that moment, without a separate blocking "confirm" step for a
+   * scenario (a still-being-planned empty period) this app already
+   * treats as valid everywhere else.
+   *
+   * SCOPE NOTE 2: the model has no separate "break period" flag — a
+   * non-teaching period is simply a period row with no subject on any
+   * day, which is already exactly how "no class" is represented today.
+   * Adding a dedicated isBreak flag would be the "unnecessary
+   * architectural expansion" Phase S's own spec explicitly says to
+   * avoid, since the existing shape already covers this case.
+   */
+  function openManageTimetableFlow() {
+    const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0]; // Monday-start, matching renderWeekGrid()'s own week range
+
+    // Deep-copied working draft — the real classroom.timetable is
+    // never touched until Save succeeds.
+    let draftPeriods = timetableService.getPeriods(classroom).map((period) => ({ ...period }));
+    const draftSlots = new Map(); // `${weekday}_${periodNumber}` -> subjectId
+    WEEKDAY_ORDER.forEach((weekday) => {
+      timetableService.getSlotsForWeekday(classroom, weekday).forEach((slot) => {
+        draftSlots.set(`${weekday}_${slot.periodNumber}`, slot.subjectId);
+      });
+    });
+
+    let mobileActiveWeekday = WEEKDAY_ORDER[0];
+    let validationErrors = [];
+
+    const overlay = document.createElement('div');
+    overlay.className = 'carry-forward-overlay manage-timetable-overlay';
+    const box = document.createElement('div');
+    box.className = 'carry-forward-overlay__box manage-timetable-overlay__box';
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    function revalidate() {
+      validationErrors = timetableService.validateTimetableDraft(draftPeriods).errors;
+    }
+
+    function nextPeriodDefaults() {
+      if (draftPeriods.length === 0) return { periodNumber: 1, startTime: '09:00', endTime: '09:40' };
+      const sorted = [...draftPeriods].sort((a, b) => a.periodNumber - b.periodNumber);
+      const last = sorted[sorted.length - 1];
+      return {
+        periodNumber: last.periodNumber + 1,
+        startTime: last.endTime,
+        endTime: addMinutesToTime(last.endTime, 40),
+      };
+    }
+
+    function renderBox() {
+      box.innerHTML = '';
+
+      const eyebrow = document.createElement('p');
+      eyebrow.className = 'carry-forward-overlay__eyebrow';
+      eyebrow.textContent = 'MANAGE TIMETABLE';
+      box.appendChild(eyebrow);
+
+      const heading = document.createElement('h3');
+      heading.className = 'manage-timetable-overlay__heading';
+      heading.textContent = 'Weekly schedule';
+      box.appendChild(heading);
+
+      const hint = document.createElement('p');
+      hint.className = 'manage-timetable-overlay__hint';
+      hint.textContent = 'This is the recurring pattern every week follows. Existing lesson plans and past teaching records are never changed by editing it.';
+      box.appendChild(hint);
+
+      if (validationErrors.length > 0) {
+        const errorBox = document.createElement('div');
+        errorBox.className = 'manage-timetable-overlay__errors';
+        validationErrors.forEach((error) => {
+          const line = document.createElement('p');
+          line.textContent = error.message;
+          errorBox.appendChild(line);
+        });
+        box.appendChild(errorBox);
+      }
+
+      box.appendChild(isNarrowViewport() ? renderMobileEditor() : renderDesktopEditor());
+
+      const actions = document.createElement('div');
+      actions.className = 'carry-forward-overlay__actions';
+
+      const cancelButton = document.createElement('button');
+      cancelButton.type = 'button';
+      cancelButton.className = 'btn btn--ghost';
+      cancelButton.textContent = 'Cancel';
+      cancelButton.addEventListener('click', () => overlay.remove());
+      actions.appendChild(cancelButton);
+
+      const saveButton = document.createElement('button');
+      saveButton.type = 'button';
+      saveButton.className = 'btn btn--primary';
+      saveButton.textContent = 'Save timetable';
+      saveButton.addEventListener('click', () => saveDraft());
+      actions.appendChild(saveButton);
+
+      box.appendChild(actions);
+    }
+
+    function renderTimeInputs(period) {
+      const wrap = document.createElement('div');
+      wrap.className = 'manage-timetable__time-inputs';
+
+      const startInput = document.createElement('input');
+      startInput.type = 'time';
+      startInput.value = period.startTime;
+      startInput.setAttribute('aria-label', `Period ${period.periodNumber} start time`);
+      startInput.addEventListener('change', () => {
+        period.startTime = startInput.value;
+        revalidate();
+        renderBox();
+      });
+
+      const dash = document.createElement('span');
+      dash.textContent = '–';
+
+      const endInput = document.createElement('input');
+      endInput.type = 'time';
+      endInput.value = period.endTime;
+      endInput.setAttribute('aria-label', `Period ${period.periodNumber} end time`);
+      endInput.addEventListener('change', () => {
+        period.endTime = endInput.value;
+        revalidate();
+        renderBox();
+      });
+
+      wrap.append(startInput, dash, endInput);
+      return wrap;
+    }
+
+    function renderSubjectSelect(weekday, periodNumber) {
+      const select = document.createElement('select');
+      select.className = 'manage-timetable__subject-select';
+      select.setAttribute('aria-label', `${WEEKDAY_LABELS[weekday]} period ${periodNumber} subject`);
+
+      const noneOption = document.createElement('option');
+      noneOption.value = '';
+      noneOption.textContent = '— No class —';
+      select.appendChild(noneOption);
+
+      subjectIdentityService.getCanonicalSubjects().forEach((subject) => {
+        const option = document.createElement('option');
+        option.value = subject.id;
+        option.textContent = subject.title;
+        select.appendChild(option);
+      });
+
+      const key = `${weekday}_${periodNumber}`;
+      select.value = draftSlots.get(key) || '';
+      select.addEventListener('change', () => {
+        if (select.value) draftSlots.set(key, select.value);
+        else draftSlots.delete(key);
+      });
+
+      return select;
+    }
+
+    function renderRemovePeriodButton(periodNumber) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn btn--icon-only manage-timetable__remove-period';
+      button.setAttribute('aria-label', `Remove period ${periodNumber}`);
+      button.appendChild(createIcon('trash-2', { size: 16 }));
+      button.addEventListener('click', () => {
+        draftPeriods = draftPeriods.filter((period) => period.periodNumber !== periodNumber);
+        WEEKDAY_ORDER.forEach((weekday) => draftSlots.delete(`${weekday}_${periodNumber}`));
+        revalidate();
+        renderBox();
+      });
+      return button;
+    }
+
+    function renderAddPeriodControl() {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn btn--text manage-timetable__add-period';
+      button.textContent = '+ Add period';
+      button.addEventListener('click', () => {
+        draftPeriods.push(nextPeriodDefaults());
+        revalidate();
+        renderBox();
+      });
+      return button;
+    }
+
+    function renderDesktopEditor() {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'manage-timetable-grid-wrapper';
+
+      const table = document.createElement('table');
+      table.className = 'manage-timetable-grid';
+
+      const headRow = document.createElement('tr');
+      headRow.appendChild(document.createElement('th'));
+      WEEKDAY_ORDER.forEach((weekday) => {
+        const th = document.createElement('th');
+        th.textContent = WEEKDAY_LABELS[weekday];
+        headRow.appendChild(th);
+      });
+      headRow.appendChild(document.createElement('th'));
+      table.appendChild(headRow);
+
+      [...draftPeriods]
+        .sort((a, b) => a.periodNumber - b.periodNumber)
+        .forEach((period) => {
+          const row = document.createElement('tr');
+
+          const timeCell = document.createElement('td');
+          timeCell.className = 'manage-timetable-grid__time-cell';
+          timeCell.appendChild(renderTimeInputs(period));
+          row.appendChild(timeCell);
+
+          WEEKDAY_ORDER.forEach((weekday) => {
+            const cell = document.createElement('td');
+            cell.appendChild(renderSubjectSelect(weekday, period.periodNumber));
+            row.appendChild(cell);
+          });
+
+          const removeCell = document.createElement('td');
+          removeCell.appendChild(renderRemovePeriodButton(period.periodNumber));
+          row.appendChild(removeCell);
+
+          table.appendChild(row);
+        });
+
+      wrapper.appendChild(table);
+      wrapper.appendChild(renderAddPeriodControl());
+      return wrapper;
+    }
+
+    function renderMobileEditor() {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'manage-timetable-mobile';
+
+      const daySelector = document.createElement('div');
+      daySelector.className = 'manage-timetable-mobile__day-selector';
+      WEEKDAY_ORDER.forEach((weekday) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = WEEKDAY_LABELS[weekday];
+        if (weekday === mobileActiveWeekday) button.classList.add('manage-timetable-mobile__day-button--active');
+        button.addEventListener('click', () => {
+          mobileActiveWeekday = weekday;
+          renderBox();
+        });
+        daySelector.appendChild(button);
+      });
+      wrapper.appendChild(daySelector);
+
+      const list = document.createElement('div');
+      list.className = 'manage-timetable-mobile__list';
+
+      [...draftPeriods]
+        .sort((a, b) => a.periodNumber - b.periodNumber)
+        .forEach((period) => {
+          const card = document.createElement('div');
+          card.className = 'manage-timetable-mobile__card';
+
+          card.appendChild(renderTimeInputs(period));
+          card.appendChild(renderSubjectSelect(mobileActiveWeekday, period.periodNumber));
+
+          const footer = document.createElement('div');
+          footer.className = 'manage-timetable-mobile__card-footer';
+          footer.appendChild(renderRemovePeriodButton(period.periodNumber));
+          card.appendChild(footer);
+
+          list.appendChild(card);
+        });
+
+      wrapper.appendChild(list);
+      wrapper.appendChild(renderAddPeriodControl());
+      return wrapper;
+    }
+
+    async function saveDraft() {
+      const result = timetableService.validateTimetableDraft(draftPeriods);
+      validationErrors = result.errors;
+      if (!result.valid) {
+        renderBox();
+        return;
+      }
+
+      await runAction(async () => {
+        timetableService.setPeriods(classroom, draftPeriods.map((period) => createTimetablePeriod(period)));
+
+        // Reconcile slots to exactly what the draft says — every
+        // (weekday, periodNumber) still in the draft either gets the
+        // subject the teacher chose, or is cleared back to "no class"
+        // (see getSlot()'s own doc comment) if they left it blank or
+        // removed that period entirely.
+        const nextSlots = [];
+        draftPeriods.forEach((period) => {
+          WEEKDAY_ORDER.forEach((weekday) => {
+            const subjectId = draftSlots.get(`${weekday}_${period.periodNumber}`);
+            if (subjectId) nextSlots.push(createTimetableSlot({ weekday, periodNumber: period.periodNumber, subjectId }));
+          });
+        });
+        classroom.timetable.slots = nextSlots;
+
+        await workspaceService.saveExplicitly(classroom);
+        overlay.remove();
+        await loadAndRender();
+      });
+    }
+
+    renderBox();
+  }
+
   function renderReflectionSection(lesson) {
     const section = document.createElement('div');
     section.className = 'period-detail-panel__reflection';
@@ -1125,6 +1494,13 @@ export async function renderTimetableView(container, { classroom }) {
   }
 
   await loadAndRender();
+}
+
+/** "HH:mm" + a duration -> "HH:mm", used only to default a newly-added period's time range to right after the previous one — never validated input, since validateTimetableDraft() re-checks the result anyway. */
+function addMinutesToTime(time, minutesToAdd) {
+  const [hour, minute] = time.split(':').map(Number);
+  const total = (hour * 60 + minute + minutesToAdd + 24 * 60) % (24 * 60);
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
 function weekdayOf(dateKey) {
