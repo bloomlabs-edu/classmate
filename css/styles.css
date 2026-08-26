@@ -12749,8 +12749,8 @@ button.wizard-checklist__row:hover {
 }
 
 .timetable-period-card__topic--empty {
-  font-weight: 600;
-  font-size: 0.85rem;
+  font-weight: 400;
+  font-size: 0.8rem;
   color: var(--color-primary-deep);
 }
 
@@ -12952,6 +12952,21 @@ button.wizard-checklist__row:hover {
   flex-direction: column;
   gap: var(--space-1);
   margin: var(--space-3) 0;
+}
+
+.period-detail-panel__attach-label {
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.period-detail-panel__attach-hint {
+  margin: 0 0 var(--space-2);
+  font-size: 0.85rem;
+  color: var(--color-muted);
 }
 
 /* ---------------------------------------------------------------------
@@ -13316,10 +13331,22 @@ button.wizard-checklist__row:hover {
   margin-top: var(--space-3);
 }
 
-/* Desktop grid */
+/* Desktop grid — spreadsheet-style frozen header row + frozen leftmost
+   (Time) column. This is a single element (.manage-timetable-grid-wrapper)
+   that scrolls BOTH axes itself (rather than splitting horizontal
+   scroll onto the wrapper and vertical onto the outer overlay box) —
+   position: sticky only tracks its own nearest scrolling ancestor, so
+   giving top-sticky (header) and left-sticky (time column) cells the
+   SAME scroll container is what makes both work at once. Only one
+   frozen column exists (Time), so `left: 0` needs no computed offset;
+   likewise the header row is the first row, so `top: 0` needs none —
+   real column/row dimensions, not a magic number. */
 
 .manage-timetable-grid-wrapper {
-  overflow-x: auto;
+  overflow: auto;
+  max-height: 44vh;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
 }
 
 .manage-timetable-grid {
@@ -13328,6 +13355,10 @@ button.wizard-checklist__row:hover {
 }
 
 .manage-timetable-grid th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--color-surface);
   font-size: 0.75rem;
   font-weight: var(--font-weight-bold);
   color: var(--color-muted);
@@ -13335,16 +13366,33 @@ button.wizard-checklist__row:hover {
   letter-spacing: 0.03em;
   padding: var(--space-2);
   text-align: left;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .manage-timetable-grid td {
   padding: var(--space-2);
   border-top: 1px solid var(--color-border);
   vertical-align: middle;
+  background: var(--color-surface);
 }
 
 .manage-timetable-grid__time-cell {
+  position: sticky;
+  left: 0;
+  z-index: 1;
   white-space: nowrap;
+  box-shadow: 1px 0 0 var(--color-border);
+}
+
+/* The top-left corner (empty header cell above the Time column) is
+   sticky on BOTH axes at once, so it needs the highest z-index —
+   otherwise scrolled weekday header cells (z-index: 2) or the sticky
+   Time column's own body cells would render on top of it at the
+   exact moment both scroll positions overlap it. */
+.manage-timetable-grid__corner-cell {
+  left: 0;
+  z-index: 3;
+  box-shadow: 1px 0 0 var(--color-border);
 }
 
 /* Mobile day-first editor */
@@ -13533,20 +13581,19 @@ button.wizard-checklist__row:hover {
   flex-shrink: 0;
 }
 
+/* Phase U — subject badge + topic/"+ Attach lesson" label are now the
+   same shared elements the Timetable grid's own period cards use (see
+   ui/components/ScheduleItemLabels.js): .timetable-period-card__subject
+   and .timetable-period-card__topic(--empty). Only the flex layout
+   here is Today's-Schedule-specific — the badge/label styling itself
+   is intentionally NOT redeclared, so it can never drift out of sync
+   with the Timetable grid again. */
 .todays-schedule-widget__main {
   flex: 1;
   display: flex;
   flex-direction: column;
-}
-
-.todays-schedule-widget__subject {
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-}
-
-.todays-schedule-widget__topic {
-  font-weight: 700;
+  align-items: flex-start;
+  gap: 4px;
 }
 
 .todays-schedule-widget__status {

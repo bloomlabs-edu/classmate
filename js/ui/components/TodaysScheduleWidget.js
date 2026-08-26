@@ -20,6 +20,7 @@ import * as timetableDisplayService from '../../services/timetableDisplayService
 import * as plannerRepository from '../../services/plannerRepository.js';
 import { getTimetableSubjectColor } from '../../config/timetableSubjectColors.js';
 import { getTodayDateKey } from '../../utils/dateHelpers.js';
+import { renderSubjectBadge, renderLessonTopicLabel } from './ScheduleItemLabels.js';
 
 function resolvePeriodStatus(period, lesson, now) {
   if (lesson && lesson.conceptIds.length > 0 && lesson.executedConceptIds.length === lesson.conceptIds.length) {
@@ -103,18 +104,8 @@ export async function renderTodaysScheduleWidget(container, { classroom, onViewF
 
       const main = document.createElement('div');
       main.className = 'todays-schedule-widget__main';
-
-      const subject = document.createElement('span');
-      subject.className = 'todays-schedule-widget__subject';
-      subject.style.color = color.text;
-      subject.textContent = timetableDisplayService.resolveSubjectTitle(classroom, slot.subjectId).toUpperCase();
-      main.appendChild(subject);
-
-      const topic = timetableDisplayService.resolveLessonTopic(classroom, lesson);
-      const topicEl = document.createElement('span');
-      topicEl.className = 'todays-schedule-widget__topic';
-      topicEl.textContent = topic || '+ Attach lesson';
-      main.appendChild(topicEl);
+      main.appendChild(renderSubjectBadge(timetableDisplayService.resolveSubjectTitle(classroom, slot.subjectId), color));
+      main.appendChild(renderLessonTopicLabel(timetableDisplayService.resolveLessonTopic(classroom, lesson)));
 
       row.appendChild(main);
 

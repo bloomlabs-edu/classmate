@@ -49,6 +49,7 @@ import { getTimetableSubjectColor } from '../../config/timetableSubjectColors.js
 import { getWeekRange, shiftDateKey, getTodayDateKey, formatDateKey } from '../../utils/dateHelpers.js';
 import { createIcon } from '../components/Icon.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
+import { renderSubjectBadge, renderLessonTopicLabel } from '../components/ScheduleItemLabels.js';
 import { getResourceTypeIcon } from '../../config/resourceTypeConfig.js';
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -375,19 +376,10 @@ export async function renderTimetableView(container, { classroom }) {
     card.className = 'timetable-period-card';
     if (slot.id === state.selectedTeachingSlotId) card.classList.add('timetable-period-card--selected');
 
-    const strip = document.createElement('span');
-    strip.className = 'timetable-period-card__subject';
-    strip.style.background = color.tint;
-    strip.style.color = color.text;
-    strip.textContent = timetableDisplayService.resolveSubjectTitle(classroom, slot.subjectId).toUpperCase();
-    card.appendChild(strip);
+    card.appendChild(renderSubjectBadge(timetableDisplayService.resolveSubjectTitle(classroom, slot.subjectId), color));
 
     const topic = timetableDisplayService.resolveLessonTopic(classroom, lesson);
-    const topicEl = document.createElement('span');
-    topicEl.className = 'timetable-period-card__topic';
-    topicEl.textContent = topic || '+ Attach lesson';
-    if (!topic) topicEl.classList.add('timetable-period-card__topic--empty');
-    card.appendChild(topicEl);
+    card.appendChild(renderLessonTopicLabel(topic));
 
     if (lesson) {
       const meta = document.createElement('span');
@@ -492,7 +484,7 @@ export async function renderTimetableView(container, { classroom }) {
     });
     header.appendChild(closeButton);
     const periodInfo = document.createElement('span');
-    periodInfo.textContent = `Period ${slot.periodNumber} · ${formatDateKey(slot.date)} · ${slot.subjectId}`;
+    periodInfo.textContent = `Period ${slot.periodNumber} · ${formatDateKey(slot.date)} · ${timetableDisplayService.resolveSubjectTitle(classroom, slot.subjectId)}`;
     header.appendChild(periodInfo);
     panel.appendChild(header);
 
@@ -732,6 +724,32 @@ export async function renderTimetableView(container, { classroom }) {
     return section;
   }
 
+  /**
+   * Phase T fix — the root cause of the reported "Measurement gets
+   * attached automatically" bug: a native <select> ALWAYS has some
+   * option selected (there is no such thing as an empty selection),
+   * so the previous version of this form — which populated unitSelect
+   * with the subject's real units and never added a placeholder —
+   * silently had its FIRST real unit selected the instant this form
+   * rendered, before the teacher touched anything. A teacher who
+   * clicked "Attach lesson plan" without deliberately re-choosing a
+   * unit (a very easy thing to not realize you need to do) ended up
+   * attaching whichever unit happened to sort first — "Measurement" in
+   * the reported case — as this Lesson's real, saved curriculumUnitId.
+   * Concepts themselves were never auto-checked (checkboxes always
+   * started unchecked), but the picker rendering fully populated,
+   * already-scoped-to-a-silently-chosen-unit concept list read, from
+   * the teacher's side, as "the app already decided the topic for me."
+   *
+   * Fixed with an explicit, disabled placeholder option that stays
+   * selected until the teacher deliberately picks a real unit (see
+   * placeholderOption below) — "Attach lesson plan" stays disabled
+   * until they do. Concepts now start in an explicit empty state ("No
+   * concepts added yet." + "+ Add concept") rather than eagerly
+   * rendering every checkbox for whatever unit happens to be selected
+   * — nothing about a Lesson's content is ever pre-filled; every field
+   * requires a deliberate action.
+   */
   function renderAttachLessonForm(slot) {
     const wrapper = document.createElement('div');
     wrapper.className = 'period-detail-panel__attach';
@@ -744,7 +762,18 @@ export async function renderTimetableView(container, { classroom }) {
       return wrapper;
     }
 
+    const unitLabel = document.createElement('label');
+    unitLabel.className = 'period-detail-panel__attach-label';
+    unitLabel.textContent = 'Unit / Topic';
+    wrapper.appendChild(unitLabel);
+
     const unitSelect = document.createElement('select');
+    const placeholderOption = document.createElement('option');
+    placeholderOption.value = '';
+    placeholderOption.textContent = '— Choose a unit —';
+    placeholderOption.disabled = true;
+    placeholderOption.selected = true;
+    unitSelect.appendChild(placeholderOption);
     learningSubject.units.forEach((unit) => {
       const option = document.createElement('option');
       option.value = unit.id;
@@ -753,15 +782,64 @@ export async function renderTimetableView(container, { classroom }) {
     });
     wrapper.appendChild(unitSelect);
 
-    const conceptListEl = document.createElement('div');
-    conceptListEl.className = 'period-detail-panel__concept-picker';
-    const checkboxes = new Map();
+    const conceptsLabel = document.createElement('p');
+    conceptsLabel.className = 'period-detail-panel__attach-label';
+    conceptsLabel.textContent = 'Concepts';
+    wrapper.appendChild(conceptsLabel);
 
-    function renderConceptCheckboxes() {
-      conceptListEl.innerHTML = '';
+    const conceptSection = document.createElement('div');
+    wrapper.appendChild(conceptSection);
+
+    const attachButton = document.createElement('button');
+    attachButton.type = 'button';
+    attachButton.className = 'btn btn--primary';
+    attachButton.textContent = 'Attach lesson plan';
+    attachButton.disabled = true;
+
+    const checkboxes = new Map();
+    let conceptPickerOpen = false;
+
+    function updateAttachButtonState() {
+      attachButton.disabled = !unitSelect.value;
+    }
+
+    function renderConceptSection() {
+      conceptSection.innerHTML = '';
       checkboxes.clear();
+
       const unit = learningSubject.units.find((u) => u.id === unitSelect.value);
-      (unit?.concepts || []).forEach((concept) => {
+      if (!unit) {
+        const hint = document.createElement('p');
+        hint.className = 'period-detail-panel__attach-hint';
+        hint.textContent = 'Choose a unit above to add concepts.';
+        conceptSection.appendChild(hint);
+        return;
+      }
+
+      if (!conceptPickerOpen) {
+        const empty = document.createElement('p');
+        empty.className = 'period-detail-panel__attach-hint';
+        empty.textContent = 'No concepts added yet.';
+        conceptSection.appendChild(empty);
+
+        // Reuses the same checkbox picker this form already had —
+        // just revealed on an explicit action instead of eagerly, per
+        // "no automatic concept insertion."
+        const addConceptButton = document.createElement('button');
+        addConceptButton.type = 'button';
+        addConceptButton.className = 'btn btn--text';
+        addConceptButton.textContent = '+ Add concept';
+        addConceptButton.addEventListener('click', () => {
+          conceptPickerOpen = true;
+          renderConceptSection();
+        });
+        conceptSection.appendChild(addConceptButton);
+        return;
+      }
+
+      const conceptListEl = document.createElement('div');
+      conceptListEl.className = 'period-detail-panel__concept-picker';
+      (unit.concepts || []).forEach((concept) => {
         const label = document.createElement('label');
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
@@ -771,15 +849,15 @@ export async function renderTimetableView(container, { classroom }) {
         label.append(concept.title);
         conceptListEl.appendChild(label);
       });
+      conceptSection.appendChild(conceptListEl);
     }
-    unitSelect.addEventListener('change', renderConceptCheckboxes);
-    renderConceptCheckboxes();
-    wrapper.appendChild(conceptListEl);
 
-    const attachButton = document.createElement('button');
-    attachButton.type = 'button';
-    attachButton.className = 'btn btn--primary';
-    attachButton.textContent = 'Attach lesson plan';
+    unitSelect.addEventListener('change', () => {
+      conceptPickerOpen = false; // a different unit invalidates whatever concepts were being picked for the old one
+      renderConceptSection();
+      updateAttachButtonState();
+    });
+
     attachButton.addEventListener('click', () =>
       runAction(async () => {
         const conceptIds = [...checkboxes.entries()].filter(([, cb]) => cb.checked).map(([id]) => id);
@@ -792,6 +870,8 @@ export async function renderTimetableView(container, { classroom }) {
         await loadAndRender();
       })
     );
+
+    renderConceptSection();
     wrapper.appendChild(attachButton);
 
     return wrapper;
@@ -841,9 +921,26 @@ export async function renderTimetableView(container, { classroom }) {
    * (its `conceptStats` array) — surfaced here for the first time, not
    * a new calculation.
    */
+  /**
+   * Phase U — STATE A (zero concepts): previously this tab always
+   * rendered "Mark concepts as covered" regardless of concept count —
+   * a real UX dead end (nothing to mark, and no way to add anything).
+   * Now shows an explicit empty state + "+ Add concept" instead, and
+   * the Mark-covered button simply does not exist in this state
+   * (never a disabled button left visible). STATE B/C (concepts.length
+   * > 0) is completely unchanged — same rows, same checkboxes, same
+   * Mark-covered button, same underlying markConceptsExecuted() call.
+   */
   function renderConceptsTab(slot, lesson) {
     const section = document.createElement('div');
     section.className = 'period-detail-panel__concepts';
+
+    const concepts = timetableDisplayService.resolveLessonConcepts(classroom, lesson);
+
+    if (concepts.length === 0) {
+      section.appendChild(renderNoConceptsEmptyState(slot, lesson));
+      return section;
+    }
 
     const conceptStatsById = new Map();
     if (lesson.executedConceptIds.length > 0) {
@@ -852,7 +949,6 @@ export async function renderTimetableView(container, { classroom }) {
       });
     }
 
-    const concepts = timetableDisplayService.resolveLessonConcepts(classroom, lesson);
     const executedSet = new Set(lesson.executedConceptIds);
     const carriedSet = new Set(lesson.carriedForwardConceptIds || []);
 
@@ -917,6 +1013,88 @@ export async function renderTimetableView(container, { classroom }) {
     section.appendChild(saveButton);
 
     return section;
+  }
+
+  /**
+   * STATE A's empty state — "No concepts added yet." + an explicit
+   * "+ Add concept" action, reusing the exact same
+   * `.period-detail-panel__attach-hint` / `.period-detail-panel__concept-picker`
+   * classes (and the same unchecked-checkbox-list pattern) Phase T's
+   * Attach Lesson form already established, so this reads as the same
+   * mechanism rather than a second one. The lesson's unit
+   * (curriculumUnitId) is already fixed at this point (a lesson always
+   * has one — see models/Lesson.js) — no unit re-selection needed
+   * here, only which of that unit's remaining concepts to add.
+   */
+  function renderNoConceptsEmptyState(slot, lesson) {
+    const wrapper = document.createElement('div');
+
+    function renderPrompt() {
+      wrapper.innerHTML = '';
+
+      const empty = document.createElement('p');
+      empty.className = 'period-detail-panel__attach-hint';
+      empty.textContent = 'No concepts added yet.';
+      wrapper.appendChild(empty);
+
+      const addButton = document.createElement('button');
+      addButton.type = 'button';
+      addButton.className = 'btn btn--text';
+      addButton.textContent = '+ Add concept';
+      addButton.addEventListener('click', renderPicker);
+      wrapper.appendChild(addButton);
+    }
+
+    function renderPicker() {
+      wrapper.innerHTML = '';
+
+      const learningSubject = timetableDisplayService.findLearningSubjectByCanonicalId(classroom, slot.subjectId);
+      const unit = learningSubject?.units.find((u) => u.id === lesson.curriculumUnitId);
+      const availableConcepts = unit?.concepts || [];
+
+      if (!unit || availableConcepts.length === 0) {
+        const hint = document.createElement('p');
+        hint.className = 'period-detail-panel__attach-hint';
+        hint.textContent = unit
+          ? 'This unit has no concepts set up yet in Learning Management.'
+          : 'This lesson’s unit could not be found.';
+        wrapper.appendChild(hint);
+        return;
+      }
+
+      const checkboxes = new Map();
+      const listEl = document.createElement('div');
+      listEl.className = 'period-detail-panel__concept-picker';
+      availableConcepts.forEach((concept) => {
+        const label = document.createElement('label');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = concept.id;
+        checkboxes.set(concept.id, checkbox);
+        label.appendChild(checkbox);
+        label.append(concept.title);
+        listEl.appendChild(label);
+      });
+      wrapper.appendChild(listEl);
+
+      const addButton = document.createElement('button');
+      addButton.type = 'button';
+      addButton.className = 'btn btn--primary';
+      addButton.textContent = 'Add concept';
+      addButton.addEventListener('click', () =>
+        runAction(async () => {
+          const newIds = [...checkboxes.entries()].filter(([, cb]) => cb.checked).map(([id]) => id);
+          if (newIds.length === 0) return;
+          lesson.conceptIds = [...lesson.conceptIds, ...newIds];
+          await plannerRepository.saveLesson(classroom.id, lesson);
+          await loadAndRender();
+        })
+      );
+      wrapper.appendChild(addButton);
+    }
+
+    renderPrompt();
+    return wrapper;
   }
 
   /** Resources tab — a lightweight loading placeholder, filled in by loadResourcesTab() once the (async) resource fetch resolves. Matches this file's own "grid data renders instantly, network data fills in" convention already used for lessons. */
@@ -1351,7 +1529,9 @@ export async function renderTimetableView(container, { classroom }) {
       table.className = 'manage-timetable-grid';
 
       const headRow = document.createElement('tr');
-      headRow.appendChild(document.createElement('th'));
+      const cornerCell = document.createElement('th');
+      cornerCell.className = 'manage-timetable-grid__corner-cell';
+      headRow.appendChild(cornerCell);
       WEEKDAY_ORDER.forEach((weekday) => {
         const th = document.createElement('th');
         th.textContent = WEEKDAY_LABELS[weekday];
