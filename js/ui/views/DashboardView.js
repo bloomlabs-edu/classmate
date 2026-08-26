@@ -86,6 +86,7 @@ import { renderClassroomLandingView } from './ClassroomLandingView.js';
 import { renderSeatingView } from './SeatingView.js';
 import { renderCurriculumManagementView } from './CurriculumManagementView.js';
 import { logViewMounted } from '../../services/persistenceLogger.js';
+import { renderTodaysScheduleWidget } from '../components/TodaysScheduleWidget.js';
 
 export function renderDashboardView(container, props) {
   logViewMounted('DashboardView');
@@ -252,6 +253,20 @@ export function renderDashboardView(container, props) {
   if (openWorkWidget) {
     wrapper.appendChild(openWorkWidget);
   }
+
+  // Today's Schedule — a compact summary only (see
+  // ui/components/TodaysScheduleWidget.js's own header comment); the
+  // full Timetable grid deliberately never lives on Home, per explicit
+  // product decision. Self-contained async component: fires off its
+  // own render and fills itself in once real data resolves, so this
+  // still-synchronous renderDashboardView() doesn't need to become
+  // async just to host it.
+  const todaysScheduleContainer = document.createElement('div');
+  wrapper.appendChild(todaysScheduleContainer);
+  renderTodaysScheduleWidget(todaysScheduleContainer, {
+    classroom,
+    onViewFullTimetable: () => router.navigate(`/classroom/${classroom.id}/timetable`),
+  });
 
   // Card-level attention indicators — each one reuses data this app
   // already computes elsewhere for its own existing purpose; nothing
@@ -456,7 +471,7 @@ const DASHBOARD_MODULES = [
     // structurally separate domain (see models/LearningProgramme.js's
     // own header comment), not a mode of either existing feature.
     id: 'learningProgrammes',
-    title: 'Learning Programmes',
+    title: 'Teaching Programmes',
     icon: 'graduation-cap',
     description: 'Run after-school circles like English Literacy Circle',
     tier: 'daily',

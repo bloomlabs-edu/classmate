@@ -61,11 +61,11 @@ export function openCreateLearningProgrammeModal({ classroom, onCreate }) {
   modal.className = 'modal modal--wide';
   modal.setAttribute('role', 'dialog');
   modal.setAttribute('aria-modal', 'true');
-  modal.setAttribute('aria-label', 'Create Learning Programme');
+  modal.setAttribute('aria-label', 'Create Teaching Programme');
 
   const heading = document.createElement('h2');
   heading.className = 'modal__heading';
-  heading.textContent = 'Create Learning Programme';
+  heading.textContent = 'Create Teaching Programme';
 
   const description = document.createElement('p');
   description.className = 'modal__description';

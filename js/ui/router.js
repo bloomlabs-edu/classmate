@@ -28,6 +28,7 @@
  *   #/classroom/{id}/learning-programmes/{programmeId}/session/{sessionId}/goals -> the dedicated Daily Goals review drill-in (see ui/views/ProgrammeGoalsReviewView.js)
  *   #/classroom/{id}/learning-programmes/{programmeId}/session/{sessionId}/observations -> the dedicated Observations drill-in (see ui/views/ProgrammeObservationsView.js)
  *   #/classroom/{id}/feed                      -> Class Feed (teacher view)
+ *   #/classroom/{id}/timetable                 -> Timetable — Week/Day/Calendar grid of TeachingSlots, Period Detail, Carry Forward (see ui/views/TimetableView.js)
  *   #/classroom/{id}/notebooks                                       -> notebook tracker list (Subject × Notebook Type)
  *   #/classroom/{id}/work-requests/{requestId}                        -> WorkRequest checking + inline history, one page (see WorkRequestRosterView.js) — no separate Timeline route exists anymore
  *   #/classroom/{id}/notebooks/{subjectId}/{typeId}                  -> create a new WorkRequest (only reached when none is currently open for this Subject x Notebook Type)
@@ -135,6 +136,9 @@ export function resolvePathParts(parts) {
     }
     if (parts[2] === 'feed') {
       return { name: 'feed', classroomId: parts[1] };
+    }
+    if (parts[2] === 'timetable') {
+      return { name: 'timetable', classroomId: parts[1] };
     }
     if (parts[2] === 'scoreboard-archive') {
       if (parts[3]) {

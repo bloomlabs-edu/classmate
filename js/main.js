@@ -43,6 +43,7 @@ import { renderStudentGoalTrackerView } from './ui/student-portal/views/StudentG
 import { renderStudentFeedView } from './ui/student-portal/views/StudentFeedView.js';
 import { renderStudentNotebooksView } from './ui/student-portal/views/StudentNotebooksView.js';
 import { renderStudentLearningView } from './ui/student-portal/views/StudentLearningView.js';
+import { renderConceptFeedbackFlowView } from './ui/student-portal/views/ConceptFeedbackFlowView.js';
 import { renderStudentLearningCircleView } from './ui/student-portal/views/StudentLearningCircleView.js';
 import * as studentAuthService from './services/studentAuthService.js';
 import { renderStudentTeamView } from './ui/student-portal/views/StudentTeamView.js';
@@ -59,6 +60,7 @@ import { renderGoalManagementView } from './ui/views/GoalManagementView.js';
 import { renderGoalDashboardView } from './ui/views/GoalDashboardView.js';
 import * as goalService from './services/goalService.js';
 import { renderFeedModerationView } from './ui/views/FeedModerationView.js';
+import { renderTimetableView } from './ui/views/TimetableView.js';
 import { renderScoreboardArchiveView } from './ui/views/ScoreboardArchiveView.js';
 import { renderTrackerView } from './ui/views/TrackerView.js';
 import { renderTeacherDiagnosticsView } from './ui/views/TeacherDiagnosticsView.js'; // TEMPORARY — see that file's own header comment
@@ -85,8 +87,12 @@ import { renderLoginView } from './ui/views/LoginView.js';
 import { renderUserBar } from './ui/components/UserBar.js';
 import { openNewClassroomModal } from './ui/components/NewClassroomModal.js';
 import { openJoinClassroomModal } from './ui/components/JoinClassroomModal.js';
+import { renderTeacherPortalSidebar, hideTeacherPortalSidebar } from './ui/components/TeacherPortalSidebar.js';
+import { renderTeacherMobileNav, hideTeacherMobileNav } from './ui/components/TeacherMobileNav.js';
 
 let appContainer = null;
+let sidebarContainer = null;
+let mobileNavContainer = null;
 let userBarContainer = null;
 let currentUser = null;
 let workspaceLoading = false;
@@ -476,6 +482,7 @@ const CLASSROOM_ROUTE_NAMES = [
   'goalManagement',
   'learningManagement',
   'feed',
+  'timetable',
   'learningProgrammesList',
   'learningProgrammeOverview',
   'learningProgrammeSettings',
@@ -598,6 +605,11 @@ async function renderStudentPortalMain(route) {
           assessmentId: route.param,
           onBack: () => router.navigate('/student'),
         });
+      } else if (route.section === 'concept-feedback') {
+        renderConceptFeedbackFlowView(content, {
+          lessonId: route.param,
+          onDone: () => router.navigate('/student'),
+        });
       } else if (route.section === 'goals') {
         renderStudentGoalTrackerView(content, {
           onBack: () => router.navigate('/student'),
@@ -645,6 +657,17 @@ async function renderStudentPortalMain(route) {
 
 function renderRoute(route, reason = 'unspecified') {
   logPersistenceEvent(`renderRoute() called`, { reason, routeName: route?.name });
+
+  // Default to hidden — the persistent Teacher Portal sidebar (see
+  // ui/components/TeacherPortalSidebar.js) only ever applies inside
+  // the classroom-scoped routes below (CLASSROOM_ROUTE_NAMES), which
+  // re-shows it explicitly. Every other route (landing, Home, Student
+  // Portal, standalone Curriculum Management, login) never had it, so
+  // clearing it unconditionally here — rather than hunting down every
+  // individual non-classroom branch — is what actually guarantees it
+  // never leaks into a screen it was never designed for.
+  if (sidebarContainer) hideTeacherPortalSidebar(sidebarContainer);
+  if (mobileNavContainer) hideTeacherMobileNav(mobileNavContainer);
 
   // Notifications are classroom-scoped (see notificationService.js's
   // own header comment) — route.classroomId is undefined for every
@@ -759,6 +782,18 @@ function renderRoute(route, reason = 'unspecified') {
       return;
     }
 
+    // Shown for every classroom-scoped route except 'diagnostics',
+    // whose whole reason for existing (see the comment above) is
+    // tolerating a missing in-memory classroom — the sidebar needs a
+    // real classroom object (name, join code, etc.) and would have
+    // nothing meaningful to render in exactly that one case.
+    if (classroom && sidebarContainer) {
+      renderTeacherPortalSidebar(sidebarContainer, { classroom, activeRouteName: route.name });
+    }
+    if (classroom && mobileNavContainer) {
+      renderTeacherMobileNav(mobileNavContainer, { classroomId: classroom.id, activeRouteName: route.name });
+    }
+
     if (route.name === 'diagnostics') {
       renderTeacherDiagnosticsView(appContainer, {
         classroomId: route.classroomId,
@@ -802,6 +837,8 @@ function renderRoute(route, reason = 'unspecified') {
         onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
         onNavigateOpenWork: (path) => router.navigate(path),
       });
+    } else if (route.name === 'timetable') {
+      renderTimetableView(appContainer, { classroom, currentUser });
     } else if (route.name === 'assessments') {
       renderAssessmentManagementView(appContainer, {
         classroom,
@@ -1127,6 +1164,8 @@ function init() {
   try {
     appContainer = document.getElementById('app');
     userBarContainer = document.getElementById('user-bar');
+    sidebarContainer = document.getElementById('teacher-sidebar');
+    mobileNavContainer = document.getElementById('teacher-mobile-nav');
 
     registerServiceWorker();
 

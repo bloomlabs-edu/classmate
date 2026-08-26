@@ -534,11 +534,13 @@ service cloud.firestore {
     // NOTE — a pre-existing gap discovered during this work, NOT
     // something this change is responsible for and NOT modified here
     // per this phase's own "do not modify unrelated Firestore rules"
-    // instruction: neither classrooms/{id}/lessons/{lessonId} (Planner)
-    // nor classrooms/{id}/resources/{resourceId} (Learning Hub) has an
-    // explicit rule anywhere in this file. Both currently fall through
-    // to the deny-by-default catch-all below. Flagged here for the
-    // reviewing team's own awareness; out of scope for this phase.
+    // instruction: classrooms/{id}/resources/{resourceId} (Learning Hub)
+    // has no explicit rule anywhere in this file and currently falls
+    // through to the deny-by-default catch-all below. Flagged here for
+    // the reviewing team's own awareness; out of scope for this phase.
+    // (classrooms/{id}/lessons/{lessonId} — Planner — had the exact
+    // same gap; fixed below, now that the Timetable feature is the
+    // first real caller of it.)
     match /classrooms/{classroomId}/programmeSessions/{sessionId} {
       allow read: if request.auth != null &&
         request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
@@ -548,6 +550,189 @@ service cloud.firestore {
 
       allow update: if request.auth != null &&
         request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+
+      allow delete: if false;
+    }
+
+    // Planner — Lesson (see models/Lesson.js, services/plannerRepository.js,
+    // services/timetableLessonService.js, services/carryForwardService.js).
+    // Fixes the exact pre-existing gap flagged in this file's own
+    // history (see the NOTE above programmeSessions): this collection
+    // previously had no rule at all and fell through to deny-by-default,
+    // making Planner/Timetable persistence non-functional in production.
+    //
+    // create/update mirror programmeSessions' own member-scoped shape
+    // exactly — only a current classroom member (a real, Google-
+    // authenticated teacher) may attach a lesson plan, mark concepts
+    // executed, or carry a concept forward. Update is member-scoped
+    // (not narrower) because a Lesson is genuinely edited over its own
+    // lifecycle by this feature — all ordinary teacher actions on an
+    // existing document, not a one-shot immutable record the way
+    // scoreboardArchives/programmeSessions' create-then-append pattern
+    // is. Delete is disallowed at the rules level: this app never
+    // deletes a Lesson once created (carrying a concept forward moves
+    // it between Lessons; it never removes one).
+    //
+    // READ is deliberately broader than create/update — ADDED for the
+    // Concept Feedback loop (see models/Lesson.js's own
+    // getFeedbackEligibleConceptIds(), services/studentPortalDataService.js's
+    // getConceptFeedbackForLesson()): a student, not a classroom member,
+    // needs to read a specific Lesson (by the exact id a StudentEvent's
+    // own payload points them to — see config/studentEventNavigation.js)
+    // to see which concepts are actually awaiting their feedback. This
+    // is not a new trust boundary invented for this feature — it's the
+    // exact same "any authenticated identity, teacher or anonymous
+    // student device, since Firestore has no cheap way to prove which
+    // classroom an anonymous uid genuinely belongs to" boundary
+    // feedPosts' and studentGoals' own read rules already accept
+    // elsewhere in this file, applied here for the same reason. Lesson
+    // content (a topic + concept ids) is no more sensitive than a Feed
+    // post; a Lesson's own id is never guessable/listable (list stays
+    // implicitly denied — no allow list exists here, same as every
+    // other collection in this file), so this doesn't let anyone
+    // enumerate or discover Lessons they weren't already pointed at.
+    match /classrooms/{classroomId}/lessons/{lessonId} {
+      allow read: if request.auth != null;
+
+      allow create: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+
+      allow update: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+
+      allow delete: if false;
+    }
+
+    // Learning Record — StudentConceptRecord (see
+    // models/StudentConceptRecord.js, services/learningRecordService.js,
+    // repositories/firestoreStudentConceptRecordsRepository.js). Phase N
+    // migration: this per-student data used to live inside
+    // classrooms/{id}'s own teams[].students[].learningRecord map,
+    // which a real anonymous student device can never safely write to
+    // (Firestore rules cannot diff a single element inside a nested
+    // array/object — the same documented limitation behind
+    // studentEntries/membershipLinks' own move to a subcollection).
+    // This collection is the architecturally correct fix: a dedicated,
+    // per-record document a student can be authorized against
+    // directly. The classrooms/{classroomId} update rule itself is
+    // UNCHANGED and UNBROADENED by this — a non-member still cannot
+    // write to the classroom document at all, exactly as before.
+    //
+    // recordId is deterministic — `${uid}_${conceptId}`, keyed on the
+    // WRITER'S OWN real auth uid, deliberately NOT `${studentId}_${conceptId}`.
+    // A studentId-keyed id would be fully predictable in advance by any
+    // authenticated device (roster student ids and concept ids are both
+    // readable) — since Firestore evaluates any write to an
+    // already-existing id as `update` (never `create`), a hostile
+    // device could pre-create another real student's own record first,
+    // permanently locking them out (update requires
+    // request.auth.uid == resource.data.uid, which a squatted record
+    // would never satisfy for its real, intended student). Keying on
+    // uid instead means a device can only ever pre-empt itself, never
+    // another real device — see
+    // repositories/firestoreStudentConceptRecordsRepository.js's own
+    // header comment for the full reasoning, including the accepted,
+    // already-precedented tradeoff (the same student on two devices
+    // gets two separate records, exactly like studentGoals already
+    // allows today).
+    //
+    // Deliberately mirrors studentGoals' own, already-proven identity
+    // pattern (checked directly, per Phase N's own investigation, as
+    // the strongest safe pattern this codebase actually has): a
+    // student writes only as themselves, proven by
+    // request.resource.data.uid == request.auth.uid — never a
+    // studentAuthLinks-style cross-check, since that collection (and
+    // the enrollment step that populated it) was rolled back earlier
+    // in this project's history (see the studentGoals rule's own
+    // comment above) and no replacement exists. This is the same,
+    // already-accepted trust level every other student-authored
+    // collection in this file has today — not a new gap.
+    //
+    // Deliberately NO "claim an existing unclaimed record" path, unlike
+    // an earlier draft of this rule: a record only ever comes into
+    // existence via its own owning student's real create — there is no
+    // teacher-create branch, and therefore no unclaimed/uid-less state
+    // a later student write would need to "claim." This is possible
+    // specifically because, per Phase N's own investigation,
+    // setNotebookStatus()/resolveHelpRequest() (the only functions that
+    // would ever need a teacher-initiated create) have zero real
+    // callers anywhere in the app — no teacher write permission is
+    // granted here at all, ahead of a UI that doesn't exist yet. If
+    // that UI is built later, this rule needs a real teacher-create
+    // branch added alongside it, not before.
+    match /classrooms/{classroomId}/studentConceptRecords/{recordId} {
+      // Readable by the record's own owning student, or any teacher
+      // member of this classroom — checks resource.data.uid directly,
+      // not a cross-document get(), for the same list-query-provability
+      // reason documented on the studentGoals rule above.
+      //
+      // resource != null is required here, not optional: Firestore
+      // THROWS (not merely denies) when a rule accesses resource.data.*
+      // against a get() for a document that doesn't exist yet — the
+      // exact case a client checking "do I already have a record for
+      // this concept" hits on its very first attempt. Discovered via
+      // this project's own real-emulator E2E test, not by inspection —
+      // repositories/firestoreStudentConceptRecordsRepository.js's own
+      // findRecord() avoids ever triggering this (a query's rule is
+      // only evaluated against documents actually returned, never a
+      // nonexistent one), but this guard is kept here regardless as
+      // defense in depth for any future getDoc()-by-id caller.
+      allow read: if request.auth != null && resource != null && (
+        request.auth.uid == resource.data.uid ||
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids
+      );
+
+      // A student may create ONLY their own record: uid must be their
+      // own real, authenticated identity, and recordId must match
+      // that same uid plus the document's own declared conceptId — a
+      // client can't create e.g.
+      // classrooms/{id}/studentConceptRecords/some-other-uid_concept-1,
+      // and, combined with uid == request.auth.uid below, can never
+      // land its own write on a document keyed by a different real
+      // device's uid at all. classroomId must match this rule's own
+      // path variable, so a record can't claim to belong to a
+      // different classroom than the one it's actually stored under.
+      //
+      // notebook/helpRequested must be exactly
+      // models/StudentConceptRecord.js's own createStudentConceptRecord()
+      // defaults on creation — 'not_required' / false — since a
+      // student is never allowed to set either field themselves (see
+      // the update rule below) and there is no teacher-create path
+      // that would ever need to set them to something else. understanding
+      // is not further restricted beyond being present: this app's own
+      // single writer (services/studentPortalDataService.js's
+      // setUnderstandingForCurrentStudent()) already only ever sends
+      // one of config/learningRecordConfig.js's own real
+      // UNDERSTANDING_KEYS, matching this file's own established
+      // convention of not re-validating a value's content in rules
+      // when the app's own single writer already guarantees its shape
+      // (see the studentGoals rule's own comment on teacherFeedback.text).
+      allow create: if request.auth != null &&
+        request.resource.data.classroomId == classroomId &&
+        request.resource.data.uid == request.auth.uid &&
+        recordId == request.auth.uid + '_' + request.resource.data.conceptId &&
+        request.resource.data.notebook == 'not_required' &&
+        request.resource.data.helpRequested == false;
+
+      // The record's own owning student may update ONLY the fields
+      // they're actually allowed to control — understanding and
+      // helpRequested (see services/learningRecordStudentService.js's
+      // own setUnderstanding()/requestHelp()/withdrawHelpRequest(), the
+      // exact same control boundary this rule enforces). classroomId,
+      // studentId, conceptId, uid, and notebook are all untouchable
+      // here: hasOnly() below already structurally guarantees none of
+      // them can be part of this write's diff at all; the explicit
+      // uid equality check is kept anyway, purely for the same
+      // legibility reason studentGoals' own update branch 4 keeps its
+      // own redundant uid check.
+      //
+      // No teacher-update branch exists — see this match block's own
+      // header comment on why (setNotebookStatus()/resolveHelpRequest()
+      // have no real caller today).
+      allow update: if request.auth != null &&
+        request.auth.uid == resource.data.uid &&
+        request.resource.data.uid == resource.data.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['understanding', 'helpRequested', 'updatedAt']);
 
       allow delete: if false;
     }

@@ -46,6 +46,19 @@ export function renderUserBar(container, { user, onSignOut, currentAccentColorId
   const bar = document.createElement('div');
   bar.className = 'user-bar';
 
+  // Phase P — mobile only (see css/styles.css's own @media rule):
+  // toggles .user-bar__secondary-menu open/closed. Inert and invisible
+  // at desktop widths, where the secondary actions it controls stay
+  // inline exactly as before — this never becomes a second navigation
+  // system, only a CSS-driven collapse of the same existing actions.
+  const menuToggle = document.createElement('button');
+  menuToggle.type = 'button';
+  menuToggle.className = 'user-bar__menu-toggle';
+  menuToggle.setAttribute('aria-label', 'More actions');
+  menuToggle.setAttribute('aria-expanded', 'false');
+  menuToggle.appendChild(createIcon('menu', { size: 20 }));
+  bar.appendChild(menuToggle);
+
   const identity = document.createElement('div');
   identity.className = 'user-bar__identity';
 
@@ -75,6 +88,40 @@ export function renderUserBar(container, { user, onSignOut, currentAccentColorId
   // editor floating in the middle of the bar.
   const rightGroup = document.createElement('div');
   rightGroup.className = 'user-bar__right-group';
+
+  // Phase P — the color editor, "Home" link, and Sign Out all move
+  // into this sub-group. At desktop widths css/styles.css keeps it
+  // laid out exactly as before (an inline row, no visual change); at
+  // mobile widths it becomes menuToggle's own dropdown instead, per
+  // the approved reference's cleaner mobile top bar. The notification
+  // control is deliberately NOT part of this group — it stays directly
+  // in rightGroup, always visible at every width, matching the
+  // reference's own "hamburger + identity + notification" hierarchy.
+  const secondaryMenu = document.createElement('div');
+  secondaryMenu.className = 'user-bar__secondary-menu';
+
+  menuToggle.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const isOpen = secondaryMenu.classList.toggle('user-bar__secondary-menu--open');
+    menuToggle.setAttribute('aria-expanded', String(isOpen));
+    if (isOpen) {
+      setTimeout(() => document.addEventListener('click', handleOutsideMenuClick), 0);
+    } else {
+      document.removeEventListener('click', handleOutsideMenuClick);
+    }
+  });
+  function handleOutsideMenuClick(event) {
+    if (!secondaryMenu.contains(event.target) && event.target !== menuToggle) {
+      secondaryMenu.classList.remove('user-bar__secondary-menu--open');
+      menuToggle.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('click', handleOutsideMenuClick);
+    }
+  }
+  // Appended now, filled in below — keeps this group's own children
+  // (color editor, Home, Sign Out) in exactly the same relative DOM
+  // order, before the notification control, that they already had
+  // before this change; only the mobile CSS collapse is new.
+  rightGroup.appendChild(secondaryMenu);
 
   if (currentAccentColorId && onSelectAccentColor) {
     const isCustomActive = currentAccentColorId.startsWith('#');
@@ -155,7 +202,7 @@ export function renderUserBar(container, { user, onSignOut, currentAccentColorId
     });
 
     pickerWrapper.append(editButton, popover);
-    rightGroup.appendChild(pickerWrapper);
+    secondaryMenu.appendChild(pickerWrapper);
   }
 
   if (notificationPermissionState && (onEnableNotifications || onDisableNotifications)) {
@@ -182,7 +229,7 @@ export function renderUserBar(container, { user, onSignOut, currentAccentColorId
     landingLink.append('Home');
     landingLink.title = 'Back to Home';
     landingLink.addEventListener('click', onBackToLanding);
-    rightGroup.appendChild(landingLink);
+    secondaryMenu.appendChild(landingLink);
   }
 
   const signOutButton = document.createElement('button');
@@ -190,7 +237,7 @@ export function renderUserBar(container, { user, onSignOut, currentAccentColorId
   signOutButton.className = 'btn btn--text';
   signOutButton.textContent = 'Sign Out';
   signOutButton.addEventListener('click', onSignOut);
-  rightGroup.appendChild(signOutButton);
+  secondaryMenu.appendChild(signOutButton);
 
   bar.appendChild(rightGroup);
   container.appendChild(bar);

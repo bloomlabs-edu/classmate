@@ -38,6 +38,12 @@ import * as studentGoalsService from './studentGoalsService.js';
 import * as learningRecordStudentService from './learningRecordStudentService.js';
 import * as goalStatisticsService from './goalStatisticsService.js';
 import * as teamStatisticsService from './teamStatisticsService.js';
+import * as plannerRepository from './plannerRepository.js';
+import * as studentAuthService from './studentAuthService.js';
+import * as conceptRecordsRepository from '../repositories/firestoreStudentConceptRecordsRepository.js';
+import { hydrateConceptRecordsForStudent } from './conceptRecordHydrationService.js';
+import { getFeedbackEligibleConceptIds } from '../models/Lesson.js';
+import { createStudentConceptRecord } from '../models/StudentConceptRecord.js';
 import { getWeekRange } from '../utils/dateHelpers.js';
 import { listRecognitionCategoriesForPeriod } from '../config/recognitionCategories.js';
 
@@ -463,6 +469,61 @@ export async function getAssessmentResultsForCurrentStudent(assessmentId) {
 }
 
 /**
+ * Resolves a `concept_feedback_available` StudentEvent's own `lessonId`
+ * pointer (see config/studentEventNavigation.js) into the current
+ * student's own view of it — read fresh from the live Lesson document
+ * every time this is called, never from the event itself, which only
+ * ever carried the pointer (same principle getAssessmentResultsForCurrentStudent()
+ * above already follows for assessmentId).
+ *
+ * Returns only the currently-EXECUTED concept ids (models/Lesson.js's
+ * own getFeedbackEligibleConceptIds()) — a concept carried forward out
+ * of this Lesson after the event was published, or never executed at
+ * all, is correctly excluded even if it was in `conceptIds`. Returns
+ * null (never throws) for a missing profile/classroom, a Lesson that
+ * no longer exists, or one with nothing executed yet — a stale or
+ * early-tapped link degrades to a real empty state, matching this
+ * file's own established convention.
+ */
+export async function getConceptFeedbackForLesson(lessonId) {
+  const found = await loadCurrentStudentAndClassroom();
+  if (!found) return null;
+
+  const { classroom, student } = found;
+
+  // Phase N fix — a real student device's DEFAULT app is never signed
+  // in (see plannerRepository.getLessonById()'s own header comment),
+  // so this Lesson read must go through the student's own per-slot
+  // instance, same as every other student-side write/read in this
+  // file, or firestore.rules's own lessons/{lessonId} read rule
+  // (request.auth != null) always denies it in production.
+  const slotIndex = studentDeviceService.getSlotForStudent(student.id);
+  if (slotIndex === null) return null;
+  const studentDb = studentAuthService.getFirestoreForSlot(slotIndex);
+  await studentAuthService.ensureAnonymousSignIn(slotIndex);
+
+  const lesson = await plannerRepository.getLessonById(classroom.id, lessonId, studentDb);
+  if (!lesson) return null;
+
+  const conceptIds = getFeedbackEligibleConceptIds(lesson);
+  if (conceptIds.length === 0) return null;
+
+  // Phase N — overlays this student's own real studentConceptRecords
+  // documents onto student.learningRecord before
+  // ConceptFeedbackFlowView.js reads it, so a concept this student
+  // already responded to (on a previous visit, possibly from a
+  // different device session) shows its real current selection rather
+  // than a stale/default one. See services/conceptRecordHydrationService.js's
+  // own header comment for the full fallback order this participates in.
+  await hydrateConceptRecordsForStudent(classroom, student);
+
+  // classroom/student are returned alongside conceptIds so
+  // ui/student-portal/views/ConceptFeedbackFlowView.js doesn't need a
+  // second loadCurrentStudentAndClassroom() call right after this one.
+  return { conceptIds, classroom, student };
+}
+
+/**
  * One student's own view of the active Goal Cycle — every category,
  * whether they have a goal for it yet (and its own approval status
  * and, once approved, its own live statistics), or null if they don't.
@@ -636,22 +697,72 @@ export async function setGoalCompletionForCurrentStudent(goalId, dateKey, comple
 }
 
 /**
- * A student self-reporting their own understanding of a concept —
- * mirrors setGoalCompletionForCurrentStudent()'s exact shape above
- * (the established, correct student-side persistence pattern: load,
- * mutate, saveExplicitly(), surface any write failure rather than
- * silently swallowing it). Reuses learningRecordStudentService's own
- * real setUnderstanding() for the mutation itself — no second
- * implementation of that logic.
+ * A student self-reporting their own understanding of a concept.
+ *
+ * Phase N rewrite: no longer saves the whole classroom document (see
+ * setGoalCompletionForCurrentStudent()'s own header comment on exactly
+ * this same class of bug) — a real anonymous student device was never
+ * actually permitted to do that under firestore.rules's own
+ * classrooms/{classroomId} update rule (request.auth.uid in
+ * memberUids), which this project's own Phase M end-to-end emulator
+ * test confirmed fails with a genuine PERMISSION_DENIED. Writes
+ * instead through this student's own per-slot Firestore instance to
+ * their own dedicated classrooms/{id}/studentConceptRecords/{uid}_{conceptId}
+ * document — see repositories/firestoreStudentConceptRecordsRepository.js
+ * (uid-keyed, not studentId-keyed — see that file's own header comment
+ * on why) and firestore.rules's own new match block for that collection.
+ *
+ * Still mutates the in-memory record via learningRecordStudentService's
+ * own real setUnderstanding() first — no second implementation of that
+ * logic — purely so this session's own immediately-rendered UI (e.g.
+ * ConceptFeedbackFlowView.js's own optimistic re-render) reflects the
+ * change without waiting on a fresh hydration round-trip. That mutation
+ * is never itself persisted via workspaceService — the repository call
+ * below is the only durable write.
  */
 export async function setUnderstandingForCurrentStudent(conceptId, understanding) {
   const found = await loadCurrentStudentAndClassroom();
   if (!found) return false;
 
-  learningRecordStudentService.setUnderstanding(found.student, conceptId, understanding);
+  const slotIndex = studentDeviceService.getSlotForStudent(found.student.id);
+  if (slotIndex === null) return false;
+
+  const updatedRecord = learningRecordStudentService.setUnderstanding(found.student, conceptId, understanding);
+
+  const db = studentAuthService.getFirestoreForSlot(slotIndex);
+  const uid = await studentAuthService.ensureAnonymousSignIn(slotIndex);
 
   try {
-    await workspaceService.saveExplicitly(found.classroom);
+    const existing = await conceptRecordsRepository.findRecord(db, found.classroom.id, uid, conceptId);
+    if (existing) {
+      await conceptRecordsRepository.updateUnderstanding(db, found.classroom.id, uid, conceptId, {
+        understanding: updatedRecord.understanding,
+        updatedAt: updatedRecord.updatedAt,
+      });
+    } else {
+      // Always the model's own true defaults here, never
+      // updatedRecord.notebook/.helpRequested — those could carry a
+      // stale legacy value forward via setUnderstanding()'s own
+      // {...existing} spread (see learningRecordStudentService.js) if
+      // this session's in-memory student object happened to already
+      // hold one, e.g. from the old embedded classroom.teams[].students[].learningRecord
+      // field. A student's FIRST-ever create must match
+      // firestore.rules's own create rule exactly (notebook ==
+      // 'not_required', helpRequested == false) — reconciling a real
+      // legacy notebook value into the new collection, if one ever
+      // exists, is the migration script's job, not this live write path's.
+      const defaults = createStudentConceptRecord();
+      await conceptRecordsRepository.createRecord(db, {
+        classroomId: found.classroom.id,
+        studentId: found.student.id,
+        conceptId,
+        uid,
+        understanding: updatedRecord.understanding,
+        notebook: defaults.notebook,
+        helpRequested: defaults.helpRequested,
+        updatedAt: updatedRecord.updatedAt,
+      });
+    }
   } catch (error) {
     console.error('[studentPortalDataService] setUnderstandingForCurrentStudent() — the write did not reach the server:', error);
     return false;

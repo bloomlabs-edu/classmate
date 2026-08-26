@@ -49,13 +49,13 @@ export async function renderLearningProgrammesListView(container, { classroom, o
   header.appendChild(createBackButton(onBack));
   const title = document.createElement('h1');
   title.className = 'tracker-header__title';
-  title.textContent = 'Learning Programmes';
+  title.textContent = 'Teaching Programmes';
   header.appendChild(title);
 
   const createButton = document.createElement('button');
   createButton.type = 'button';
   createButton.className = 'btn btn--primary';
-  createButton.textContent = '+ Create Learning Programme';
+  createButton.textContent = '+ Create Teaching Programme';
   createButton.addEventListener('click', () => {
     openCreateLearningProgrammeModal({
       classroom,
@@ -88,7 +88,7 @@ export async function renderLearningProgrammesListView(container, { classroom, o
     const emptyStateCreateButton = document.createElement('button');
     emptyStateCreateButton.type = 'button';
     emptyStateCreateButton.className = 'btn btn--primary';
-    emptyStateCreateButton.textContent = 'Create Learning Programme';
+    emptyStateCreateButton.textContent = 'Create Teaching Programme';
     emptyStateCreateButton.addEventListener('click', () => createButton.click());
     empty.appendChild(emptyStateCreateButton);
     content.appendChild(empty);

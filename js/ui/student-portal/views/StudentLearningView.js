@@ -59,6 +59,7 @@ import { createBackButton } from '../../components/BackButton.js';
 import { createEmptyStateElement } from '../../components/EmptyState.js';
 import { createIcon } from '../../components/Icon.js';
 import { loadCurrentStudentAndClassroom, setUnderstandingForCurrentStudent } from '../../../services/studentPortalDataService.js';
+import { hydrateConceptRecordsForStudent } from '../../../services/conceptRecordHydrationService.js';
 import * as learningRecordService from '../../../services/learningRecordService.js';
 import * as resourceService from '../../../services/resourceService.js';
 import { getStudentUnderstandingLabel, getStudentUnderstandingIcon } from '../../../config/learningRecordConfig.js';
@@ -80,6 +81,14 @@ export async function renderStudentLearningView(container, { onBack } = {}) {
     return;
   }
   const { classroom, student } = found;
+
+  // Phase N — overlays this student's own real studentConceptRecords
+  // documents onto student.learningRecord before any level below reads
+  // it via learningRecordService.getStudentConceptRecord(), so this
+  // screen shows the student's real, current reflection rather than a
+  // stale/default one. See services/conceptRecordHydrationService.js's
+  // own header comment for the full fallback order this participates in.
+  await hydrateConceptRecordsForStudent(classroom, student);
 
   // level: 'subjects' | 'units' | 'concept-map' | 'concept-detail'
   let level = 'subjects';

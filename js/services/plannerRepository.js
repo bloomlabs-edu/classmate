@@ -45,7 +45,7 @@
  * rather than configuring a second, conflicting one.
  */
 
-import { getFirestore, collection, doc, setDoc, getDocs, query, where, writeBatch } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+import { getFirestore, collection, doc, getDoc, setDoc, getDocs, query, where, writeBatch } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 import { getFirebaseApp } from './firebaseApp.js';
 
 let db = null;
@@ -83,6 +83,50 @@ export async function saveLesson(classroomId, lesson) {
 /** Every Lesson belonging to one Planning Cycle, for this classroom. */
 export async function getLessonsForCycle(classroomId, planningCycleId) {
   const lessonsQuery = query(lessonsCollectionRef(classroomId), where('planningCycleId', '==', planningCycleId));
+  const snapshot = await getDocs(lessonsQuery);
+  return snapshot.docs.map((docSnapshot) => ({ id: docSnapshot.id, ...docSnapshot.data() }));
+}
+
+/** The Lesson attached to one concrete Teaching Slot (see services/timetableService.js's buildTeachingSlotId()), or null if that period has no lesson plan attached yet. Used by the Timetable UI to decide "attach a new lesson plan" vs. "open the existing one." */
+export async function getLessonByTeachingSlotId(classroomId, teachingSlotId) {
+  const lessonsQuery = query(lessonsCollectionRef(classroomId), where('teachingSlotId', '==', teachingSlotId));
+  const snapshot = await getDocs(lessonsQuery);
+  return snapshot.empty ? null : { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+}
+
+/**
+ * One Lesson by its own id, directly — what
+ * services/studentPortalDataService.js's getConceptFeedbackForLesson()
+ * uses to resolve a StudentEvent's own lessonId pointer into the
+ * current, live executedConceptIds every time a student opens the
+ * Concept Feedback flow (never a snapshot carried in the event's own
+ * payload — see config/studentEventNavigation.js's own header comment
+ * for why that convention matters here specifically).
+ *
+ * Optional `firestoreOverride` — Phase N fix: a real student device's
+ * DEFAULT app (this file's own getDb()) is NEVER signed in to anything
+ * (only its per-slot app is — see studentAuthService.js's own header
+ * comment on why a shared default-app Auth instance can't be reused
+ * for a student identity). firestore.rules's own lessons/{lessonId}
+ * read rule requires request.auth != null, so calling this with no
+ * override from student-side code would always fail with
+ * PERMISSION_DENIED in production — a genuine, pre-existing Phase M
+ * bug, only surfaced now by Phase N's own real-identity-mechanism E2E
+ * test (an earlier, simplified test harness happened to sign in
+ * anonymously on the default app directly, masking this). Every
+ * teacher-side caller is unaffected — they never pass this argument,
+ * so getDb() (the default app, where a teacher's own real Google
+ * session already lives) is used exactly as before.
+ */
+export async function getLessonById(classroomId, lessonId, firestoreOverride = null) {
+  const activeDb = firestoreOverride || getDb();
+  const snapshot = await getDoc(doc(collection(activeDb, 'classrooms', classroomId, 'lessons'), lessonId));
+  return snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null;
+}
+
+/** Every Lesson whose own `date` falls within [startDateKey, endDateKey] (inclusive) — what the Timetable Week/Day grid fetches in one query per visible range, rather than one query per period. */
+export async function getLessonsForDateRange(classroomId, startDateKey, endDateKey) {
+  const lessonsQuery = query(lessonsCollectionRef(classroomId), where('date', '>=', startDateKey), where('date', '<=', endDateKey));
   const snapshot = await getDocs(lessonsQuery);
   return snapshot.docs.map((docSnapshot) => ({ id: docSnapshot.id, ...docSnapshot.data() }));
 }

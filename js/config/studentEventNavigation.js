@@ -53,6 +53,17 @@ export const STUDENT_EVENT_DETAIL_ROUTES = {
     buildRoute: () => '/student/feed',
     ctaLabel: 'View Post',
   },
+  // Published by services/timetableLessonService.js's
+  // shareFeedbackWithStudents() — payload carries only `lessonId`, a
+  // pointer, never a snapshot of which concepts are involved (see that
+  // function's own header comment for why: services/
+  // studentPortalDataService.js's getConceptFeedbackForLesson() always
+  // resolves the LIVE, current executedConceptIds when this route
+  // actually opens).
+  concept_feedback_available: {
+    buildRoute: (payload) => `/student/concept-feedback/${payload.lessonId}`,
+    ctaLabel: 'Give Feedback',
+  },
 };
 
 /** Returns { path, ctaLabel } for this event's own detail screen, or null if this event type has no dedicated screen (see this file's own header comment). */

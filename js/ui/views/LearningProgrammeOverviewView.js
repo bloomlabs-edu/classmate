@@ -37,7 +37,7 @@ export async function renderLearningProgrammeOverviewView(container, { classroom
 
   const programme = learningProgrammeService.getLearningProgrammeById(classroom, programmeId);
   if (!programme) {
-    container.appendChild(createEmptyStateElement({ message: 'This Learning Programme could not be found.' }));
+    container.appendChild(createEmptyStateElement({ message: 'This Teaching Programme could not be found.' }));
     return;
   }
 

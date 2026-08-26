@@ -234,6 +234,7 @@ export function createClassroom({
   currentScoringPeriodStartedAt = null,
   settings = buildDefaultSettings(),
   learningProgrammes = [],
+  timetable = { periods: [], slots: [] },
 } = {}) {
   return {
     id: id || generateId(),
@@ -263,5 +264,6 @@ export function createClassroom({
     currentScoringPeriodStartedAt,
     settings,
     learningProgrammes,
+    timetable,
   };
 }

@@ -34,6 +34,7 @@
 
 import * as workspaceService from '../../services/workspaceService.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
+import { hydrateConceptRecordsForConcepts } from '../../services/conceptRecordHydrationService.js';
 import * as learningRecordTeacherService from '../../services/learningRecordTeacherService.js';
 import * as resourceService from '../../services/resourceService.js';
 import * as resourceRepository from '../../services/resourceRepository.js';
@@ -89,6 +90,15 @@ export function renderConceptWorkspaceView(container, { classroom, subject, unit
     // on every classroom load.
     const migrated = await resourceService.migrateConceptResourceLinksIfNeeded(classroom.id, concept);
     if (migrated) workspaceService.save(classroom);
+
+    // Phase N — overlays every student's real studentConceptRecords
+    // document for THIS ONE concept onto classroom.teams[].students[].learningRecord,
+    // so the Student Progress tab's "needing help"/"mastered" counts
+    // below reflect real data. Bounded by roster size (one concept ×
+    // every student), never by the classroom's full syllabus size —
+    // see services/conceptRecordHydrationService.js's own header
+    // comment on why this is deliberately not a whole-classroom fetch.
+    await hydrateConceptRecordsForConcepts(classroom, [concept.id]);
 
     // Fetched once per render and passed down as a plain array —
     // both the Overview tab's resource count and the Resources tab's
