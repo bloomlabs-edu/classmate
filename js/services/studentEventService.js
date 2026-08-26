@@ -33,9 +33,22 @@ import * as readStateRepository from '../repositories/firestoreStudentEventReadS
  * function itself doesn't check for that, since what counts as
  * "succeeded" is specific to each publisher.
  */
-export function publishEvent(classroom, { studentId, type, category, title, message, payload }) {
+/**
+ * `id`/`createdAt` are optional and exist for exactly one reason: a
+ * caller that wants Firestore's arrayUnion() to genuinely deduplicate
+ * a retried append (arrayUnion only recognizes two array elements as
+ * "the same" when they're deeply equal in EVERY field, not just one
+ * matching id) needs to pass the exact same values on every attempt,
+ * rather than this function generating a fresh random id/timestamp
+ * each call (createStudentEvent()'s own default behavior, still
+ * exactly what every existing caller here gets since none of them
+ * pass these two). See services/feedService.js's createPostAsTeacher()
+ * for the one real caller that uses this.
+ */
+export function publishEvent(classroom, { studentId, type, category, title, message, payload, id, createdAt }) {
   if (!classroom.studentEvents) classroom.studentEvents = [];
   const event = createStudentEvent({
+    id,
     studentId,
     classroomId: classroom.id,
     type,
@@ -43,6 +56,7 @@ export function publishEvent(classroom, { studentId, type, category, title, mess
     title,
     message,
     payload,
+    createdAt,
   });
   classroom.studentEvents.push(event);
   return event;
@@ -53,10 +67,21 @@ export function publishEvent(classroom, { studentId, type, category, title, mess
  * classroom's roster — for events that aren't about one specific
  * student (e.g. an Assessment being published applies to the whole
  * class, not whoever happens to already have a StudentResult entry).
+ *
+ * `idPrefix`, if given, produces a deterministic `${idPrefix}_${studentId}`
+ * id for each student's own event instead of a random one — see
+ * publishEvent()'s own comment above for why. Every existing caller
+ * omits it and is completely unaffected.
  */
-export function publishEventToAllStudents(classroom, eventDetails) {
+export function publishEventToAllStudents(classroom, { idPrefix, ...eventDetails }) {
   const students = classroom.teams.flatMap((team) => team.students);
-  return students.map((student) => publishEvent(classroom, { ...eventDetails, studentId: student.id }));
+  return students.map((student) =>
+    publishEvent(classroom, {
+      ...eventDetails,
+      studentId: student.id,
+      id: idPrefix ? `${idPrefix}_${student.id}` : undefined,
+    })
+  );
 }
 
 /** This student's own event feed, newest first — sorting happens here, at read time, matching this app's own established convention (see services/assessmentService.js's listAssessments()) rather than requiring insertion order to already be correct. */

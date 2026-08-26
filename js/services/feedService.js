@@ -15,6 +15,10 @@ import * as studentDeviceService from './studentDeviceService.js';
 import * as feedRepository from '../repositories/firestoreFeedRepository.js';
 import * as notificationService from './notificationService.js';
 import { NOTIFICATION_CATEGORIES } from '../config/notificationCategories.js';
+import * as studentEventService from './studentEventService.js';
+import { STUDENT_EVENT_CATEGORIES } from '../config/studentEventCategories.js';
+import * as workspaceService from './workspaceService.js';
+import { getCurrentIsoDate } from '../utils/dateHelpers.js';
 
 /**
  * Every post for the current student's own classroom, newest-first,
@@ -300,8 +304,14 @@ export async function addCommentAsTeacher(classroomId, postId, { uid, authorName
  *
  * Returns the new postId on success, or null on a genuine failure —
  * matching createPostAsCurrentStudent()'s own explicit convention.
+ *
+ * `teams` — the caller's own already-loaded classroom.teams (see
+ * FeedModerationView.js, which already holds the live classroom this
+ * screen was rendered with) — used ONLY to know who's on the roster
+ * for the student-notification step below; never read from Firestore
+ * again here, so this adds no new read and no new listener.
  */
-export async function createPostAsTeacher({ classroomId, uid, authorName, text }) {
+export async function createPostAsTeacher({ classroomId, uid, authorName, text, teams = [] }) {
   try {
     const postId = await feedRepository.createPost(feedRepository.teacherFirestore(), {
       classroomId,
@@ -333,6 +343,50 @@ export async function createPostAsTeacher({ classroomId, uid, authorName, text }
       createdByUid: uid,
       readBy: [uid],
     });
+
+    // Student-facing bell notification (see StudentNotificationBell.js) \u2014
+    // deliberately AFTER the post write above already succeeded (the
+    // try/catch around it is what actually enforces that: this line is
+    // unreachable if the post write itself threw). This is separate
+    // infrastructure from the teacher Notification above, on purpose:
+    // notificationService's own collection is member-gated, and a
+    // student's own per-slot anonymous uid is never a member (see
+    // firestore.rules) - the student bell instead reads
+    // classroom.studentEvents, the same array-on-the-classroom-document
+    // system every other student notification (badges, stars, published
+    // assessments) already uses. `idPrefix`/`createdAt` are fixed once,
+    // here, so that IF this specific step is ever retried on its own
+    // (the post itself NOT being recreated - a fresh post naturally gets
+    // a fresh postId, which is a different, new notification, not a
+    // duplicate), arrayUnion() genuinely recognizes a repeat as the
+    // exact same array element rather than appending it twice - see
+    // studentEventService.js's own publishEvent()/publishEventToAllStudents()
+    // comments for why both fields need to be fixed, not just one.
+    // Wrapped in its own try/catch, deliberately not awaited into the
+    // outer try above: a failure here must never be reported as "the
+    // post itself was rejected" (the outer catch's own message), and
+    // must never cause createPostAsTeacher() to return null after the
+    // post has already genuinely succeeded.
+    try {
+      const events = studentEventService.publishEventToAllStudents(
+        { teams, studentEvents: [] },
+        {
+          type: 'feed_post_created',
+          category: STUDENT_EVENT_CATEGORIES.FEED,
+          title: 'New in Class Feed',
+          message: `${authorName} posted something new.`,
+          payload: { classroomId, postId },
+          createdAt: getCurrentIsoDate(),
+          idPrefix: `feed_${postId}`,
+        }
+      );
+      await workspaceService.appendStudentEvents(classroomId, events);
+    } catch (notifyError) {
+      console.error(
+        '[feedService] createPostAsTeacher() \u2014 the post itself succeeded, but publishing the student notification failed:',
+        notifyError
+      );
+    }
 
     return postId;
   } catch (error) {

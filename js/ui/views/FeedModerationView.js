@@ -85,6 +85,7 @@ export async function renderFeedModerationView(container, { classroom, currentUs
             uid: currentUser.uid,
             authorName: currentUser.displayName || 'Teacher',
             text,
+            teams: classroom.teams,
           });
           if (!postId) {
             window.alert('Could not publish this post right now. Please try again.');

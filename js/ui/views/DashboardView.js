@@ -66,6 +66,9 @@
 
 import { createIcon } from '../components/Icon.js';
 import * as pendingTaskService from '../../services/pendingTaskService.js';
+import * as goalService from '../../services/goalService.js';
+import * as notificationService from '../../services/notificationService.js';
+import { NOTIFICATION_CATEGORIES } from '../../config/notificationCategories.js';
 import { renderTeachingAssistant } from '../components/TeachingAssistant.js';
 import { getDisplayName, getDisplaySubtitle } from '../../services/classroomService.js';
 import { createClassroomHeaderElement } from '../components/ClassroomHeader.js';
@@ -90,6 +93,7 @@ export function renderDashboardView(container, props) {
   const {
     classroom,
     currentUser,
+    notifications = [],
     onOpenSettings,
     onOpenSettingsStudents,
     onOpenSettingsGroups,
@@ -249,6 +253,51 @@ export function renderDashboardView(container, props) {
     wrapper.appendChild(openWorkWidget);
   }
 
+  // Card-level attention indicators — each one reuses data this app
+  // already computes elsewhere for its own existing purpose; nothing
+  // here is a new listener or a new calculation invented just to
+  // populate a card. A module with no reliable signal (Classroom,
+  // Learning, Learning Programmes, Assessments — no "needs grading"
+  // concept exists anywhere yet) simply has no entry, and its card
+  // stays as plain description text, per explicit instruction not to
+  // fabricate a count.
+  const pendingTaskGroups = pendingTaskService.getPendingTasks(classroom);
+  const attentionById = {};
+
+  // Notebooks — the same three work-request groups
+  // PendingTasksWidget.js already surfaces below, summed the exact
+  // same way that widget's own "N tasks need your attention" line
+  // already does (group.items.length, not item.count) — deliberately
+  // excludes activity_awaiting_completion, which belongs to a
+  // different destination than this card navigates to.
+  const notebookPendingCount = pendingTaskGroups
+    .filter((group) => group.id !== 'activity_awaiting_completion')
+    .reduce((sum, group) => sum + group.items.length, 0);
+  if (notebookPendingCount > 0) {
+    attentionById.notebooks = `${notebookPendingCount} need${notebookPendingCount === 1 ? 's' : ''} review`;
+  }
+
+  // Goals — goalService.getPendingApprovalGoals() already exists for
+  // Goal Management's own review queue; this just counts it.
+  const activeGoalCycle = goalService.getActiveCycle(classroom);
+  const pendingGoalApprovals = activeGoalCycle ? goalService.getPendingApprovalGoals(activeGoalCycle).length : 0;
+  if (pendingGoalApprovals > 0) {
+    attentionById.goals = `${pendingGoalApprovals} awaiting approval`;
+  }
+
+  // Class Feed — the exact same `notifications` list UserBar.js's own
+  // bell renders (see main.js's manageNotificationSubscription()),
+  // filtered to this one category and counted with the bell's own
+  // countUnread() — no second subscription to the notifications
+  // collection.
+  const unreadFeedCount = notificationService.countUnread(
+    notifications.filter((notification) => notification.category === NOTIFICATION_CATEGORIES.FEED),
+    currentUser?.uid
+  );
+  if (unreadFeedCount > 0) {
+    attentionById.feed = `${unreadFeedCount} new message${unreadFeedCount === 1 ? '' : 's'}`;
+  }
+
   wrapper.appendChild(
     renderPrimaryModulesSection({
       onOpenClassroomLanding: openClassroomLanding,
@@ -258,6 +307,7 @@ export function renderDashboardView(container, props) {
       onOpenNotebookTracker,
       onOpenFeed: openFeed,
       onOpenLearningProgrammes: openLearningProgrammes,
+      attentionById,
     })
   );
 
@@ -295,7 +345,7 @@ export function renderDashboardView(container, props) {
   const allStudents = classroom.teams.flatMap((team) => team.students);
   const hasAnyRecognition = allStudents.some((student) => (student.badges || []).length > 0);
   const hasAnyScoreActivity = allStudents.some((student) => student.score !== 0 || (student.history || []).length > 0);
-  const hasPendingTasks = pendingTaskService.getPendingTasks(classroom).length > 0;
+  const hasPendingTasks = pendingTaskGroups.length > 0;
   const hasSubjectsConfigured = (classroom.notebookConfig?.subjects || []).length > 0;
   const hasRealGroups = classroom.teams.some((team) => !team.isUngrouped);
 
@@ -430,7 +480,16 @@ const DASHBOARD_MODULES = [
   },
 ];
 
-function renderPrimaryModulesSection({ onOpenClassroomLanding, onOpenLearningManagement, onOpenAssessmentManagement, onOpenGoalManagement, onOpenNotebookTracker, onOpenFeed, onOpenLearningProgrammes }) {
+function renderPrimaryModulesSection({
+  onOpenClassroomLanding,
+  onOpenLearningManagement,
+  onOpenAssessmentManagement,
+  onOpenGoalManagement,
+  onOpenNotebookTracker,
+  onOpenFeed,
+  onOpenLearningProgrammes,
+  attentionById = {},
+}) {
   const section = document.createElement('div');
   section.className = 'primary-modules';
 
@@ -457,6 +516,7 @@ function renderPrimaryModulesSection({ onOpenClassroomLanding, onOpenLearningMan
         onClick,
         tier: module.tier,
         accentColor: module.accentColor,
+        attentionText: attentionById[module.id],
       })
     );
   });
@@ -495,21 +555,32 @@ function renderPrimaryModulesSection({ onOpenClassroomLanding, onOpenLearningMan
  * Lucide icon system, not emoji (emoji stay reserved for celebration/
  * recognition/emotion, as documented there).
  */
-function createPrimaryModuleCard({ icon, label, description, onClick, tier, accentColor }) {
+function createPrimaryModuleCard({ icon, label, description, onClick, tier, accentColor, attentionText }) {
   const card = document.createElement('button');
   card.type = 'button';
   card.className = `primary-module-card primary-module-card--${tier}`;
   // A single custom property, set once here, that every tier's CSS
-  // (--daily, --setup) reads for icon color, border color, and hover
-  // treatment — the module's own identity color flows through one
-  // channel rather than being hardcoded per module name in CSS. Class
-  // Mode (tier "primary") has no accentColor at all; its own CSS rule
-  // uses --color-primary-deep directly instead, so this is simply
-  // never set for that card.
+  // (--daily, --setup) reads for icon color, border color, tinted
+  // background, and hover treatment — the module's own identity color
+  // flows through one channel rather than being hardcoded per module
+  // name in CSS. Class Mode (tier "primary") has no accentColor at
+  // all; its own CSS rule uses --color-primary-deep directly instead,
+  // so this is simply never set for that card.
   if (accentColor) card.style.setProperty('--module-accent', accentColor);
 
-  const iconEl = createIcon(icon, { size: 28, strokeWidth: 1.75, className: 'primary-module-card__icon' });
-  card.appendChild(iconEl);
+  // Primary (Class Mode) keeps its existing bare icon directly on the
+  // solid filled background — a badge circle there would just be a
+  // duplicate colored shape on top of an already-colored card. Daily/
+  // setup tiers get an icon badge, matching the tinted-card language
+  // this restyle is otherwise built on.
+  if (tier === 'primary') {
+    card.appendChild(createIcon(icon, { size: 28, strokeWidth: 1.75, className: 'primary-module-card__icon' }));
+  } else {
+    const badge = document.createElement('span');
+    badge.className = 'primary-module-card__icon-badge';
+    badge.appendChild(createIcon(icon, { size: 22, strokeWidth: 1.75, className: 'primary-module-card__icon' }));
+    card.appendChild(badge);
+  }
 
   const labelEl = document.createElement('span');
   labelEl.className = 'primary-module-card__label';
@@ -520,6 +591,17 @@ function createPrimaryModuleCard({ icon, label, description, onClick, tier, acce
   descriptionEl.className = 'primary-module-card__description';
   descriptionEl.textContent = description;
   card.appendChild(descriptionEl);
+
+  // Short, actionable, subordinate to the title — a small muted pill,
+  // never a large red count. Omitted entirely (not rendered empty)
+  // when the caller found nothing real to say — see this file's own
+  // attentionById comment above for exactly what backs each one.
+  if (attentionText) {
+    const attentionEl = document.createElement('span');
+    attentionEl.className = 'primary-module-card__attention';
+    attentionEl.textContent = attentionText;
+    card.appendChild(attentionEl);
+  }
 
   card.addEventListener('click', onClick);
   return card;

@@ -37,7 +37,8 @@
  * itself.
  */
 
-import { getHomeSummary, getEventFeed, loadCurrentStudentAndClassroom, getWeeklyNetPoints, getAlertsForCurrentStudent } from '../../../services/studentPortalDataService.js';
+import { getHomeSummary, getEventFeed, loadCurrentStudentAndClassroom, getWeeklyNetPoints, getAlertsForCurrentStudent, getGoalCycleForCurrentStudent, getUnreadEventCountByCategory } from '../../../services/studentPortalDataService.js';
+import { STUDENT_EVENT_CATEGORIES } from '../../../config/studentEventCategories.js';
 import { createTeamStandingsBoardElement } from '../../components/TeamStandingsBoard.js';
 import { createWeeklyNetPointsSection } from '../../components/WeeklyNetPointsGraph.js';
 import * as studentDeviceService from '../../../services/studentDeviceService.js';
@@ -46,17 +47,19 @@ import { createEmptyStateElement } from '../../components/EmptyState.js';
 import { formatDate } from '../../../utils/dateHelpers.js';
 import { getEventDetailRoute } from '../../../config/studentEventNavigation.js';
 import { getEventCopyForViewer } from '../../../services/studentEventService.js';
-import { createStudentAlertsPanelElement } from '../components/StudentAlertsPanel.js';
+import { createIcon, createIconBadge, ICON_CATEGORIES } from '../../components/Icon.js';
 
 export async function renderStudentJourneyView(container, { onSessionInvalid, onNavigateToEventDetail, onNavigateToGoals, onNavigateToFeed, onNavigateToNotebooks, onNavigateToLearning, onNavigateToLearningCircle, onNavigateToStudentProfile, onNavigateToTeam, onNavigateToStandings } = {}) {
   container.innerHTML = '';
 
-  const [summary, eventFeed, found, weeklyNetPoints, alerts] = await Promise.all([
+  const [summary, eventFeed, found, weeklyNetPoints, alerts, goalCycle, unreadFeedCount] = await Promise.all([
     getHomeSummary(),
     getEventFeed(),
     loadCurrentStudentAndClassroom(),
     getWeeklyNetPoints(),
     getAlertsForCurrentStudent(),
+    getGoalCycleForCurrentStudent(),
+    getUnreadEventCountByCategory(STUDENT_EVENT_CATEGORIES.FEED),
   ]);
 
   const wrapper = document.createElement('div');
@@ -103,87 +106,140 @@ export async function renderStudentJourneyView(container, { onSessionInvalid, on
   greetingRow.appendChild(greeting);
   wrapper.appendChild(greetingRow);
 
-  // Alerts — pending notebook submissions and upcoming published
-  // tests, per explicit product request. Placed immediately under the
-  // greeting; renders nothing at all when there's nothing to show
-  // (see StudentAlertsPanel.js's own header comment for why).
-  const alertsPanel = createStudentAlertsPanelElement({
-    pendingSubmissions: alerts.pendingSubmissions,
-    upcomingAssessments: alerts.upcomingAssessments,
-    onNavigateToNotebooks,
-  });
-  if (alertsPanel) wrapper.appendChild(alertsPanel);
+  // Explore - the Bento dashboard (see this file's own
+  // createBentoCard() below). Replaces the old always-shown alerts
+  // panel (pending notebook submissions now surface through the
+  // Notebooks card's own subtitle/chip instead - still backed by the
+  // exact same getAlertsForCurrentStudent() data as before) and the
+  // old plain link buttons for My Goals / Class Feed / Notebooks /
+  // Learning / Learning Circle. Every card still calls the exact same
+  // on* callback its old link did, on the exact same user action (a
+  // click) - only the presentation changed.
+  const exploreHeading = document.createElement('h2');
+  exploreHeading.className = 'student-home__section-heading';
+  exploreHeading.textContent = 'Explore';
+  wrapper.appendChild(exploreHeading);
 
-  // "My Goals" — Goals Phase 1's own entry point into
-  // StudentGoalTrackerView.js. Always shown (not conditional on a
-  // cycle actually existing) so a student always knows where to look;
-  // that view's own empty state handles "no active cycle yet"
-  // gracefully if they tap through before one exists.
+  const bento = document.createElement('div');
+  bento.className = 'student-home__bento';
+
+  // My Goals - the hero card. "In progress" counts categories with any
+  // goal set at all (pending or approved), matching this same data's
+  // only other current consumer (StudentGoalTrackerView.js) treating
+  // both states as "there's a goal here." The progress bar is the
+  // average overallCompletionPercent across exactly those categories -
+  // omitted entirely (not zeroed) when there's nothing to average, per
+  // this redesign's own "don't fabricate data" requirement.
   if (onNavigateToGoals) {
-    const goalsLink = document.createElement('button');
-    goalsLink.type = 'button';
-    goalsLink.className = 'student-home__goals-link';
-    goalsLink.textContent = '\ud83c\udfaf My Goals \u2192';
-    goalsLink.addEventListener('click', onNavigateToGoals);
-    wrapper.appendChild(goalsLink);
+    const categoriesWithGoal = (goalCycle?.categories || []).filter((category) => category.goal);
+    const goalsInProgress = categoriesWithGoal.length;
+    let goalsSubtitle;
+    let goalsProgressPercent;
+    if (!goalCycle) {
+      goalsSubtitle = 'Set your first goal';
+    } else if (goalsInProgress === 0) {
+      goalsSubtitle = 'No goals set yet';
+    } else {
+      goalsSubtitle = `${goalsInProgress} goal${goalsInProgress === 1 ? '' : 's'} in progress`;
+      goalsProgressPercent =
+        categoriesWithGoal.reduce((sum, category) => sum + category.goal.overallCompletionPercent, 0) / goalsInProgress;
+    }
+    bento.appendChild(
+      createBentoCard({
+        icon: 'target',
+        category: 'activities',
+        cardTint: '#FDF1F3',
+        title: 'My Goals',
+        subtitle: goalsSubtitle,
+        progressPercent: goalsProgressPercent,
+        isHero: true,
+        onClick: onNavigateToGoals,
+      })
+    );
   }
 
-  // Class Feed — same "always shown, view handles its own empty
-  // state" convention as My Goals above.
+  // Class Feed - now backed by real data: teacher-authored posts
+  // publish a feed_post_created StudentEvent (see
+  // services/feedService.js's createPostAsTeacher()), so this card can
+  // show a genuine unread count the same way Notebooks already does,
+  // rather than the generic placeholder copy it used before that
+  // existed. Falls back to the same generic copy when there's nothing
+  // unread, per this redesign's own "no fabricated numbers" rule.
   if (onNavigateToFeed) {
-    const feedLink = document.createElement('button');
-    feedLink.type = 'button';
-    feedLink.className = 'student-home__goals-link';
-    feedLink.textContent = '\ud83d\udcac Class Feed \u2192';
-    feedLink.addEventListener('click', onNavigateToFeed);
-    wrapper.appendChild(feedLink);
+    bento.appendChild(
+      createBentoCard({
+        icon: 'message-circle',
+        category: 'teacher',
+        cardTint: '#F0F7FD',
+        title: 'Class Feed',
+        subtitle:
+          unreadFeedCount > 0
+            ? `${unreadFeedCount} new message${unreadFeedCount === 1 ? '' : 's'}`
+            : "See what's new in your class",
+        onClick: onNavigateToFeed,
+      })
+    );
   }
 
-  // Notebooks — same convention again. Deliberately does not say
-  // "Journal" or "Portfolio" anywhere: this links to the existing
-  // Notebook Tracker's own data (what's due, has it been submitted),
-  // not a new digital-notebook concept.
+  // Notebooks - the exact same pendingSubmissions this page already
+  // fetched for the old alerts panel (getAlertsForCurrentStudent()
+  // above), just surfaced here instead. The contextual chip reuses
+  // that same list's own first entry's label (already "Subject -
+  // NotebookType", e.g. "Science - Classwork") rather than a second,
+  // separate lookup.
   if (onNavigateToNotebooks) {
-    const notebooksLink = document.createElement('button');
-    notebooksLink.type = 'button';
-    notebooksLink.className = 'student-home__goals-link';
-    notebooksLink.textContent = '\ud83d\udcd3 Notebooks \u2192';
-    notebooksLink.addEventListener('click', onNavigateToNotebooks);
-    wrapper.appendChild(notebooksLink);
+    const pendingCount = alerts.pendingSubmissions.length;
+    bento.appendChild(
+      createBentoCard({
+        icon: 'notebook-text',
+        category: 'notebook',
+        cardTint: '#F5F2FC',
+        title: 'Notebooks',
+        subtitle: pendingCount === 0 ? 'All caught up!' : `${pendingCount} note${pendingCount === 1 ? '' : 's'} pending`,
+        chip: pendingCount > 0 ? alerts.pendingSubmissions[0].label : null,
+        onClick: onNavigateToNotebooks,
+      })
+    );
   }
 
-  // Learning — the new curriculum/resource discovery surface (see
-  // ui/student-portal/views/StudentLearningView.js). Same convention
-  // again: always shown, that view's own empty states handle "no
-  // subjects yet" gracefully.
+  // Learning - no page-level "next up" concept exists yet (that lives
+  // deep inside StudentLearningView.js's own
+  // loadAndRenderContinueLearning(), never surfaced through
+  // studentPortalDataService.js) - "Continue exploring" is this
+  // redesign's own explicitly-sanctioned, non-data fallback copy for
+  // exactly this case, not a placeholder statistic.
   if (onNavigateToLearning) {
-    const learningLink = document.createElement('button');
-    learningLink.type = 'button';
-    learningLink.className = 'student-home__goals-link';
-    learningLink.textContent = '\ud83d\udcda Learning \u2192';
-    learningLink.addEventListener('click', onNavigateToLearning);
-    wrapper.appendChild(learningLink);
+    bento.appendChild(
+      createBentoCard({
+        icon: 'book-open',
+        category: 'progress',
+        cardTint: '#F1F8ED',
+        title: 'Learning',
+        subtitle: 'Continue exploring',
+        onClick: onNavigateToLearning,
+      })
+    );
   }
 
-  // Learning Circle — the first Learning Programme entry point
-  // anywhere in Student Mode (see
-  // ui/student-portal/views/StudentLearningCircleView.js). Same
-  // "always shown, that view's own empty state handles gracefully"
-  // convention as every other link above — a student who isn't part
-  // of any Learning Circle simply sees that view's own "You're not
-  // part of a Learning Circle yet" message once they tap through,
-  // rather than this link being conditionally hidden (which would
-  // require knowing membership before this screen even renders).
+  // Learning Circle - same reasoning as Class Feed above: no
+  // page-level participant/session summary exists yet, so this states
+  // what the space is for rather than inventing a presence count.
   if (onNavigateToLearningCircle) {
-    const learningCircleLink = document.createElement('button');
-    learningCircleLink.type = 'button';
-    learningCircleLink.className = 'student-home__goals-link';
-    learningCircleLink.textContent = '\ud83c\udf93 Learning Circle \u2192';
-    learningCircleLink.addEventListener('click', onNavigateToLearningCircle);
-    wrapper.appendChild(learningCircleLink);
+    bento.appendChild(
+      createBentoCard({
+        icon: 'graduation-cap',
+        category: 'student',
+        cardTint: '#FEF4EA',
+        title: 'Learning Circle',
+        subtitle: 'Discuss, learn and grow together',
+        onClick: onNavigateToLearningCircle,
+      })
+    );
   }
 
-  // The actual, shared Classroom Standings board — the same
+  wrapper.appendChild(bento);
+
+  // The actual, shared Classroom Standings board - the same
   // component Class Mode and the "Team" tab already render, reused
   // directly here, never redesigned or duplicated. QA fix: this
   // previously showed only a compact, collapsed card linking away to
@@ -191,13 +247,26 @@ export async function renderStudentJourneyView(container, { onSessionInvalid, on
   // instead of the actual Class Mode-style board" pattern this
   // product's own current requirement explicitly calls out to avoid.
   if (found.classroom) {
-    wrapper.appendChild(
+    const standingsHeading = document.createElement('h2');
+    standingsHeading.className = 'student-home__section-heading student-home__section-heading--standings';
+    standingsHeading.textContent = 'Class Standings';
+    wrapper.appendChild(standingsHeading);
+
+    const standingsSubheading = document.createElement('p');
+    standingsSubheading.className = 'student-home__section-subheading';
+    standingsSubheading.textContent = 'See how your team is doing';
+    wrapper.appendChild(standingsSubheading);
+
+    const standingsSection = document.createElement('div');
+    standingsSection.className = 'student-home__standings-section';
+    standingsSection.appendChild(
       createTeamStandingsBoardElement({
         classroom: found.classroom,
         onTap: (student) => onNavigateToStudentProfile?.(student.id),
         onTapTeam: (teamId) => onNavigateToTeam?.(teamId),
       })
     );
+    wrapper.appendChild(standingsSection);
   }
 
   // Compact Progress Summary — one line, not a re-statement of every
@@ -316,6 +385,94 @@ function createModule({ icon, title, value, caption, lines }) {
     captionEl.className = 'student-home__card-caption';
     captionEl.textContent = caption;
     card.append(valueEl, captionEl);
+  }
+
+  return card;
+}
+
+/**
+ * One Bento "Explore" destination card - an icon badge, a bold title,
+ * one supporting line, and a solid-colored arrow-button affordance,
+ * matching the Bento reference this page was redesigned against (see
+ * this file's own callers above for exactly what real data each card
+ * is given - this function only lays it out, never decides what to
+ * show).
+ *
+ * `category` is one of Icon.js's own ICON_CATEGORIES keys, reused
+ * as-is for its tint/icon color pairing rather than inventing a
+ * second color system - see Icon.js's own header comment on why only
+ * icons ClassMate already uses live there. `cardTint` is this card's
+ * own, deliberately lighter background wash (a plain hex, not a
+ * token - no existing token models "a pastel card behind a more
+ * saturated icon badge") so the badge itself, unchanged from
+ * createIconBadge()'s own existing look, still reads as more
+ * saturated than the card behind it, matching the reference's layered
+ * pastel look.
+ *
+ * The hero card (`isHero: true`, My Goals only) lays out
+ * icon/content/arrow in a single horizontal row with the arrow
+ * vertically centered on the far right; every other card stacks icon
+ * above title/subtitle, with the optional chip and the arrow sharing
+ * one bottom row instead.
+ */
+function createBentoCard({ icon, category, cardTint, title, subtitle, chip, progressPercent, isHero, onClick }) {
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'student-home__bento-card' + (isHero ? ' student-home__bento-card--hero' : '');
+  card.style.backgroundColor = cardTint;
+  if (onClick) card.addEventListener('click', onClick);
+
+  const badge = createIconBadge(icon, category, { size: isHero ? 56 : 44 });
+  card.appendChild(badge);
+
+  const content = document.createElement('div');
+  content.className = 'student-home__bento-content';
+
+  const titleEl = document.createElement('span');
+  titleEl.className = 'student-home__bento-title';
+  titleEl.textContent = title;
+  content.appendChild(titleEl);
+
+  const subtitleEl = document.createElement('span');
+  subtitleEl.className = 'student-home__bento-subtitle';
+  subtitleEl.textContent = subtitle;
+  content.appendChild(subtitleEl);
+
+  const arrowColor = ICON_CATEGORIES[category]?.icon || '#5B6672';
+  const arrow = document.createElement('span');
+  arrow.className = 'student-home__bento-arrow' + (isHero ? ' student-home__bento-arrow--hero' : '');
+  arrow.setAttribute('aria-hidden', 'true');
+  arrow.style.backgroundColor = arrowColor;
+  arrow.appendChild(createIcon('arrow-right', { size: isHero ? 18 : 16 }));
+
+  if (typeof progressPercent === 'number') {
+    const track = document.createElement('div');
+    track.className = 'student-home__bento-progress';
+    const fill = document.createElement('div');
+    fill.className = 'student-home__bento-progress-fill';
+    fill.style.width = `${Math.max(0, Math.min(100, progressPercent))}%`;
+    fill.style.backgroundColor = arrowColor;
+    track.appendChild(fill);
+    content.appendChild(track);
+  }
+
+  if (isHero) {
+    card.appendChild(content);
+    card.appendChild(arrow);
+  } else {
+    const footer = document.createElement('div');
+    footer.className = 'student-home__bento-footer';
+    if (chip) {
+      const chipEl = document.createElement('span');
+      chipEl.className = 'student-home__bento-chip';
+      chipEl.style.backgroundColor = ICON_CATEGORIES[category]?.tint || '#EBEDEF';
+      chipEl.style.color = arrowColor;
+      chipEl.textContent = chip;
+      footer.appendChild(chipEl);
+    }
+    footer.appendChild(arrow);
+    content.appendChild(footer);
+    card.appendChild(content);
   }
 
   return card;

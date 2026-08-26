@@ -913,8 +913,13 @@ select:focus-visible,
  * overrides the single-class rule above regardless of source order.
  */
 .classroom-header {
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
+  /* Blends into .dashboard-view's own warm canvas instead of sitting
+     on a separate white bar with its own divider — the .classroom-hero
+     card below is now the only visible surface here, floating
+     directly on the page the same way the Student Portal's own
+     greeting does. */
+  background: transparent;
+  border-bottom: none;
 }
 
 .tracker-header__title-block {
@@ -3660,6 +3665,17 @@ button.wizard-checklist__row:hover {
 /* Classroom Dashboard (Phase 2) — structural only, no visual polish yet
    per this phase's explicit instructions; themes/animations come later. */
 
+/* Warm, off-white canvas for the Dashboard specifically — the same
+   visual family as the Student Portal's own .student-portal page
+   background, scoped to this one view's own wrapper rather than the
+   shared --color-bg token, so no other teacher screen is affected.
+   Everything below (header, module cards, widgets) now sits on this,
+   not the app's usual cooler --color-bg. */
+.dashboard-view {
+  background-color: #fdf9f4;
+  min-height: 100%;
+}
+
 .dashboard-view__content {
   display: flex;
   flex-direction: column;
@@ -4106,6 +4122,32 @@ button.wizard-checklist__row:hover {
 .dashboard-widget--learn .dashboard-widget__heading {
   color: var(--palette-learn-label);
 }
+/* Weekly Snapshot restyle — scoped to this one widget's own modifier
+   class (not the shared .dashboard-widget/.kpi-card base rules, both
+   used by other, out-of-scope screens: .kpi-card also backs
+   ProgrammeSessionView.js) so nothing else on the Dashboard, or
+   elsewhere in the app, is affected. Same data, same structure —
+   rounder card, more breathing room, and a bolder metric block so the
+   one number that matters is scannable at a glance. */
+.dashboard-widget--learn {
+  border-radius: 20px;
+  padding: 1.35rem 1.5rem;
+}
+.dashboard-widget--learn .kpi-card {
+  border-radius: 16px;
+  padding: 1rem 1.15rem;
+  gap: 0.65rem;
+}
+.dashboard-widget--learn .kpi-card__number {
+  font-size: 2rem;
+}
+.dashboard-widget--learn .dashboard-widget__subheading {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+  text-transform: none;
+  margin-top: 1.1rem;
+}
 .dashboard-widget--focus .dashboard-widget__heading {
   color: var(--palette-focus-label);
 }
@@ -4413,7 +4455,11 @@ button.wizard-checklist__row:hover {
    and later a single "📚 Curriculum" button). */
 .primary-modules {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  /* Wider minimum than before — these are now spacious, left-aligned
+     bento-style cards (icon badge + title + description + optional
+     attention pill), not centered icon-only squares, so each one
+     needs more room to read comfortably. */
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 1rem;
   margin: 1.5rem 0;
   /* Matches .dashboard-widget's own 1rem horizontal padding (see its
@@ -4423,35 +4469,41 @@ button.wizard-checklist__row:hover {
      extend past those edges, a real, reported misalignment. */
   padding: 0 1rem;
 }
-/* Guarantees two columns specifically on narrow phone widths, where
-   minmax(150px, 1fr) alone could otherwise collapse to a single
-   column once the viewport gets small enough. */
-@media (max-width: 480px) {
+/* Below this width, a spacious two-column (or auto-fit-derived
+   multi-column) layout leaves too little width per card for its own
+   title + description + attention pill to stay readable without
+   awkward wrapping — full-width single-column stacking instead,
+   matching this app's own dominant small-screen breakpoint. */
+@media (max-width: 640px) {
   .primary-modules {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: 1fr;
   }
 }
 .primary-module-card {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
   gap: 0.5rem;
-  padding: 1.25rem 1rem;
-  /* Approximately 1:0.9 (width:height) per explicit direction — close
-     to square, not the old tall vertical stack. min-height is a floor,
-     not a fixed height, so longer descriptions on narrow cards still
-     wrap without clipping. */
-  aspect-ratio: 1 / 0.9;
-  min-height: 130px;
-  border-radius: 18px;
+  padding: 1.25rem 1.35rem;
+  min-height: 140px;
+  border-radius: 20px;
   cursor: pointer;
-  text-align: center;
+  text-align: left;
   /* One shared timing for every tier's hover lift, border, and shadow
      changes — per explicit requirement that interaction timing stay
      identical across tiers even though the specific hover treatment
      (darker fill / stronger border / subtle shadow) differs. */
   transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease, filter 150ms ease;
+}
+.primary-module-card__icon-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background-color: color-mix(in srgb, var(--module-accent) 16%, var(--color-surface));
+  margin-bottom: 0.15rem;
 }
 .primary-module-card__label {
   font-size: 1rem;
@@ -4460,6 +4512,22 @@ button.wizard-checklist__row:hover {
 .primary-module-card__description {
   font-size: 0.78rem;
   line-height: 1.3;
+}
+/* The one, shared "something needs attention" treatment across every
+   card — a small muted pill in the module's own accent color, never a
+   large/red count. Only ever present when a caller found real data
+   (see ui/views/DashboardView.js's own attentionById) — absent
+   otherwise, not rendered empty. */
+.primary-module-card__attention {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.72rem;
+  font-weight: var(--font-weight-bold);
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-pill);
+  background-color: color-mix(in srgb, var(--module-accent) 18%, var(--color-surface));
+  color: color-mix(in srgb, var(--module-accent) 85%, black);
+  margin-top: 0.1rem;
 }
 
 /* Class Mode only — the single daily, time-critical action gets the
@@ -4493,24 +4561,26 @@ button.wizard-checklist__row:hover {
 }
 
 /* Classroom and Learning — daily tools a teacher opens constantly,
-   not the single primary action but still clearly present: white
-   surface, full-strength accent-colored icon, bold black label. Each
-   module's own unique accent color (--module-accent, set inline per
-   card from DASHBOARD_MODULES in DashboardView.js) drives the border,
-   icon, and hover ring here — restrained accents used to improve
-   scanability between modules, applied through icon color, borders,
-   and hover only, never as a large filled area (that treatment is
-   reserved for Class Mode alone, which uses the actual brand accent,
-   --color-primary-deep, not a module color). A deliberately stronger
-   border than the setup tier below is the one visual cue separating
-   "daily" from "setup" once both sit on the same white background. */
+   not the single primary action but still clearly present. Restyled
+   onto the same tinted-card language as the Student Portal's own
+   Bento cards (see .student-home__bento-card): a light wash of the
+   module's own accent color (--module-accent, set inline per card
+   from DASHBOARD_MODULES in DashboardView.js) instead of a bold
+   colored border, with the icon badge carrying the stronger, more
+   saturated version of that same color — restrained accents used to
+   improve scanability between modules, never as a large filled area
+   (that treatment is reserved for Class Mode alone, which uses the
+   actual brand accent, --color-primary-deep, not a module color). A
+   deliberately slightly stronger tint than the setup tier below is
+   the one visual cue separating "daily" from "setup." */
 .primary-module-card--daily {
-  background-color: var(--color-surface, #ffffff);
-  border: 1.5px solid var(--module-accent);
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+  background-color: color-mix(in srgb, var(--module-accent) 7%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--module-accent) 18%, transparent);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
 }
 .primary-module-card--daily:hover {
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.1), 0 0 0 2px var(--module-accent);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.1);
+  border-color: color-mix(in srgb, var(--module-accent) 40%, transparent);
   transform: translateY(-2px);
 }
 .primary-module-card--daily .primary-module-card__icon {
@@ -4524,23 +4594,22 @@ button.wizard-checklist__row:hover {
 }
 
 /* Curriculum and Assessments — administrative tasks touched
-   occasionally, deliberately quieter than the daily tools above:
-   plain white surface, thin neutral border, and each module's own
-   accent color again (not plain gray) but at reduced opacity on the
-   icon specifically — still a unique, recognizable identity color per
-   module, just visually quieter to match this tier's "occasional,
-   not daily" weight. Still fully visible and immediately tappable —
-   "quieter," not "hidden" or disabled-looking. Typography is
-   identical to every other tier (see .primary-module-card__label) —
-   this tier's quietness comes entirely from color/border/elevation,
-   never from a lighter font weight. */
+   occasionally, deliberately quieter than the daily tools above: a
+   much fainter tint of the module's own accent color (not plain white
+   or plain gray) and reduced icon opacity — still a unique,
+   recognizable identity color per module, just visually quieter to
+   match this tier's "occasional, not daily" weight. Still fully
+   visible and immediately tappable — "quieter," not "hidden" or
+   disabled-looking. Typography is identical to every other tier (see
+   .primary-module-card__label) — this tier's quietness comes entirely
+   from color/border/elevation, never from a lighter font weight. */
 .primary-module-card--setup {
-  background-color: var(--color-surface, #ffffff);
+  background-color: color-mix(in srgb, var(--module-accent) 4%, var(--color-surface));
   border: 1px solid var(--color-border);
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
 }
 .primary-module-card--setup:hover {
-  border-color: var(--module-accent);
+  border-color: color-mix(in srgb, var(--module-accent) 40%, transparent);
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.1);
   transform: translateY(-2px);
 }
@@ -4602,8 +4671,9 @@ button.wizard-checklist__row:hover {
      help actual legibility, since it's not something the WCAG ratio
      formula accounts for at all. */
   background-color: var(--color-primary-deep); /* the chosen accent color — see config/accentColorConfig.js */
-  border-radius: var(--radius-card);
-  padding: 1.25rem 1.5rem;
+  border-radius: 20px;
+  padding: 1.5rem 1.75rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.1);
 }
 .classroom-hero .tracker-header__title {
   margin: 0;
@@ -5123,6 +5193,133 @@ button.wizard-checklist__row:hover {
   font-size: 1.1rem;
   font-weight: var(--font-weight-black);
   margin: 0 0 0.85rem;
+}
+
+/* Bento Home dashboard (see ui/student-portal/views/StudentJourneyView.js's
+   own createBentoCard()) - "Explore" cards, plus the section headings
+   shared with Class Standings below them. Card tints are plain,
+   hand-picked hex values, not existing design tokens - see
+   createBentoCard()'s own header comment for why a lighter-than-badge
+   pastel wash has no existing token to reuse. Icon badges themselves
+   are untouched createIconBadge() output (Icon.js), so their own
+   tint/icon colors stay exactly the shared, existing design-system
+   values. */
+.student-home__section-heading {
+  font-size: 1.05rem;
+  font-weight: var(--font-weight-black);
+  margin: 1.75rem 0 0.15rem;
+}
+.student-home__section-heading--standings {
+  margin-top: 2.25rem;
+}
+.student-home__section-subheading {
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+  margin: 0 0 1rem;
+}
+
+.student-home__bento {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.9rem;
+  margin-top: 0.75rem;
+}
+@media (max-width: 640px) {
+  .student-home__bento {
+    grid-template-columns: 1fr;
+  }
+}
+
+.student-home__bento-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.7rem;
+  width: 100%;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  border-radius: 22px;
+  padding: 1.15rem 1.25rem;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(184, 99, 26, 0.06);
+  transition: box-shadow var(--duration-fast, 150ms) var(--ease-standard, ease), transform var(--duration-fast, 150ms) var(--ease-standard, ease);
+}
+.student-home__bento-card:hover,
+.student-home__bento-card:focus-visible {
+  box-shadow: 0 6px 20px rgba(184, 99, 26, 0.14);
+  transform: translateY(-1px);
+}
+.student-home__bento-card--hero {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  gap: 1.1rem;
+}
+.student-home__bento-card--hero .student-home__bento-content {
+  flex: 1;
+}
+
+.student-home__bento-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 100%;
+}
+.student-home__bento-title {
+  font-size: 1rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+}
+.student-home__bento-subtitle {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+.student-home__bento-progress {
+  margin-top: 0.5rem;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background-color: rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+.student-home__bento-progress-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+}
+
+.student-home__bento-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  margin-top: 0.15rem;
+}
+.student-home__bento-chip {
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-pill);
+}
+
+.student-home__bento-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: #ffffff;
+  margin-left: auto;
+}
+.student-home__bento-arrow--hero {
+  width: 40px;
+  height: 40px;
+}
+
+.student-home__standings-section .team-grid {
+  padding: 0;
 }
 
 /* Achievements */
@@ -7560,6 +7757,9 @@ button.wizard-checklist__row:hover {
   background-color: var(--color-warning);
   color: #3a2e00;
 }
+.student-event-card__tag--feed {
+  background-color: #5ea6da;
+}
 .student-event-card__title {
   font-weight: var(--font-weight-bold);
   margin: 0;
@@ -8110,24 +8310,6 @@ button.wizard-checklist__row:hover {
 .goal-dashboard__feedback-textarea:focus {
   outline: none;
   border-color: var(--color-primary, #2e7d9e);
-}
-
-/* "My Goals" navigation card — see
-   ui/student-portal/views/StudentJourneyView.js */
-.student-home__goals-link {
-  display: block;
-  width: 100%;
-  background-color: #ffffff;
-  border: none;
-  border-radius: 16px;
-  padding: 1rem 1.25rem;
-  margin-top: 0.75rem;
-  text-align: left;
-  font-size: 1rem;
-  font-weight: var(--font-weight-bold);
-  color: var(--color-primary);
-  box-shadow: 0 4px 16px rgba(184, 99, 26, 0.08);
-  cursor: pointer;
 }
 
 /* Alerts panel — pending notebook submissions, upcoming tests. See

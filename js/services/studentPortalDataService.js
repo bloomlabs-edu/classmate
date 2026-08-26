@@ -374,6 +374,24 @@ export async function getUnreadEventCount() {
   return studentEventService.countUnread(events, liveReadState.readEventIds);
 }
 
+/**
+ * Same as getUnreadEventCount() above, scoped to one category — for a
+ * Bento card (see StudentJourneyView.js) that wants to know "how many
+ * of MY unread notifications are specifically about this feature,"
+ * not the bell's own total. Reuses the exact same live classroom +
+ * read-state data getUnreadEventCount() does (no new listener, no
+ * second read) — only the filtering differs.
+ */
+export async function getUnreadEventCountByCategory(category) {
+  const found = await loadCurrentStudentAndClassroom();
+  if (!found) return 0;
+
+  const events = studentEventService
+    .getEventsForStudent(found.classroom, found.student.id)
+    .filter((event) => event.category === category);
+  return studentEventService.countUnread(events, liveReadState.readEventIds);
+}
+
 /** The bell popover's own recent list — the same events getEventFeed() would return, capped and each annotated with isUnread, computed against the same live read state getUnreadEventCount() above uses. Never affects, and is never affected by, "Your Updates" itself. */
 export async function getRecentEventsForBell() {
   const found = await loadCurrentStudentAndClassroom();

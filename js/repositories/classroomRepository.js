@@ -168,4 +168,23 @@ export class ClassroomRepository {
   async getClassroomOnce(classroomId) {
     throw new Error('ClassroomRepository.getClassroomOnce() must be implemented by a subclass');
   }
+
+  /**
+   * Atomically appends one or more StudentEvents to classroom.studentEvents,
+   * touching no other field — for a caller (like Class Feed's
+   * createPostAsTeacher()) that has no live, already-loaded classroom
+   * object it's about to save wholesale via saveClassroom() anyway.
+   * Every existing StudentEvent publisher (badges, stars, assessments)
+   * instead mutates an in-memory classroom that a broader Class Mode
+   * action already owns and persists via a full saveClassroom()
+   * overwrite; reusing that same path here would mean reading the
+   * whole classroom fresh just to re-save it unchanged except for a
+   * few array entries, and would risk silently clobbering any other
+   * concurrent edit to that document with a stale full-document
+   * write. A targeted arrayUnion() update avoids both problems.
+   */
+  // eslint-disable-next-line no-unused-vars
+  async appendStudentEvents(classroomId, events) {
+    throw new Error('ClassroomRepository.appendStudentEvents() must be implemented by a subclass');
+  }
 }

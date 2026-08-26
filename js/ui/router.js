@@ -198,7 +198,7 @@ export function resolvePathParts(parts) {
   }
 
   if (parts[0] === 'student') {
-    const section = parts[1] || 'journey';
+    const section = parts[1] || 'home';
     // Generic — a detail screen reachable from an event card (see
     // config/studentEventNavigation.js) needs one identifier beyond
     // its section name; `param` is deliberately unnamed (not

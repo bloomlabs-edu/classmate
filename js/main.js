@@ -771,6 +771,12 @@ function renderRoute(route, reason = 'unspecified') {
       renderDashboardView(appContainer, {
         classroom,
         currentUser,
+        // The exact same live list UserBar.js's own bell already renders
+        // (see manageNotificationSubscription() above) — passed straight
+        // through so the Class Feed card's own attention indicator can
+        // filter/count it locally, without a second subscription to the
+        // same notifications collection.
+        notifications,
         onOpenSettings: () => router.navigate(`/classroom/${classroom.id}/settings`),
         onOpenSettingsStudents: () => router.navigate(`/classroom/${classroom.id}/settings/class`),
         onOpenSettingsGroups: () => router.navigate(`/classroom/${classroom.id}/settings/class`),

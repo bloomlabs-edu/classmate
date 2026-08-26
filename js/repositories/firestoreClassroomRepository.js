@@ -320,6 +320,12 @@ class FirestoreClassroomRepository extends ClassroomRepository {
     }
   }
 
+  /** See classroomRepository.js's own header comment on this method for why it exists as a targeted update rather than routing through saveClassroom(). */
+  async appendStudentEvents(classroomId, events) {
+    if (!events || events.length === 0) return;
+    await updateDoc(this._classroomDoc(classroomId), { studentEvents: arrayUnion(...events) });
+  }
+
   async getClassroomOnce(classroomId) {
     const docSnapshot = await getDoc(this._classroomDoc(classroomId));
     return docSnapshot.exists() ? docSnapshot.data() : null;

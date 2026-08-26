@@ -49,6 +49,10 @@ export const STUDENT_EVENT_DETAIL_ROUTES = {
     buildRoute: () => '/student/goals',
     ctaLabel: 'View Goal',
   },
+  feed_post_created: {
+    buildRoute: () => '/student/feed',
+    ctaLabel: 'View Post',
+  },
 };
 
 /** Returns { path, ctaLabel } for this event's own detail screen, or null if this event type has no dedicated screen (see this file's own header comment). */

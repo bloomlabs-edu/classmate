@@ -444,6 +444,11 @@ export function getClassroomOnce(classroomId) {
   return repository.getClassroomOnce(classroomId);
 }
 
+/** See repositories/classroomRepository.js's own appendStudentEvents() for why this is a separate, targeted write rather than going through save(). */
+export function appendStudentEvents(classroomId, events) {
+  return repository.appendStudentEvents(classroomId, events);
+}
+
 /** `owner` is the creating teacher's safe profile: { uid, displayName }. */
 export function createClassroom(details, owner) {
   const classroom = classroomService.createEmptyClassroom(details, owner);

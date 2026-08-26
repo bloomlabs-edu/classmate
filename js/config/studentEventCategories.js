@@ -21,4 +21,9 @@ export const STUDENT_EVENT_CATEGORIES = {
   CLASSROOM: 'Classroom',
   TEAM: 'Team',
   ANNOUNCEMENT: 'Announcement',
+  // Single word, deliberately not "Class Feed" - event.category becomes a
+  // CSS class suffix via .toLowerCase() (see StudentJourneyView.js's own
+  // renderEventCard()), and a space would silently split into two
+  // separate class tokens instead of one.
+  FEED: 'Feed',
 };

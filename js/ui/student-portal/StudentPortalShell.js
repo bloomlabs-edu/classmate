@@ -32,7 +32,7 @@ import { createIcon } from '../components/Icon.js';
 import { renderStudentNotificationBell } from './components/StudentNotificationBell.js';
 
 const SECTIONS = [
-  { id: 'journey', icon: 'graduation-cap', label: 'Journey' },
+  { id: 'home', icon: 'graduation-cap', label: 'Home' },
   { id: 'team', icon: 'users', label: 'Team' },
   { id: 'recognition', icon: 'trophy', label: 'Recognition' },
   { id: 'profile', icon: 'user', label: 'Profile' },
