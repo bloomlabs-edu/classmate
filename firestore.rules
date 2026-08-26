@@ -17,16 +17,24 @@
 // write it (see services/memberService.js for the roles: owner,
 // teacher, viewer). A teacher's list of accessible classrooms is a
 // separate pointer collection, users/{uid}/classroomRefs, which only
-// that uid can read or write.
+// that uid can read, create, or update — see that match block's own
+// comment for the one narrow exception to this on delete.
 //
 // What this enforces:
 //   - Only a member of a classroom (their uid is in its `memberUids`
 //     array) can read or write it at all.
 //   - Only the classroom's stated owner (ownerUid) can create it in the
 //     first place, or delete it.
-//   - A teacher can only read/write their own classroomRefs and users
-//     documents (used for the one-time migration flag) — never anyone
-//     else's.
+//   - A teacher can only read/create/update their own classroomRefs and
+//     users documents (used for the one-time migration flag) — never
+//     anyone else's. The one exception: a classroom's real, verified
+//     owner may also DELETE another member's classroomRefs entry, but
+//     only for a classroom they actually own and only for an actual
+//     member of it — needed so deleteClassroom()'s single atomic batch
+//     (the classroom doc + every member's ref, all removed together)
+//     can succeed for shared/co-taught classrooms, not just
+//     single-member ones. See that block's own comment for the full
+//     reasoning and why this can't be exploited beyond that.
 //   - The old teachers/{uid}/classrooms/ location from before sharing
 //     existed is kept read/delete-able by its original owner ONLY —
 //     needed for the one-time migration in
@@ -167,7 +175,62 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == uid;
 
       match /classroomRefs/{classroomId} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
+        allow read: if request.auth != null && request.auth.uid == uid;
+
+        allow create, update: if request.auth != null && request.auth.uid == uid;
+
+        // DELETE gets one narrow second path beyond "this is my own
+        // ref": firestoreClassroomRepository.deleteClassroom() removes
+        // the classroom document AND every member's classroomRefs
+        // entry in ONE atomic batch (see that function's own comment).
+        // A batch is all-or-nothing, so without this, the classroom
+        // owner deleting anyone else's ref in that same batch would
+        // fail the whole commit with PERMISSION_DENIED the instant a
+        // classroom has more than one member — confirmed directly as
+        // the real cause of a real failed deletion, via temporary
+        // diagnostic logging before this fix existed.
+        //
+        // isClassroomOwnerRemovingMemberRef() below trusts nothing the
+        // client claims: it reads the classroom document's OWN,
+        // real ownerUid/memberUids fields directly. Deliberately
+        // scoped by BOTH conditions, not just the first:
+        //   - request.auth.uid == classroom.ownerUid — caller must be
+        //     THIS exact classroom's real, verified owner, not merely
+        //     signed in.
+        //   - uid in classroom.memberUids — the ref being deleted
+        //     (path segment `uid`) must belong to an actual member of
+        //     THAT SAME classroom, so an owner can never use this to
+        //     delete some unrelated user's unrelated ref under a
+        //     classroomId that happens to match one they own.
+        // Ordinary (non-owner) members are completely unaffected —
+        // they still only ever satisfy the FIRST branch of `allow
+        // delete` below (their own uid), exactly as before this
+        // change; this function is never reached for them at all
+        // unless they also happen to be the owner.
+        //
+        // Why get() here is safe even mid-deletion: Firestore
+        // evaluates every rule within one commit (batch or
+        // transaction) against a single, consistent snapshot of the
+        // database as it stood BEFORE that commit's own writes are
+        // applied — never against another write from the SAME commit.
+        // So even though this exact batch also deletes
+        // classrooms/{classroomId} itself, this get() still sees that
+        // document fully intact, with its real ownerUid/memberUids,
+        // not as already-gone. (If the classroom document genuinely
+        // doesn't exist at all — e.g. an orphaned ref with nothing to
+        // check against — accessing .data on a nonexistent get()
+        // result fails this function's own evaluation, which Firestore
+        // treats as this function returning false: falls through to
+        // needing the first branch instead, never an open/ambiguous
+        // allow.)
+        function isClassroomOwnerRemovingMemberRef() {
+          let classroom = get(/databases/$(database)/documents/classrooms/$(classroomId)).data;
+          return request.auth.uid == classroom.ownerUid && uid in classroom.memberUids;
+        }
+
+        allow delete: if request.auth != null && (
+          request.auth.uid == uid || isClassroomOwnerRemovingMemberRef()
+        );
       }
     }
 
