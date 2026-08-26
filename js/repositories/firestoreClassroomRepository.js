@@ -17,19 +17,18 @@
  * services/workspaceService.js talks to this only through the
  * ClassroomRepository contract, never to Firestore APIs directly.
  *
- * Offline persistence is enabled via `persistentLocalCache()`, with
- * `persistentMultipleTabManager()` so more than one browser tab of this
- * app can be open at once without fighting over exclusive IndexedDB
- * access (see the comment on `_getDb()` below for what goes wrong
- * without it): reads fall back to the local cache when offline, writes
- * queue locally and sync automatically once the connection returns — no
- * separate offline code is needed anywhere else in the app.
+ * Uses the SDK's default, in-memory-only cache (no persistentLocalCache())
+ * — see the comment on `_getDb()` below for why: this app's own
+ * IndexedDB-persisted cache was found to get stuck reporting a real,
+ * existing document as nonexistent, with no way to recover short of
+ * a user clearing that device's storage. Offline writes still queue
+ * and sync automatically once reconnected, for the duration of a
+ * single page session; nothing is persisted across a reload or app
+ * restart.
  */
 
 import {
   initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
   collection,
   doc,
   getDoc,
@@ -103,42 +102,24 @@ class FirestoreClassroomRepository extends ClassroomRepository {
 
   _getDb() {
     if (!this.db) {
-      const app = getFirebaseApp();
-      // persistentMultipleTabManager is required here: without it,
-      // persistentLocalCache() defaults to single-tab exclusive access to
-      // its IndexedDB store. This app's singleton repository instance is
-      // only a singleton *within one tab* — a second tab of the same app
-      // open at the same time runs its own independent module instance
-      // and would otherwise fight the first tab for that exclusive lock,
-      // which is a documented cause of "Firestore INTERNAL ASSERTION
-      // FAILED: Unexpected state" and the cascading failures that follow
-      // it (including token requests, once Firestore's internal state is
-      // corrupted).
-      //
-      // initializeFirestore() with persistentLocalCache() can throw
-      // synchronously if IndexedDB isn't fully available to the page —
-      // a real, documented condition on mobile browsers specifically
-      // (Incognito/Private mode, restricted site-storage settings, or
-      // immediately after the user clears site data, before storage
-      // permission for the origin is freshly re-established). Since
-      // this is the first Firestore call in the whole app's boot
-      // sequence, an uncaught throw here previously halted all
-      // JavaScript execution before anything rendered — a silent,
-      // total white screen, with no error visible anywhere. Falling
-      // back to a plain, non-persistent Firestore instance means the
-      // app still works (no offline cache, but every online feature
-      // is unaffected) instead of not working at all.
-      try {
-        this.db = initializeFirestore(app, {
-          localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
-        });
-      } catch (error) {
-        console.error(
-          '[firestoreClassroomRepository] Persistent (offline) cache unavailable — falling back to a non-persistent Firestore instance. Offline support is disabled for this session; online reads and writes are unaffected.',
-          error
-        );
-        this.db = initializeFirestore(app, {});
-      }
+      // Deliberately no persistentLocalCache()/persistentMultipleTabManager()
+      // here — this app's own persisted IndexedDB cache was found to get
+      // stuck reporting a real, existing document as nonexistent (via
+      // getDocFromCache, getDocFromServer, AND getDoc alike) after a
+      // failed/rolled-back batch write, with no way to recover short of
+      // clearing that device's storage — confirmed directly: a
+      // completely fresh Firestore instance with the SDK's default,
+      // in-memory-only cache read the exact same document correctly.
+      // Plain initializeFirestore(app, {}) uses that same default
+      // (memoryLocalCache), so nothing on disk can ever get stuck this
+      // way again. Trade-off, explicit: offline reads/writes no longer
+      // survive a page reload or app restart (in-memory only, cleared
+      // each fresh load); still fully supports being offline for the
+      // duration of a single session before reconnecting. Multi-tab
+      // usage is unaffected in the other direction — each tab simply
+      // gets its own independent in-memory cache, with no shared
+      // IndexedDB lock left to contend over at all.
+      this.db = initializeFirestore(getFirebaseApp(), {});
     }
     return this.db;
   }
