@@ -50,7 +50,11 @@ self.addEventListener("notificationclick", (event) => {
   );
 });
 
-const CACHE_NAME = "classmate-v1.1";
+// Increment CACHE_NAME when application assets change so returning
+// clients invalidate the previous application cache (see the
+// activate handler below, which already deletes any cache whose name
+// no longer matches this one).
+const CACHE_NAME = "classmate-v1.2";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
