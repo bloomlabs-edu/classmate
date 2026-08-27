@@ -54,7 +54,7 @@ self.addEventListener("notificationclick", (event) => {
 // clients invalidate the previous application cache (see the
 // activate handler below, which already deletes any cache whose name
 // no longer matches this one).
-const CACHE_NAME = "classmate-v1.2";
+const CACHE_NAME = "classmate-v1.3";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
