@@ -50,3 +50,19 @@ export function resolveLessonConcepts(classroom, lesson) {
     title: findConcept(classroom, conceptId)?.concept?.title || conceptId,
   }));
 }
+
+/**
+ * A LearningUnit's own concepts that are not already in `excludeIds` —
+ * what the Timetable's "Add concept" picker (ui/views/TimetableView.js)
+ * offers as suggestions, so a concept already attached to the current
+ * lesson never shows up a second time as if it were still available.
+ * Pure and dependency-free (no classroom lookup needed — `unit` is
+ * already resolved by the caller), matching this file's own existing
+ * "small, directly testable derivation" functions above. A missing
+ * `unit` (its own LearningUnit could not be found) or a unit with no
+ * concepts yet both correctly resolve to an empty array, never a
+ * thrown error.
+ */
+export function getAddableConcepts(unit, excludeIds = []) {
+  return (unit?.concepts || []).filter((concept) => !excludeIds.includes(concept.id));
+}

@@ -160,6 +160,38 @@ export function getFeedbackEligibleConceptIds(lesson) {
 }
 
 /**
+ * Reassigns `lesson` to a different curriculumUnitId — a pure,
+ * dependency-free mutation (same rationale as findInvalidExecutedConceptIds()
+ * above: directly unit-testable without pulling in
+ * services/plannerRepository.js's real Firestore import). Kept here,
+ * not inline in ui/views/TimetableView.js's own openEditLessonUnitFlow(),
+ * so this one invariant — "a concept id from the old unit is meaningless
+ * against the new one, so every concept-related field resets rather
+ * than silently carrying stale ids across" — stays covered by a real
+ * test rather than only ever exercised by hand in a browser.
+ *
+ * Every concept-related field resets, not just conceptIds: executedConceptIds/
+ * carriedForwardConceptIds/conceptProvenance would otherwise keep
+ * referencing concept ids that no longer belong to this lesson's own
+ * unit, and feedbackSharedAt would otherwise still claim feedback was
+ * shared for a set of concepts that no longer applies.
+ *
+ * Caller's responsibility (not this function's): deciding whether to
+ * warn/confirm before calling this when the lesson already has
+ * concepts, and persisting the result afterward — this only ever
+ * mutates the in-memory `lesson` object handed to it.
+ */
+export function resetLessonForUnitChange(lesson, newUnitId) {
+  lesson.curriculumUnitId = newUnitId;
+  lesson.conceptIds = [];
+  lesson.executedConceptIds = [];
+  lesson.carriedForwardConceptIds = [];
+  lesson.conceptProvenance = {};
+  lesson.feedbackSharedAt = null;
+  return lesson;
+}
+
+/**
  * Moves one planned concept from `sourceLesson` to `targetLesson` —
  * a pure, dependency-free mutation (no Firestore, no id generation)
  * kept in this model file for the same reason findInvalidExecutedConceptIds()

@@ -53,3 +53,45 @@ test('resolveLessonConcepts: empty array for no lesson at all', () => {
   const { classroom } = classroomWithSyllabus();
   assert.deepEqual(timetableDisplayService.resolveLessonConcepts(classroom, null), []);
 });
+
+// ---------------------------------------------------------------------
+// getAddableConcepts — the Timetable's "Add concept" picker's own
+// suggestion filter (ui/views/TimetableView.js's renderConceptPicker()).
+// ---------------------------------------------------------------------
+
+test('getAddableConcepts: every concept already configured in Learning Management is offered when none are excluded', () => {
+  const { unit, evaporation, condensation } = classroomWithSyllabus();
+  const addable = timetableDisplayService.getAddableConcepts(unit, []);
+  assert.deepEqual(addable.map((c) => c.id).sort(), [evaporation.id, condensation.id].sort());
+});
+
+test('getAddableConcepts: a concept already attached to the lesson (excludeIds) is not offered again', () => {
+  const { unit, evaporation, condensation } = classroomWithSyllabus();
+  const addable = timetableDisplayService.getAddableConcepts(unit, [evaporation.id]);
+  assert.deepEqual(addable.map((c) => c.id), [condensation.id]);
+});
+
+test('getAddableConcepts: a concept created afterward (e.g. via "+ Create new concept") is immediately offered — same live unit.concepts array, not a snapshot', () => {
+  const { classroom, unit } = classroomWithSyllabus();
+  const before = timetableDisplayService.getAddableConcepts(unit, []);
+  assert.equal(before.length, 2);
+
+  const newConcept = { id: 'sublimation', title: 'Sublimation' };
+  unit.concepts.push(newConcept);
+
+  const after = timetableDisplayService.getAddableConcepts(unit, []);
+  assert.equal(after.length, 3);
+  assert.ok(after.some((c) => c.id === 'sublimation'));
+});
+
+test('getAddableConcepts: a unit with no concepts at all in Learning Management returns an empty array, not an error (STATE A)', () => {
+  const { classroom } = classroomWithSyllabus();
+  const subject = learningRecordTeacherService.createSubject(classroom, { title: 'Maths', subjectId: 'mathematics' });
+  const emptyUnit = learningRecordTeacherService.createUnit(classroom, subject.id, { title: 'Fractions' });
+  assert.deepEqual(timetableDisplayService.getAddableConcepts(emptyUnit, []), []);
+});
+
+test('getAddableConcepts: a missing/undefined unit resolves to an empty array, never throws', () => {
+  assert.deepEqual(timetableDisplayService.getAddableConcepts(null, []), []);
+  assert.deepEqual(timetableDisplayService.getAddableConcepts(undefined, []), []);
+});

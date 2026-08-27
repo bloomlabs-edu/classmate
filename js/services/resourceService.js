@@ -130,9 +130,13 @@ export async function getResourceById(classroomId, concept, resourceId) {
   return resources.find((resource) => resource.id === resourceId) || null;
 }
 
-/** Creates a resource with its real name from the start (see ui/views/ConceptWorkspaceView.js's immediate-naming step) — never a placeholder title silently sitting there until someone thinks to rename it. Writes the new Resource document, then links it to this concept. */
-export async function createResourceOnConcept(classroomId, concept, { title, type, addedBy = null }) {
-  const resource = createResource({ title, type });
+/**
+ * Creates a resource with its real name from the start (see ui/views/ConceptWorkspaceView.js's immediate-naming step) — never a placeholder title silently sitting there until someone thinks to rename it. Writes the new Resource document, then links it to this concept.
+ *
+ * `content` — optional, same "type-specific, this file says nothing about its shape" field models/Resource.js's own doc comment describes (Reading's own editor populates `{ blocks: [...] }` this same way, later, via a separate save path). ui/views/TimetableView.js's own "+ Add resource" form is the first caller to populate this at creation time, for `type: 'external_link'`, as `{ url, description }` — the natural, minimal content shape for a link, not a new Resource architecture.
+ */
+export async function createResourceOnConcept(classroomId, concept, { title, type, content = null, addedBy = null }) {
+  const resource = createResource({ title, type, content });
   await resourceRepository.saveResource(classroomId, resource);
 
   if (!concept.resourceLinks) concept.resourceLinks = [];

@@ -33,3 +33,24 @@ export const TIMETABLE_SUBJECT_COLORS = Object.freeze({
 export function getTimetableSubjectColor(subjectId) {
   return TIMETABLE_SUBJECT_COLORS[subjectId] || TIMETABLE_SUBJECT_COLORS.default;
 }
+
+/**
+ * Phase V — the same shared per-subject identity above, just mixed
+ * down to a much fainter wash suitable for a whole card/row background
+ * rather than a small pill (see ui/views/TimetableView.js's period
+ * cards, ui/components/TodaysScheduleWidget.js's rows, and the Period
+ * Detail panel, which all call this now instead of each inventing its
+ * own tint logic). Derived from this file's own existing `text` color
+ * via CSS color-mix() — no new colors added to the palette, and the
+ * same 8% mix strength already used elsewhere in this app's own
+ * "quiet colored surface" convention (see TeacherPortalSidebar's own
+ * active-nav-item background, css/styles.css). Deliberately not the
+ * already-defined `tint` value directly: `tint` is tuned to sit behind
+ * dark badge text at pill size — spread across an entire card it read
+ * as too saturated in practice, closer to the "full saturated cell
+ * color" this phase explicitly says to avoid.
+ */
+export function getTimetableSubjectWash(subjectId) {
+  const color = getTimetableSubjectColor(subjectId);
+  return `color-mix(in srgb, ${color.text} 8%, var(--color-surface))`;
+}

@@ -39,13 +39,14 @@ import * as carryForwardService from '../../services/carryForwardService.js';
 import * as conceptFeedbackService from '../../services/conceptFeedbackService.js';
 import * as plannerRepository from '../../services/plannerRepository.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
+import * as learningRecordTeacherService from '../../services/learningRecordTeacherService.js';
 import * as workspaceService from '../../services/workspaceService.js';
 import * as resourceService from '../../services/resourceService.js';
 import * as subjectIdentityService from '../../services/subjectIdentityService.js';
 import { createTimetablePeriod, createTimetableSlot } from '../../models/Timetable.js';
 import { hydrateConceptRecordsForConcepts } from '../../services/conceptRecordHydrationService.js';
-import { getFeedbackEligibleConceptIds } from '../../models/Lesson.js';
-import { getTimetableSubjectColor } from '../../config/timetableSubjectColors.js';
+import { getFeedbackEligibleConceptIds, resetLessonForUnitChange } from '../../models/Lesson.js';
+import { getTimetableSubjectColor, getTimetableSubjectWash } from '../../config/timetableSubjectColors.js';
 import { getWeekRange, shiftDateKey, getTodayDateKey, formatDateKey } from '../../utils/dateHelpers.js';
 import { createIcon } from '../components/Icon.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
@@ -392,6 +393,7 @@ export async function renderTimetableView(container, { classroom, preserveState 
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'timetable-period-card';
+    card.style.background = getTimetableSubjectWash(slot.subjectId);
     if (slot.id === state.selectedTeachingSlotId) card.classList.add('timetable-period-card--selected');
 
     card.appendChild(renderSubjectBadge(timetableDisplayService.resolveSubjectTitle(classroom, slot.subjectId), color));
@@ -506,13 +508,15 @@ export async function renderTimetableView(container, { classroom, preserveState 
     header.appendChild(periodInfo);
     panel.appendChild(header);
 
-    const color = getTimetableSubjectColor(slot.subjectId);
-    const strip = document.createElement('span');
-    strip.className = 'timetable-period-card__subject';
-    strip.style.background = color.tint;
-    strip.style.color = color.text;
-    strip.textContent = timetableDisplayService.resolveSubjectTitle(classroom, slot.subjectId).toUpperCase();
-    panel.appendChild(strip);
+    // Phase V — a subtle subject-wash "lesson header card", the same
+    // shared wash every other schedule surface now uses (grid cells,
+    // Today's Schedule rows) — reusing renderSubjectBadge() too, so the
+    // badge itself stays byte-identical everywhere as well.
+    const lessonHeaderCard = document.createElement('div');
+    lessonHeaderCard.className = 'period-detail-panel__lesson-header';
+    lessonHeaderCard.style.background = getTimetableSubjectWash(slot.subjectId);
+    lessonHeaderCard.appendChild(renderSubjectBadge(timetableDisplayService.resolveSubjectTitle(classroom, slot.subjectId), getTimetableSubjectColor(slot.subjectId)));
+    panel.appendChild(lessonHeaderCard);
 
     if (!lesson) {
       panel.appendChild(renderAttachLessonForm(slot));
@@ -520,9 +524,22 @@ export async function renderTimetableView(container, { classroom, preserveState 
     }
 
     const topic = timetableDisplayService.resolveLessonTopic(classroom, lesson);
+    const topicRow = document.createElement('div');
+    topicRow.className = 'period-detail-panel__topic-row';
     const topicEl = document.createElement('h2');
     topicEl.textContent = topic || '(untitled lesson)';
-    panel.appendChild(topicEl);
+    topicRow.appendChild(topicEl);
+
+    // Unobtrusive — deliberately .btn--text (same subtle weight as
+    // "+ Attach lesson"), never competing with the topic heading itself.
+    const editLessonButton = document.createElement('button');
+    editLessonButton.type = 'button';
+    editLessonButton.className = 'btn btn--text period-detail-panel__edit-lesson';
+    editLessonButton.textContent = 'Edit lesson';
+    editLessonButton.addEventListener('click', () => openEditLessonUnitFlow(slot, lesson));
+    topicRow.appendChild(editLessonButton);
+
+    lessonHeaderCard.appendChild(topicRow);
 
     // Phase P — tab navigation (Overview / Concepts / Resources /
     // Reflection), per the approved reference. Reduces the previous
@@ -559,7 +576,7 @@ export async function renderTimetableView(container, { classroom, preserveState 
       tabContent.appendChild(renderConceptsTab(slot, lesson));
     } else if (state.activeDetailTab === 'resources') {
       tabContent.appendChild(renderResourcesTabPlaceholder());
-      loadResourcesTab(tabContent, lesson);
+      loadResourcesTab(tabContent, slot, lesson);
     } else if (state.activeDetailTab === 'reflection') {
       tabContent.appendChild(renderReflectionSection(lesson));
     } else {
@@ -814,8 +831,8 @@ export async function renderTimetableView(container, { classroom, preserveState 
     attachButton.textContent = 'Attach lesson plan';
     attachButton.disabled = true;
 
-    const checkboxes = new Map();
     let conceptPickerOpen = false;
+    const selectedConceptIds = new Set();
 
     function updateAttachButtonState() {
       attachButton.disabled = !unitSelect.value;
@@ -823,7 +840,6 @@ export async function renderTimetableView(container, { classroom, preserveState 
 
     function renderConceptSection() {
       conceptSection.innerHTML = '';
-      checkboxes.clear();
 
       const unit = learningSubject.units.find((u) => u.id === unitSelect.value);
       if (!unit) {
@@ -834,56 +850,73 @@ export async function renderTimetableView(container, { classroom, preserveState 
         return;
       }
 
-      if (!conceptPickerOpen) {
+      if (conceptPickerOpen) {
+        conceptSection.appendChild(
+          renderConceptPicker(unit, [...selectedConceptIds], (newIds) => {
+            newIds.forEach((id) => selectedConceptIds.add(id));
+            conceptPickerOpen = false;
+            renderConceptSection();
+          })
+        );
+        return;
+      }
+
+      if (selectedConceptIds.size === 0) {
         const empty = document.createElement('p');
         empty.className = 'period-detail-panel__attach-hint';
         empty.textContent = 'No concepts added yet.';
         conceptSection.appendChild(empty);
-
-        // Reuses the same checkbox picker this form already had —
-        // just revealed on an explicit action instead of eagerly, per
-        // "no automatic concept insertion."
-        const addConceptButton = document.createElement('button');
-        addConceptButton.type = 'button';
-        addConceptButton.className = 'btn btn--text';
-        addConceptButton.textContent = '+ Add concept';
-        addConceptButton.addEventListener('click', () => {
-          conceptPickerOpen = true;
-          renderConceptSection();
+      } else {
+        const chosenList = document.createElement('div');
+        chosenList.className = 'period-detail-panel__concept-picker';
+        [...selectedConceptIds].forEach((id) => {
+          const concept = unit.concepts.find((c) => c.id === id);
+          const row = document.createElement('div');
+          row.className = 'period-detail-panel__concept-row';
+          const label = document.createElement('span');
+          label.textContent = concept ? concept.title : id;
+          row.appendChild(label);
+          const removeButton = document.createElement('button');
+          removeButton.type = 'button';
+          removeButton.className = 'btn btn--icon-only';
+          removeButton.setAttribute('aria-label', `Remove ${concept ? concept.title : 'concept'}`);
+          removeButton.appendChild(createIcon('x', { size: 14 }));
+          removeButton.addEventListener('click', () => {
+            selectedConceptIds.delete(id);
+            renderConceptSection();
+          });
+          row.appendChild(removeButton);
+          chosenList.appendChild(row);
         });
-        conceptSection.appendChild(addConceptButton);
-        return;
+        conceptSection.appendChild(chosenList);
       }
 
-      const conceptListEl = document.createElement('div');
-      conceptListEl.className = 'period-detail-panel__concept-picker';
-      (unit.concepts || []).forEach((concept) => {
-        const label = document.createElement('label');
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.value = concept.id;
-        checkboxes.set(concept.id, checkbox);
-        label.appendChild(checkbox);
-        label.append(concept.title);
-        conceptListEl.appendChild(label);
+      const addConceptButton = document.createElement('button');
+      addConceptButton.type = 'button';
+      addConceptButton.className = 'btn btn--text';
+      addConceptButton.textContent = selectedConceptIds.size === 0 ? '+ Add concept' : '+ Add another concept';
+      addConceptButton.addEventListener('click', () => {
+        conceptPickerOpen = true;
+        renderConceptSection();
       });
-      conceptSection.appendChild(conceptListEl);
+      conceptSection.appendChild(addConceptButton);
     }
 
     unitSelect.addEventListener('change', () => {
-      conceptPickerOpen = false; // a different unit invalidates whatever concepts were being picked for the old one
+      // A different unit invalidates whatever concepts were picked for the old one — concepts are always scoped to one unit.
+      conceptPickerOpen = false;
+      selectedConceptIds.clear();
       renderConceptSection();
       updateAttachButtonState();
     });
 
     attachButton.addEventListener('click', () =>
       runAction(async () => {
-        const conceptIds = [...checkboxes.entries()].filter(([, cb]) => cb.checked).map(([id]) => id);
         await timetableLessonService.attachLessonPlan(classroom, {
           teachingSlotId: slot.id,
           date: slot.date,
           curriculumUnitId: unitSelect.value,
-          conceptIds,
+          conceptIds: [...selectedConceptIds],
         });
         await loadAndRender();
       })
@@ -893,6 +926,191 @@ export async function renderTimetableView(container, { classroom, preserveState 
     wrapper.appendChild(attachButton);
 
     return wrapper;
+  }
+
+  /**
+   * Phase V — lets a teacher correct an already-attached lesson's own
+   * unit/topic (e.g. the wrong unit was picked when attaching) without
+   * touching the recurring timetable pattern at all. Mirrors
+   * openCarryForwardFlow()'s / openManageTimetableFlow()'s own overlay
+   * shell (document.body.appendChild(overlay), a re-render function, a
+   * Cancel that just removes the overlay).
+   *
+   * Only ever mutates and saves THIS ONE Lesson document —
+   * plannerRepository.saveLesson() writes a single Lesson by its own
+   * id, completely separate from classroom.timetable (see
+   * timetableService.js's own model doc comment) and from every other
+   * dated occurrence's own Lesson (each has its own unique
+   * teachingSlotId/id) — so this structurally cannot touch the
+   * recurring pattern or any other date's Lesson, not just by
+   * convention but because there is no code path here that ever
+   * reaches either.
+   *
+   * The current unit is pre-selected (the opposite of Attach Lesson's
+   * own forced-placeholder rule) — here the teacher is correcting an
+   * EXISTING, already-deliberate choice, not making a fresh one, so
+   * showing what's already saved is the honest default. Changing to a
+   * DIFFERENT unit clears this lesson's concept-related fields (see
+   * doSave() below) rather than silently carrying concepts that belong
+   * to the old unit's id-space into the new one — a concept id from
+   * one unit is meaningless against another.
+   */
+  function openEditLessonUnitFlow(slot, lesson) {
+    const learningSubject = timetableDisplayService.findLearningSubjectByCanonicalId(classroom, slot.subjectId);
+
+    const overlay = document.createElement('div');
+    overlay.className = 'carry-forward-overlay';
+    const box = document.createElement('div');
+    box.className = 'carry-forward-overlay__box';
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    const eyebrow = document.createElement('p');
+    eyebrow.className = 'carry-forward-overlay__eyebrow';
+    eyebrow.textContent = 'EDIT LESSON';
+    box.appendChild(eyebrow);
+
+    const heading = document.createElement('h3');
+    heading.className = 'carry-forward-overlay__concept';
+    heading.textContent = timetableDisplayService.resolveSubjectTitle(classroom, slot.subjectId);
+    box.appendChild(heading);
+
+    // Makes explicit which ONE dated occurrence this edits — without
+    // this, "EDIT LESSON" + a bare subject name reads as if it might
+    // touch the whole recurring Science slot, not just this Thursday's
+    // lesson. Matches this overlay's own doc comment above: only ever
+    // this one Lesson document, never classroom.timetable or any other
+    // date's occurrence.
+    const subheading = document.createElement('p');
+    subheading.className = 'period-detail-panel__attach-hint';
+    subheading.textContent = `Period ${slot.periodNumber} · ${formatDateKey(slot.date)} — this date only`;
+    box.appendChild(subheading);
+
+    const unitLabel = document.createElement('label');
+    unitLabel.className = 'period-detail-panel__attach-label';
+    unitLabel.textContent = 'Unit / Topic';
+    box.appendChild(unitLabel);
+
+    const unitSelect = document.createElement('select');
+    (learningSubject?.units || []).forEach((unit) => {
+      const option = document.createElement('option');
+      option.value = unit.id;
+      option.textContent = unit.title;
+      unitSelect.appendChild(option);
+    });
+    unitSelect.value = lesson.curriculumUnitId;
+    box.appendChild(unitSelect);
+
+    const actions = document.createElement('div');
+    actions.className = 'carry-forward-overlay__actions';
+
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'btn btn--ghost';
+    cancelButton.textContent = 'Cancel';
+    cancelButton.addEventListener('click', () => overlay.remove());
+    actions.appendChild(cancelButton);
+
+    const saveButton = document.createElement('button');
+    saveButton.type = 'button';
+    saveButton.className = 'btn btn--primary';
+    saveButton.textContent = 'Save';
+    saveButton.addEventListener('click', () =>
+      runAction(async () => {
+        const newUnitId = unitSelect.value;
+        if (newUnitId === lesson.curriculumUnitId) {
+          overlay.remove();
+          return; // unchanged — nothing to save, per "changes only this lesson record" (never a no-op write)
+        }
+
+        if (lesson.conceptIds.length > 0) {
+          const proceed = window.confirm(
+            `Changing the unit will clear this lesson's ${lesson.conceptIds.length} assigned concept(s), since they belong to the old unit. Continue?`
+          );
+          if (!proceed) return;
+        }
+
+        resetLessonForUnitChange(lesson, newUnitId);
+
+        await plannerRepository.saveLesson(classroom.id, lesson);
+        overlay.remove();
+        await loadAndRender();
+      })
+    );
+    actions.appendChild(saveButton);
+
+    box.appendChild(actions);
+  }
+
+  /**
+   * The Concepts tab's "+ Add concept" action once at least one
+   * concept is already attached (STATE C — see renderConceptsTab()
+   * above). A modal, unlike the initial empty-state prompt (which can
+   * safely replace itself in place, since there's nothing else on the
+   * tab yet to preserve) — the already-attached concept rows need to
+   * stay visible/in context behind this, not be replaced by the
+   * picker. Wraps the exact same renderConceptPicker() the empty state
+   * uses below: one shared picker, one shared "select existing vs.
+   * create new" behavior, never a second implementation.
+   *
+   * Only ever mutates and saves THIS lesson's own conceptIds — the
+   * same "one Lesson document, never classroom.timetable, never
+   * another date's Lesson" guarantee as openEditLessonUnitFlow() above.
+   */
+  function openAddConceptFlow(slot, lesson) {
+    const learningSubject = timetableDisplayService.findLearningSubjectByCanonicalId(classroom, slot.subjectId);
+    const unit = learningSubject?.units.find((u) => u.id === lesson.curriculumUnitId);
+
+    const overlay = document.createElement('div');
+    overlay.className = 'carry-forward-overlay add-concept-overlay';
+    const box = document.createElement('div');
+    box.className = 'carry-forward-overlay__box add-concept-overlay__box';
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    const eyebrow = document.createElement('p');
+    eyebrow.className = 'carry-forward-overlay__eyebrow';
+    eyebrow.textContent = 'ADD CONCEPTS';
+    box.appendChild(eyebrow);
+
+    const heading = document.createElement('h3');
+    heading.className = 'carry-forward-overlay__concept';
+    heading.textContent =
+      timetableDisplayService.resolveLessonTopic(classroom, lesson) || timetableDisplayService.resolveSubjectTitle(classroom, slot.subjectId);
+    box.appendChild(heading);
+
+    const subheading = document.createElement('p');
+    subheading.className = 'period-detail-panel__attach-hint';
+    subheading.textContent = `Period ${slot.periodNumber} · ${formatDateKey(slot.date)}`;
+    box.appendChild(subheading);
+
+    if (unit) {
+      box.appendChild(
+        renderConceptPicker(unit, lesson.conceptIds, (newIds) =>
+          runAction(async () => {
+            lesson.conceptIds = [...lesson.conceptIds, ...newIds];
+            await plannerRepository.saveLesson(classroom.id, lesson);
+            overlay.remove();
+            await loadAndRender();
+          })
+        )
+      );
+    } else {
+      const hint = document.createElement('p');
+      hint.className = 'period-detail-panel__attach-hint';
+      hint.textContent = 'This lesson’s unit could not be found.';
+      box.appendChild(hint);
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'carry-forward-overlay__actions';
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'btn btn--ghost';
+    cancelButton.textContent = 'Cancel';
+    cancelButton.addEventListener('click', () => overlay.remove());
+    actions.appendChild(cancelButton);
+    box.appendChild(actions);
   }
 
   function renderFeedbackSummaryCards(summary) {
@@ -1017,6 +1235,20 @@ export async function renderTimetableView(container, { classroom, preserveState 
       section.appendChild(row);
     });
 
+    // STATE C — at least one concept is already attached. Previously
+    // there was no way to attach MORE concepts once any existed at all
+    // (this button simply didn't exist); opens the same shared
+    // renderConceptPicker() the initial empty-state prompt below uses,
+    // in a modal (openAddConceptFlow()) since the attached-concepts
+    // list above needs to stay visible/in-context, not be replaced by
+    // the picker the way the empty state can afford to.
+    const addMoreButton = document.createElement('button');
+    addMoreButton.type = 'button';
+    addMoreButton.className = 'btn btn--text';
+    addMoreButton.textContent = '+ Add concept';
+    addMoreButton.addEventListener('click', () => openAddConceptFlow(slot, lesson));
+    section.appendChild(addMoreButton);
+
     const saveButton = document.createElement('button');
     saveButton.type = 'button';
     saveButton.className = 'btn btn--primary';
@@ -1068,22 +1300,125 @@ export async function renderTimetableView(container, { classroom, preserveState 
 
       const learningSubject = timetableDisplayService.findLearningSubjectByCanonicalId(classroom, slot.subjectId);
       const unit = learningSubject?.units.find((u) => u.id === lesson.curriculumUnitId);
-      const availableConcepts = unit?.concepts || [];
 
-      if (!unit || availableConcepts.length === 0) {
+      if (!unit) {
         const hint = document.createElement('p');
         hint.className = 'period-detail-panel__attach-hint';
-        hint.textContent = unit
-          ? 'This unit has no concepts set up yet in Learning Management.'
-          : 'This lesson’s unit could not be found.';
+        hint.textContent = 'This lesson’s unit could not be found.';
         wrapper.appendChild(hint);
         return;
       }
 
-      const checkboxes = new Map();
-      const listEl = document.createElement('div');
-      listEl.className = 'period-detail-panel__concept-picker';
-      availableConcepts.forEach((concept) => {
+      wrapper.appendChild(
+        renderConceptPicker(unit, lesson.conceptIds, (newIds) =>
+          runAction(async () => {
+            lesson.conceptIds = [...lesson.conceptIds, ...newIds];
+            await plannerRepository.saveLesson(classroom.id, lesson);
+            await loadAndRender();
+          })
+        )
+      );
+    }
+
+    renderPrompt();
+    return wrapper;
+  }
+
+  /**
+   * The one shared concept-picker UI, used by the Attach Lesson form's
+   * own concept step, the Concepts tab's initial "+ Add concept" prompt
+   * (this lesson has no concepts yet), and openAddConceptFlow() below
+   * (adding MORE concepts once at least one is already attached) — one
+   * place a teacher adds a concept from, not several divergent ones.
+   * `excludeIds` keeps already-assigned/already-selected concepts out
+   * of the suggestion list (via timetableDisplayService.getAddableConcepts()).
+   * `onAdd(conceptIds)` fires ONLY when the teacher explicitly clicks
+   * "Add selected concept(s)" — never on its own, and nothing is ever
+   * pre-checked.
+   *
+   * "Create new concept" reuses
+   * learningRecordTeacherService.createConcept() — the exact same
+   * mutation Learning Management's own syllabus editor already uses to
+   * add a concept to a unit — never a second, parallel concept system.
+   * The new concept is pushed straight into `unit.concepts`, so it's
+   * real, permanent, and immediately shows up as a suggestion for any
+   * other lesson using this same unit, not just this one.
+   *
+   * FIX — creating a concept used to call onAdd([newConcept.id])
+   * immediately, silently attaching it to whatever lesson/draft this
+   * picker happened to be open against the instant a teacher typed a
+   * name and clicked Create — before they ever chose to add anything.
+   * onAdd() is now reserved exclusively for "Add selected concept(s)";
+   * creating a concept only re-renders the suggestion list so the new
+   * concept appears there, unchecked, exactly like any other existing
+   * concept the teacher hasn't picked yet.
+   */
+  function renderConceptPicker(unit, excludeIds, onAdd) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'period-detail-panel__concept-picker-wrapper';
+
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.placeholder = 'Search concepts…';
+    searchInput.className = 'period-detail-panel__concept-search';
+
+    const suggestionsLabel = document.createElement('p');
+    suggestionsLabel.className = 'period-detail-panel__attach-label';
+    suggestionsLabel.textContent = 'Suggested from Learning Management';
+
+    const listEl = document.createElement('div');
+    listEl.className = 'period-detail-panel__concept-picker';
+
+    const addExistingButton = document.createElement('button');
+    addExistingButton.type = 'button';
+    addExistingButton.className = 'btn btn--primary';
+    addExistingButton.textContent = 'Add selected concept(s)';
+    addExistingButton.addEventListener('click', () => {
+      const selected = [...checkboxes.entries()].filter(([, checkbox]) => checkbox.checked).map(([id]) => id);
+      if (selected.length === 0) return;
+      onAdd(selected);
+    });
+
+    const checkboxes = new Map();
+
+    // STATE A (this unit has no concepts in Learning Management at
+    // all) hides the search box / "Suggested" label / Add button
+    // entirely — there is nothing to search or select yet, only the
+    // empty message and "+ Create new concept" below. STATE B (the
+    // unit has concepts, none excluded yet) shows the normal search +
+    // checkbox list. Re-evaluated on every render (search input, and
+    // right after creating a concept), since creating the unit's very
+    // first concept flips STATE A -> STATE B live.
+    function renderList(filterText) {
+      listEl.innerHTML = '';
+      checkboxes.clear();
+      const available = timetableDisplayService.getAddableConcepts(unit, excludeIds);
+
+      searchInput.hidden = available.length === 0;
+      suggestionsLabel.hidden = available.length === 0;
+      addExistingButton.hidden = available.length === 0;
+
+      if (available.length === 0) {
+        const none = document.createElement('p');
+        none.className = 'period-detail-panel__attach-hint';
+        none.textContent = 'No concepts are available for this unit yet.';
+        listEl.appendChild(none);
+        return;
+      }
+
+      const filtered = filterText
+        ? available.filter((concept) => concept.title.toLowerCase().includes(filterText.toLowerCase()))
+        : available;
+
+      if (filtered.length === 0) {
+        const none = document.createElement('p');
+        none.className = 'period-detail-panel__attach-hint';
+        none.textContent = 'No concepts match your search.';
+        listEl.appendChild(none);
+        return;
+      }
+
+      filtered.forEach((concept) => {
         const label = document.createElement('label');
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
@@ -1093,25 +1428,77 @@ export async function renderTimetableView(container, { classroom, preserveState 
         label.append(concept.title);
         listEl.appendChild(label);
       });
-      wrapper.appendChild(listEl);
+    }
+    searchInput.addEventListener('input', () => renderList(searchInput.value.trim()));
 
-      const addButton = document.createElement('button');
-      addButton.type = 'button';
-      addButton.className = 'btn btn--primary';
-      addButton.textContent = 'Add concept';
-      addButton.addEventListener('click', () =>
-        runAction(async () => {
-          const newIds = [...checkboxes.entries()].filter(([, cb]) => cb.checked).map(([id]) => id);
-          if (newIds.length === 0) return;
-          lesson.conceptIds = [...lesson.conceptIds, ...newIds];
-          await plannerRepository.saveLesson(classroom.id, lesson);
-          await loadAndRender();
-        })
-      );
-      wrapper.appendChild(addButton);
+    wrapper.appendChild(searchInput);
+    wrapper.appendChild(suggestionsLabel);
+    wrapper.appendChild(listEl);
+    renderList('');
+    wrapper.appendChild(addExistingButton);
+
+    // Collapsed until explicitly opened — never shown pre-filled,
+    // matching the same "reveal on explicit action" rule as everything
+    // else in this concept flow.
+    const createToggle = document.createElement('button');
+    createToggle.type = 'button';
+    createToggle.className = 'btn btn--text';
+    createToggle.textContent = '+ Create new concept';
+
+    const createForm = document.createElement('div');
+    createForm.className = 'period-detail-panel__create-concept-form';
+    createForm.hidden = true;
+
+    const nameLabel = document.createElement('label');
+    nameLabel.className = 'period-detail-panel__attach-label';
+    nameLabel.textContent = 'Concept name';
+    createForm.appendChild(nameLabel);
+
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.placeholder = 'e.g. Photosynthesis';
+    createForm.appendChild(nameInput);
+
+    function collapseCreateForm() {
+      nameInput.value = '';
+      createForm.hidden = true;
+      createToggle.hidden = false;
     }
 
-    renderPrompt();
+    const createFormActions = document.createElement('div');
+    createFormActions.className = 'period-detail-panel__create-concept-form-actions';
+
+    const createCancelButton = document.createElement('button');
+    createCancelButton.type = 'button';
+    createCancelButton.className = 'btn btn--ghost';
+    createCancelButton.textContent = 'Cancel';
+    createCancelButton.addEventListener('click', collapseCreateForm);
+    createFormActions.appendChild(createCancelButton);
+
+    const createButton = document.createElement('button');
+    createButton.type = 'button';
+    createButton.className = 'btn btn--primary';
+    createButton.textContent = 'Create concept';
+    createButton.addEventListener('click', () => {
+      const title = nameInput.value.trim();
+      if (!title) return;
+      learningRecordTeacherService.createConcept(classroom, unit.id, { title });
+      workspaceService.save(classroom);
+      collapseCreateForm();
+      renderList(searchInput.value.trim());
+    });
+    createFormActions.appendChild(createButton);
+    createForm.appendChild(createFormActions);
+
+    createToggle.addEventListener('click', () => {
+      createForm.hidden = false;
+      createToggle.hidden = true;
+      nameInput.focus();
+    });
+
+    wrapper.appendChild(createToggle);
+    wrapper.appendChild(createForm);
+
     return wrapper;
   }
 
@@ -1127,20 +1514,35 @@ export async function renderTimetableView(container, { classroom, preserveState 
    * Aggregates services/resourceService.js's own getResources() across
    * every concept in this lesson — reuses the exact same resource
    * system ConceptWorkspaceView.js already uses per-concept; no new
-   * resource system, no lesson-level resource field. Falls back to
-   * this app's own existing empty state when a lesson genuinely has no
-   * linked resources yet.
+   * resource system, no lesson-level resource field (see this
+   * function's own "+ Add resource" -> openAddResourceFlow() below for
+   * why a resource added here still genuinely targets one of this
+   * lesson's own concepts, never the lesson document itself). Falls
+   * back to this app's own existing empty state when a lesson
+   * genuinely has no linked resources yet — but "+ Add resource" is
+   * shown either way, per explicit product direction that adding a
+   * resource must be discoverable from this tab regardless of whether
+   * anything is here yet.
+   *
+   * Keeps {resource, concept} pairs, not just resources, since
+   * removing a resource (resourceService.deleteResource()) needs to
+   * know which concept it's actually unlinking from.
    */
-  async function loadResourcesTab(container, lesson) {
+  async function loadResourcesTab(container, slot, lesson) {
     // The REAL LearningConcept objects (with their own resourceLinks
     // field), not timetableDisplayService's {id, title}-only display
     // shape — resourceService.getResources() reads resourceLinks
     // directly off whatever concept object it's given.
     const realConcepts = lesson.conceptIds.map((id) => learningRecordService.getConceptById(classroom, id)).filter(Boolean);
-    let resources = [];
+    let entries = [];
     try {
-      const perConcept = await Promise.all(realConcepts.map((concept) => resourceService.getResources(classroom.id, concept)));
-      resources = perConcept.flat();
+      const perConcept = await Promise.all(
+        realConcepts.map(async (concept) => {
+          const resources = await resourceService.getResources(classroom.id, concept);
+          return resources.map((resource) => ({ resource, concept }));
+        })
+      );
+      entries = perConcept.flat();
     } catch (error) {
       console.error('[TimetableView] Failed to load lesson resources:', error);
     }
@@ -1152,23 +1554,228 @@ export async function renderTimetableView(container, { classroom, preserveState 
     if (!container.isConnected || state.activeDetailTab !== 'resources') return;
 
     container.innerHTML = '';
-    if (resources.length === 0) {
+
+    const addButton = document.createElement('button');
+    addButton.type = 'button';
+    addButton.className = 'btn btn--text';
+    addButton.textContent = '+ Add resource';
+    addButton.addEventListener('click', () => openAddResourceFlow(slot, lesson, () => loadResourcesTab(container, slot, lesson)));
+    container.appendChild(addButton);
+
+    if (entries.length === 0) {
       container.appendChild(createEmptyStateElement({ message: 'No resources linked to this lesson’s concepts yet.' }));
       return;
     }
 
     const list = document.createElement('div');
     list.className = 'period-detail-panel__resource-list';
-    resources.forEach((resource) => {
+    entries.forEach(({ resource, concept }) => {
       const item = document.createElement('div');
       item.className = 'period-detail-panel__resource-item';
       item.appendChild(createIcon(getResourceTypeIcon(resource.type), { size: 16 }));
-      const label = document.createElement('span');
-      label.textContent = resource.title;
-      item.appendChild(label);
+
+      const textWrap = document.createElement('span');
+      textWrap.className = 'period-detail-panel__resource-item-text';
+      if (resource.content?.url) {
+        const link = document.createElement('a');
+        link.href = resource.content.url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = resource.title;
+        textWrap.appendChild(link);
+      } else {
+        const label = document.createElement('span');
+        label.textContent = resource.title;
+        textWrap.appendChild(label);
+      }
+      if (resource.content?.description) {
+        const description = document.createElement('span');
+        description.className = 'period-detail-panel__resource-item-description';
+        description.textContent = resource.content.description;
+        textWrap.appendChild(description);
+      }
+      item.appendChild(textWrap);
+
+      const removeButton = document.createElement('button');
+      removeButton.type = 'button';
+      removeButton.className = 'btn btn--icon-only';
+      removeButton.setAttribute('aria-label', `Remove ${resource.title}`);
+      removeButton.appendChild(createIcon('trash-2', { size: 14 }));
+      removeButton.addEventListener('click', () =>
+        runAction(async () => {
+          const confirmed = window.confirm(`Remove "${resource.title}"? This cannot be undone.`);
+          if (!confirmed) return;
+          await resourceService.deleteResource(classroom.id, concept, resource.id);
+          workspaceService.save(classroom);
+          await loadResourcesTab(container, slot, lesson);
+        })
+      );
+      item.appendChild(removeButton);
+
       list.appendChild(item);
     });
     container.appendChild(list);
+  }
+
+  /**
+   * The Resources tab's "+ Add resource" action — a simple manual
+   * entry form (title / URL / optional description), not
+   * ConceptWorkspaceView.js's own full resource editor (a separate,
+   * heavier multi-type workflow deliberately not pulled in here — see
+   * this file's own header comment on staying a minimal, real form
+   * rather than a second Resource system).
+   *
+   * Resources are a Concept-level system, not a Lesson-level one (see
+   * loadResourcesTab()'s own doc comment) — models/Lesson.js has no
+   * resource field at all, by design, so a resource added here still
+   * genuinely attaches to one of THIS lesson's own concepts, the same
+   * way every resource this tab already displays does. Exactly one
+   * concept is the only real choice there is to make when the lesson
+   * has just one, and is used without asking — with more than one, the
+   * teacher must explicitly pick which, via a forced, disabled
+   * placeholder option (mirroring renderAttachLessonForm()'s own Phase
+   * T fix: never a silently-selected first concept).
+   *
+   * `type` is fixed to 'external_link' — the one existing
+   * config/resourceTypeConfig.js type this title/url/description shape
+   * actually matches — stored as `{ url, description }` on the
+   * existing, deliberately type-specific Resource.content field (see
+   * services/resourceService.js's own updated header comment); not a
+   * new Resource architecture, no new Firestore collection.
+   */
+  function openAddResourceFlow(slot, lesson, onSaved) {
+    const concepts = timetableDisplayService.resolveLessonConcepts(classroom, lesson);
+
+    const overlay = document.createElement('div');
+    overlay.className = 'carry-forward-overlay';
+    const box = document.createElement('div');
+    box.className = 'carry-forward-overlay__box';
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    const eyebrow = document.createElement('p');
+    eyebrow.className = 'carry-forward-overlay__eyebrow';
+    eyebrow.textContent = 'ADD RESOURCE';
+    box.appendChild(eyebrow);
+
+    const heading = document.createElement('h3');
+    heading.className = 'carry-forward-overlay__concept';
+    heading.textContent =
+      timetableDisplayService.resolveLessonTopic(classroom, lesson) || timetableDisplayService.resolveSubjectTitle(classroom, slot.subjectId);
+    box.appendChild(heading);
+
+    // A lesson with zero concepts has nowhere for a resource to
+    // structurally attach (see this function's own header comment) —
+    // rather than force a lesson-level architecture change to route
+    // around that, this is surfaced honestly, with a direct pointer to
+    // where a concept actually gets added.
+    if (concepts.length === 0) {
+      const hint = document.createElement('p');
+      hint.className = 'period-detail-panel__attach-hint';
+      hint.textContent = 'Resources attach to a concept. Add a concept to this lesson first, from the Concepts tab.';
+      box.appendChild(hint);
+
+      const closeActions = document.createElement('div');
+      closeActions.className = 'carry-forward-overlay__actions';
+      const closeButton = document.createElement('button');
+      closeButton.type = 'button';
+      closeButton.className = 'btn btn--ghost';
+      closeButton.textContent = 'Close';
+      closeButton.addEventListener('click', () => overlay.remove());
+      closeActions.appendChild(closeButton);
+      box.appendChild(closeActions);
+      return;
+    }
+
+    let conceptSelect = null;
+    if (concepts.length > 1) {
+      const conceptLabel = document.createElement('label');
+      conceptLabel.className = 'period-detail-panel__attach-label';
+      conceptLabel.textContent = 'Concept';
+      box.appendChild(conceptLabel);
+
+      conceptSelect = document.createElement('select');
+      const placeholderOption = document.createElement('option');
+      placeholderOption.value = '';
+      placeholderOption.textContent = '— Choose a concept —';
+      placeholderOption.disabled = true;
+      placeholderOption.selected = true;
+      conceptSelect.appendChild(placeholderOption);
+      concepts.forEach(({ id, title }) => {
+        const option = document.createElement('option');
+        option.value = id;
+        option.textContent = title;
+        conceptSelect.appendChild(option);
+      });
+      box.appendChild(conceptSelect);
+    }
+
+    const titleLabel = document.createElement('label');
+    titleLabel.className = 'period-detail-panel__attach-label';
+    titleLabel.textContent = 'Resource title';
+    box.appendChild(titleLabel);
+    const titleInput = document.createElement('input');
+    titleInput.type = 'text';
+    box.appendChild(titleInput);
+
+    const urlLabel = document.createElement('label');
+    urlLabel.className = 'period-detail-panel__attach-label';
+    urlLabel.textContent = 'URL';
+    box.appendChild(urlLabel);
+    const urlInput = document.createElement('input');
+    urlInput.type = 'url';
+    urlInput.placeholder = 'https://…';
+    box.appendChild(urlInput);
+
+    const descriptionLabel = document.createElement('label');
+    descriptionLabel.className = 'period-detail-panel__attach-label';
+    descriptionLabel.textContent = 'Optional description';
+    box.appendChild(descriptionLabel);
+    const descriptionInput = document.createElement('textarea');
+    box.appendChild(descriptionInput);
+
+    const actions = document.createElement('div');
+    actions.className = 'carry-forward-overlay__actions';
+
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'btn btn--ghost';
+    cancelButton.textContent = 'Cancel';
+    cancelButton.addEventListener('click', () => overlay.remove());
+    actions.appendChild(cancelButton);
+
+    const addButton = document.createElement('button');
+    addButton.type = 'button';
+    addButton.className = 'btn btn--primary';
+    addButton.textContent = 'Add resource';
+
+    function updateAddButtonState() {
+      const hasConcept = concepts.length === 1 || Boolean(conceptSelect && conceptSelect.value);
+      addButton.disabled = !hasConcept || !titleInput.value.trim() || !urlInput.value.trim();
+    }
+    titleInput.addEventListener('input', updateAddButtonState);
+    urlInput.addEventListener('input', updateAddButtonState);
+    if (conceptSelect) conceptSelect.addEventListener('change', updateAddButtonState);
+    updateAddButtonState();
+
+    addButton.addEventListener('click', () =>
+      runAction(async () => {
+        const targetConceptId = concepts.length === 1 ? concepts[0].id : conceptSelect.value;
+        const concept = learningRecordService.getConceptById(classroom, targetConceptId);
+        if (!concept) return;
+
+        await resourceService.createResourceOnConcept(classroom.id, concept, {
+          title: titleInput.value.trim(),
+          type: 'external_link',
+          content: { url: urlInput.value.trim(), description: descriptionInput.value.trim() || null },
+        });
+        workspaceService.save(classroom);
+        overlay.remove();
+        onSaved?.();
+      })
+    );
+    actions.appendChild(addButton);
+    box.appendChild(actions);
   }
 
   /** "Thu 28 Aug" — weekday + day + month, no year; reuses this file's own existing weekdayOf()/monthAbbrev()/WEEKDAY_LABELS, never a second date-formatting implementation. */

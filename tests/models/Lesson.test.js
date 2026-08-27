@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createLesson, findInvalidExecutedConceptIds, getFeedbackEligibleConceptIds, carryForwardConcept } from '../../js/models/Lesson.js';
+import { createLesson, findInvalidExecutedConceptIds, getFeedbackEligibleConceptIds, carryForwardConcept, resetLessonForUnitChange } from '../../js/models/Lesson.js';
 
 test('createLesson: executedConceptIds/carriedForwardConceptIds/conceptProvenance default to empty, planningCycleId to null', () => {
   const lesson = createLesson({ classroomId: 'c1', date: '2026-08-25', teachingSlotId: 'slot-1', conceptIds: ['A', 'B'] });
@@ -106,4 +106,46 @@ test('carryForwardConcept: throws if the concept has already been carried forwar
   const thursday = createLesson({ id: 'lesson-thu', classroomId: 'c1', conceptIds: [] });
 
   assert.throws(() => carryForwardConcept({ sourceLesson: tuesday, targetLesson: thursday, conceptId: 'D', sourceTeachingSlotId: 's1', carriedAt: 'now' }));
+});
+
+// ---------------------------------------------------------------------
+// resetLessonForUnitChange — "Measurement" attached by accident,
+// teacher corrects it via the Timetable's own "Edit lesson" action.
+// ---------------------------------------------------------------------
+
+test('resetLessonForUnitChange: reassigns curriculumUnitId to the new unit', () => {
+  const lesson = createLesson({ classroomId: 'c1', curriculumUnitId: 'unit-measurement', conceptIds: [] });
+  resetLessonForUnitChange(lesson, 'unit-fractions');
+  assert.equal(lesson.curriculumUnitId, 'unit-fractions');
+});
+
+test('resetLessonForUnitChange: clears conceptIds/executedConceptIds/carriedForwardConceptIds/conceptProvenance — a concept id from the old unit is meaningless against the new one', () => {
+  const lesson = createLesson({
+    classroomId: 'c1',
+    curriculumUnitId: 'unit-measurement',
+    conceptIds: ['A', 'B'],
+    executedConceptIds: ['A'],
+    carriedForwardConceptIds: ['B'],
+    conceptProvenance: { B: { fromLessonId: 'other-lesson', fromTeachingSlotId: 'slot-x', carriedAt: '2026-08-01T00:00:00.000Z' } },
+  });
+
+  resetLessonForUnitChange(lesson, 'unit-fractions');
+
+  assert.deepEqual(lesson.conceptIds, []);
+  assert.deepEqual(lesson.executedConceptIds, []);
+  assert.deepEqual(lesson.carriedForwardConceptIds, []);
+  assert.deepEqual(lesson.conceptProvenance, {});
+});
+
+test('resetLessonForUnitChange: clears feedbackSharedAt — feedback already shared referred to concepts that no longer apply', () => {
+  const lesson = createLesson({ classroomId: 'c1', curriculumUnitId: 'unit-measurement', conceptIds: ['A'], feedbackSharedAt: '2026-08-20T10:00:00.000Z' });
+  resetLessonForUnitChange(lesson, 'unit-fractions');
+  assert.equal(lesson.feedbackSharedAt, null);
+});
+
+test('resetLessonForUnitChange: a lesson that already had zero concepts stays at zero (no-op on the concept fields, but the unit still changes)', () => {
+  const lesson = createLesson({ classroomId: 'c1', curriculumUnitId: 'unit-measurement', conceptIds: [] });
+  resetLessonForUnitChange(lesson, 'unit-fractions');
+  assert.equal(lesson.curriculumUnitId, 'unit-fractions');
+  assert.deepEqual(lesson.conceptIds, []);
 });

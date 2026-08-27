@@ -18,7 +18,7 @@
 import * as timetableService from '../../services/timetableService.js';
 import * as timetableDisplayService from '../../services/timetableDisplayService.js';
 import * as plannerRepository from '../../services/plannerRepository.js';
-import { getTimetableSubjectColor } from '../../config/timetableSubjectColors.js';
+import { getTimetableSubjectColor, getTimetableSubjectWash } from '../../config/timetableSubjectColors.js';
 import { getTodayDateKey } from '../../utils/dateHelpers.js';
 import { renderSubjectBadge, renderLessonTopicLabel } from './ScheduleItemLabels.js';
 
@@ -95,6 +95,7 @@ export async function renderTodaysScheduleWidget(container, { classroom, onViewF
 
       const row = document.createElement('div');
       row.className = 'todays-schedule-widget__row';
+      row.style.background = getTimetableSubjectWash(slot.subjectId);
 
       const time = document.createElement('span');
       time.className = 'todays-schedule-widget__time';
