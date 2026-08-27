@@ -54,7 +54,7 @@ self.addEventListener("notificationclick", (event) => {
 // clients invalidate the previous application cache (see the
 // activate handler below, which already deletes any cache whose name
 // no longer matches this one).
-const CACHE_NAME = "classmate-v1.5";
+const CACHE_NAME = "classmate-v1.6";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -83,7 +83,7 @@ self.addEventListener("fetch", (event) => {
   // identitytoolkit/securetoken requests, Firestore's own real-time
   // WebChannel stream and writes, FCM) is cross-origin from this app's
   // own classmate-302c2.web.app origin, same as Google Fonts. Letting
-  // any of those fall through to this handler's cache-then-network
+  // any of those fall through to this handler's network-then-cache
   // logic below risks serving a stale cached Auth/Firestore response
   // instead of live data, or wrapping a long-lived real-time stream in
   // logic this handler was never designed for. Leaving them
@@ -95,21 +95,33 @@ self.addEventListener("fetch", (event) => {
   // same origin) is ever cached below.
   if (new URL(event.request.url).origin !== self.location.origin) return;
 
+  // NETWORK-FIRST, cache as an offline fallback only — deliberately NOT
+  // "return whatever's cached immediately, refresh the cache in the
+  // background for next time." That older strategy (see this file's
+  // own git history) always answered the CURRENT request from
+  // whatever was already in Cache Storage, so a real deployment could
+  // sit fully live on the server while every already-cached client
+  // kept seeing the previous one for a full extra reload cycle — the
+  // new bytes only became visible on the SECOND request after a
+  // deploy, never the first. Since this app's asset URLs aren't
+  // content-hashed (the same js/main.js path is reused release over
+  // release), the cache can never tell "old" and "new" apart on its
+  // own — correctness has to come from always preferring the network
+  // when it's reachable. This still updates Cache Storage on every
+  // successful fetch, so offline behavior (the .catch() fallback
+  // below) stays exactly as capable as before; only the online,
+  // network-reachable path changed.
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const networkFetch = fetch(event.request)
-        .then((response) => {
-          if (response && response.status === 200) {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, copy);
-            });
-          }
-          return response;
-        })
-        .catch(() => cached);
-
-      return cached || networkFetch;
-    })
+    fetch(event.request)
+      .then((response) => {
+        if (response && response.status === 200) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, copy);
+          });
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });

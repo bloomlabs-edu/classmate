@@ -1195,10 +1195,25 @@ function escapeHtml(text) {
  * classic-script service worker. Fire-and-forget: a registration
  * failure (e.g. an unsupported browser) should never block the rest
  * of the app from loading, so this only logs, never throws upward.
+ *
+ * `updateViaCache: 'none'` — this app is hosted from more than one
+ * origin (Firebase Hosting, which already sends
+ * Cache-Control: no-cache on every JS file, and GitHub Pages, which
+ * does not: it serves service-worker.js itself with a 10-minute HTTP
+ * cache). Without this option, a browser's own periodic "has
+ * service-worker.js changed?" check on GitHub Pages could be answered
+ * from that stale HTTP cache instead of asking the server, silently
+ * delaying how soon a new deployment's service worker (and, since
+ * this is a module worker, its own `import`ed scripts) is even
+ * detected — on top of, and separate from, this file's own Cache
+ * Storage fetch strategy below. This option is a browser-level
+ * instruction understood by the Service Worker spec itself, not a
+ * change to GitHub Pages' hosting config (which this app has no
+ * ability to alter, and doesn't need to, for this to work).
  */
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
-  navigator.serviceWorker.register('/service-worker.js', { type: 'module' }).catch((error) => {
+  navigator.serviceWorker.register('/service-worker.js', { type: 'module', updateViaCache: 'none' }).catch((error) => {
     console.error('[main] Service worker registration failed:', error);
   });
 }
