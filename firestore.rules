@@ -531,16 +531,11 @@ service cloud.firestore {
     // project's own historical-integrity invariants for Learning
     // Programmes: a session should never simply disappear.
     //
-    // NOTE — a pre-existing gap discovered during this work, NOT
-    // something this change is responsible for and NOT modified here
-    // per this phase's own "do not modify unrelated Firestore rules"
-    // instruction: classrooms/{id}/resources/{resourceId} (Learning Hub)
-    // has no explicit rule anywhere in this file and currently falls
-    // through to the deny-by-default catch-all below. Flagged here for
-    // the reviewing team's own awareness; out of scope for this phase.
-    // (classrooms/{id}/lessons/{lessonId} — Planner — had the exact
-    // same gap; fixed below, now that the Timetable feature is the
-    // first real caller of it.)
+    // NOTE — classrooms/{id}/lessons/{lessonId} (Planner) previously had
+    // no rule at all here and fell through to the deny-by-default
+    // catch-all below; fixed below. classrooms/{id}/resources/{resourceId}
+    // (Learning Hub) had the exact same gap — now fixed too, immediately
+    // after the lessons block below, using the same member-scoped shape.
     match /classrooms/{classroomId}/programmeSessions/{sessionId} {
       allow read: if request.auth != null &&
         request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
@@ -601,6 +596,39 @@ service cloud.firestore {
         request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
 
       allow delete: if false;
+    }
+
+    // Learning Hub — Resource (see models/Resource.js,
+    // services/resourceService.js, services/resourceRepository.js).
+    // Fixes the exact pre-existing gap flagged in this file's own NOTE
+    // above: this collection previously had no rule at all and fell
+    // through to deny-by-default, making resource create/read/update/
+    // delete non-functional in production for every caller — both
+    // ui/views/ConceptWorkspaceView.js's own pre-existing "+Add
+    // Resource" and the Timetable's own "+ Add resource".
+    //
+    // Same member-scoped shape as the lessons block immediately above:
+    // read requires only a signed-in identity (a Resource's own id is
+    // never guessable/listable — list stays implicitly denied, no
+    // allow list exists here, same as every other collection in this
+    // file); create/update require the caller be a current classroom
+    // member. Unlike lessons (which never deletes), delete is also
+    // member-scoped rather than disallowed — services/resourceService.js's
+    // own deleteResource() is a real, existing, teacher-facing action
+    // (see that file's own header comment on this app having no
+    // separate "Unlink" vs "Delete" distinction yet), so this only
+    // grants what that already-existing function needs, not more.
+    match /classrooms/{classroomId}/resources/{resourceId} {
+      allow read: if request.auth != null;
+
+      allow create: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+
+      allow update: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+
+      allow delete: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
     }
 
     // Learning Record — StudentConceptRecord (see
