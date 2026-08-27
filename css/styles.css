@@ -550,29 +550,256 @@ select:focus-visible,
 
 /* Home view (classroom dashboard) */
 
-.home-view {
-  max-width: 1000px;
+/*
+ * Personal Hub (ui/views/PersonalHubView.js) — the teacher landing page
+ * at #/teacher. Hierarchy: Profile -> My Week -> My Classrooms -> Other
+ * Classrooms -> My Schools & Programs -> Management, each its own
+ * .hub-section so spacing between questions stays consistent (mirrors
+ * .dashboard-view__group's own "whitespace carries grouping" rhythm).
+ */
+.personal-hub {
+  max-width: 1100px;
   margin: 0 auto;
   padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
 }
 
-.home-view__header {
+.hub-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.hub-section__header {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
+  gap: var(--space-3);
 }
 
-.home-view__actions {
-  display: flex;
-  gap: 0.75rem;
-}
-.home-view__title {
-  font-size: 1.5rem;
+.hub-section__title {
+  font-size: 1.2rem;
   font-weight: var(--font-weight-black);
   margin: 0;
+}
+
+.hub-section__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/* Profile header */
+.hub-profile {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--elevation-card);
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.hub-profile__identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.hub-profile__avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.hub-profile__avatar--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--color-primary-deep);
+  color: var(--color-on-primary-deep);
+  font-weight: var(--font-weight-black);
+  font-size: 1.25rem;
+}
+.hub-profile__name {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: var(--font-weight-black);
+}
+.hub-profile__roles {
+  margin: 0.2rem 0 0;
+  color: var(--color-primary-strong);
+  font-weight: var(--font-weight-medium);
+  font-size: 0.9rem;
+}
+.hub-profile__affiliations {
+  margin: 0.2rem 0 0;
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+.hub-profile__stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+}
+.hub-stat-tile {
+  background-color: var(--color-bg);
+  border-radius: var(--radius-control);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.15rem;
+}
+.hub-stat-tile__value {
+  font-size: 1.3rem;
+  font-weight: var(--font-weight-black);
+  color: var(--color-ink);
+}
+.hub-stat-tile__label {
+  font-size: 0.72rem;
+  color: var(--color-muted);
+}
+
+/* My Week */
+.hub-week__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.hub-week__nav-button {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.hub-week__range {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-ink);
+  font-size: 0.9rem;
+}
+.hub-week__footer {
+  display: flex;
+  justify-content: flex-end;
+}
+/* A horizontally-scrolling row of day columns — deliberately the SAME
+   layout at every width, not a grid that gets squeezed on mobile: a
+   teacher's week rarely fits a phone's width no matter how narrow the
+   columns get, so scrolling sideways through real, tappable day
+   columns is the genuinely usable mobile behavior here, and it works
+   identically well on desktop. */
+.hub-week-grid {
+  display: flex;
+  gap: var(--space-3);
+  overflow-x: auto;
+  padding-bottom: var(--space-2);
+  scroll-snap-type: x proximity;
+}
+.hub-week-grid__day {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 150px;
+  scroll-snap-align: start;
+}
+.hub-week-grid__day-header {
+  font-size: 0.72rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.hub-week-entry {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  background-color: var(--palette-learn-wash);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  width: 100%;
+}
+.hub-week-entry:hover {
+  border-color: var(--color-primary);
+}
+.hub-week-entry__subject {
+  font-weight: var(--font-weight-bold);
+  font-size: 0.85rem;
+  color: var(--color-ink);
+}
+.hub-week-entry__context {
+  font-size: 0.72rem;
+  color: var(--color-muted);
+}
+
+/* My Schools & Programs */
+.hub-org-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+}
+.hub-org-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--elevation-card);
+  padding: var(--space-4);
+}
+.hub-org-card--programme {
+  background-color: var(--palette-growth-wash);
+}
+.hub-org-card__badge {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--palette-growth-label);
+  margin-bottom: 0.35rem;
+}
+.hub-org-card__name {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+  font-weight: var(--font-weight-black);
+}
+.hub-org-card__meta {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+
+/* Management */
+.hub-management__link {
+  align-self: flex-start;
+  padding-left: 0;
+}
+
+@media (max-width: 640px) {
+  .hub-profile__identity {
+    align-items: flex-start;
+  }
+  .hub-profile__stats {
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-2);
+  }
+  .hub-stat-tile {
+    padding: var(--space-2);
+  }
+  .hub-stat-tile__value {
+    font-size: 1.1rem;
+  }
 }
 
 .classroom-grid {
@@ -3808,7 +4035,7 @@ button.wizard-checklist__row:hover {
   }
   .team-grid,
   .settings-content,
-  .home-view {
+  .personal-hub {
     padding: 1rem;
   }
   .notebook-checking-row {

@@ -8,7 +8,7 @@
  * Classroom" for a co-teacher who's signing in for the first time
  * specifically to join someone else's — this is exactly the screen
  * they'd land on before joining anything, so it needs both options,
- * not just HomeView.js's (which only shows once at least one
+ * not just PersonalHubView.js's (which only shows once at least one
  * classroom already exists).
  */
 

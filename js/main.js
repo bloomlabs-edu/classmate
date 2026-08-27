@@ -27,7 +27,7 @@ import * as pushNotificationService from './services/pushNotificationService.js'
 import * as notificationService from './services/notificationService.js';
 import * as feedService from './services/feedService.js';
 import { showToast } from './ui/components/Toast.js';
-import { ClassroomValidationError } from './services/classroomService.js';
+import { ClassroomValidationError, getDisplayName } from './services/classroomService.js';
 import * as router from './ui/router.js';
 import { renderWelcomeView } from './ui/views/WelcomeView.js';
 import { renderLandingView } from './ui/views/LandingView.js';
@@ -52,7 +52,7 @@ import { renderStudentTeamDetailView } from './ui/student-portal/views/StudentTe
 import { renderStudentPublicProfileView } from './ui/student-portal/views/StudentPublicProfileView.js';
 import { renderStudentAvatarBuilderView } from './ui/student-portal/views/StudentAvatarBuilderView.js';
 import { renderStudentProfileView as renderStudentPortalProfileView } from './ui/student-portal/views/StudentProfileView.js';
-import { renderHomeView } from './ui/views/HomeView.js';
+import { renderPersonalHubView } from './ui/views/PersonalHubView.js';
 import { renderCurriculumManagementView } from './ui/views/CurriculumManagementView.js';
 import { renderLearningManagementView } from './ui/views/LearningManagementView.js';
 import { renderAssessmentManagementView } from './ui/views/AssessmentManagementView.js';
@@ -462,6 +462,38 @@ function handleJoinClassroom() {
         });
     },
   });
+}
+
+/**
+ * Delete Classroom, from the ⋯ menu on a My Classrooms card — reuses
+ * the exact same workspaceService.deleteClassroom() the classroom's
+ * own Settings -> Danger Zone button already calls (see
+ * ui/views/SettingsView.js's own renderDangerSection()), with the same
+ * confirm() wording. This handler only adds the confirm dialog and
+ * refreshes the current route afterward so the card disappears
+ * immediately — it does not change deleteClassroom() itself, and does
+ * not attempt any cleanup beyond what that function already does.
+ */
+function handleDeleteClassroomFromHome(classroomId) {
+  const classroom = workspaceService.getState().classrooms.find((c) => c.id === classroomId);
+  if (!classroom) return;
+
+  const confirmed = window.confirm(`Delete "${getDisplayName(classroom)}"? This cannot be undone.`);
+  if (!confirmed) return;
+
+  let deleted = false;
+  try {
+    deleted = workspaceService.deleteClassroom(classroomId);
+  } catch (error) {
+    console.error('[main] Failed to delete classroom:', error);
+  }
+
+  if (!deleted) {
+    window.alert('Something went wrong deleting this classroom. Please try again.');
+    return;
+  }
+
+  renderRoute(router.getCurrentRoute(), 'classroom-deleted');
 }
 
 const CLASSROOM_ROUTE_NAMES = [
@@ -1105,12 +1137,15 @@ function renderRoute(route, reason = 'unspecified') {
   if (classrooms.length === 0) {
     renderWelcomeView(appContainer, { onNewClassroom: handleNewClassroom, onJoinClassroom: handleJoinClassroom });
   } else {
-    renderHomeView(appContainer, {
+    renderPersonalHubView(appContainer, {
       classrooms,
+      currentUser,
       onSelectClassroom: (id) => router.navigate(`/classroom/${id}`),
       onNewClassroom: handleNewClassroom,
       onJoinClassroom: handleJoinClassroom,
+      onDeleteClassroom: handleDeleteClassroomFromHome,
       onOpenCurriculumManagement: () => router.navigate('/curriculum-management'),
+      onOpenTimetable: (classroomId) => router.navigate(`/classroom/${classroomId}/timetable`),
     });
   }
 }
