@@ -384,6 +384,16 @@ select:focus {
   background-color: rgba(14, 192, 226, 0.1);
 }
 
+/* Pill-shaped modifier — for icon+text actions that should read as a
+   standalone chip rather than a rectangular button (see the Personal
+   Hub's own "+ New Classroom"/"This Week"/"View Full Timetable"
+   buttons, matching the approved reference). Combined with an
+   existing variant class (.btn--ghost, etc.), not a replacement for
+   one. */
+.btn--pill {
+  border-radius: var(--radius-pill);
+}
+
 .btn--danger {
   border-color: var(--color-danger);
   color: var(--color-danger);
@@ -552,21 +562,30 @@ select:focus-visible,
 
 /*
  * Personal Hub (ui/views/PersonalHubView.js) — the teacher landing page
- * at #/teacher. Hierarchy: Profile -> My Week -> My Classrooms -> Other
- * Classrooms -> My Schools & Programs -> Management, each its own
- * .hub-section so spacing between questions stays consistent (mirrors
- * .dashboard-view__group's own "whitespace carries grouping" rhythm).
+ * at #/teacher, matching the approved visual reference (references/
+ * Personal Profile view.png). Section order: Profile -> Today ->
+ * My Classrooms/Other Classrooms -> My Schools & Programs -> My Week ->
+ * Management. Every section is its own white .hub-section card (the
+ * reference's own "each question gets its own box" language); a
+ * .hub-two-col row either holds two full .hub-section cards side by
+ * side (My Classrooms/Other Classrooms) or, inside a single
+ * .hub-section, two plain sub-columns (Schools/Learning Programmes).
  */
 .personal-hub {
-  max-width: 1100px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--space-5);
 }
 
 .hub-section {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--elevation-card);
+  padding: var(--space-5);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -580,37 +599,62 @@ select:focus-visible,
   gap: var(--space-3);
 }
 
+.hub-section__title-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-muted);
+}
+
 .hub-section__title {
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   font-weight: var(--font-weight-black);
+  color: var(--color-ink);
   margin: 0;
 }
 
 .hub-section__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-3);
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* A two-column row — either two sibling .hub-section cards
+   (My Classrooms/Other Classrooms) or, inside one .hub-section, two
+   plain sub-columns (Schools/Learning Programmes). Collapses to a
+   single column below 960px, matching every other multi-column
+   surface in this app (see the shared @media (max-width: 960px)
+   convention used throughout this file). */
+.hub-two-col {
+  display: grid;
+  gap: var(--space-5);
+}
+.hub-two-col--classrooms {
+  grid-template-columns: 2fr 1fr;
+}
+.hub-two-col--orgs {
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-6);
+}
+.hub-two-col--single {
+  grid-template-columns: 1fr;
 }
 
 /* Profile header */
-.hub-profile {
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  box-shadow: var(--elevation-card);
-  padding: var(--space-5);
+.hub-profile__main {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: var(--space-4);
 }
 .hub-profile__identity {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-4);
 }
 .hub-profile__avatar {
-  width: 56px;
-  height: 56px;
+  width: 72px;
+  height: 72px;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
@@ -622,27 +666,46 @@ select:focus-visible,
   background-color: var(--color-primary-deep);
   color: var(--color-on-primary-deep);
   font-weight: var(--font-weight-black);
-  font-size: 1.25rem;
+  font-size: 1.6rem;
 }
 .hub-profile__name {
   margin: 0;
-  font-size: 1.35rem;
+  font-size: 1.55rem;
   font-weight: var(--font-weight-black);
 }
 .hub-profile__roles {
-  margin: 0.2rem 0 0;
+  margin: 0.25rem 0 0;
   color: var(--color-primary-strong);
   font-weight: var(--font-weight-medium);
-  font-size: 0.9rem;
+  font-size: 0.92rem;
 }
 .hub-profile__affiliations {
-  margin: 0.2rem 0 0;
+  margin: 0.15rem 0 0;
   color: var(--color-muted);
   font-size: 0.85rem;
 }
+.hub-profile__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+/* A generic tinted pill — colored via inline style (see
+   PersonalHubView.js's own tint() helper, the same color-mix
+   wash/label technique --palette-*-wash/-label already use), since
+   the exact set of roles/classroom colors shown here is runtime data,
+   not a fixed set of CSS classes. */
+.hub-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-pill);
+  padding: 0.3rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: var(--font-weight-bold);
+}
 .hub-profile__stats {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: var(--space-3);
 }
 .hub-stat-tile {
@@ -650,152 +713,357 @@ select:focus-visible,
   border-radius: var(--radius-control);
   padding: var(--space-3);
   display: flex;
-  flex-direction: column;
   align-items: center;
-  text-align: center;
-  gap: 0.15rem;
+  gap: var(--space-3);
+}
+.hub-stat-tile__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 .hub-stat-tile__value {
-  font-size: 1.3rem;
+  font-size: 1.25rem;
   font-weight: var(--font-weight-black);
   color: var(--color-ink);
+  line-height: 1.15;
 }
 .hub-stat-tile__label {
+  font-size: 0.82rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+}
+.hub-stat-tile__sublabel {
   font-size: 0.72rem;
   color: var(--color-muted);
 }
 
-/* My Week */
-.hub-week__nav {
+/* Today strip */
+.hub-today-strip-wrapper {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  flex-wrap: wrap;
+  gap: var(--space-2);
 }
-.hub-week__nav-button {
-  width: 36px;
-  height: 36px;
-  padding: 0;
+.hub-today-strip__nav {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  background-color: var(--color-surface);
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+.hub-today-strip__nav:hover {
+  border-color: var(--color-primary);
+  color: var(--color-ink);
+}
+.hub-today-strip {
+  flex: 1;
+  display: flex;
+  gap: var(--space-3);
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  padding-bottom: var(--space-1);
+  min-width: 0;
+}
+.hub-today-card {
+  position: relative;
   flex-shrink: 0;
+  scroll-snap-align: start;
+  min-width: 210px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: var(--space-3) var(--space-6) var(--space-3) var(--space-3);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+.hub-today-card:hover {
+  border-color: var(--color-primary);
+}
+.hub-today-card__chevron {
+  position: absolute;
+  right: var(--space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-muted);
+}
+.hub-today-card__top {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.hub-today-card__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.hub-today-card__time {
+  font-weight: var(--font-weight-bold);
+  font-size: 0.82rem;
+  color: var(--color-ink);
+}
+.hub-today-card__subject {
+  font-weight: var(--font-weight-black);
+  font-size: 1rem;
+  color: var(--color-ink);
+}
+.hub-today-card__meta,
+.hub-today-card__school {
+  font-size: 0.78rem;
+  color: var(--color-muted);
+}
+.hub-today-helper {
+  text-align: center;
+  color: var(--color-muted);
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+/* My Week (full grid) */
+.hub-week__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.hub-week__subheader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
 }
 .hub-week__range {
   font-weight: var(--font-weight-medium);
   color: var(--color-ink);
   font-size: 0.9rem;
 }
+.hub-week__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.hub-week__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--color-muted);
+}
+.hub-week__legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
 .hub-week__footer {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
 }
-/* A horizontally-scrolling row of day columns — deliberately the SAME
-   layout at every width, not a grid that gets squeezed on mobile: a
-   teacher's week rarely fits a phone's width no matter how narrow the
-   columns get, so scrolling sideways through real, tappable day
-   columns is the genuinely usable mobile behavior here, and it works
-   identically well on desktop. */
-.hub-week-grid {
-  display: flex;
-  gap: var(--space-3);
+.hub-week-table-wrapper {
   overflow-x: auto;
   padding-bottom: var(--space-2);
-  scroll-snap-type: x proximity;
 }
-.hub-week-grid__day {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  min-width: 150px;
-  scroll-snap-align: start;
+.hub-week-table {
+  display: grid;
+  gap: 0.4rem;
 }
-.hub-week-grid__day-header {
-  font-size: 0.72rem;
+.hub-week-table__day-header {
+  text-align: center;
+  font-size: 0.7rem;
   font-weight: var(--font-weight-bold);
   color: var(--color-muted);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  padding: 0.35rem 0.2rem;
+}
+.hub-week-table__day-header--today {
+  color: var(--color-primary-strong);
+  background-color: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
+  border-radius: var(--radius-control);
+}
+.hub-week-table__time {
+  font-size: 0.72rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 0.5rem;
+  white-space: nowrap;
+}
+.hub-week-table__cell {
+  min-height: 3.4rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: 0.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  background-color: var(--color-bg);
+}
+.hub-week-table__cell--today {
+  border-color: var(--color-primary);
+  border-width: 2px;
+}
+.hub-week-table__empty {
+  margin: auto;
+  color: var(--color-muted);
+  font-size: 0.85rem;
 }
 .hub-week-entry {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.15rem;
-  background-color: var(--palette-learn-wash);
-  border: 1px solid var(--color-border);
+  gap: 0.1rem;
+  border: none;
   border-radius: var(--radius-control);
-  padding: var(--space-2) var(--space-3);
+  padding: 0.3rem 0.45rem;
   text-align: left;
   cursor: pointer;
   font: inherit;
   width: 100%;
 }
-.hub-week-entry:hover {
-  border-color: var(--color-primary);
-}
 .hub-week-entry__subject {
   font-weight: var(--font-weight-bold);
-  font-size: 0.85rem;
-  color: var(--color-ink);
+  font-size: 0.74rem;
 }
 .hub-week-entry__context {
-  font-size: 0.72rem;
-  color: var(--color-muted);
+  font-size: 0.66rem;
+  opacity: 0.85;
 }
 
 /* My Schools & Programs */
+.hub-org-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.hub-org-column__title {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: var(--font-weight-black);
+  color: var(--color-ink);
+}
+/* Sits directly under .hub-org-column__title — pulled up against the
+   parent's own flex `gap` (see .hub-org-column) so it reads as one
+   caption to that heading, not a separately-spaced paragraph. */
+.hub-org-column__caption {
+  margin: -0.55rem 0 0;
+  font-size: 0.75rem;
+  color: var(--color-muted);
+}
 .hub-org-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: var(--space-3);
 }
 .hub-org-card {
-  background-color: var(--color-surface);
+  background-color: var(--color-bg);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  box-shadow: var(--elevation-card);
-  padding: var(--space-4);
-}
-.hub-org-card--programme {
-  background-color: var(--palette-growth-wash);
-}
-.hub-org-card__badge {
-  display: inline-block;
-  font-size: 0.68rem;
-  font-weight: var(--font-weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--palette-growth-label);
-  margin-bottom: 0.35rem;
+  border-radius: var(--radius-control);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
 }
 .hub-org-card__name {
-  margin: 0 0 0.25rem;
-  font-size: 1rem;
+  margin: 0;
+  font-size: 0.92rem;
   font-weight: var(--font-weight-black);
+  color: var(--color-ink);
 }
 .hub-org-card__meta {
   margin: 0;
   color: var(--color-muted);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
+}
+.hub-org-card__status {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.1rem 0 0;
+  color: var(--color-muted);
+  font-size: 0.76rem;
+}
+.hub-org-card__status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--color-success);
+  flex-shrink: 0;
 }
 
 /* Management */
-.hub-management__link {
-  align-self: flex-start;
-  padding-left: 0;
+.hub-management__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: var(--space-3);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+.hub-management__row:hover {
+  border-color: var(--color-primary);
+}
+.hub-management__text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.hub-management__row-title {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+  font-size: 0.95rem;
+}
+.hub-management__row-description {
+  font-size: 0.82rem;
+  color: var(--color-muted);
+}
+.hub-management__chevron {
+  flex-shrink: 0;
+  color: var(--color-muted);
+}
+
+@media (max-width: 960px) {
+  .hub-two-col,
+  .hub-two-col--classrooms,
+  .hub-two-col--orgs {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
-  .hub-profile__identity {
-    align-items: flex-start;
+  .hub-section {
+    padding: var(--space-4);
   }
   .hub-profile__stats {
-    grid-template-columns: repeat(3, 1fr);
-    gap: var(--space-2);
+    grid-template-columns: repeat(2, 1fr);
   }
   .hub-stat-tile {
     padding: var(--space-2);
+    gap: var(--space-2);
   }
   .hub-stat-tile__value {
     font-size: 1.1rem;
@@ -925,6 +1193,59 @@ select:focus-visible,
   margin: 0;
   color: var(--color-muted);
   font-size: 0.9rem;
+}
+
+/* "YOU TEACH" — this uid's real subjects in this classroom (see
+   services/personalHubService.js's getSubjectsTaughtInClassroom()).
+   Only ever rendered when there's at least one real subject to show —
+   see ui/components/ClassroomCard.js's own subjectsTaught prop. */
+.classroom-card__subjects {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-top: 0.6rem;
+}
+.classroom-card__subjects-label {
+  font-size: 0.68rem;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.05em;
+  color: var(--color-muted);
+}
+.classroom-card__subjects-value {
+  font-size: 0.88rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+}
+
+/* The reference's own explicit "Open Classroom →"/"View Classroom →"
+   affordance line at the bottom of a card — see
+   ui/components/ClassroomCard.js's own actionLabel prop. */
+.classroom-card__action {
+  display: block;
+  margin-top: 0.6rem;
+  color: var(--color-primary-strong);
+  font-weight: var(--font-weight-bold);
+  font-size: 0.85rem;
+}
+
+/* A colored initials badge for a classroom the teacher manages (see
+   ui/views/PersonalHubView.js's own buildMonogramBadge()) — a rounded
+   SQUARE, deliberately distinct from the circular .icon-badge used
+   for a neutral/"other" classroom, a school, or a stat tile, so the
+   two kinds of card read apart from each other at a glance. Colored
+   via inline style (PersonalHubView.js's tint() helper) since the
+   exact color is runtime data, cycling a fixed palette per classroom. */
+.hub-monogram {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-control);
+  font-weight: var(--font-weight-black);
+  font-size: 0.85rem;
+  margin-bottom: var(--space-2);
+  flex-shrink: 0;
 }
 
 /* Modal (New Classroom) */
@@ -13661,6 +13982,28 @@ button.wizard-checklist__row:hover {
   font-size: 0.8rem;
   color: var(--color-ink);
   background: var(--color-surface);
+}
+
+/* Subject + "Taught by" stacked together for one period cell — see
+   ui/views/TimetableView.js's own renderPeriodCellControls(). */
+.manage-timetable__cell-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.manage-timetable__teacher-select {
+  width: 100%;
+  min-width: 128px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: var(--space-2);
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  background: var(--color-surface);
+}
+.manage-timetable__teacher-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .manage-timetable-grid {

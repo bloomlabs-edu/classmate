@@ -27,7 +27,7 @@
 
 import { generateId } from '../utils/idGenerator.js';
 
-export function createTeachingSlot({ id, date, weekday, periodNumber, duration, subjectId } = {}) {
+export function createTeachingSlot({ id, date, weekday, periodNumber, duration, subjectId, teacherUid = null } = {}) {
   return {
     id: id || generateId(),
     date, // ISO date string, e.g. "2026-10-14"
@@ -35,5 +35,13 @@ export function createTeachingSlot({ id, date, weekday, periodNumber, duration, 
     periodNumber,
     duration, // minutes; becomes a Lesson's own estimatedMinutes at generation time
     subjectId, // the canonical subjectId (see services/subjectIdentityService.js) this slot is taught in
+    // Carried straight through from the recurring models/Timetable.js
+    // slot this concrete occurrence was derived from (see
+    // services/timetableService.js's getConcreteSlotsForDateRange()) —
+    // null when that recurring slot has no "Taught by" assignment yet.
+    // Powers services/personalHubService.js's own Today/My Week
+    // filtering; unrelated to Planner/Lesson generation, which never
+    // reads this field.
+    teacherUid,
   };
 }

@@ -42,12 +42,32 @@ export function createTimetablePeriod({ periodNumber, startTime, endTime } = {})
   };
 }
 
-/** One recurring weekly assignment: this weekday's this period is this subject. */
-export function createTimetableSlot({ weekday, periodNumber, subjectId } = {}) {
+/**
+ * One recurring weekly assignment: this weekday's this period is this
+ * subject.
+ *
+ * `teacherUid` — nullable, the real Firebase Auth uid of whichever
+ * classroom member (see models/Classroom.js's own `members` map)
+ * actually teaches this specific period, distinct from `subjectId`
+ * itself. Added so "what does THIS teacher teach in this classroom"
+ * (see services/personalHubService.js's getSubjectsTaughtInClassroom())
+ * can be answered from real, explicitly-set data rather than guessed —
+ * a classroom's `timetable` is one shared weekly pattern read by every
+ * member (owner, every co-teacher, every viewer), and before this
+ * field existed nothing distinguished which specific member actually
+ * teaches which period. `null` (the default, and the value on every
+ * slot that predates this field) means "not yet assigned" — a real,
+ * legitimate state, never backfilled with a guess; see
+ * ui/views/TimetableView.js's own Manage Timetable "Taught by" picker
+ * for the one place this is ever set, alongside the existing subject
+ * picker for that same period.
+ */
+export function createTimetableSlot({ weekday, periodNumber, subjectId, teacherUid = null } = {}) {
   return {
     weekday, // 0 (Sun) - 6 (Sat)
     periodNumber,
     subjectId, // canonical subjectId — see services/subjectIdentityService.js
+    teacherUid,
   };
 }
 

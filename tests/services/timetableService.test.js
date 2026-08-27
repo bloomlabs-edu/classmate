@@ -58,6 +58,55 @@ test('removeSlot: clears a period back to "no class"', () => {
   assert.equal(timetableService.getSlot(classroom, 2, 3), null);
 });
 
+test('upsertSlot: a brand-new slot defaults teacherUid to null when none is given — not yet assigned, never guessed', () => {
+  const classroom = classroomWithPattern();
+  timetableService.upsertSlot(classroom, { weekday: 6, periodNumber: 1, subjectId: 'art' });
+  assert.equal(timetableService.getSlot(classroom, 6, 1).teacherUid, null);
+});
+
+test('upsertSlot: persists a real teacherUid on a new slot', () => {
+  const classroom = classroomWithPattern();
+  timetableService.upsertSlot(classroom, { weekday: 6, periodNumber: 1, subjectId: 'art', teacherUid: 'teacher-a' });
+  assert.equal(timetableService.getSlot(classroom, 6, 1).teacherUid, 'teacher-a');
+});
+
+test('upsertSlot: updating an existing slot\'s subject without passing teacherUid leaves its own teacherUid untouched', () => {
+  const classroom = classroomWithPattern();
+  timetableService.upsertSlot(classroom, { weekday: 2, periodNumber: 3, subjectId: 'science', teacherUid: 'teacher-a' });
+  timetableService.upsertSlot(classroom, { weekday: 2, periodNumber: 3, subjectId: 'english' });
+  const slot = timetableService.getSlot(classroom, 2, 3);
+  assert.equal(slot.subjectId, 'english');
+  assert.equal(slot.teacherUid, 'teacher-a');
+});
+
+test('upsertSlot: explicitly passing teacherUid: null clears an existing assignment', () => {
+  const classroom = classroomWithPattern();
+  timetableService.upsertSlot(classroom, { weekday: 2, periodNumber: 3, subjectId: 'science', teacherUid: 'teacher-a' });
+  timetableService.upsertSlot(classroom, { weekday: 2, periodNumber: 3, subjectId: 'science', teacherUid: null });
+  assert.equal(timetableService.getSlot(classroom, 2, 3).teacherUid, null);
+});
+
+test('getSlotsForTeacher: returns only the real slots explicitly assigned to this uid, across every weekday', () => {
+  const classroom = classroomWithPattern();
+  timetableService.upsertSlot(classroom, { weekday: 1, periodNumber: 2, subjectId: 'mathematics', teacherUid: 'teacher-a' });
+  timetableService.upsertSlot(classroom, { weekday: 3, periodNumber: 2, subjectId: 'mathematics', teacherUid: 'teacher-a' });
+  timetableService.upsertSlot(classroom, { weekday: 2, periodNumber: 3, subjectId: 'science', teacherUid: 'teacher-b' });
+
+  const slotsForA = timetableService.getSlotsForTeacher(classroom, 'teacher-a');
+  assert.equal(slotsForA.length, 2);
+  assert.ok(slotsForA.every((slot) => slot.subjectId === 'mathematics'));
+
+  // teacher-b's own slot is real too, but never leaks into teacher-a's list.
+  const slotsForB = timetableService.getSlotsForTeacher(classroom, 'teacher-b');
+  assert.equal(slotsForB.length, 1);
+  assert.equal(slotsForB[0].subjectId, 'science');
+});
+
+test('getSlotsForTeacher: a classroom where no slot has been assigned to this uid yet returns empty, never a guess', () => {
+  const classroom = classroomWithPattern(); // real slots exist, but none carry a teacherUid
+  assert.deepEqual(timetableService.getSlotsForTeacher(classroom, 'teacher-a'), []);
+});
+
 test('getConcreteSlotsForDateRange: preloads the real subject for every real date in range, using the classroom\'s actual pattern', () => {
   const classroom = classroomWithPattern();
   // 2026-08-24 is a Monday; range covers Mon-Sun that week.

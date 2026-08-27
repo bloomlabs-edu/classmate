@@ -57,23 +57,48 @@ export function getSlotsForWeekday(classroom, weekday) {
     .sort((a, b) => a.periodNumber - b.periodNumber);
 }
 
-/** Sets (or replaces) the subject taught in one (weekday, periodNumber) slot. */
-export function upsertSlot(classroom, { weekday, periodNumber, subjectId }) {
+/**
+ * Sets (or replaces) the subject taught in one (weekday, periodNumber)
+ * slot, and optionally which classroom member teaches it (`teacherUid`
+ * — see models/Timetable.js's own doc comment on why this exists).
+ * Omitting `teacherUid` leaves an existing slot's own value untouched
+ * (rather than silently clearing it to null) — this keeps every
+ * pre-existing call site that only ever managed subjectId (e.g. a
+ * future automated migration, or any caller not yet updated for the
+ * "Taught by" picker) from accidentally un-assigning a teacher it
+ * never meant to touch.
+ */
+export function upsertSlot(classroom, { weekday, periodNumber, subjectId, teacherUid }) {
   const timetable = ensureTimetable(classroom);
   const existing = timetable.slots.find((slot) => slot.weekday === weekday && slot.periodNumber === periodNumber);
   if (existing) {
     existing.subjectId = subjectId;
+    if (teacherUid !== undefined) existing.teacherUid = teacherUid;
   } else {
-    timetable.slots.push(createTimetableSlot({ weekday, periodNumber, subjectId }));
+    timetable.slots.push(createTimetableSlot({ weekday, periodNumber, subjectId, teacherUid: teacherUid ?? null }));
   }
   return timetable;
 }
 
-/** Clears the subject from one (weekday, periodNumber) — that period becomes "no class" ("—" in the UI). */
+/** Clears the subject from one (weekday, periodNumber) — that period becomes "no class" ("—" in the UI). Also clears any teacherUid on it, since "no class" has no one teaching it. */
 export function removeSlot(classroom, { weekday, periodNumber }) {
   const timetable = ensureTimetable(classroom);
   timetable.slots = timetable.slots.filter((slot) => !(slot.weekday === weekday && slot.periodNumber === periodNumber));
   return timetable;
+}
+
+/**
+ * Every recurring slot, across every weekday, that `teacherUid`
+ * specifically teaches — the real, explicit signal
+ * services/personalHubService.js's getSubjectsTaughtInClassroom() uses
+ * to answer "what does this teacher teach in this classroom," now that
+ * slots can carry that assignment (see models/Timetable.js). A slot
+ * whose teacherUid is still null/unset (not yet assigned via the
+ * "Taught by" picker) correctly never matches any uid here — this
+ * never guesses.
+ */
+export function getSlotsForTeacher(classroom, teacherUid) {
+  return ensureTimetable(classroom).slots.filter((slot) => slot.teacherUid === teacherUid);
 }
 
 /** A stable, deterministic id for the concrete TeachingSlot at one real date+period — so a Lesson's own teachingSlotId stays consistent every time this same (classroom, date, period) is recomputed, with no separate persistence needed for the concrete occurrence itself. */
@@ -112,6 +137,7 @@ export function getConcreteSlotsForDateRange(classroom, startDateKey, endDateKey
           periodNumber: period.periodNumber,
           duration: minutesBetween(period.startTime, period.endTime),
           subjectId: slot.subjectId,
+          teacherUid: slot.teacherUid ?? null,
         })
       );
     }

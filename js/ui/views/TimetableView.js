@@ -43,6 +43,8 @@ import * as learningRecordTeacherService from '../../services/learningRecordTeac
 import * as workspaceService from '../../services/workspaceService.js';
 import * as resourceService from '../../services/resourceService.js';
 import * as subjectIdentityService from '../../services/subjectIdentityService.js';
+import * as memberService from '../../services/memberService.js';
+import { MEMBER_ROLES } from '../../config/memberRoles.js';
 import { createTimetablePeriod, createTimetableSlot } from '../../models/Timetable.js';
 import { hydrateConceptRecordsForConcepts } from '../../services/conceptRecordHydrationService.js';
 import { getFeedbackEligibleConceptIds, resetLessonForUnitChange } from '../../models/Lesson.js';
@@ -1977,12 +1979,24 @@ export async function renderTimetableView(container, { classroom, preserveState 
     // Deep-copied working draft — the real classroom.timetable is
     // never touched until Save succeeds.
     let draftPeriods = timetableService.getPeriods(classroom).map((period) => ({ ...period }));
-    const draftSlots = new Map(); // `${weekday}_${periodNumber}` -> subjectId
+    // `${weekday}_${periodNumber}` -> { subjectId, teacherUid }. teacherUid
+    // (see models/Timetable.js's own doc comment) is who actually teaches
+    // this period — carried alongside subjectId here so Save can persist
+    // both together, the same "one draft entry per cell" shape as before.
+    const draftSlots = new Map();
     WEEKDAY_ORDER.forEach((weekday) => {
       timetableService.getSlotsForWeekday(classroom, weekday).forEach((slot) => {
-        draftSlots.set(`${weekday}_${slot.periodNumber}`, slot.subjectId);
+        draftSlots.set(`${weekday}_${slot.periodNumber}`, { subjectId: slot.subjectId, teacherUid: slot.teacherUid ?? null });
       });
     });
+
+    // Owners/teachers only — a Viewer has no teaching permissions (see
+    // config/memberRoles.js), so offering them in "who teaches this
+    // period" would let a slot claim a member who structurally can't be
+    // teaching it.
+    const assignableMembers = memberService
+      .listMembers(classroom)
+      .filter((member) => member.role === MEMBER_ROLES.OWNER || member.role === MEMBER_ROLES.TEACHER);
 
     let mobileActiveWeekday = WEEKDAY_ORDER[0];
     let validationErrors = [];
@@ -2091,7 +2105,7 @@ export async function renderTimetableView(container, { classroom, preserveState 
       return wrap;
     }
 
-    function renderSubjectSelect(weekday, periodNumber) {
+    function renderSubjectSelect(weekday, periodNumber, onSubjectChange) {
       const select = document.createElement('select');
       select.className = 'manage-timetable__subject-select';
       select.setAttribute('aria-label', `${WEEKDAY_LABELS[weekday]} period ${periodNumber} subject`);
@@ -2109,13 +2123,75 @@ export async function renderTimetableView(container, { classroom, preserveState 
       });
 
       const key = `${weekday}_${periodNumber}`;
-      select.value = draftSlots.get(key) || '';
+      select.value = draftSlots.get(key)?.subjectId || '';
       select.addEventListener('change', () => {
-        if (select.value) draftSlots.set(key, select.value);
-        else draftSlots.delete(key);
+        if (select.value) {
+          const existing = draftSlots.get(key);
+          draftSlots.set(key, { subjectId: select.value, teacherUid: existing?.teacherUid ?? null });
+        } else {
+          // "No class" — nobody teaches a period that doesn't exist,
+          // so the teacher assignment goes with it.
+          draftSlots.delete(key);
+        }
+        onSubjectChange?.();
       });
 
       return select;
+    }
+
+    /**
+     * "Taught by" — who actually teaches this specific period (see
+     * models/Timetable.js's own doc comment on `teacherUid`). Only
+     * rendered/enabled once a subject is chosen for this cell — a
+     * period with "no class" has no one to assign. Options are this
+     * classroom's own real owner/teacher members (assignableMembers,
+     * built above from memberService.listMembers()), never free text,
+     * so a slot's teacherUid always resolves to a real member.
+     */
+    function renderTeacherSelect(weekday, periodNumber) {
+      const select = document.createElement('select');
+      select.className = 'manage-timetable__teacher-select';
+      select.setAttribute('aria-label', `${WEEKDAY_LABELS[weekday]} period ${periodNumber} taught by`);
+
+      const key = `${weekday}_${periodNumber}`;
+      const entry = draftSlots.get(key);
+      select.disabled = !entry;
+
+      const unassignedOption = document.createElement('option');
+      unassignedOption.value = '';
+      unassignedOption.textContent = entry ? 'Taught by…' : '—';
+      select.appendChild(unassignedOption);
+
+      assignableMembers.forEach((member) => {
+        const option = document.createElement('option');
+        option.value = member.uid;
+        option.textContent = member.displayName;
+        select.appendChild(option);
+      });
+
+      select.value = entry?.teacherUid || '';
+      select.addEventListener('change', () => {
+        const current = draftSlots.get(key);
+        if (current) draftSlots.set(key, { ...current, teacherUid: select.value || null });
+      });
+
+      return select;
+    }
+
+    /** The subject picker plus its own "Taught by" picker for one (weekday, periodNumber) cell — kept together so every call site gets both controls, not just the subject one. */
+    function renderPeriodCellControls(weekday, periodNumber) {
+      const wrap = document.createElement('div');
+      wrap.className = 'manage-timetable__cell-controls';
+      const subjectSelect = renderSubjectSelect(weekday, periodNumber, () => {
+        // Re-render so the "Taught by" select's own enabled/disabled
+        // state and options immediately reflect the subject that was
+        // just picked (or cleared) — same as every other draft edit
+        // here (see renderTimeInputs()'s own change handlers above).
+        revalidate();
+        renderBox();
+      });
+      wrap.append(subjectSelect, renderTeacherSelect(weekday, periodNumber));
+      return wrap;
     }
 
     function renderRemovePeriodButton(periodNumber) {
@@ -2177,7 +2253,7 @@ export async function renderTimetableView(container, { classroom, preserveState 
 
           WEEKDAY_ORDER.forEach((weekday) => {
             const cell = document.createElement('td');
-            cell.appendChild(renderSubjectSelect(weekday, period.periodNumber));
+            cell.appendChild(renderPeriodCellControls(weekday, period.periodNumber));
             row.appendChild(cell);
           });
 
@@ -2222,7 +2298,7 @@ export async function renderTimetableView(container, { classroom, preserveState 
           card.className = 'manage-timetable-mobile__card';
 
           card.appendChild(renderTimeInputs(period));
-          card.appendChild(renderSubjectSelect(mobileActiveWeekday, period.periodNumber));
+          card.appendChild(renderPeriodCellControls(mobileActiveWeekday, period.periodNumber));
 
           const footer = document.createElement('div');
           footer.className = 'manage-timetable-mobile__card-footer';
@@ -2256,8 +2332,8 @@ export async function renderTimetableView(container, { classroom, preserveState 
         const nextSlots = [];
         draftPeriods.forEach((period) => {
           WEEKDAY_ORDER.forEach((weekday) => {
-            const subjectId = draftSlots.get(`${weekday}_${period.periodNumber}`);
-            if (subjectId) nextSlots.push(createTimetableSlot({ weekday, periodNumber: period.periodNumber, subjectId }));
+            const entry = draftSlots.get(`${weekday}_${period.periodNumber}`);
+            if (entry) nextSlots.push(createTimetableSlot({ weekday, periodNumber: period.periodNumber, subjectId: entry.subjectId, teacherUid: entry.teacherUid }));
           });
         });
         classroom.timetable.slots = nextSlots;

@@ -33,7 +33,18 @@
 // card instances instead of module-level renders of the same one.
 let closeActiveMenu = null;
 
-export function createClassroomCardElement({ displayName, subtitle, studentCount, memberCount, onClick, isOwner, onDeleteClassroom }) {
+export function createClassroomCardElement({
+  displayName,
+  subtitle,
+  studentCount,
+  memberCount,
+  onClick,
+  isOwner,
+  onDeleteClassroom,
+  badge,
+  actionLabel = 'Open Classroom',
+  subjectsTaught,
+}) {
   const card = document.createElement('div');
   card.className = 'classroom-card';
 
@@ -42,6 +53,17 @@ export function createClassroomCardElement({ displayName, subtitle, studentCount
   openButton.className = 'classroom-card__open-button';
   openButton.setAttribute('aria-label', `Open ${displayName}`);
   openButton.addEventListener('click', () => onClick?.());
+
+  // Optional per-card visual identifier (e.g. a colored monogram or a
+  // neutral icon) — a plain DOM node supplied by the caller (see
+  // ui/views/PersonalHubView.js), which already knows whether this is
+  // a classroom the teacher manages (gets a colored monogram) or one
+  // they're just a member of (gets a neutral icon). This component
+  // stays props-only either way — it never decides the badge's own
+  // look, only where it sits.
+  if (badge) {
+    openButton.appendChild(badge);
+  }
 
   const title = document.createElement('h2');
   title.className = 'classroom-card__name';
@@ -59,6 +81,40 @@ export function createClassroomCardElement({ displayName, subtitle, studentCount
   meta.className = 'classroom-card__meta';
   meta.textContent = `${studentCount} Student${studentCount === 1 ? '' : 's'} · ${memberCount} Teacher${memberCount === 1 ? '' : 's'}`;
   openButton.appendChild(meta);
+
+  // "YOU TEACH" — this uid's own real subjects in this classroom (see
+  // services/personalHubService.js's getSubjectsTaughtInClassroom()).
+  // Omitted entirely, not shown as an empty/placeholder block, when
+  // there's nothing real to report — a classroom this uid hasn't been
+  // assigned any periods on yet (via Manage Timetable's "Taught by"
+  // picker) should stay silent about it, never imply "you teach
+  // nothing here."
+  if (subjectsTaught && subjectsTaught.length > 0) {
+    const subjectsBlock = document.createElement('div');
+    subjectsBlock.className = 'classroom-card__subjects';
+
+    const label = document.createElement('span');
+    label.className = 'classroom-card__subjects-label';
+    label.textContent = 'YOU TEACH';
+    subjectsBlock.appendChild(label);
+
+    const value = document.createElement('span');
+    value.className = 'classroom-card__subjects-value';
+    value.textContent = subjectsTaught.join(' · ');
+    subjectsBlock.appendChild(value);
+
+    openButton.appendChild(subjectsBlock);
+  }
+
+  // The reference's own explicit "Open Classroom →" / "View Classroom
+  // →" affordance line — purely a visual cue restating what the whole
+  // button already does; it's inside openButton, not a second click
+  // target, so keyboard/screen-reader behavior is unchanged from
+  // before this was added.
+  const action = document.createElement('span');
+  action.className = 'classroom-card__action';
+  action.textContent = `${actionLabel} →`;
+  openButton.appendChild(action);
 
   card.appendChild(openButton);
 
