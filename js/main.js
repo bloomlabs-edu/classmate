@@ -838,7 +838,15 @@ function renderRoute(route, reason = 'unspecified') {
         onNavigateOpenWork: (path) => router.navigate(path),
       });
     } else if (route.name === 'timetable') {
-      renderTimetableView(appContainer, { classroom, currentUser });
+      // Phase W — a classroom-save-triggered remount (reason ===
+      // 'workspace-init-onchange', fired by workspaceService's live
+      // Firestore listener any time this classroom document changes,
+      // including from Timetable's own writes) must not close whatever
+      // period-detail panel the teacher currently has open. Every other
+      // reason (a genuine 'url-route-changed' navigation, sign-in,
+      // etc.) still gets TimetableView's normal clean-slate mount — see
+      // that view's own renderTimetableView() header comment.
+      renderTimetableView(appContainer, { classroom, currentUser, preserveState: reason === 'workspace-init-onchange' });
     } else if (route.name === 'assessments') {
       renderAssessmentManagementView(appContainer, {
         classroom,

@@ -59,14 +59,32 @@ function isNarrowViewport() {
   return typeof window !== 'undefined' && window.innerWidth <= 640;
 }
 
-export async function renderTimetableView(container, { classroom }) {
-  const state = {
-    viewMode: isNarrowViewport() ? 'day' : 'week', // 'week' | 'day' | 'calendar' (calendar aliases to week — see header comment)
-    anchorDateKey: getTodayDateKey(),
-    lessonsByTeachingSlotId: {},
-    selectedTeachingSlotId: null,
-    activeDetailTab: 'overview', // 'overview' | 'concepts' | 'resources' | 'reflection' — Phase P
-  };
+/**
+ * Phase W — survives across renderTimetableView() calls so a
+ * classroom-save-triggered remount (see main.js's own
+ * workspace-init-onchange, fired by workspaceService's live Firestore
+ * listener any time this classroom document changes — including from
+ * this view's own writes, e.g. creating a concept) doesn't blow away
+ * whatever period-detail panel the teacher currently has open. Only
+ * ever read/written by renderTimetableView() below via its
+ * `preserveState` param — a fresh, genuine navigation to Timetable
+ * (main.js's own 'url-route-changed') still gets the original clean-
+ * slate defaults, matching this view's existing behavior.
+ */
+let preservedState = null; // { classroomId, state } | null
+
+export async function renderTimetableView(container, { classroom, preserveState = false }) {
+  const state =
+    preserveState && preservedState && preservedState.classroomId === classroom.id
+      ? preservedState.state
+      : {
+          viewMode: isNarrowViewport() ? 'day' : 'week', // 'week' | 'day' | 'calendar' (calendar aliases to week — see header comment)
+          anchorDateKey: getTodayDateKey(),
+          lessonsByTeachingSlotId: {},
+          selectedTeachingSlotId: null,
+          activeDetailTab: 'overview', // 'overview' | 'concepts' | 'resources' | 'reflection' — Phase P
+        };
+  preservedState = { classroomId: classroom.id, state };
 
   /** Re-renders against the currently visible range's own real, already-loaded data — no new fetch. Shared by every interaction that only changes selection/tab state, never lesson data itself (period-card click, tab click). */
   function rerenderCurrentRange() {
