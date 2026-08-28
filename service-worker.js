@@ -54,7 +54,7 @@ self.addEventListener("notificationclick", (event) => {
 // clients invalidate the previous application cache (see the
 // activate handler below, which already deletes any cache whose name
 // no longer matches this one).
-const CACHE_NAME = "classmate-v1.6";
+const CACHE_NAME = "classmate-v1.7";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -111,8 +111,22 @@ self.addEventListener("fetch", (event) => {
   // successful fetch, so offline behavior (the .catch() fallback
   // below) stays exactly as capable as before; only the online,
   // network-reachable path changed.
+  //
+  // { cache: "no-store" } on this fetch() is load-bearing, not
+  // decorative — verified by reproduction, not assumed: a fetch()
+  // issued from inside a Service Worker still passes through the
+  // browser's own plain HTTP cache underneath it unless told not to.
+  // GitHub Pages serves every JS/CSS/HTML file with a 10-minute
+  // Cache-Control: max-age=600 with no per-file override available —
+  // without this option, this same "network-first" handler would
+  // still silently hand back a same-origin HTTP-cache hit instead of
+  // ever reaching the network, for up to that whole 10 minutes, even
+  // on a hard reload or a brand-new tab. "no-store" forces this exact
+  // fetch to skip both reading from AND writing to that HTTP cache —
+  // Cache Storage above is this handler's own, separate, deliberate
+  // cache; this option only bypasses the browser's other one underneath it.
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request, { cache: "no-store" })
       .then((response) => {
         if (response && response.status === 200) {
           const copy = response.clone();
