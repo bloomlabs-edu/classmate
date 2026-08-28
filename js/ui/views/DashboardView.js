@@ -436,7 +436,7 @@ export function renderDashboardView(container, props) {
  *
  * Tiers, matching how often a teacher actually reaches for each:
  *   - primary: used multiple times every single teaching day (Class
- *     Mode) — the one filled, strongest-elevation card.
+ *     Mode) — the strongest wash/border of the three, white surface.
  *   - daily: used frequently while preparing or managing classes
  *     (Classroom, Learning) — white surface, accent border and icon.
  *   - setup: occasional administrative workspace (Curriculum,
@@ -568,11 +568,11 @@ function renderPrimaryModulesSection({
  * (.primary-module-card--primary/--daily/--setup), never hardcoded by
  * module name here.
  *
- *   - primary (Class Mode): filled, solid accent color, strongest
- *     elevation — the one daily, time-critical action.
+ *   - primary (Class Mode): white surface, the strongest accent wash
+ *     and border of the three — the one daily, time-critical action.
  *   - daily (Classroom, Learning): white surface, accent-colored
  *     border and icon — frequently used, clearly present, but not
- *     competing with Class Mode's own filled treatment.
+ *     competing with Class Mode's own stronger wash.
  *   - setup (Curriculum, Assessments): white surface, neutral border,
  *     muted gray icon — occasional administrative tasks that should
  *     read as quieter without looking disabled. Per explicit
@@ -600,11 +600,11 @@ function createPrimaryModuleCard({ icon, label, description, onClick, tier, acce
   // so this is simply never set for that card.
   if (accentColor) card.style.setProperty('--module-accent', accentColor);
 
-  // Primary (Class Mode) keeps its existing bare icon directly on the
-  // solid filled background — a badge circle there would just be a
-  // duplicate colored shape on top of an already-colored card. Daily/
-  // setup tiers get an icon badge, matching the tinted-card language
-  // this restyle is otherwise built on.
+  // Primary (Class Mode) keeps its existing bare icon directly on its
+  // washed background — a badge circle there would just be a
+  // duplicate tinted shape on an already-tinted card. Daily/setup
+  // tiers get an icon badge, matching the tinted-card language this
+  // restyle is otherwise built on.
   if (tier === 'primary') {
     card.appendChild(createIcon(icon, { size: 28, strokeWidth: 1.75, className: 'primary-module-card__icon' }));
   } else {

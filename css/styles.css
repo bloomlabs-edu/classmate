@@ -4725,14 +4725,18 @@ button.wizard-checklist__row:hover {
  * quiet.
  */
 /*
- * A solid, saturated color block — not a pale wash — matching the
- * reference's "Attendance" treatment exactly: one confidently-colored
- * box earns attention precisely because every surface around it is
- * white. Text uses --color-on-brand (verified dark ink), the same
- * pattern already established for every other solid-brand-color fill
- * in this app (e.g. .btn--primary) — white text on TFI Cyan measures
- * 2.17:1 and fails WCAG AA (see Phase 5's CHANGELOG entry); on-brand
- * measures 8.0:1.
+ * Shared default: a solid, saturated color block — not a pale wash —
+ * matching the reference's "Attendance" treatment exactly: one
+ * confidently-colored box earns attention precisely because every
+ * surface around it is white. Text uses --color-on-brand (verified
+ * dark ink), the same pattern already established for every other
+ * solid-brand-color fill in this app (e.g. .btn--primary) — white text
+ * on TFI Cyan measures 2.17:1 and fails WCAG AA (see Phase 5's
+ * CHANGELOG entry); on-brand measures 8.0:1. Still backs
+ * ProgrammeSessionView.js as-is; Weekly Snapshot overrides this to a
+ * tinted wash instead (see .dashboard-widget--learn .kpi-card below,
+ * Phase 3 refinement) since a full solid fill read as an old-theme
+ * "banner" treatment there.
  */
 .kpi-card {
   display: flex;
@@ -4772,29 +4776,18 @@ button.wizard-checklist__row:hover {
  * applied as a widget's own background-color.
  */
 /*
- * Recognition Wall — a dark "showcase" background, distinct from every
- * other widget's plain white surface, so the white recognition cards
- * inside genuinely pop rather than blending into the page. Reuses the
- * app's one existing fixed-dark tone (--color-chrome-bg/--color-chrome-text,
- * already used for the persistent top bar) rather than inventing a new
- * dark color — this is a fixed, deliberate design choice, not tied to
- * a theme system (there is only one theme).
+ * Recognition Wall — migrated onto the White canvas principle above
+ * (Phase 3 refinement): this used to be the one remaining full-fill
+ * "Hero"-era card, a dark showcase background left over from before
+ * that principle was adopted. Now a plain white/surface .dashboard-widget
+ * like every other widget, with a top-border accent (matching
+ * .dashboard-widget--community's own pattern below) as its one colored
+ * moment; the heading keeps its existing tinted-label treatment from
+ * .dashboard-widget--celebrate below, now legible on white rather than
+ * needing a text-shadow to survive on a solid fill.
  */
 .dashboard-widget--recognition {
-  /* Same gradient as the Hero (see its comment for the contrast math
-     and the honest tradeoff being made). */
-  background-color: var(--color-primary-deep); /* the chosen accent color — see config/accentColorConfig.js */
-}
-.dashboard-widget--recognition.dashboard-widget--celebrate .dashboard-widget__heading {
-  color: var(--color-chrome-text);
-  text-shadow: var(--shadow-on-primary-deep);
-}
-.dashboard-widget--recognition .btn--text {
-  color: var(--color-chrome-text);
-  text-shadow: var(--shadow-on-primary-deep);
-}
-.dashboard-widget--recognition .btn--text:hover {
-  color: var(--color-primary);
+  border-top: 3px solid var(--color-primary-deep);
 }
 
 .dashboard-widget--celebrate .dashboard-widget__heading {
@@ -4818,9 +4811,15 @@ button.wizard-checklist__row:hover {
   border-radius: 16px;
   padding: 1rem 1.15rem;
   gap: 0.65rem;
+  background-color: var(--palette-learn-wash);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 .dashboard-widget--learn .kpi-card__number {
   font-size: 2rem;
+  color: var(--palette-learn-label);
+}
+.dashboard-widget--learn .kpi-card__label {
+  color: var(--color-muted);
 }
 .dashboard-widget--learn .dashboard-widget__subheading {
   font-size: var(--text-sm);
@@ -5211,34 +5210,32 @@ button.wizard-checklist__row:hover {
   margin-top: 0.1rem;
 }
 
-/* Class Mode only — the single daily, time-critical action gets the
-   one filled, solid-accent-color treatment. Uses the same
-   accent-aware tokens as every other colored surface in the app
-   (headers, Primary buttons), so it automatically respects whichever
-   accent color a teacher has chosen and that color's own verified
-   text-contrast pairing (see config/accentColorConfig.js) — never a
-   hardcoded blue that could fall out of sync with the rest of the
-   app's own chosen color. */
+/* Class Mode only — the single daily, time-critical action, given the
+   strongest wash/border intensity of the three tiers (12%/30%, vs
+   daily's 7%/18% and setup's 4%/plain border) so it still reads as
+   "the one" without the old full solid-fill treatment (Phase 3
+   refinement — quiet white/surface cards everywhere, per Personal Hub).
+   Uses --color-primary-deep directly (the teacher's own chosen brand
+   accent), not a module color, so this card's identity stays distinct
+   from every accent-colored module below it. */
 .primary-module-card--primary {
-  background-color: var(--color-primary-deep);
-  border: 1px solid transparent;
-  box-shadow: 0 4px 14px rgba(21, 101, 192, 0.35);
+  background-color: color-mix(in srgb, var(--color-primary-deep) 12%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--color-primary-deep) 30%, transparent);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
 }
 .primary-module-card--primary:hover {
-  filter: brightness(0.92);
+  border-color: color-mix(in srgb, var(--color-primary-deep) 50%, transparent);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.1);
   transform: translateY(-2px);
 }
 .primary-module-card--primary .primary-module-card__icon {
-  color: var(--color-on-primary-deep);
+  color: var(--color-primary-deep);
 }
 .primary-module-card--primary .primary-module-card__label {
-  color: var(--color-on-primary-deep);
-  text-shadow: var(--shadow-on-primary-deep);
+  color: var(--color-ink);
 }
 .primary-module-card--primary .primary-module-card__description {
-  color: var(--color-on-primary-deep);
-  opacity: 0.88;
-  text-shadow: var(--shadow-on-primary-deep);
+  color: var(--color-muted);
 }
 
 /* Classroom and Learning — daily tools a teacher opens constantly,
@@ -5249,11 +5246,10 @@ button.wizard-checklist__row:hover {
    from DASHBOARD_MODULES in DashboardView.js) instead of a bold
    colored border, with the icon badge carrying the stronger, more
    saturated version of that same color — restrained accents used to
-   improve scanability between modules, never as a large filled area
-   (that treatment is reserved for Class Mode alone, which uses the
-   actual brand accent, --color-primary-deep, not a module color). A
-   deliberately slightly stronger tint than the setup tier below is
-   the one visual cue separating "daily" from "setup." */
+   improve scanability between modules. A deliberately slightly
+   stronger tint than the setup tier below is the one visual cue
+   separating "daily" from "setup"; Class Mode's own wash above is
+   stronger still, the one cue separating "primary" from "daily." */
 .primary-module-card--daily {
   background-color: color-mix(in srgb, var(--module-accent) 7%, var(--color-surface));
   border: 1px solid color-mix(in srgb, var(--module-accent) 18%, transparent);
