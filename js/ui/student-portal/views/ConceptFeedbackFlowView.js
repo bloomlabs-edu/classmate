@@ -34,6 +34,7 @@
 import { getStudentConceptRecord, findConcept } from '../../../services/learningRecordService.js';
 import * as studentPortalDataService from '../../../services/studentPortalDataService.js';
 import { createIcon } from '../../components/Icon.js';
+import { renderConceptPreviewCard, renderConceptReferenceCard } from '../components/ConceptPreviewCard.js';
 
 /**
  * Mirrors StudentLearningView.js's own SELECTABLE_UNDERSTANDING_KEYS
@@ -111,6 +112,15 @@ export async function renderConceptFeedbackFlowView(container, { lessonId, onDon
     conceptBlock.appendChild(title);
     wrapper.appendChild(conceptBlock);
 
+    // Recall before answering — the dual-access pattern's first half
+    // (see ui/student-portal/components/ConceptPreviewCard.js's own
+    // header comment). The title is already shown immediately above
+    // in conceptBlock, so this card only adds description/resource,
+    // nothing duplicated.
+    if (found?.concept) {
+      wrapper.appendChild(renderConceptPreviewCard(classroom.id, found.concept));
+    }
+
     const question = document.createElement('p');
     question.className = 'concept-feedback-flow__question';
     question.textContent = 'How well do you understand this?';
@@ -160,6 +170,13 @@ export async function renderConceptFeedbackFlowView(container, { lessonId, onDon
       optionsList.appendChild(option);
     });
     wrapper.appendChild(optionsList);
+
+    // Revisit after answering — the dual-access pattern's second half.
+    // Feedback stays quick either way: this card never blocks or
+    // delays Next/Done, it's just there if the student wants it.
+    if (found?.concept) {
+      wrapper.appendChild(renderConceptReferenceCard(classroom.id, found.concept));
+    }
 
     const dots = document.createElement('div');
     dots.className = 'concept-feedback-flow__dots';

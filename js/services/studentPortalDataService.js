@@ -39,6 +39,7 @@ import * as learningRecordStudentService from './learningRecordStudentService.js
 import * as goalStatisticsService from './goalStatisticsService.js';
 import * as teamStatisticsService from './teamStatisticsService.js';
 import * as plannerRepository from './plannerRepository.js';
+import * as timetableLessonService from './timetableLessonService.js';
 import * as studentAuthService from './studentAuthService.js';
 import * as conceptRecordsRepository from '../repositories/firestoreStudentConceptRecordsRepository.js';
 import { hydrateConceptRecordsForStudent } from './conceptRecordHydrationService.js';
@@ -521,6 +522,40 @@ export async function getConceptFeedbackForLesson(lessonId) {
   // ui/student-portal/views/ConceptFeedbackFlowView.js doesn't need a
   // second loadCurrentStudentAndClassroom() call right after this one.
   return { conceptIds, classroom, student };
+}
+
+/**
+ * Phase 5 (Student Learning View) — every Lesson genuinely taught
+ * (has at least one executed concept) in the last `days` days, for
+ * the current student's own classroom. The one function
+ * ui/student-portal/views/StudentLearningView.js's "My Learning" /
+ * "Recently Taught" landing calls; grouping by date/relative label is
+ * services/learningHistoryGrouping.js's own, separate, pure concern —
+ * this function only resolves real data.
+ *
+ * Same per-slot Firestore instance requirement as
+ * getConceptFeedbackForLesson() just above, and for the exact same
+ * reason (a student device's default app is never signed in to
+ * anything — see plannerRepository.getLessonsForDateRange()'s own doc
+ * comment) — without this, every call from a real student device
+ * would fail with PERMISSION_DENIED in production. Returns null
+ * (never throws) for a missing profile/classroom, matching this
+ * file's own established convention; returns an empty array (not
+ * null) when the classroom genuinely has no taught lessons yet in
+ * range — a real, honest "nothing yet," not a load failure.
+ */
+export async function getRecentlyTaughtLessons({ days = 30 } = {}) {
+  const found = await loadCurrentStudentAndClassroom();
+  if (!found) return null;
+
+  const { classroom, student } = found;
+
+  const slotIndex = studentDeviceService.getSlotForStudent(student.id);
+  if (slotIndex === null) return null;
+  const studentDb = studentAuthService.getFirestoreForSlot(slotIndex);
+  await studentAuthService.ensureAnonymousSignIn(slotIndex);
+
+  return timetableLessonService.getRecentlyTaughtLessons(classroom, { days, firestoreOverride: studentDb });
 }
 
 /**

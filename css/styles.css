@@ -2204,6 +2204,46 @@ select:focus-visible,
 .concept-workspace__status-row {
   display: flex;
 }
+/* "What did we learn?" description editor (Phase 5) — same quiet
+   white card treatment as .concept-workspace__stat-card just below,
+   not a new visual system. */
+.concept-workspace__description {
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 1.1rem 1.25rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.concept-workspace__description-heading {
+  margin: 0;
+  font-weight: var(--font-weight-bold);
+}
+.concept-workspace__description-text {
+  margin: 0;
+  color: var(--color-ink);
+  line-height: 1.5;
+  overflow-wrap: break-word;
+}
+.concept-workspace__description-text--empty {
+  color: var(--color-muted);
+  font-style: italic;
+}
+.concept-workspace__description-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 0.95rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  resize: vertical;
+}
+.concept-workspace__description-actions {
+  display: flex;
+  gap: 0.6rem;
+}
 .concept-workspace__stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -11446,6 +11486,55 @@ button.wizard-checklist__row:hover {
   color: var(--color-muted);
   font-size: 1.1rem;
 }
+/* "My Learning" / Recently Taught landing (Phase 5) — same row/card
+   language as the rest of this file, just a new row content shape. */
+.student-learning__recent-heading {
+  margin: 0 0 0.75rem;
+  font-weight: var(--font-weight-black);
+  font-size: 1.15rem;
+}
+.student-learning__recent-day-heading {
+  margin: 1rem 0 0.5rem;
+  color: var(--color-muted);
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.student-learning__recent-day-heading:first-of-type {
+  margin-top: 0;
+}
+.student-learning__recent-row {
+  font-weight: normal;
+  align-items: flex-start;
+}
+.student-learning__recent-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  text-align: left;
+}
+.student-learning__recent-row-subject {
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-muted);
+}
+.student-learning__recent-row-unit {
+  font-size: 1rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+}
+.student-learning__recent-row-preview {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  font-weight: normal;
+}
+.student-learning__view-all {
+  margin-top: 1rem;
+  align-self: flex-start;
+}
 .student-learning__loading {
   color: var(--color-muted);
   padding: 1rem 0;
@@ -14386,6 +14475,71 @@ button.wizard-checklist__row:hover {
   margin: 0 0 var(--space-4);
   font-size: 1rem;
   color: var(--color-muted);
+}
+
+/* Concept preview / reference card (Phase 5) — shared by
+   ui/student-portal/components/ConceptPreviewCard.js, used both above
+   and below the feedback options here, and in StudentLearningView.js's
+   Concept Detail level. Same quiet surface-card treatment as every
+   other card in the app — no new visual system. */
+.concept-preview-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--elevation-card);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.concept-preview-card__heading {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.concept-preview-card__title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+}
+.concept-preview-card__description {
+  margin: 0;
+  color: var(--color-ink);
+  line-height: 1.5;
+  overflow-wrap: break-word;
+}
+.concept-preview-card__description--empty {
+  color: var(--color-muted);
+  font-style: italic;
+}
+.concept-preview-card__resource-slot:empty {
+  display: none;
+}
+.concept-preview-card__resource {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: var(--space-2);
+}
+.concept-preview-card__resource-description {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  overflow-wrap: break-word;
+}
+.concept-preview-card__resource-link {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .concept-feedback-flow__options {

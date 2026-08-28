@@ -202,12 +202,12 @@ export async function renderStudentJourneyView(container, { onSessionInvalid, on
     );
   }
 
-  // Learning - no page-level "next up" concept exists yet (that lives
-  // deep inside StudentLearningView.js's own
-  // loadAndRenderContinueLearning(), never surfaced through
-  // studentPortalDataService.js) - "Continue exploring" is this
-  // redesign's own explicitly-sanctioned, non-data fallback copy for
-  // exactly this case, not a placeholder statistic.
+  // Learning - lands on StudentLearningView.js's own "My Learning" /
+  // Recently Taught retrospective landing now (Phase 5), not the
+  // curriculum browse tree this subtitle used to describe — updated
+  // to match what's actually behind this card rather than leaving a
+  // stale "Continue exploring" describing a screen that no longer
+  // opens first.
   if (onNavigateToLearning) {
     bento.appendChild(
       createBentoCard({
@@ -215,7 +215,7 @@ export async function renderStudentJourneyView(container, { onSessionInvalid, on
         category: 'progress',
         cardTint: '#F1F8ED',
         title: 'Learning',
-        subtitle: 'Continue exploring',
+        subtitle: 'See what we’ve learned',
         onClick: onNavigateToLearning,
       })
     );

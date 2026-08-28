@@ -58,12 +58,14 @@
 import { createBackButton } from '../../components/BackButton.js';
 import { createEmptyStateElement } from '../../components/EmptyState.js';
 import { createIcon } from '../../components/Icon.js';
-import { loadCurrentStudentAndClassroom, setUnderstandingForCurrentStudent } from '../../../services/studentPortalDataService.js';
+import { loadCurrentStudentAndClassroom, setUnderstandingForCurrentStudent, getRecentlyTaughtLessons } from '../../../services/studentPortalDataService.js';
 import { hydrateConceptRecordsForStudent } from '../../../services/conceptRecordHydrationService.js';
 import * as learningRecordService from '../../../services/learningRecordService.js';
 import * as resourceService from '../../../services/resourceService.js';
+import { groupByDay } from '../../../services/learningHistoryGrouping.js';
 import { getStudentUnderstandingLabel, getStudentUnderstandingIcon } from '../../../config/learningRecordConfig.js';
 import { buildLearningHubLaunchUrl } from '../../views/ConceptWorkspaceView.js';
+import { renderConceptPreviewCard, renderConceptReferenceCard } from '../components/ConceptPreviewCard.js';
 
 // The 4 real progression steps a student can deliberately choose in
 // the Concept Detail view — "not_marked" (Not explored yet) is a
@@ -90,45 +92,83 @@ export async function renderStudentLearningView(container, { onBack } = {}) {
   // own header comment for the full fallback order this participates in.
   await hydrateConceptRecordsForStudent(classroom, student);
 
-  // level: 'subjects' | 'units' | 'concept-map' | 'concept-detail'
-  let level = 'subjects';
+  // level: 'recent' (My Learning / Recently Taught — the default
+  // landing, Phase 5) | 'recent-detail' (reviewing one Recently Taught
+  // day's own concepts) | 'subjects' | 'units' | 'concept-map' |
+  // 'concept-detail' (the original curriculum-structure browse,
+  // reached via "View all learning" — kept intact, not replaced: see
+  // this file's own header comment on why a retrospective, date-based
+  // view and a structural browse both stay necessary).
+  let level = 'recent';
   let selectedSubject = null;
   let selectedUnit = null;
   let selectedConceptIndex = 0;
+  // null while loading, [] once loaded with nothing found, else the
+  // real array from studentPortalDataService.getRecentlyTaughtLessons()
+  // — see renderRecentLevel()'s own handling of each state.
+  let recentLessons = null;
+  // The one "Recently Taught" entry (one Lesson's worth: date +
+  // subject + unit + the concepts actually taught that occurrence)
+  // currently open in 'recent-detail'.
+  let selectedRecentEntry = null;
+
+  getRecentlyTaughtLessons({ days: 30 }).then((lessons) => {
+    recentLessons = lessons || [];
+    if (level === 'recent') rerender();
+  });
 
   async function rerender() {
-    render(container, classroom, student, level, { selectedSubject, selectedUnit, selectedConceptIndex }, {
-      onBack,
-      onSelectSubject: (subject) => {
-        selectedSubject = subject;
-        level = 'units';
-        rerender();
-      },
-      onSelectUnit: (unit) => {
-        selectedUnit = unit;
-        level = 'concept-map';
-        rerender();
-      },
-      onSelectConcept: (conceptIndex) => {
-        selectedConceptIndex = conceptIndex;
-        level = 'concept-detail';
-        rerender();
-      },
-      onNavigateConcept: (conceptIndex) => {
-        selectedConceptIndex = conceptIndex;
-        rerender();
-      },
-      onSetUnderstanding: async (conceptId, understanding) => {
-        await setUnderstandingForCurrentStudent(conceptId, understanding);
-        rerender();
-      },
-      onBackOneLevel: () => {
-        if (level === 'concept-detail') { level = 'concept-map'; }
-        else if (level === 'concept-map') { level = 'units'; selectedUnit = null; }
-        else if (level === 'units') { level = 'subjects'; selectedSubject = null; }
-        rerender();
-      },
-    });
+    render(
+      container,
+      classroom,
+      student,
+      level,
+      { selectedSubject, selectedUnit, selectedConceptIndex, recentLessons, selectedRecentEntry },
+      {
+        onBack,
+        onViewAllLearning: () => {
+          level = 'subjects';
+          rerender();
+        },
+        onSelectRecentEntry: (entry) => {
+          selectedRecentEntry = entry;
+          selectedConceptIndex = 0;
+          level = 'recent-detail';
+          rerender();
+        },
+        onSelectSubject: (subject) => {
+          selectedSubject = subject;
+          level = 'units';
+          rerender();
+        },
+        onSelectUnit: (unit) => {
+          selectedUnit = unit;
+          level = 'concept-map';
+          rerender();
+        },
+        onSelectConcept: (conceptIndex) => {
+          selectedConceptIndex = conceptIndex;
+          level = 'concept-detail';
+          rerender();
+        },
+        onNavigateConcept: (conceptIndex) => {
+          selectedConceptIndex = conceptIndex;
+          rerender();
+        },
+        onSetUnderstanding: async (conceptId, understanding) => {
+          await setUnderstandingForCurrentStudent(conceptId, understanding);
+          rerender();
+        },
+        onBackOneLevel: () => {
+          if (level === 'concept-detail') { level = 'concept-map'; }
+          else if (level === 'recent-detail') { level = 'recent'; selectedRecentEntry = null; }
+          else if (level === 'concept-map') { level = 'units'; selectedUnit = null; }
+          else if (level === 'units') { level = 'subjects'; selectedSubject = null; }
+          else if (level === 'subjects') { level = 'recent'; }
+          rerender();
+        },
+      }
+    );
   }
 
   await rerender();
@@ -142,10 +182,11 @@ function render(container, classroom, student, level, selection, handlers) {
 
   const header = document.createElement('header');
   header.className = 'tracker-header';
-  // Top level's own back genuinely leaves this screen (the real
-  // onBack prop); every deeper level's own back only moves up one
-  // level internally, per this file's own header comment.
-  header.appendChild(createBackButton(level === 'subjects' ? handlers.onBack : handlers.onBackOneLevel));
+  // Top level is now 'recent' (My Learning) — its own back genuinely
+  // leaves this screen (the real onBack prop); every deeper level's
+  // own back only moves up one level internally, per this file's own
+  // header comment.
+  header.appendChild(createBackButton(level === 'recent' ? handlers.onBack : handlers.onBackOneLevel));
   const title = document.createElement('h1');
   title.className = 'tracker-header__title';
   title.textContent = titleForLevel(level, selection);
@@ -155,14 +196,22 @@ function render(container, classroom, student, level, selection, handlers) {
   const content = document.createElement('div');
   content.className = 'student-learning__content';
 
-  if (level === 'subjects') {
+  if (level === 'recent') {
+    content.appendChild(renderRecentLevel(selection.recentLessons, handlers));
+  } else if (level === 'recent-detail') {
+    content.appendChild(
+      renderConceptDetailLevel(classroom, selection.selectedRecentEntry.concepts, selection.selectedConceptIndex, student, handlers, selection.selectedRecentEntry.subjectTitle)
+    );
+  } else if (level === 'subjects') {
     content.appendChild(renderSubjectsLevel(classroom, handlers));
   } else if (level === 'units') {
     content.appendChild(renderUnitsLevel(selection.selectedSubject, handlers));
   } else if (level === 'concept-map') {
     content.appendChild(renderConceptMapLevel(selection.selectedUnit, student, handlers));
   } else if (level === 'concept-detail') {
-    content.appendChild(renderConceptDetailLevel(classroom, selection.selectedUnit, selection.selectedConceptIndex, student, handlers));
+    content.appendChild(
+      renderConceptDetailLevel(classroom, selection.selectedUnit.concepts, selection.selectedConceptIndex, student, handlers, selection.selectedUnit.title)
+    );
   }
 
   wrapper.appendChild(content);
@@ -170,11 +219,108 @@ function render(container, classroom, student, level, selection, handlers) {
 }
 
 function titleForLevel(level, selection) {
+  if (level === 'recent') return 'My Learning';
+  if (level === 'recent-detail') return selection.selectedRecentEntry?.unitTitle || 'Learning';
   if (level === 'subjects') return 'Learning';
   if (level === 'units') return selection.selectedSubject?.title || 'Subject';
   if (level === 'concept-map') return selection.selectedUnit?.title || 'Unit';
   if (level === 'concept-detail') return selection.selectedUnit?.title || 'Unit';
   return 'Learning';
+}
+
+/**
+ * "My Learning" — the default landing, Phase 5. Answers "what have we
+ * learned recently?" with real, dated Lessons (see
+ * services/timetableLessonService.js's getRecentlyTaughtLessons()) —
+ * never a fabricated timetable or invented history. One row per
+ * Lesson actually taught (grouped under its own day heading via
+ * services/learningHistoryGrouping.js's groupByDay()), capped to the
+ * 5 most recent days so this landing stays a quick scan, not a full
+ * log — "View all learning" (below) is the deliberate escape hatch
+ * for the full curriculum tree, including any concept marked taught
+ * without ever going through a dated Lesson at all (see this file's
+ * own header comment).
+ */
+function renderRecentLevel(recentLessons, handlers) {
+  const wrapper = document.createElement('div');
+
+  if (recentLessons === null) {
+    const loading = document.createElement('p');
+    loading.className = 'student-learning__loading';
+    loading.textContent = 'Loading…';
+    wrapper.appendChild(loading);
+    return wrapper;
+  }
+
+  if (recentLessons.length === 0) {
+    wrapper.appendChild(
+      createEmptyStateElement({ message: 'No learning yet. Once your teacher records what you learn, it will appear here.' })
+    );
+  } else {
+    const heading = document.createElement('p');
+    heading.className = 'student-learning__recent-heading';
+    heading.textContent = 'Recently Taught';
+    wrapper.appendChild(heading);
+
+    const groups = groupByDay(recentLessons).slice(0, 5);
+    groups.forEach((group) => {
+      const dayHeading = document.createElement('p');
+      dayHeading.className = 'student-learning__recent-day-heading';
+      dayHeading.textContent = group.label;
+      wrapper.appendChild(dayHeading);
+
+      const list = document.createElement('div');
+      list.className = 'student-learning__list';
+      group.entries.forEach((entry) => {
+        list.appendChild(createRecentEntryRow(entry, () => handlers.onSelectRecentEntry(entry)));
+      });
+      wrapper.appendChild(list);
+    });
+  }
+
+  const viewAllButton = document.createElement('button');
+  viewAllButton.type = 'button';
+  viewAllButton.className = 'btn btn--text student-learning__view-all';
+  viewAllButton.textContent = 'View all learning →';
+  viewAllButton.addEventListener('click', handlers.onViewAllLearning);
+  wrapper.appendChild(viewAllButton);
+
+  return wrapper;
+}
+
+function createRecentEntryRow(entry, onClick) {
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'student-learning__row student-learning__recent-row';
+
+  const textWrap = document.createElement('span');
+  textWrap.className = 'student-learning__recent-row-text';
+
+  const subjectEl = document.createElement('span');
+  subjectEl.className = 'student-learning__recent-row-subject';
+  subjectEl.textContent = entry.subjectTitle;
+  textWrap.appendChild(subjectEl);
+
+  const unitEl = document.createElement('span');
+  unitEl.className = 'student-learning__recent-row-unit';
+  unitEl.textContent = entry.unitTitle;
+  textWrap.appendChild(unitEl);
+
+  const previewEl = document.createElement('span');
+  previewEl.className = 'student-learning__recent-row-preview';
+  previewEl.textContent = entry.concepts.length === 1 ? entry.concepts[0].title : `${entry.concepts.length} concepts`;
+  textWrap.appendChild(previewEl);
+
+  row.appendChild(textWrap);
+
+  const chevron = document.createElement('span');
+  chevron.className = 'student-learning__row-chevron';
+  chevron.textContent = '›';
+  chevron.setAttribute('aria-hidden', 'true');
+  row.appendChild(chevron);
+
+  row.addEventListener('click', onClick);
+  return row;
 }
 
 function renderSubjectsLevel(classroom, handlers) {
@@ -303,8 +449,8 @@ function createConceptMapRow(concept, understanding, onClick) {
  * this exists anywhere in ClassMate yet, and showing invented numbers
  * would be worse than showing none.
  */
-function renderConceptDetailLevel(classroom, unit, conceptIndex, student, handlers) {
-  const concepts = unit?.concepts || [];
+function renderConceptDetailLevel(classroom, concepts, conceptIndex, student, handlers, contextLabel) {
+  concepts = concepts || [];
   const concept = concepts[conceptIndex];
   const wrapper = document.createElement('div');
   wrapper.className = 'student-learning__concept-detail';
@@ -326,8 +472,15 @@ function renderConceptDetailLevel(classroom, unit, conceptIndex, student, handle
 
   const introEl = document.createElement('p');
   introEl.className = 'student-learning__concept-detail-intro';
-  introEl.textContent = `One of the ideas you're expected to understand in ${unit.title}.`;
+  introEl.textContent = `One of the ideas you're expected to understand in ${contextLabel}.`;
   wrapper.appendChild(introEl);
+
+  // Recall before answering — the dual-access pattern's first half
+  // (see ui/student-portal/components/ConceptPreviewCard.js). Title
+  // is already shown immediately above, so this only ever adds
+  // description/resource — never a second copy of the title, unless
+  // there's genuinely nothing else to show (showTitle omitted then).
+  wrapper.appendChild(renderConceptPreviewCard(classroom.id, concept, { showEmptyState: true }));
 
   const reflectionPrompt = document.createElement('p');
   reflectionPrompt.className = 'student-learning__concept-detail-prompt';
@@ -357,6 +510,12 @@ function renderConceptDetailLevel(classroom, unit, conceptIndex, student, handle
     reflectionGroup.appendChild(reflectionButton);
   });
   wrapper.appendChild(reflectionGroup);
+
+  // Revisit after answering — the dual-access pattern's second half.
+  // Renders nothing at all (see renderConceptReferenceCard()'s own
+  // `hidden` handling) when there's neither a description nor a
+  // resource, rather than an empty "Review this concept" card.
+  wrapper.appendChild(renderConceptReferenceCard(classroom.id, concept));
 
   const continueSlot = document.createElement('div');
   continueSlot.className = 'student-learning__concept-detail-continue';

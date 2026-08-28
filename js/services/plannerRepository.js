@@ -55,8 +55,8 @@ function getDb() {
   return db;
 }
 
-function lessonsCollectionRef(classroomId) {
-  return collection(getDb(), 'classrooms', classroomId, 'lessons');
+function lessonsCollectionRef(classroomId, db = getDb()) {
+  return collection(db, 'classrooms', classroomId, 'lessons');
 }
 
 /** Persists a whole batch of newly-generated Lessons in one atomic write — what services/plannerService.js's generateAndSaveLessons() calls right after the engine produces them. */
@@ -124,9 +124,24 @@ export async function getLessonById(classroomId, lessonId, firestoreOverride = n
   return snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null;
 }
 
-/** Every Lesson whose own `date` falls within [startDateKey, endDateKey] (inclusive) — what the Timetable Week/Day grid fetches in one query per visible range, rather than one query per period. */
-export async function getLessonsForDateRange(classroomId, startDateKey, endDateKey) {
-  const lessonsQuery = query(lessonsCollectionRef(classroomId), where('date', '>=', startDateKey), where('date', '<=', endDateKey));
+/**
+ * Every Lesson whose own `date` falls within [startDateKey, endDateKey]
+ * (inclusive) — what the Timetable Week/Day grid fetches in one query
+ * per visible range, rather than one query per period.
+ *
+ * Optional `firestoreOverride` — same fix, same reasoning as
+ * getLessonById()'s own doc comment above: services/timetableLessonService.js's
+ * getRecentlyTaughtLessons() (Phase 5) is the first STUDENT-side
+ * caller of this function, and a student device's default app is
+ * never signed in, so this would otherwise always fail with
+ * PERMISSION_DENIED in production for that one new caller. Every
+ * teacher-side caller (the Timetable grid) is unaffected — it never
+ * passes this argument, so getDb() (the default app) is used exactly
+ * as before.
+ */
+export async function getLessonsForDateRange(classroomId, startDateKey, endDateKey, firestoreOverride = null) {
+  const activeDb = firestoreOverride || getDb();
+  const lessonsQuery = query(lessonsCollectionRef(classroomId, activeDb), where('date', '>=', startDateKey), where('date', '<=', endDateKey));
   const snapshot = await getDocs(lessonsQuery);
   return snapshot.docs.map((docSnapshot) => ({ id: docSnapshot.id, ...docSnapshot.data() }));
 }

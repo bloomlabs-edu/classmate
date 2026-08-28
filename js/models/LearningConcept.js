@@ -51,15 +51,36 @@
  *                    services/resourceService.js's getResources(),
  *                    which defaults a missing array to `[]` rather
  *                    than assuming every concept already has one.
+ *   description   - Phase 5 (Student Learning View) addition. A short,
+ *                    optional, teacher-authored plain-text blurb — "A
+ *                    force is a push or pull..." — answering "what did
+ *                    we learn?" for this one concept. Nullable by
+ *                    design: a concept created before this field
+ *                    existed, or one a teacher simply hasn't written a
+ *                    blurb for yet, has `description: null`, and every
+ *                    reader treats that as "no preview text to show,"
+ *                    never a placeholder/fake description. Set via
+ *                    services/learningRecordTeacherService.js's
+ *                    setConceptDescription() — the same
+ *                    mutate-here-save-at-the-call-site convention
+ *                    setConceptTaughtStatus() already uses. Deliberately
+ *                    plain text, not the Reading domain's `{blocks:[...]}`
+ *                    shape (models/ReadingContent.js) — this is a one-
+ *                    line recall aid shown inline next to a feedback
+ *                    prompt, not an authored lesson document; a
+ *                    concept that genuinely needs a fuller reference
+ *                    already has that path via resourceLinks (e.g. an
+ *                    'external_link' or 'reading' Resource).
  */
 
 import { generateId } from '../utils/idGenerator.js';
 
-export function createLearningConcept({ id, title, status = 'not_taught', resourceLinks = [] } = {}) {
+export function createLearningConcept({ id, title, status = 'not_taught', resourceLinks = [], description = null } = {}) {
   return {
     id: id || generateId(),
     title,
     status,
     resourceLinks,
+    description,
   };
 }

@@ -29,7 +29,8 @@ import * as plannerRepository from './plannerRepository.js';
 import * as learningRecordTeacherService from './learningRecordTeacherService.js';
 import * as studentEventService from './studentEventService.js';
 import { STUDENT_EVENT_CATEGORIES } from '../config/studentEventCategories.js';
-import { getCurrentIsoDate } from '../utils/dateHelpers.js';
+import { getCurrentIsoDate, getTodayDateKey, shiftDateKey } from '../utils/dateHelpers.js';
+import { resolveExecutedLessonEntries } from './learningHistoryGrouping.js';
 
 /**
  * Attaches a lesson plan to one concrete Timetable period. `conceptIds`
@@ -128,3 +129,37 @@ export async function shareFeedbackWithStudents(classroom, lesson, { subjectTitl
 }
 
 export { getFeedbackEligibleConceptIds };
+
+/**
+ * Phase 5 (Student Learning View) — every Lesson in the last `days`
+ * days that actually had at least one executed concept, resolved into
+ * a flat, display-ready shape: one entry per Lesson (date + subject +
+ * unit + the concepts really taught that occurrence), newest first is
+ * NOT done here — see services/learningHistoryGrouping.js's own
+ * sortByDateDesc()/groupByDay() for that, kept pure and separately
+ * testable rather than mixed into this Firestore-touching read.
+ *
+ * A Lesson with `executedConceptIds` referencing a concept id that no
+ * longer resolves (deleted from the syllabus tree since) is skipped
+ * entirely if NONE of its executed concepts resolve — the honest
+ * "nothing real left to show for this occurrence" case, not an error.
+ * The actual per-Lesson resolution (subject/unit/concept lookups,
+ * skipping a Lesson with nothing real left to show) is
+ * services/learningHistoryGrouping.js's own resolveExecutedLessonEntries()
+ * — kept there, not here, purely so it's unit-testable without this
+ * file's own Firestore dependency; this function is just "fetch, then
+ * delegate."
+ *
+ * Optional `firestoreOverride` — passed straight through to
+ * plannerRepository.getLessonsForDateRange(); see that function's own
+ * doc comment. services/studentPortalDataService.js's
+ * getRecentlyTaughtLessons() is the caller that actually needs this (a
+ * student device's default app is never signed in); the Timetable's
+ * own teacher-side calls (once it starts using this function, if it
+ * ever does) would simply omit it.
+ */
+export async function getRecentlyTaughtLessons(classroom, { days = 30, todayDateKey = getTodayDateKey(), firestoreOverride = null } = {}) {
+  const sinceDateKey = shiftDateKey(todayDateKey, -days);
+  const lessons = await plannerRepository.getLessonsForDateRange(classroom.id, sinceDateKey, todayDateKey, firestoreOverride);
+  return resolveExecutedLessonEntries(classroom, lessons);
+}

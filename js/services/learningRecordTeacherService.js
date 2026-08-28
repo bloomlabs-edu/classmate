@@ -120,6 +120,22 @@ export function setConceptTaughtStatus(classroom, conceptId, status) {
   return concept;
 }
 
+/**
+ * Sets a concept's short, student-facing recall blurb (see
+ * models/LearningConcept.js's own `description` doc comment) — same
+ * mutate-here-caller-saves shape as setConceptTaughtStatus() above.
+ * An empty/whitespace-only string is normalized to `null`, matching
+ * this field's own "no blurb yet" default rather than persisting a
+ * visually-empty-but-technically-set string.
+ */
+export function setConceptDescription(classroom, conceptId, description) {
+  const concept = getConceptById(classroom, conceptId);
+  if (!concept) return null;
+  const trimmed = (description || '').trim();
+  concept.description = trimmed || null;
+  return concept;
+}
+
 // ---- Notebook status (per-student, teacher-set) -------------------
 
 /**

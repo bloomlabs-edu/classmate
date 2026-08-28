@@ -83,6 +83,19 @@ export function renderConceptWorkspaceView(container, { classroom, subject, unit
   let selectedResourceId = initialResourceId;
   let pendingLearningHubExperience = null; // the {id, title, type, entry} the teacher picked from the catalogue, held until the naming/audience step
 
+  // Overview tab's own "What did we learn?" description editor state —
+  // Phase 5. `editingDescription` toggles the textarea open; `descriptionSaveState`
+  // is null | { status: 'saving' | 'failed' }, matching the exact
+  // guarded-mutation-then-awaited-save shape Phase 4 established for
+  // Learning Management's own inline create forms (see
+  // ui/views/LearningManagementView.js's onCreateUnit/onCreateConcept)
+  // — this is a new mutation, not a change to any existing Resource
+  // CRUD call in this file, so it uses that established, reliable
+  // pattern from the start rather than this file's own older
+  // fire-and-forget workspaceService.save() convention.
+  let editingDescription = false;
+  let descriptionSaveState = null;
+
   async function rerender() {
     // Learning Hub's own concern, not workspaceService's or
     // classroomService's — see resourceService.js's own comment for
@@ -107,9 +120,35 @@ export function renderConceptWorkspaceView(container, { classroom, subject, unit
     // here rather than scattered through the render tree.
     const resources = await resourceService.getResources(classroom.id, concept);
 
-    renderWorkspace(container, classroom, subject, unit, concept, activeTab, resources, { resourceMode, pendingType, selectedResourceId, pendingLearningHubExperience }, {
+    renderWorkspace(container, classroom, subject, unit, concept, activeTab, resources, { resourceMode, pendingType, selectedResourceId, pendingLearningHubExperience, editingDescription, descriptionSaveState }, {
       onBack,
       rerender,
+      onStartEditDescription: () => {
+        editingDescription = true;
+        descriptionSaveState = null;
+        rerender();
+      },
+      onCancelEditDescription: () => {
+        editingDescription = false;
+        descriptionSaveState = null;
+        rerender();
+      },
+      onSaveDescription: async (text) => {
+        learningRecordTeacherService.setConceptDescription(classroom, concept.id, text);
+        workspaceService.markDirty(classroom.id);
+        descriptionSaveState = { status: 'saving' };
+        rerender();
+        try {
+          await workspaceService.saveExplicitly(classroom);
+          editingDescription = false;
+          descriptionSaveState = null;
+        } catch (error) {
+          // Already logged by saveExplicitly() itself. The description
+          // stays set in memory; the Overview tab shows Retry.
+          descriptionSaveState = { status: 'failed' };
+        }
+        rerender();
+      },
       onSelectTab: (tabId) => {
         activeTab = tabId;
         resourceMode = 'list'; // switching tabs away and back always returns to the plain list
@@ -275,7 +314,7 @@ function renderWorkspace(container, classroom, subject, unit, concept, activeTab
   } else if (activeTab === 'student-progress') {
     content.appendChild(renderStudentProgressTab(classroom, concept));
   } else {
-    content.appendChild(renderOverviewTab(classroom, concept, resources));
+    content.appendChild(renderOverviewTab(classroom, concept, resources, resourceState, handlers));
   }
 
   wrapper.appendChild(content);
@@ -284,9 +323,11 @@ function renderWorkspace(container, classroom, subject, unit, concept, activeTab
 
 // ---- Overview ---------------------------------------------------------
 
-function renderOverviewTab(classroom, concept, resources) {
+function renderOverviewTab(classroom, concept, resources, resourceState, handlers) {
   const section = document.createElement('div');
   section.className = 'concept-workspace__section';
+
+  section.appendChild(renderConceptDescriptionEditor(concept, resourceState, handlers));
 
   const allStudents = classroom.teams.flatMap((team) => team.students);
   const records = allStudents.map((student) => learningRecordService.getStudentConceptRecord(student, concept.id));
@@ -333,6 +374,88 @@ function renderOverviewTab(classroom, concept, resources) {
   section.appendChild(statsGrid);
 
   return section;
+}
+
+/**
+ * "What did we learn?" — the short, optional recall blurb students
+ * see in the Student Learning View's own concept preview (see
+ * models/LearningConcept.js's `description` doc comment, added this
+ * phase). Read-mode shows the current blurb (or an honest "No
+ * description yet" prompt, never a fake placeholder) with an
+ * Edit/Add action; edit-mode is a plain textarea + Save/Cancel,
+ * mirroring the exact inline-form shape
+ * ui/views/LearningManagementView.js's own renderAddUnitControl()/
+ * renderAddConceptControl() established in Phase 4 (disabled +
+ * "Saving…"/Retry while a save is in flight, error text on failure,
+ * nothing here ever silently drops the teacher's own text).
+ */
+function renderConceptDescriptionEditor(concept, resourceState, handlers) {
+  const wrap = document.createElement('div');
+  wrap.className = 'concept-workspace__description';
+
+  const heading = document.createElement('p');
+  heading.className = 'concept-workspace__description-heading';
+  heading.textContent = 'What did we learn?';
+  wrap.appendChild(heading);
+
+  const { editingDescription, descriptionSaveState } = resourceState;
+  const isSaving = descriptionSaveState?.status === 'saving';
+  const isFailed = descriptionSaveState?.status === 'failed';
+
+  if (!editingDescription) {
+    const text = document.createElement('p');
+    text.className = 'concept-workspace__description-text';
+    text.textContent = concept.description || 'No description yet — students will only see the concept title.';
+    if (!concept.description) text.classList.add('concept-workspace__description-text--empty');
+    wrap.appendChild(text);
+
+    const editButton = document.createElement('button');
+    editButton.type = 'button';
+    editButton.className = 'btn btn--text';
+    editButton.textContent = concept.description ? 'Edit description' : '+ Add description';
+    editButton.addEventListener('click', handlers.onStartEditDescription);
+    wrap.appendChild(editButton);
+    return wrap;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.className = 'concept-workspace__description-input';
+  textarea.value = concept.description || '';
+  textarea.placeholder = 'e.g. A force is a push or pull that can change how something moves.';
+  textarea.rows = 3;
+  textarea.disabled = isSaving;
+  wrap.appendChild(textarea);
+
+  const actions = document.createElement('div');
+  actions.className = 'concept-workspace__description-actions';
+
+  const saveButton = document.createElement('button');
+  saveButton.type = 'button';
+  saveButton.className = 'btn btn--primary';
+  saveButton.disabled = isSaving;
+  saveButton.textContent = isSaving ? 'Saving…' : isFailed ? 'Retry' : 'Save';
+  saveButton.addEventListener('click', () => handlers.onSaveDescription(textarea.value));
+  actions.appendChild(saveButton);
+
+  if (!isFailed) {
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'btn btn--text';
+    cancelButton.disabled = isSaving;
+    cancelButton.textContent = 'Cancel';
+    cancelButton.addEventListener('click', handlers.onCancelEditDescription);
+    actions.appendChild(cancelButton);
+  }
+  wrap.appendChild(actions);
+
+  if (isFailed) {
+    const errorNote = document.createElement('p');
+    errorNote.className = 'learning-management__inline-error';
+    errorNote.textContent = 'Save failed. Check your connection and try again.';
+    wrap.appendChild(errorNote);
+  }
+
+  return wrap;
 }
 
 function createStatCard(label, value) {
