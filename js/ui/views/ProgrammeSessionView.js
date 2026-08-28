@@ -368,7 +368,28 @@ function buildActivityCard(classroomId, session, activity, index, editable, pers
   return card;
 }
 
-/** Collapsed by default — see this file's own header comment for why no add-input may sit permanently visible. Reveals the same quick-suggestion buttons + custom-text field this feature has always had. */
+/**
+ * Collapsed by default — see this file's own header comment for why no
+ * add-input may sit permanently visible. Reveals the same quick-
+ * suggestion buttons + custom-text field this feature has always had.
+ *
+ * PHASE 7 — RELIABILITY FIX: every control below (each quick-suggestion
+ * button, the custom input, and its own Add button) now shares one
+ * closure-local `isSaving` flag. Without this, none of them were ever
+ * disabled while their own recordActivity()->persistPatch() was in
+ * flight, so a rapid re-click — on the same button, or a different one
+ * in this same row, since they all write the same shared
+ * session.activities array via the same whole-array persistPatch —
+ * could re-enter recordActivity() a second time before the first save
+ * had actually settled, producing two persisted entries from what was
+ * experienced as one action. `recordActivity()`, `buildActivitiesPatch()`,
+ * and `persistPatch()` itself are all unchanged and still called
+ * exactly the same way; this only guards *when* they're allowed to
+ * fire again. Two separate, genuinely intentional clicks (e.g. logging
+ * "Guided Reading" twice, in two different actions) still work exactly
+ * as before once each one's own save has settled — this guards
+ * re-entry, not repetition.
+ */
 function buildAddActivityDisclosure(classroomId, session, persistPatch, redraw) {
   const wrapper = document.createElement('div');
   wrapper.className = 'programme-session-view__add-activity-disclosure';
@@ -382,16 +403,64 @@ function buildAddActivityDisclosure(classroomId, session, persistPatch, redraw) 
   revealContainer.className = 'programme-session-view__add-activity-row';
   revealContainer.hidden = true;
 
+  let isSaving = false;
+  const allControls = [];
+
+  function setControlsDisabled(disabled) {
+    allControls.forEach((control) => {
+      control.disabled = disabled;
+    });
+  }
+
+  /**
+   * The one place any Add Activity action actually runs — reuses the
+   * exact, unmodified recordActivity()/buildActivitiesPatch()/
+   * persistPatch() sequence every caller already used; this only
+   * wraps it with the disable-while-pending guard. persistPatch()
+   * itself is documented to never re-throw (see
+   * ProgrammeSessionSaveIndicator.js's own header comment) — the
+   * try/catch here is a safety net only, so an unexpected error can
+   * never leave every control permanently disabled.
+   */
+  async function runAddActivity(clickedControl, pendingLabel, originalLabel, name) {
+    isSaving = true;
+    setControlsDisabled(true);
+    clickedControl.textContent = pendingLabel;
+
+    programmeSessionService.recordActivity(session, { name });
+
+    let succeeded = false;
+    try {
+      succeeded = await persistPatch(() =>
+        programmeSessionService.saveSessionPatch(classroomId, session.id, programmeSessionService.buildActivitiesPatch(session))
+      );
+    } catch (error) {
+      succeeded = false;
+    }
+
+    if (succeeded) {
+      // redraw() tears down and rebuilds this whole disclosure fresh —
+      // the controls above no longer exist once it returns, so there
+      // is nothing left here to manually re-enable.
+      redraw();
+      return;
+    }
+
+    isSaving = false;
+    setControlsDisabled(false);
+    clickedControl.textContent = originalLabel;
+  }
+
   SUGGESTED_ACTIVITIES.forEach((name) => {
     const quickButton = document.createElement('button');
     quickButton.type = 'button';
     quickButton.className = 'btn btn--ghost';
     quickButton.textContent = name;
-    quickButton.addEventListener('click', async () => {
-      programmeSessionService.recordActivity(session, { name });
-      await persistPatch(() => programmeSessionService.saveSessionPatch(classroomId, session.id, programmeSessionService.buildActivitiesPatch(session)));
-      redraw();
+    quickButton.addEventListener('click', () => {
+      if (isSaving) return;
+      runAddActivity(quickButton, 'Adding…', name, name);
     });
+    allControls.push(quickButton);
     revealContainer.appendChild(quickButton);
   });
 
@@ -403,13 +472,13 @@ function buildAddActivityDisclosure(classroomId, session, persistPatch, redraw) 
   addButton.type = 'button';
   addButton.className = 'btn btn--secondary';
   addButton.textContent = 'Add';
-  addButton.addEventListener('click', async () => {
+  addButton.addEventListener('click', () => {
+    if (isSaving) return;
     const name = customInput.value.trim();
     if (!name) return;
-    programmeSessionService.recordActivity(session, { name });
-    await persistPatch(() => programmeSessionService.saveSessionPatch(classroomId, session.id, programmeSessionService.buildActivitiesPatch(session)));
-    redraw();
+    runAddActivity(addButton, 'Adding\u2026', 'Add', name);
   });
+  allControls.push(customInput, addButton);
   revealContainer.append(customInput, addButton);
 
   toggleButton.addEventListener('click', () => {
