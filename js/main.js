@@ -666,7 +666,13 @@ async function renderStudentPortalMain(route) {
         });
       } else {
         renderStudentJourneyView(content, {
-          onSessionInvalid: () => router.navigate('/student'),
+          // Phase 2 — this fires automatically from inside the view's
+          // own data-loading path when the session/profile fails to
+          // resolve, not from a click. `replace: true` so it doesn't
+          // push a phantom "/student" entry onto the real Back stack
+          // for something the student never chose to navigate to —
+          // see ui/router.js's own navigate() doc comment.
+          onSessionInvalid: () => router.navigate('/student', { replace: true }),
           // The generic event-navigation pattern (see
           // config/studentEventNavigation.js): the view itself never
           // imports the router — it only ever calls back out with an
@@ -810,7 +816,16 @@ function renderRoute(route, reason = 'unspecified') {
     // screen's whole reason for existing, not an error state. See
     // ui/views/TeacherDiagnosticsView.js's own header comment.
     if (!classroom && route.name !== 'diagnostics') {
-      router.navigate('/teacher');
+      // Phase 2 — this fires from renderRoute() itself, not a click:
+      // hashchange, sign-in/out, and every single Firestore snapshot
+      // update for this teacher's classrooms all call renderRoute(),
+      // so this redirect can trigger with no user action at all
+      // (e.g. mid-hydration, right after sign-in, before the
+      // workspace has this classroom loaded yet). `replace: true`
+      // keeps it from padding the browser's real Back stack with a
+      // phantom "/teacher" entry the user never actually chose to
+      // visit — see ui/router.js's own navigate() doc comment.
+      router.navigate('/teacher', { replace: true });
       return;
     }
 

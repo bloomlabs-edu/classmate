@@ -223,8 +223,31 @@ export function resolvePathParts(parts) {
   return { name: 'home' };
 }
 
-export function navigate(path) {
-  window.location.hash = path;
+/**
+ * `replace: true` — for a redirect/correction the app makes on the
+ * user's behalf (e.g. "this classroom route no longer resolves, send
+ * them to Home"), not a destination the user actually chose. Plain
+ * `window.location.hash = path` always PUSHES a new session-history
+ * entry, indistinguishable from a real user-chosen navigation — every
+ * one of those silently sits in the browser's own Back stack, so an
+ * automatic redirect that fires on its own (not from a click — e.g.
+ * re-running on every Firestore snapshot update while a classroom
+ * hasn't hydrated yet) can inject a phantom entry the user then has to
+ * press Back through, landing them somewhere they never actually
+ * visited. `location.replace()` still changes the hash (still fires
+ * `hashchange`, still re-renders normally) but swaps the CURRENT
+ * history entry instead of adding a new one, so a corrective redirect
+ * never becomes something to "go back" past. Only pass this for a
+ * redirect the app decided on its own; a user clicking something to
+ * get somewhere new should keep pushing, which is why this defaults
+ * to false and every existing call site is unaffected.
+ */
+export function navigate(path, { replace = false } = {}) {
+  if (replace) {
+    window.location.replace(`#${path}`);
+  } else {
+    window.location.hash = path;
+  }
 }
 
 export function getCurrentRoute() {
