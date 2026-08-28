@@ -143,6 +143,7 @@ export async function renderStudentGoalTrackerView(container, { onBack }) {
           renderNow();
         } else {
           console.log(`[LSRW-DIAG][${instanceId}] submission FAILED, falling back to rerender()`, { timestamp: Date.now() });
+          window.alert('Something went wrong saving that. Please try again.');
           await rerender();
         }
       },
@@ -457,10 +458,30 @@ function renderGoalEntryForm(category, handlers, currentText) {
   const submitButton = document.createElement('button');
   submitButton.type = 'button';
   submitButton.className = 'btn btn--primary';
-  submitButton.textContent = category.goal ? 'Save Changes' : 'Submit Goal';
-  submitButton.addEventListener('click', () => {
-    if (!input.value.trim()) return;
-    handlers.onSubmitGoal(category.categoryId, input.value.trim());
+  const idleLabel = category.goal ? 'Save Changes' : 'Submit Goal';
+  submitButton.textContent = idleLabel;
+  // Phase 4 — submission idempotency: disabling synchronously (before
+  // the first `await`) is what actually prevents a second rapid click
+  // from firing at all, since a disabled button never dispatches
+  // 'click'. Nothing here needs to restore itself on the success path
+  // — onSubmitGoal() always ends in a full renderNow()/rerender() that
+  // replaces this entire form (see this file's own header comment on
+  // why a full re-render is unavoidable); the `finally` below only
+  // guards the sliver of time between this click and that re-render
+  // actually landing, including the failure path.
+  submitButton.addEventListener('click', async () => {
+    const text = input.value.trim();
+    if (!text) return;
+    submitButton.disabled = true;
+    input.disabled = true;
+    submitButton.textContent = 'Submitting…';
+    try {
+      await handlers.onSubmitGoal(category.categoryId, text);
+    } finally {
+      submitButton.disabled = false;
+      input.disabled = false;
+      submitButton.textContent = idleLabel;
+    }
   });
 
   form.append(input, submitButton);

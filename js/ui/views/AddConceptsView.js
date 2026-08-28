@@ -54,12 +54,18 @@ export function renderAddConceptsView(container, { classroom, unit, onBack }) {
   let selectedSourceUnit = null; // the curriculum pack's own unit, not the target classroom unit
   let checkedTitles = null; // Set<string>, only meaningful during 'review'
   let loadError = null;
+  // Non-null only once the import mutation has actually happened —
+  // { concepts } while the save is in flight or has failed, plus an
+  // `error` once failed. Guards onImport below against re-running
+  // importConceptsIntoUnit() a second time on a Retry click, which
+  // would otherwise import every checked title twice.
+  let importState = null;
 
   function rerender() {
     renderAddConcepts(
       container,
       mode,
-      { selectedCurriculum, selectedGrade, selectedSubjectEntry, selectedPack, selectedSourceUnit, checkedTitles, loadError },
+      { selectedCurriculum, selectedGrade, selectedSubjectEntry, selectedPack, selectedSourceUnit, checkedTitles, loadError, importState },
       {
         onBack,
         onPickCurriculumLibrary: () => {
@@ -101,12 +107,37 @@ export function renderAddConceptsView(container, { classroom, unit, onBack }) {
           else checkedTitles.add(title);
           rerender();
         },
-        onImport: () => {
-          const titles = selectedSourceUnit.concepts.filter((title) => checkedTitles.has(title));
-          const created = conceptImportService.importConceptsIntoUnit(classroom, unit, titles);
-          workspaceService.save(classroom);
-          showToast(`${created.length} concept${created.length === 1 ? '' : 's'} imported`);
-          onBack();
+        onImport: async () => {
+          if (!importState) {
+            const titles = selectedSourceUnit.concepts.filter((title) => checkedTitles.has(title));
+            const created = conceptImportService.importConceptsIntoUnit(classroom, unit, titles);
+            // Marks this classroom dirty the instant the imported
+            // Concepts exist in memory — before the network write
+            // below even starts — so an incoming Firestore snapshot
+            // from before they existed can't silently revert the
+            // import while the save is in flight (see
+            // workspaceService.js's canApplyIncomingServerState()).
+            workspaceService.markDirty(classroom.id);
+            importState = { concepts: created };
+          }
+          rerender();
+          try {
+            // saveExplicitly(), not save() — awaited, so this view
+            // only ever navigates back (onBack()) once the write has
+            // actually settled, and can show a real failure/retry
+            // state instead of silently leaving the import unsaved.
+            await workspaceService.saveExplicitly(classroom);
+            const { concepts } = importState;
+            showToast(`${concepts.length} concept${concepts.length === 1 ? '' : 's'} imported`);
+            onBack();
+          } catch (error) {
+            // Already logged by saveExplicitly() itself. The Concepts
+            // stay created in memory — Retry re-enters this same
+            // handler with importState already set, so it only
+            // retries the save, never re-imports.
+            importState = { ...importState, error: true };
+            rerender();
+          }
         },
         onBackTo: (targetMode) => {
           mode = targetMode;
@@ -364,14 +395,31 @@ function renderReviewStep(selection, handlers) {
 
   section.appendChild(list);
 
+  const importState = selection.importState;
+  const isSaving = importState && !importState.error;
+  const isFailed = Boolean(importState?.error);
+
   const importButton = document.createElement('button');
   importButton.type = 'button';
   importButton.className = 'btn btn--primary';
-  const count = selection.checkedTitles.size;
-  importButton.textContent = count > 0 ? `Import ${count} Concept${count === 1 ? '' : 's'}` : 'Import';
-  importButton.disabled = count === 0;
+  const count = importState ? importState.concepts.length : selection.checkedTitles.size;
+  if (isSaving) {
+    importButton.textContent = 'Importing…';
+  } else if (isFailed) {
+    importButton.textContent = 'Retry';
+  } else {
+    importButton.textContent = count > 0 ? `Import ${count} Concept${count === 1 ? '' : 's'}` : 'Import';
+  }
+  importButton.disabled = isSaving || (!importState && count === 0);
   importButton.addEventListener('click', handlers.onImport);
   section.appendChild(importButton);
+
+  if (isFailed) {
+    const errorNote = document.createElement('p');
+    errorNote.className = 'add-concepts__error';
+    errorNote.textContent = 'Save failed. Check your connection and try again.';
+    section.appendChild(errorNote);
+  }
 
   return section;
 }

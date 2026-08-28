@@ -98,32 +98,70 @@ export function openCreateAssessmentModal({ classroom, onAssessmentCreated }) {
   const actions = document.createElement('div');
   actions.className = 'modal__actions';
 
+  // Set once the Assessment has actually been created in memory (the
+  // first successful click past validation) — kept outside the click
+  // handler so a Retry click, after a failed save below, re-attempts
+  // only the save, never calls createNewAssessment() a second time
+  // and ends up with two Assessments for one click-plus-retry.
+  let pendingAssessment = null;
+
   const createButton = document.createElement('button');
   createButton.type = 'button';
   createButton.className = 'btn btn--primary';
   createButton.textContent = 'Create Assessment';
-  createButton.addEventListener('click', () => {
-    const title = nameField.input.value.trim();
-    const type = typeField.select.value;
-    const academicYear = yearField.input.value.trim();
-    const date = dateField.input.value;
-    const subjectIds = subjectCheckboxes.filter((cb) => cb.checked).map((cb) => cb.value);
+  createButton.addEventListener('click', async () => {
+    if (!pendingAssessment) {
+      const title = nameField.input.value.trim();
+      const type = typeField.select.value;
+      const academicYear = yearField.input.value.trim();
+      const date = dateField.input.value;
+      const subjectIds = subjectCheckboxes.filter((cb) => cb.checked).map((cb) => cb.value);
 
-    if (!title) {
-      errorText.textContent = 'Please enter an assessment name.';
-      errorText.hidden = false;
-      return;
-    }
-    if (subjectIds.length === 0) {
-      errorText.textContent = 'Please choose at least one subject.';
-      errorText.hidden = false;
-      return;
+      if (!title) {
+        errorText.textContent = 'Please enter an assessment name.';
+        errorText.hidden = false;
+        return;
+      }
+      if (subjectIds.length === 0) {
+        errorText.textContent = 'Please choose at least one subject.';
+        errorText.hidden = false;
+        return;
+      }
+
+      pendingAssessment = assessmentService.createNewAssessment(classroom, { title, type, academicYear, date, subjectIds });
+      // Marks this classroom dirty the instant the Assessment (plus
+      // its per-subject AssessmentSubject entries) exists in memory —
+      // before the network write below even starts — so an incoming
+      // Firestore snapshot from before it existed can't silently
+      // revert it while the save is in flight (see
+      // workspaceService.js's canApplyIncomingServerState()).
+      workspaceService.markDirty(classroom.id);
     }
 
-    const assessment = assessmentService.createNewAssessment(classroom, { title, type, academicYear, date, subjectIds });
-    workspaceService.save(classroom);
-    close();
-    onAssessmentCreated(assessment);
+    errorText.hidden = true;
+    createButton.disabled = true;
+    cancelButton.disabled = true;
+    createButton.textContent = 'Creating…';
+
+    try {
+      // saveExplicitly(), not save() — awaited, so this handler knows
+      // exactly when the write has actually settled and the button
+      // can only ever fire one persistence attempt at a time, rather
+      // than firing-and-forgetting it and leaving the button clickable
+      // (and the assessment's saved state ambiguous) the whole time.
+      await workspaceService.saveExplicitly(classroom);
+      close();
+      onAssessmentCreated(pendingAssessment);
+    } catch (error) {
+      // Already logged by saveExplicitly() itself. The Assessment
+      // stays created in memory and every field the teacher entered
+      // stays exactly as typed — nothing here clears the form.
+      errorText.textContent = 'Save failed. Check your connection and try again.';
+      errorText.hidden = false;
+      createButton.disabled = false;
+      cancelButton.disabled = false;
+      createButton.textContent = 'Retry';
+    }
   });
   actions.appendChild(createButton);
 

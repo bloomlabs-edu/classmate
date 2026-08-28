@@ -262,10 +262,29 @@ async function renderComments(commentsSection, post, { onListComments, onAddComm
   commentSubmit.type = 'button';
   commentSubmit.className = 'btn btn--text';
   commentSubmit.textContent = 'Send';
+  // Phase 4 — submission idempotency: this previously had no guard at
+  // all, so two rapid clicks (or a slow connection) could fire
+  // onAddComment() twice before either write landed, creating two
+  // genuinely duplicate comment documents — there's no natural business
+  // key to dedupe a comment against server-side (unlike a goal, two
+  // identical-text comments are still two distinct, valid comments), so
+  // the fix is a client-side in-flight guard: disabling synchronously
+  // before the first `await` is what actually stops a second click from
+  // firing at all.
   commentSubmit.addEventListener('click', async () => {
     const text = commentInput.value.trim();
     if (!text) return;
-    await onAddComment(post.id, text);
+    commentSubmit.disabled = true;
+    commentInput.disabled = true;
+    commentSubmit.textContent = 'Sending…';
+    const commentId = await onAddComment(post.id, text);
+    if (!commentId) {
+      window.alert('Something went wrong posting that comment. Please try again.');
+      commentSubmit.disabled = false;
+      commentInput.disabled = false;
+      commentSubmit.textContent = 'Send';
+      return;
+    }
     await onRefresh();
   });
   commentComposer.appendChild(commentSubmit);

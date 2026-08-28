@@ -35,6 +35,7 @@ import * as notificationService from './notificationService.js';
 import { NOTIFICATION_CATEGORIES } from '../config/notificationCategories.js';
 import { logPersistenceEvent } from './persistenceLogger.js';
 import * as workspaceCoordinator from './workspaceCoordinator.js';
+import { createSaveStateMachine } from './classroomSaveStateMachine.js';
 
 let onChangeCallback = null;
 let unsubscribeRefs = null;
@@ -64,21 +65,16 @@ const pendingSaves = new Set();
  * explicitly saved — not "we've confirmed nothing changed," just "we
  * have no reason to believe anything did."
  */
-const saveStates = new Map();
+const saveStateMachine = createSaveStateMachine();
 let saveStateChangeCallback = null;
 
-/**
- * The latest incoming Firestore snapshot for a classroom that arrived
- * while it wasn't safe to apply (see canApplyIncomingServerState()
- * below) — only ever the newest one; an older deferred snapshot is
- * simply replaced, never queued, since only the most current server
- * state is ever worth reconciling.
- */
-const pendingSnapshots = new Map(); // classroomId -> deferred classroom data
-
-function getDefaultSaveState() {
-  return { status: 'clean', error: null };
-}
+// Every transition — whether via setSaveState() below or markDirty()
+// (which itself transitions to 'dirty') — notifies through here, so
+// the UI's own onSaveStateChange() subscriber (see
+// ui/views/LearningManagementView.js) fires for both.
+saveStateMachine.onChange((classroomId, state) => {
+  saveStateChangeCallback?.(classroomId, state);
+});
 
 /**
  * Whether a classroom's own working copy is safe to overwrite with an
@@ -99,42 +95,28 @@ function getDefaultSaveState() {
  * cares about: no known discrepancy between the working copy and the
  * server right now.
  */
+export function getSaveState(classroomId) {
+  return saveStateMachine.getSaveState(classroomId);
+}
+
 export function canApplyIncomingServerState(classroomId) {
-  const status = getSaveState(classroomId).status;
-  return status === 'clean' || status === 'saved';
+  return saveStateMachine.canApplyIncomingServerState(classroomId);
 }
 
 export function setSaveState(classroomId, status, error = null) {
   const previousStatus = getSaveState(classroomId).status;
   logPersistenceEvent(`Save state transition: ${previousStatus} \u2192 ${status}`, { classroomId });
-  saveStates.set(classroomId, { status, error });
-  saveStateChangeCallback?.(classroomId, { status, error });
-  maybeReconcilePendingSnapshot(classroomId);
-}
-
-/**
- * Applies a classroom's own latest deferred snapshot, if one exists
- * and it's now safe to (see canApplyIncomingServerState()). Called
- * after every save-state transition here, since that's the only thing
- * in this file today that can move a classroom from unsafe to safe —
- * a future lock condition living elsewhere would call this same
- * function once it releases, rather than this file needing to know
- * that lock exists at all.
- */
-function maybeReconcilePendingSnapshot(classroomId) {
-  if (!pendingSnapshots.has(classroomId)) return;
-  if (!canApplyIncomingServerState(classroomId)) return;
-  const pending = pendingSnapshots.get(classroomId);
-  pendingSnapshots.delete(classroomId);
-  applyIncomingSnapshot(classroomId, pending);
+  const deferredSnapshot = saveStateMachine.setSaveState(classroomId, status, error);
+  if (deferredSnapshot) applyIncomingSnapshot(classroomId, deferredSnapshot);
 }
 
 /**
  * The one place an incoming server snapshot actually lands in this
  * app's in-memory state — used both for a snapshot applied
  * immediately (see subscribeToClassroom() below) and a previously
- * deferred one applied once safe (see maybeReconcilePendingSnapshot()
- * above). Updates the canonical in-memory classroom, then hands off
+ * deferred one applied once safe (see setSaveState() above, and
+ * services/classroomSaveStateMachine.js's own reconcilePendingSnapshot()).
+ * Updates the canonical in-memory classroom, then hands off
  * to whichever active workspace is showing it (see
  * services/workspaceCoordinator.js) — falling back to this file's own
  * onChangeCallback (today's renderRoute()-triggering path) only when
@@ -157,29 +139,27 @@ export function onSaveStateChange(callback) {
   saveStateChangeCallback = callback;
 }
 
-export function getSaveState(classroomId) {
-  return saveStates.get(classroomId) || getDefaultSaveState();
-}
-
 /**
- * Call after any in-place classroom mutation that should go through
- * the explicit-Save workflow instead of autosaving immediately (see
- * ui/views/LearningManagementView.js's own onAddSubject/
- * onRemoveSubject/etc. for which mutations this applies to today).
- * Never downgrades an in-progress save's own 'saving' status — a
- * mutation that happens to land mid-write doesn't un-start that write,
- * it just means there will be more to save the next time Save Changes
- * is clicked.
+ * Call after any in-place classroom mutation that should be protected
+ * from an incoming stale snapshot until it's saved — originally just
+ * the explicit-Save Subject workflow (see ui/components/AddSubjectModal.js's
+ * onSubjectAdded/onRemoveSubject/etc.), now also every other Learning
+ * Management mutation that autosaves immediately instead of waiting
+ * for a manual "Save Changes" click (see
+ * ui/views/LearningManagementView.js's onCreateUnit/onCreateConcept
+ * and friends) — either way, the actual no-downgrade-during-'saving'
+ * rule and the defer-a-stale-snapshot-until-safe behavior live in
+ * services/classroomSaveStateMachine.js now; this is a thin,
+ * logged wrapper around it.
  */
 export function markDirty(classroomId) {
   logPersistenceEvent('markDirty() called', { classroomId });
-  if (getSaveState(classroomId).status === 'saving') return;
-  setSaveState(classroomId, 'dirty');
+  saveStateMachine.markDirty(classroomId);
 }
 
 /** True while any classroom's explicit save is currently in flight — the gate services/authService.js's caller (see main.js's handleSignOut) checks before letting sign-out proceed uninterrupted. */
 export function isAnySaveInProgress() {
-  return Array.from(saveStates.values()).some((state) => state.status === 'saving');
+  return saveStateMachine.isAnySaveInProgress();
 }
 
 /**
@@ -311,7 +291,15 @@ function subscribeToClassroom(classroomId) {
           // kept; an older one simply gets replaced here, never
           // queued, since only the most current server state is worth
           // reconciling once it's safe to.
-          pendingSnapshots.set(classroomId, classroomData);
+          // Stored as this classroom's own deferred snapshot inside
+          // saveStateMachine — canApplyIncomingServerState() already
+          // told us this exact snapshot isn't safe to apply yet, so
+          // this call takes that same "not safe right now" path
+          // itself and simply records it, to be reconciled the next
+          // time setSaveState()/markDirty() makes this classroom safe
+          // again (see classroomSaveStateMachine.js's own
+          // reconcilePendingSnapshot()).
+          saveStateMachine.receiveSnapshot(classroomId, classroomData);
         }
       } else {
         // The document is gone, or this teacher lost access to it —
@@ -334,7 +322,7 @@ function unsubscribeFromClassroom(classroomId) {
   classroomSubscriptions.get(classroomId)?.();
   classroomSubscriptions.delete(classroomId);
   classroomService.removeClassroomFromMemory(classroomId);
-  pendingSnapshots.delete(classroomId);
+  saveStateMachine.clearClassroom(classroomId);
 }
 
 function unsubscribeFromAllClassrooms() {
@@ -474,7 +462,21 @@ export function importRosterIntoClassroom(classroomId, teamsWithStudentNames) {
   const classroom = classroomService.getClassroomById(classroomId);
   if (!classroom) return null;
   classroomService.importRoster(classroom, teamsWithStudentNames);
-  persistClassroom(classroom);
+  // markDirty() + saveExplicitly(), not persistClassroom() — the
+  // imported roster is a real, teacher-authored mutation of this
+  // classroom, exposed to the exact same stale-snapshot race as
+  // Create Unit/Concept/Assessment (see
+  // ui/views/ClassroomManagementView.js's own "Upload Student List"
+  // and ui/views/SetupWizardView.js, both callers of this function):
+  // without markDirty(), an incoming snapshot from before the import
+  // could silently revert the whole roster back out of memory while
+  // this write is still in flight. Neither caller awaits this
+  // function today (both rely on the live classroom subscription to
+  // re-render once the write actually lands), so this stays
+  // fire-and-forget from their point of view — only the *mechanism*
+  // changed, not this function's own signature or contract.
+  markDirty(classroomId);
+  saveExplicitly(classroom).catch(() => {});
   return classroom;
 }
 

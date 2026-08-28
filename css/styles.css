@@ -8412,6 +8412,16 @@ button.wizard-checklist__row:hover {
 .learning-management__save-indicator--failed {
   color: var(--color-danger);
 }
+/* Inline failure note under an in-progress Add Unit/Add Concept form
+   (see ui/views/LearningManagementView.js's renderAddUnitControl()/
+   renderAddConceptControl()) — same danger color as the save-status
+   banner above, deliberately not reusing .modal__error since this
+   isn't inside a modal. */
+.learning-management__inline-error {
+  margin: 0.4rem 0 0;
+  font-size: var(--text-sm);
+  color: var(--color-danger);
+}
 
 /* Student Event Feed ("Your Updates") — see
    ui/student-portal/views/StudentJourneyView.js's renderEventCard().

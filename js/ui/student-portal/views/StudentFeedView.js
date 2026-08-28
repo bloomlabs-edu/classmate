@@ -89,8 +89,10 @@ export async function renderStudentFeedView(container, { onBack, onNavigateToPat
     const text = composerInput.value.trim();
     if (!text) return;
     postButton.disabled = true;
+    postButton.textContent = 'Posting…';
     const postId = await feedService.createPostAsCurrentStudent({ text });
     postButton.disabled = false;
+    postButton.textContent = 'Post';
     if (!postId) {
       window.alert('Something went wrong posting this. Please try again.');
       return;

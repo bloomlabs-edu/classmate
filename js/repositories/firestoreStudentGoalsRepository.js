@@ -32,7 +32,6 @@ import {
   getFirestore,
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 import { getFirebaseApp } from '../services/firebaseApp.js';
-import { generateId } from '../utils/idGenerator.js';
 
 function teacherDb() {
   return getFirestore(getFirebaseApp());
@@ -47,6 +46,26 @@ function goalDoc(db, classroomId, goalId) {
 }
 
 /**
+ * The natural business key for one student's one category within one
+ * cycle — used as the fallback document ID below (Phase 4: submission
+ * idempotency) so that two submitGoal() calls racing on the exact same
+ * (studentId, cycleId, categoryId), neither of which has found the
+ * other's write yet via findGoal()'s own read, land on the SAME
+ * document instead of each minting its own random id and creating a
+ * duplicate goal. Deliberately not used to look up an EXISTING goal
+ * (findGoal()'s query below is still authoritative for that) — this
+ * only changes what a brand-new goal's id becomes, so every
+ * already-submitted goal (which got a random id before this fix)
+ * keeps resolving correctly through the existing query, no migration
+ * needed. `::` matches this app's own established composite-key
+ * convention (see StudentGoalTrackerView.js's own buildOptimisticKey())
+ * and is a valid Firestore document-id character.
+ */
+function buildDeterministicGoalId({ studentId, cycleId, categoryId }) {
+  return `${studentId}::${cycleId}::${categoryId}`;
+}
+
+/**
  * Creates a new goal, or updates the existing one for this exact
  * (studentId, categoryId, cycleId) — called from the student's own
  * per-slot Firestore instance. `db` is passed in explicitly, never
@@ -55,7 +74,7 @@ function goalDoc(db, classroomId, goalId) {
  */
 export async function submitGoal(db, { classroomId, studentId, cycleId, categoryId, text, uid }) {
   const existing = await findGoal(db, classroomId, { studentId, cycleId, categoryId, uid });
-  const goalId = existing?.id ?? generateId();
+  const goalId = existing?.id ?? buildDeterministicGoalId({ studentId, cycleId, categoryId });
 
   await setDoc(goalDoc(db, classroomId, goalId), {
     id: goalId,

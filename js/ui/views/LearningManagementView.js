@@ -182,6 +182,15 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
   // until now).
   let addingUnit = false;
   let addingConcept = false;
+  // Non-null only while a just-created Unit/Concept's own save is
+  // in flight or has failed — { status: 'saving' | 'failed', title }.
+  // Carries the title through so a failed save's Retry (which re-runs
+  // this same handler) can re-display it and re-attempt the save
+  // without creating a second Unit/Concept (see onCreateUnit/
+  // onCreateConcept below: the in-memory mutation only ever happens
+  // once, guarded by this state being null).
+  let unitCreateState = null;
+  let conceptCreateState = null;
   // Set only while a teacher has picked a Learning Hub result but the
   // Unit has more than one Concept, so a small "which concept?" step
   // is needed before the real Resource+link is created — see
@@ -256,6 +265,8 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
         selectedSubjectCurriculumState,
         addingUnit,
         addingConcept,
+        unitCreateState,
+        conceptCreateState,
         pendingLearningHubExperience,
         singleClassroomMode,
         saveState: selectedClassroom ? workspaceService.getSaveState(selectedClassroom.id) : null,
@@ -339,6 +350,8 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
       conceptContext = null;
       addingUnit = false;
       addingConcept = false;
+      unitCreateState = null;
+      conceptCreateState = null;
       pendingLearningHubExperience = null;
       mode = 'subject';
       loadCurriculumStateFor(subject);
@@ -367,12 +380,14 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
       selectedPartName = partName;
       selectedUnitId = null;
       addingUnit = false;
+      unitCreateState = null;
       pendingLearningHubExperience = null;
       rerender();
     },
     onSelectUnit: (unitId) => {
       selectedUnitId = unitId;
       addingConcept = false;
+      conceptCreateState = null;
       pendingLearningHubExperience = null;
       rerender();
     },
@@ -382,41 +397,114 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
       // linkedCurriculumUnitId already works on this same model.
       unit.learningHubPack = pack ? { packId: pack.id, title: pack.title } : null;
       if (!pack) delete unit.learningHubPack; // omit entirely when cleared, matching this field's own "omit, never undefined" Firestore-safety convention
-      workspaceService.save(selectedClassroom);
+      // markDirty() closes the stale-snapshot window the instant this
+      // mutation happens — see workspaceService.js's own
+      // canApplyIncomingServerState() — before saveExplicitly() (not
+      // save()) actually persists it, so a concurrent incoming
+      // snapshot can never revert this pick back out from under the
+      // teacher. Not awaited here (no per-row pending UI in this
+      // picker), but saveExplicitly()'s own saveState transitions
+      // still drive the existing "Saving…/✓ Changes saved/Save
+      // failed. Retry" banner (renderSaveStatus() below) — the
+      // failure case is not silently swallowed, just not blocking
+      // this specific click.
+      workspaceService.markDirty(selectedClassroom.id);
+      workspaceService.saveExplicitly(selectedClassroom).catch(() => {});
       rerender();
     },
     onStartAddUnit: () => {
       addingUnit = true;
+      unitCreateState = null;
       rerender();
     },
     onCancelAddUnit: () => {
       addingUnit = false;
+      unitCreateState = null;
       rerender();
     },
-    onCreateUnit: (title) => {
-      // Reuses the exact, already-existing, already-curriculum-optional
-      // service function directly — no linkedCurriculumUnitId passed
-      // at all, matching a manually-created Unit's own real
-      // provenance. Behaves identically to a curriculum-derived Unit
-      // from this point forward (see models/LearningUnit.js's own
-      // header comment).
-      learningRecordTeacherService.createUnit(selectedClassroom, selectedSubject.id, { title });
-      workspaceService.save(selectedClassroom);
-      addingUnit = false;
+    onCreateUnit: async (title) => {
+      // The in-memory mutation runs exactly once, guarded by
+      // unitCreateState being null — a Retry click (after a failed
+      // save below) re-enters this same handler with unitCreateState
+      // already set to 'failed', so it only re-attempts the save,
+      // never creates a second Unit.
+      if (!unitCreateState) {
+        // Reuses the exact, already-existing, already-curriculum-optional
+        // service function directly — no linkedCurriculumUnitId passed
+        // at all, matching a manually-created Unit's own real
+        // provenance. Behaves identically to a curriculum-derived Unit
+        // from this point forward (see models/LearningUnit.js's own
+        // header comment).
+        const unit = learningRecordTeacherService.createUnit(selectedClassroom, selectedSubject.id, { title });
+        // Marks this classroom dirty the instant the Unit exists in
+        // memory — before the network write below even starts — so
+        // an incoming Firestore snapshot from before this Unit existed
+        // can never overwrite it out of the UI while the save is in
+        // flight (see workspaceService.js's canApplyIncomingServerState()).
+        workspaceService.markDirty(selectedClassroom.id);
+        unitCreateState = { status: 'saving', title, unit };
+      } else if (title !== unitCreateState.title) {
+        // The teacher edited the title in the form before clicking
+        // Retry — the Unit already exists in memory from the attempt
+        // above (never re-created), so a plain Retry re-saves it
+        // under its original title regardless of what the input now
+        // shows. Applying the edit here, in place, is what makes
+        // Retry actually save what the teacher currently sees.
+        unitCreateState.unit.title = title;
+        unitCreateState = { ...unitCreateState, status: 'saving', title };
+      } else {
+        unitCreateState = { ...unitCreateState, status: 'saving' };
+      }
+      rerender();
+      try {
+        // saveExplicitly(), not save() — awaited, so this handler
+        // (and the Create button it's driving; see
+        // renderAddUnitControl()) knows exactly when the write has
+        // actually settled, rather than firing-and-forgetting it.
+        await workspaceService.saveExplicitly(selectedClassroom);
+        addingUnit = false;
+        unitCreateState = null;
+      } catch (error) {
+        // Already logged by saveExplicitly() itself. The Unit stays
+        // created in memory (nothing here undoes it) and the form
+        // shows Retry — clicking it re-enters this same handler with
+        // unitCreateState already set, so it only retries the save.
+        unitCreateState = { ...unitCreateState, status: 'failed' };
+      }
       rerender();
     },
     onStartAddConcept: () => {
       addingConcept = true;
+      conceptCreateState = null;
       rerender();
     },
     onCancelAddConcept: () => {
       addingConcept = false;
+      conceptCreateState = null;
       rerender();
     },
-    onCreateConcept: (unitId, title) => {
-      learningRecordTeacherService.createConcept(selectedClassroom, unitId, { title });
-      workspaceService.save(selectedClassroom);
-      addingConcept = false;
+    onCreateConcept: async (unitId, title) => {
+      // Same guarded-mutation-then-awaited-save shape as onCreateUnit
+      // above — see its own comments for why, including the
+      // edited-title-on-Retry handling.
+      if (!conceptCreateState) {
+        const concept = learningRecordTeacherService.createConcept(selectedClassroom, unitId, { title });
+        workspaceService.markDirty(selectedClassroom.id);
+        conceptCreateState = { status: 'saving', title, concept };
+      } else if (title !== conceptCreateState.title) {
+        conceptCreateState.concept.title = title;
+        conceptCreateState = { ...conceptCreateState, status: 'saving', title };
+      } else {
+        conceptCreateState = { ...conceptCreateState, status: 'saving' };
+      }
+      rerender();
+      try {
+        await workspaceService.saveExplicitly(selectedClassroom);
+        addingConcept = false;
+        conceptCreateState = null;
+      } catch (error) {
+        conceptCreateState = { ...conceptCreateState, status: 'failed' };
+      }
       rerender();
     },
     onOpenLearningHubPanel: (unit) => {
@@ -450,6 +538,15 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
       openLearningHubPanelInstance?.rerender(pendingLearningHubExperience);
     },
     onUseLearningHubResourceForConcept: async (experience, concept) => {
+      // Marked dirty up front, before any of the awaits below —
+      // createResourceOnConcept() mutates concept.resourceLinks (part
+      // of this classroom document) partway through its own body, and
+      // there's a real await gap between that mutation and the
+      // classroom save at the end of this handler. Calling
+      // markDirty() first closes that whole window at once rather
+      // than trying to time it to land exactly when the mutation
+      // happens inside a function this handler doesn't control.
+      workspaceService.markDirty(selectedClassroom.id);
       // Mirrors ui/views/ConceptWorkspaceView.js's own
       // onCreateLearningHubResource exactly — same Resource type
       // mapping, same content shape, same default ('teacher')
@@ -460,7 +557,19 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
       resource.content = { kind: 'learning_hub_experience', experienceType: experience.type, experienceId: experience.id };
       resource.audience = 'teacher';
       await resourceRepository.saveResource(selectedClassroom.id, resource);
-      workspaceService.save(selectedClassroom);
+      // saveExplicitly(), not save() — the resulting saveState still
+      // drives the same "Saving…/✓ Changes saved/Save failed. Retry"
+      // banner (renderSaveStatus() below) on failure, rather than
+      // silently dropping the classroom-side link if this write fails.
+      try {
+        await workspaceService.saveExplicitly(selectedClassroom);
+      } catch (error) {
+        // Already logged and reflected in saveState by saveExplicitly()
+        // itself — the Resource itself is already durably saved via
+        // resourceRepository above regardless; only its link from this
+        // Concept is at risk, and the save-status banner's Retry
+        // covers that.
+      }
       pendingLearningHubExperience = null;
       openLearningHubPanelInstance?.rerender(pendingLearningHubExperience);
     },
@@ -662,7 +771,20 @@ function renderView(container, mode, state, handlers) {
   if (mode === 'choose-class') {
     wrapper.appendChild(renderChooseClassStep(state.classrooms, handlers));
   } else if (mode === 'subject') {
-    wrapper.appendChild(renderSubjectStep(state.selectedSubject, state.selectedSubjectCurriculumState, state.selectedPartName, state.selectedUnitId, state.addingUnit, state.addingConcept, state.pendingLearningHubExperience, handlers));
+    wrapper.appendChild(
+      renderSubjectStep(
+        state.selectedSubject,
+        state.selectedSubjectCurriculumState,
+        state.selectedPartName,
+        state.selectedUnitId,
+        state.addingUnit,
+        state.addingConcept,
+        state.unitCreateState,
+        state.conceptCreateState,
+        state.pendingLearningHubExperience,
+        handlers
+      )
+    );
   } else {
     wrapper.appendChild(renderHomeStep(state.selectedClassroom, handlers));
   }
@@ -796,7 +918,7 @@ function renderDeveloperUtilities(handlers) {
  * everything else here, not hidden behind "⋮". No floating menu
  * anywhere on this screen.
  */
-function renderSubjectStep(subject, curriculumState, selectedPartName, selectedUnitId, addingUnit, addingConcept, pendingLearningHubExperience, handlers) {
+function renderSubjectStep(subject, curriculumState, selectedPartName, selectedUnitId, addingUnit, addingConcept, unitCreateState, conceptCreateState, pendingLearningHubExperience, handlers) {
   const section = document.createElement('div');
   section.className = 'learning-management__section';
 
@@ -842,7 +964,7 @@ function renderSubjectStep(subject, curriculumState, selectedPartName, selectedU
     // Units are shown whenever they genuinely exist — regardless of
     // Curriculum status — matching how Assessments already read this
     // exact same tree with no curriculum gating at all.
-    section.appendChild(renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUnit, addingConcept, pendingLearningHubExperience, handlers));
+    section.appendChild(renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUnit, addingConcept, unitCreateState, conceptCreateState, pendingLearningHubExperience, handlers));
     // "Import from Curriculum" is deliberately NOT offered here once
     // real Units already exist without one — curriculumLinkingService.js's
     // own assignment fully replaces subject.units (never merges),
@@ -856,7 +978,7 @@ function renderSubjectStep(subject, curriculumState, selectedPartName, selectedU
     }
   } else {
     section.appendChild(createEmptyStateElement({ message: 'No Units yet.' }));
-    section.appendChild(renderAddUnitControl(addingUnit, handlers));
+    section.appendChild(renderAddUnitControl(addingUnit, unitCreateState, handlers));
     if (curriculumState.status === 'none') {
       section.appendChild(curriculumActionButton);
     }
@@ -963,7 +1085,7 @@ export function renderUnitPackControl(container, unit, handlers) {
  * only job is calling that existing function, not a second creation
  * path.
  */
-function renderAddUnitControl(addingUnit, handlers) {
+function renderAddUnitControl(addingUnit, unitCreateState, handlers) {
   const wrapper = document.createElement('div');
   wrapper.className = 'learning-management__add-unit-control';
 
@@ -977,26 +1099,47 @@ function renderAddUnitControl(addingUnit, handlers) {
     return wrapper;
   }
 
+  const isSaving = unitCreateState?.status === 'saving';
+  const isFailed = unitCreateState?.status === 'failed';
+
   const input = document.createElement('input');
   input.type = 'text';
   input.placeholder = 'Unit title';
+  // Re-populated from state (not just left blank) so a failed save's
+  // Retry click re-reads the exact same title it already created —
+  // handlers.onCreateUnit() itself never re-creates the Unit once
+  // unitCreateState is set, but it still needs a non-empty `title` to
+  // pass through the "if (!title) return;" guard below.
+  if (unitCreateState) input.value = unitCreateState.title;
+  input.disabled = isSaving;
   wrapper.appendChild(input);
 
   const createButton = document.createElement('button');
   createButton.type = 'button';
   createButton.className = 'btn btn--primary';
-  createButton.textContent = 'Create';
+  createButton.disabled = isSaving;
+  createButton.textContent = isSaving ? 'Creating…' : isFailed ? 'Retry' : 'Create';
   createButton.addEventListener('click', () => {
     const title = input.value.trim();
     if (!title) return;
     handlers.onCreateUnit(title);
   });
-  const cancelButton = document.createElement('button');
-  cancelButton.type = 'button';
-  cancelButton.className = 'btn btn--text';
-  cancelButton.textContent = 'Cancel';
-  cancelButton.addEventListener('click', handlers.onCancelAddUnit);
-  wrapper.append(createButton, cancelButton);
+  wrapper.appendChild(createButton);
+
+  if (isFailed) {
+    const errorNote = document.createElement('p');
+    errorNote.className = 'learning-management__inline-error';
+    errorNote.textContent = 'Save failed. Check your connection and try again.';
+    wrapper.appendChild(errorNote);
+  } else {
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'btn btn--text';
+    cancelButton.textContent = 'Cancel';
+    cancelButton.disabled = isSaving;
+    cancelButton.addEventListener('click', handlers.onCancelAddUnit);
+    wrapper.appendChild(cancelButton);
+  }
 
   return wrapper;
 }
@@ -1006,7 +1149,7 @@ function renderAddUnitControl(addingUnit, handlers) {
  * exactly, reusing the existing learningRecordTeacherService.createConcept()
  * directly.
  */
-function renderAddConceptControl(unitId, addingConcept, handlers) {
+function renderAddConceptControl(unitId, addingConcept, conceptCreateState, handlers) {
   const wrapper = document.createElement('div');
   wrapper.className = 'learning-management__add-unit-control';
 
@@ -1020,31 +1163,50 @@ function renderAddConceptControl(unitId, addingConcept, handlers) {
     return wrapper;
   }
 
+  const isSaving = conceptCreateState?.status === 'saving';
+  const isFailed = conceptCreateState?.status === 'failed';
+
   const input = document.createElement('input');
   input.type = 'text';
   input.placeholder = 'Concept title';
+  // See renderAddUnitControl()'s own comment on this same pattern —
+  // re-populated from state so Retry re-submits the same title
+  // without creating a second Concept.
+  if (conceptCreateState) input.value = conceptCreateState.title;
+  input.disabled = isSaving;
   wrapper.appendChild(input);
 
   const createButton = document.createElement('button');
   createButton.type = 'button';
   createButton.className = 'btn btn--primary';
-  createButton.textContent = 'Create';
+  createButton.disabled = isSaving;
+  createButton.textContent = isSaving ? 'Creating…' : isFailed ? 'Retry' : 'Create';
   createButton.addEventListener('click', () => {
     const title = input.value.trim();
     if (!title) return;
     handlers.onCreateConcept(unitId, title);
   });
-  const cancelButton = document.createElement('button');
-  cancelButton.type = 'button';
-  cancelButton.className = 'btn btn--text';
-  cancelButton.textContent = 'Cancel';
-  cancelButton.addEventListener('click', handlers.onCancelAddConcept);
-  wrapper.append(createButton, cancelButton);
+  wrapper.appendChild(createButton);
+
+  if (isFailed) {
+    const errorNote = document.createElement('p');
+    errorNote.className = 'learning-management__inline-error';
+    errorNote.textContent = 'Save failed. Check your connection and try again.';
+    wrapper.appendChild(errorNote);
+  } else {
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'btn btn--text';
+    cancelButton.textContent = 'Cancel';
+    cancelButton.disabled = isSaving;
+    cancelButton.addEventListener('click', handlers.onCancelAddConcept);
+    wrapper.appendChild(cancelButton);
+  }
 
   return wrapper;
 }
 
-function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUnit, addingConcept, pendingLearningHubExperience, handlers) {
+function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUnit, addingConcept, unitCreateState, conceptCreateState, pendingLearningHubExperience, handlers) {
   const wrapper = document.createElement('div');
 
   const distinctPartNames = [...new Set(subject.units.map((unit) => unit.partName).filter(Boolean))];
@@ -1090,7 +1252,7 @@ function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUni
 
     if (selectedUnit.concepts.length === 0) {
       wrapper.appendChild(createEmptyStateElement({ message: "What do you want your students to understand in this unit?" }));
-      wrapper.appendChild(renderAddConceptControl(selectedUnit.id, addingConcept, handlers));
+      wrapper.appendChild(renderAddConceptControl(selectedUnit.id, addingConcept, conceptCreateState, handlers));
     } else {
       const conceptList = document.createElement('div');
       conceptList.className = 'learning-management__subject-card-list';
@@ -1098,7 +1260,7 @@ function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUni
         conceptList.appendChild(createNavigationRow({ label: concept.title, onClick: () => handlers.onSelectConcept(concept) }));
       });
       wrapper.appendChild(conceptList);
-      wrapper.appendChild(renderAddConceptControl(selectedUnit.id, addingConcept, handlers));
+      wrapper.appendChild(renderAddConceptControl(selectedUnit.id, addingConcept, conceptCreateState, handlers));
     }
 
     // Learning Hub is now a dormant plugin (see
@@ -1161,7 +1323,7 @@ function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUni
     list.appendChild(createNavigationRow({ label, onClick: () => handlers.onSelectUnit(unit.id) }));
   });
   wrapper.appendChild(list);
-  wrapper.appendChild(renderAddUnitControl(addingUnit, handlers));
+  wrapper.appendChild(renderAddUnitControl(addingUnit, unitCreateState, handlers));
 
   return wrapper;
 }
