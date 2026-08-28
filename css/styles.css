@@ -337,11 +337,9 @@ select:focus {
 
 .btn--primary {
   /* Same approved gradient as every header — applied to every Primary
-     button across the app, per explicit direction. Contrast math
-     already verified for these exact stops (see .classroom-hero's
-     comment): 5.49:1/3.3:1 with white text, using the WCAG large-text
-     exception since this button's text is bold — same honest tradeoff
-     already agreed on for the Hero. */
+     button across the app, per explicit direction. Contrast verified
+     at these exact stops: 5.49:1/3.3:1 with white text, using the
+     WCAG large-text exception since this button's text is bold. */
   background-color: var(--color-primary-deep); /* the chosen accent color — see config/accentColorConfig.js */
   border-color: transparent;
   /* Phase 7B — intent hierarchy: Action-intent buttons (this one) get
@@ -1524,26 +1522,29 @@ select:focus-visible,
   align-items: center;
   gap: 1rem;
   padding: 1.25rem 1.5rem;
-  /* Applied across every page's header, per explicit direction — same
-     gradient/contrast approach approved for the Dashboard Hero (see
-     .classroom-hero's own comment for the full contrast math). */
+  /* Applied across every page's header that still uses this shared
+     gradient header treatment (Tracker, Settings, etc.) — the
+     Dashboard's own classroom-identity header no longer does; see
+     .classroom-header immediately below and .classroom-shell-header
+     further down this file for its own quiet, Personal-Hub-matching
+     treatment instead. */
   background-color: var(--color-primary-deep); /* the chosen accent color — see config/accentColorConfig.js */
 }
 /*
  * The Dashboard's own header (ClassroomHeader.js) is excluded from the
- * rule above — it already has its own colorful moment nested inside
- * (.classroom-hero), and Primary Action / Secondary Content need to
- * stay on a plain surface so their own white cards (Start Class Mode,
- * Continue Working) read clearly rather than floating on a second,
- * competing gradient. Higher specificity here (two classes) correctly
- * overrides the single-class rule above regardless of source order.
+ * rule above — Phase 3 replaced its old solid-color "hero" banner with
+ * a quiet white card (.classroom-shell-header, see below), and Primary
+ * Action / Secondary Content need to stay on a plain surface so their
+ * own white cards (Start Class Mode, Continue Working) read clearly
+ * rather than floating on a competing background. Higher specificity
+ * here (two classes) correctly overrides the single-class rule above
+ * regardless of source order.
  */
 .classroom-header {
   /* Blends into .dashboard-view's own warm canvas instead of sitting
-     on a separate white bar with its own divider — the .classroom-hero
-     card below is now the only visible surface here, floating
-     directly on the page the same way the Student Portal's own
-     greeting does. */
+     on a separate colored bar — .classroom-shell-header below is now
+     the only visible surface here, floating directly on the page the
+     same way the Personal Hub's own section cards do. */
   background: transparent;
   border-bottom: none;
 }
@@ -1638,33 +1639,6 @@ select:focus-visible,
 .tracker-header .btn--danger:hover:not(:disabled) {
   background-color: #9c392e;
 }
-/* The Dashboard's own header stays on a plain surface (see .classroom-header
-   above), so its title/subtitle/back-button text should NOT inherit the
-   white treatment meant for gradient headers — reset back to normal ink. */
-.classroom-header .tracker-header__title,
-.classroom-header .tracker-header__subtitle {
-  color: var(--color-ink);
-  text-shadow: none;
-}
-
-/*
- * The Hero (classroom-context slot inside ClassroomHeader — see
- * DashboardView.js). Deliberately timeless: a greeting and the
- * classroom's identity, not a dashboard summary — no live stats or
- * counts belong here, those already have their own widgets below.
- */
-.classroom-hero__greeting {
-  margin: 0 0 0.1rem;
-  font-size: var(--text-sm);
-  color: var(--color-muted);
-}
-.classroom-hero__motto {
-  margin: 0.3rem 0 0;
-  font-size: var(--text-sm);
-  font-style: italic;
-  color: var(--color-muted);
-}
-
 .tracker-header__actions {
   display: flex;
   flex-wrap: wrap;
@@ -5357,40 +5331,63 @@ button.wizard-checklist__row:hover {
 }
 
 /*
- * The Hero — deliberately the single strongest visual treatment in the
- * app. This is the one, explicitly scoped exception to this project's
- * general "no gradients" convention (established in earlier phases for
- * everyday UI chrome): a classroom's landing moment should feel like
- * entering a room, not opening a tool, and a soft gradient is what
- * creates that "this is a place, not a panel" feeling that flat color
- * alone doesn't. Kept soft/pastel rather than saturated, so it reads as
- * premium and welcoming rather than loud — consistent with "bright and
- * breathable" everywhere else.
+ * Phase 3 — the classroom identity block (classroom-context slot
+ * inside ClassroomHeader — see DashboardView.js), redesigned to match
+ * the Personal Hub's own visual language: white surface, subtle
+ * border, rounded card, restrained shadow, generous spacing — quiet
+ * and functional, not the single loudest thing on the page. Replaces
+ * the earlier solid-accent-color "Hero" banner (see this file's own
+ * git history) — that treatment made sense before the Personal Hub
+ * existed as this app's own real "arrival" screen; keeping an equally
+ * loud, separate welcome moment here just competed with it every time
+ * a teacher opened a classroom. Reuses the exact card tokens the
+ * Personal Hub's own sections already use (--elevation-card,
+ * --radius-card), not a new visual system.
  */
-.classroom-hero {
-  /* User's original gradient, darkened only enough for the large bold
-     title to clear WCAG's large-text exception (3:1, not the standard
-     4.5:1) — 80% mix, much closer to the original vibrant colors than
-     the earlier 65% fix. Verified: 5.49:1 / 3.3:1. The smaller
-     greeting/subtitle text (13.6px, doesn't qualify for the large-text
-     exception) sits below full AA at this level — flagged honestly,
-     not hidden; the text-shadow below is a real, separate technique to
-     help actual legibility, since it's not something the WCAG ratio
-     formula accounts for at all. */
-  background-color: var(--color-primary-deep); /* the chosen accent color — see config/accentColorConfig.js */
-  border-radius: 20px;
-  padding: 1.5rem 1.75rem;
-  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.1);
+.classroom-shell-header {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--elevation-card);
+  padding: var(--space-5);
 }
-.classroom-hero .tracker-header__title {
+.classroom-shell-header__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary-strong);
+  cursor: pointer;
+}
+.classroom-shell-header__back:hover {
+  text-decoration: underline;
+}
+.classroom-shell-header__name {
   margin: 0;
+  font-size: var(--text-2xl);
+  font-weight: var(--font-weight-black);
+  color: var(--color-ink);
 }
-.classroom-hero .tracker-header__title,
-.classroom-hero .tracker-header__subtitle,
-.classroom-hero__greeting,
-.classroom-hero__motto {
-  color: var(--color-on-primary-deep);
-  text-shadow: var(--shadow-on-primary-deep);
+.classroom-shell-header__subtitle {
+  margin: 0.2rem 0 0;
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+}
+.classroom-shell-header__meta {
+  margin: var(--space-2) 0 0;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+.classroom-shell-header__motto {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  font-style: italic;
+  color: var(--color-muted);
 }
 
 .classroom-header__primary-action {

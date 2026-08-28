@@ -70,7 +70,7 @@ import * as goalService from '../../services/goalService.js';
 import * as notificationService from '../../services/notificationService.js';
 import { NOTIFICATION_CATEGORIES } from '../../config/notificationCategories.js';
 import { renderTeachingAssistant } from '../components/TeachingAssistant.js';
-import { getDisplayName, getDisplaySubtitle } from '../../services/classroomService.js';
+import { getDisplayName, getDisplaySubtitle, getStudentCount, getMemberCount } from '../../services/classroomService.js';
 import { createClassroomHeaderElement } from '../components/ClassroomHeader.js';
 import { createRecognitionWidgetElement } from '../components/RecognitionWidget.js';
 import { createWeeklySnapshotWidgetElement } from '../components/WeeklySnapshotWidget.js';
@@ -205,34 +205,51 @@ export function renderDashboardView(container, props) {
   const wrapper = document.createElement('div');
   wrapper.className = 'dashboard-view';
 
+  // Phase 3 — the classroom identity block is deliberately quiet and
+  // functional now, matching the Personal Hub's own visual language
+  // (white surface, subtle border, rounded card, restrained shadow —
+  // see css/styles.css's .classroom-shell-header), not the earlier
+  // large solid-color banner with a personal "Welcome back" greeting.
+  // The Personal Hub is this app's own real "welcome" surface now; a
+  // second one here just competed with it. "← My Classrooms" is a
+  // genuine navigation choice back to that same Personal Hub — a
+  // plain router.navigate() push, not a redirect, so browser Back
+  // still behaves exactly as Phase 2 already fixed it to.
   const classroomContext = document.createElement('div');
-  classroomContext.className = 'classroom-hero';
+  classroomContext.className = 'classroom-shell-header';
 
-  const greeting = document.createElement('p');
-  greeting.className = 'classroom-hero__greeting';
-  greeting.textContent = `Welcome back, ${getFirstName(currentUser?.displayName)}`;
-  classroomContext.appendChild(greeting);
+  const backLink = document.createElement('button');
+  backLink.type = 'button';
+  backLink.className = 'classroom-shell-header__back';
+  backLink.append(createIcon('arrow-left', { size: 14 }), ' My Classrooms');
+  backLink.addEventListener('click', () => router.navigate('/teacher'));
+  classroomContext.appendChild(backLink);
 
   const title = document.createElement('h1');
-  title.className = 'tracker-header__title';
+  title.className = 'classroom-shell-header__name';
   title.textContent = getDisplayName(classroom);
   classroomContext.appendChild(title);
 
   const subtitle = document.createElement('p');
-  subtitle.className = 'tracker-header__subtitle';
+  subtitle.className = 'classroom-shell-header__subtitle';
   subtitle.textContent = getDisplaySubtitle(classroom);
   classroomContext.appendChild(subtitle);
 
-  // Deliberately timeless — a sense of entering a classroom, not a
-  // dashboard summary. No live stats or pending counts here; those
-  // already live in their own widgets below. `classroom.motto` doesn't
-  // exist as a field yet (setting one is scoped to a future Classroom
-  // Culture phase — banner, motto, color, theme, mascot) — this slot
-  // is forward-compatible for when that phase adds it, but renders
-  // nothing until then.
+  const meta = document.createElement('p');
+  meta.className = 'classroom-shell-header__meta';
+  const studentCount = getStudentCount(classroom);
+  const memberCount = getMemberCount(classroom);
+  meta.textContent = `${studentCount} Student${studentCount === 1 ? '' : 's'} · ${memberCount} Teacher${memberCount === 1 ? '' : 's'}`;
+  classroomContext.appendChild(meta);
+
+  // `classroom.motto` doesn't exist as a field yet (setting one is
+  // scoped to a future Classroom Culture phase) — this slot is
+  // forward-compatible for when that phase adds it, but renders
+  // nothing until then. Restyled quietly along with everything else
+  // here; it was never itself the "loud banner" being replaced.
   if (classroom.motto) {
     const motto = document.createElement('p');
-    motto.className = 'classroom-hero__motto';
+    motto.className = 'classroom-shell-header__motto';
     motto.textContent = classroom.motto;
     classroomContext.appendChild(motto);
   }
@@ -686,12 +703,6 @@ function renderPreRosterWelcome(container, classroom, assistantCallbacks, onOpen
     // future rule ever changes that, this is the first place to
     // revisit.
   });
-}
-
-/** Extracts a first name for the Hero's greeting — falls back gracefully if displayName is ever missing. */
-function getFirstName(displayName) {
-  if (!displayName) return 'there';
-  return displayName.trim().split(/\s+/)[0];
 }
 
 /**
