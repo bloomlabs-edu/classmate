@@ -102,7 +102,10 @@ export function renderConceptWorkspaceView(container, { classroom, subject, unit
     // why this is a lazy, explicit call here rather than a hook fired
     // on every classroom load.
     const migrated = await resourceService.migrateConceptResourceLinksIfNeeded(classroom.id, concept);
-    if (migrated) workspaceService.save(classroom);
+    if (migrated) {
+      workspaceService.markDirty(classroom.id);
+      workspaceService.saveExplicitly(classroom).catch(() => {});
+    }
 
     // Phase N — overlays every student's real studentConceptRecords
     // document for THIS ONE concept onto classroom.teams[].students[].learningRecord,
@@ -176,7 +179,20 @@ export function renderConceptWorkspaceView(container, { classroom, subject, unit
       },
       onCreateResource: async (title) => {
         const resource = await resourceService.createResourceOnConcept(classroom.id, concept, { title, type: pendingType });
-        workspaceService.save(classroom);
+        workspaceService.markDirty(classroom.id);
+        try {
+          await workspaceService.saveExplicitly(classroom);
+        } catch (error) {
+          // The Resource document itself is already durably saved
+          // (createResourceOnConcept() awaits that before ever touching
+          // concept.resourceLinks) — only the link push on the
+          // classroom document failed to persist. Roll that link back
+          // out so a retry doesn't leave a second, duplicate link
+          // behind once the classroom save eventually succeeds.
+          const index = concept.resourceLinks.findIndex((link) => link.resourceId === resource.id);
+          if (index !== -1) concept.resourceLinks.splice(index, 1);
+          throw error; // propagate to the Create button's own guard, which restores it for retry
+        }
         pendingType = null;
         selectedResourceId = resource.id;
         resourceMode = 'details'; // land on the new resource's own page, not back on the list
@@ -190,14 +206,23 @@ export function renderConceptWorkspaceView(container, { classroom, subject, unit
         // reference — never the full catalogue entry — is stored.
         const resourceType = LEARNING_HUB_EXPERIENCE_TYPE_TO_RESOURCE_TYPE[pendingLearningHubExperience.type] || 'activity';
         const resource = await resourceService.createResourceOnConcept(classroom.id, concept, { title, type: resourceType });
-        resource.content = {
-          kind: 'learning_hub_experience',
-          experienceType: pendingLearningHubExperience.type,
-          experienceId: pendingLearningHubExperience.id,
-        };
-        resource.audience = audience;
-        await resourceRepository.saveResource(classroom.id, resource);
-        workspaceService.save(classroom);
+        try {
+          resource.content = {
+            kind: 'learning_hub_experience',
+            experienceType: pendingLearningHubExperience.type,
+            experienceId: pendingLearningHubExperience.id,
+          };
+          resource.audience = audience;
+          await resourceRepository.saveResource(classroom.id, resource);
+          workspaceService.markDirty(classroom.id);
+          await workspaceService.saveExplicitly(classroom);
+        } catch (error) {
+          // Same rollback reasoning as onCreateResource above — undo
+          // the in-memory link so a retry starts clean.
+          const index = concept.resourceLinks.findIndex((link) => link.resourceId === resource.id);
+          if (index !== -1) concept.resourceLinks.splice(index, 1);
+          throw error;
+        }
         pendingLearningHubExperience = null;
         selectedResourceId = resource.id;
         resourceMode = 'details';
@@ -262,25 +287,48 @@ function renderWorkspace(container, classroom, subject, unit, concept, activeTab
   triggerLabel.textContent = 'Learning Hub';
   learningHubTrigger.append(triggerIcon, ' ', triggerLabel);
   learningHubTrigger.addEventListener('click', () => {
+    // Local to this one header-click's resulting panel instance — this
+    // function (renderWorkspace) is rebuilt fresh on every rerender(),
+    // so a variable declared in the outer workspace closure wouldn't be
+    // reachable from LearningHubPanel.js's own callback anyway. This
+    // guard only needs to survive for as long as this one panel is
+    // open, which is exactly its scope here — see this file's own
+    // isCreatingResource for the equivalent guard on the other two
+    // Create-Resource surfaces.
+    let isCreatingResourceFromPanel = false;
     openLearningHubPanel({
       concept,
       unit,
       pendingLearningHubExperience: null,
       handlers: {
         onPickLearningHubExperience: async (experience) => {
-          // Mirrors ui/views/LearningManagementView.js's own
-          // onUseLearningHubResourceForConcept exactly — same
-          // Resource type mapping, same content shape, same default
-          // ('teacher') audience. Not a second implementation; this
-          // Concept is always known here already, so there is no
-          // "which Concept?" step at all.
-          const resourceType = LEARNING_HUB_EXPERIENCE_TYPE_TO_RESOURCE_TYPE[experience.type] || 'activity';
-          const resource = await resourceService.createResourceOnConcept(classroom.id, concept, { title: experience.title, type: resourceType });
-          resource.content = { kind: 'learning_hub_experience', experienceType: experience.type, experienceId: experience.id };
-          resource.audience = 'teacher';
-          await resourceRepository.saveResource(classroom.id, resource);
-          workspaceService.save(classroom);
-          handlers.rerender();
+          if (isCreatingResourceFromPanel) return;
+          isCreatingResourceFromPanel = true;
+          try {
+            // Mirrors ui/views/LearningManagementView.js's own
+            // onUseLearningHubResourceForConcept exactly — same
+            // Resource type mapping, same content shape, same default
+            // ('teacher') audience. Not a second implementation; this
+            // Concept is always known here already, so there is no
+            // "which Concept?" step at all.
+            const resourceType = LEARNING_HUB_EXPERIENCE_TYPE_TO_RESOURCE_TYPE[experience.type] || 'activity';
+            const resource = await resourceService.createResourceOnConcept(classroom.id, concept, { title: experience.title, type: resourceType });
+            try {
+              resource.content = { kind: 'learning_hub_experience', experienceType: experience.type, experienceId: experience.id };
+              resource.audience = 'teacher';
+              await resourceRepository.saveResource(classroom.id, resource);
+              workspaceService.markDirty(classroom.id);
+              await workspaceService.saveExplicitly(classroom);
+            } catch (error) {
+              // Same rollback reasoning as onCreateResource/onCreateLearningHubResource above.
+              const index = concept.resourceLinks.findIndex((link) => link.resourceId === resource.id);
+              if (index !== -1) concept.resourceLinks.splice(index, 1);
+              return; // this path has no button of its own to restore; just stop here so a next pick can retry
+            }
+            handlers.rerender();
+          } finally {
+            isCreatingResourceFromPanel = false;
+          }
         },
         onUseLearningHubResourceForConcept: () => {},
         onCancelPendingLearningHubExperience: () => {},
@@ -606,7 +654,8 @@ function createResourceCard(classroom, concept, resource, index, total, handlers
   upButton.addEventListener('click', (event) => {
     event.stopPropagation();
     resourceService.moveResourceUp(concept, resource.id);
-    workspaceService.save(classroom);
+    workspaceService.markDirty(classroom.id);
+    workspaceService.saveExplicitly(classroom).catch(() => {});
     handlers.rerender();
   });
 
@@ -619,7 +668,8 @@ function createResourceCard(classroom, concept, resource, index, total, handlers
   downButton.addEventListener('click', (event) => {
     event.stopPropagation();
     resourceService.moveResourceDown(concept, resource.id);
-    workspaceService.save(classroom);
+    workspaceService.markDirty(classroom.id);
+    workspaceService.saveExplicitly(classroom).catch(() => {});
     handlers.rerender();
   });
 
@@ -738,10 +788,27 @@ function renderNameNewResourceView(pendingType, handlers) {
   createButton.type = 'button';
   createButton.className = 'btn btn--primary';
   createButton.textContent = 'Create';
-  createButton.addEventListener('click', () => {
+  createButton.addEventListener('click', async () => {
+    // Synchronous re-entrancy guard, same idiom as this app's other
+    // Create actions (e.g. ui/views/WorkRequestCreateView.js) — checked
+    // and set before any await, so a rapid second click while the first
+    // is still pending is a no-op rather than a second real creation.
+    if (createButton.disabled) return;
     const title = input.value.trim();
     if (!title) return;
-    handlers.onCreateResource(title);
+    createButton.disabled = true;
+    createButton.textContent = 'Creating…';
+    try {
+      await handlers.onCreateResource(title);
+      // On success, onCreateResource's own rerender() tears down and
+      // rebuilds this whole tab (landing on the new resource's Details
+      // page) — nothing left here to manually re-enable.
+    } catch (error) {
+      createButton.disabled = false;
+      createButton.textContent = 'Create';
+      // input.value is left exactly as the teacher typed it, so a
+      // retry doesn't require retyping the title.
+    }
   });
 
   form.append(input, createButton);
@@ -892,10 +959,20 @@ function renderLearningHubNameNewView(experience, handlers) {
   createButton.type = 'button';
   createButton.className = 'btn btn--primary';
   createButton.textContent = 'Create';
-  createButton.addEventListener('click', () => {
+  createButton.addEventListener('click', async () => {
+    // Same synchronous re-entrancy guard as renderNameNewResourceView's
+    // own Create button above.
+    if (createButton.disabled) return;
     const title = input.value.trim();
     if (!title) return;
-    handlers.onCreateLearningHubResource(title, selectedAudience);
+    createButton.disabled = true;
+    createButton.textContent = 'Creating…';
+    try {
+      await handlers.onCreateLearningHubResource(title, selectedAudience);
+    } catch (error) {
+      createButton.disabled = false;
+      createButton.textContent = 'Create';
+    }
   });
   form.appendChild(createButton);
 
@@ -1117,7 +1194,8 @@ function renderResourceDetailsView(container, classroom, concept, resource, hand
   deleteButton.addEventListener('click', async () => {
     if (!window.confirm(`Delete "${resource.title}"?`)) return;
     await resourceService.deleteResource(classroom.id, concept, resource.id);
-    workspaceService.save(classroom);
+    workspaceService.markDirty(classroom.id);
+    workspaceService.saveExplicitly(classroom).catch(() => {});
     handlers.onBackToResourceList();
   });
   detailsCard.appendChild(deleteButton);
