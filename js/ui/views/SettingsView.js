@@ -169,7 +169,8 @@ function renderNotebooksSection(content, classroom, rerender) {
       buttonLabel: '+ Add Subject',
       onAdd: (name) => {
         notebookConfigService.addSubject(classroom, name);
-        workspaceService.save(classroom);
+        workspaceService.markDirty(classroom.id);
+        workspaceService.saveExplicitly(classroom).catch(() => {});
         rerender();
       },
     })
@@ -186,7 +187,8 @@ function createNotebookSubjectRow(classroom, subject, rerender) {
   header.className = 'settings-notebook-subject__header';
   header.appendChild(createInlineEditableLabel(subject.name, (newName) => {
     notebookConfigService.renameSubject(classroom, subject.id, newName);
-    workspaceService.save(classroom);
+    workspaceService.markDirty(classroom.id);
+    workspaceService.saveExplicitly(classroom).catch(() => {});
     rerender();
   }));
 
@@ -198,7 +200,8 @@ function createNotebookSubjectRow(classroom, subject, rerender) {
     const confirmed = window.confirm(`Remove "${subject.name}" and all its Notebook Types? This cannot be undone.`);
     if (!confirmed) return;
     notebookConfigService.removeSubject(classroom, subject.id);
-    workspaceService.save(classroom);
+    workspaceService.markDirty(classroom.id);
+    workspaceService.saveExplicitly(classroom).catch(() => {});
     rerender();
   });
   header.appendChild(removeButton);
@@ -221,7 +224,8 @@ function createNotebookSubjectRow(classroom, subject, rerender) {
       helperText: 'Notebook types help you organize different kinds of student work.',
       onAdd: (name) => {
         notebookConfigService.addNotebookType(classroom, subject.id, name);
-        workspaceService.save(classroom);
+        workspaceService.markDirty(classroom.id);
+        workspaceService.saveExplicitly(classroom).catch(() => {});
         rerender();
       },
     })
@@ -236,7 +240,8 @@ function createNotebookTypeRow(classroom, type, rerender) {
 
   item.appendChild(createInlineEditableLabel(type.name, (newName) => {
     notebookConfigService.renameNotebookType(classroom, type.id, newName);
-    workspaceService.save(classroom);
+    workspaceService.markDirty(classroom.id);
+    workspaceService.saveExplicitly(classroom).catch(() => {});
     rerender();
   }));
 
@@ -248,7 +253,8 @@ function createNotebookTypeRow(classroom, type, rerender) {
     const confirmed = window.confirm(`Remove "${type.name}"? This cannot be undone.`);
     if (!confirmed) return;
     notebookConfigService.removeNotebookType(classroom, type.id);
-    workspaceService.save(classroom);
+    workspaceService.markDirty(classroom.id);
+    workspaceService.saveExplicitly(classroom).catch(() => {});
     rerender();
   });
   item.appendChild(removeButton);
