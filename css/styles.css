@@ -12130,6 +12130,214 @@ button.wizard-checklist__row:hover {
   align-self: flex-start;
 }
 
+/*
+ * Daily Check — ui/views/NotebookDailyCheckView.js's own tracking
+ * screen, reached instead of Checkpoints for any 'daily' trackingMode
+ * notebook type. Reuses .notebook-tracker-view/.notebook-tracker__page-header
+ * (same page-header/typeface scoping as Notebook Tracker's own
+ * redesign) rather than a third header treatment.
+ */
+.daily-check__subtitle {
+  margin: 0 0 1rem;
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+  font-weight: var(--font-weight-bold);
+}
+.daily-check__date-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+.daily-check__date-label {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 1.1rem;
+  font-weight: var(--font-weight-black);
+  color: var(--color-ink);
+  cursor: pointer;
+}
+.daily-check__holiday-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 2.5rem 1.5rem;
+  border: 1px dashed rgba(0, 0, 0, 0.12);
+  border-radius: 20px;
+  color: var(--color-muted);
+  text-align: center;
+}
+.daily-check__holiday-label {
+  margin: 0;
+  font-weight: var(--font-weight-bold);
+}
+.daily-check__table-wrap {
+  background-color: var(--color-surface);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  border-radius: 20px;
+  padding: 0.5rem 1rem;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+  overflow-x: auto;
+}
+.daily-check__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.daily-check__table th {
+  text-align: left;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-muted);
+  padding: 0.75rem 0.6rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+.daily-check__table td {
+  padding: 0.6rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+  font-size: 0.95rem;
+}
+.daily-check__name-cell {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+}
+.daily-check__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background-color: var(--color-bg);
+  color: var(--color-muted);
+  cursor: pointer;
+}
+.daily-check__toggle--checked {
+  background-color: color-mix(in srgb, var(--color-success, #3d7a4e) 16%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-success, #3d7a4e) 40%, transparent);
+  color: var(--color-success, #3d7a4e);
+}
+.daily-check__streak-cell {
+  font-weight: var(--font-weight-bold);
+}
+.daily-check__score-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  color: var(--color-muted);
+}
+.daily-check__score-input {
+  width: 3rem;
+  padding: 0.25rem 0.4rem;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  font: inherit;
+  text-align: center;
+}
+
+/* Settings > Notebooks — the small "Tracking" affordance and its
+   mode pill added next to each notebook type row. */
+.settings-notebook-type__tracking-pill {
+  display: inline-flex;
+  font-size: 0.72rem;
+  font-weight: var(--font-weight-bold);
+  padding: 0.15rem 0.55rem;
+  border-radius: var(--radius-pill);
+  background-color: color-mix(in srgb, var(--color-primary-deep) 12%, var(--color-surface));
+  color: color-mix(in srgb, var(--color-primary-deep) 80%, black);
+  margin: 0 0.5rem;
+}
+
+/* ui/components/NotebookTrackingModal.js */
+.notebook-tracking-modal__option-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 0.75rem 0 1.25rem;
+}
+.notebook-tracking-modal__option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  cursor: pointer;
+}
+.notebook-tracking-modal__option--selected {
+  border-color: var(--color-primary-deep);
+  background-color: color-mix(in srgb, var(--color-primary-deep) 6%, var(--color-surface));
+}
+.notebook-tracking-modal__option input {
+  margin-top: 0.2rem;
+}
+.notebook-tracking-modal__option-title {
+  display: block;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+}
+.notebook-tracking-modal__option-description {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--color-muted);
+}
+.notebook-tracking-modal__section {
+  border-top: 1px solid var(--color-border);
+  padding-top: 1rem;
+  margin-top: 0.5rem;
+}
+.notebook-tracking-modal__section-heading {
+  margin: 0 0 0.15rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+  font-size: 0.9rem;
+}
+.notebook-tracking-modal__section-description {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--color-muted);
+}
+.notebook-tracking-modal__score-max {
+  margin: 0.75rem 0;
+}
+.notebook-tracking-modal__custom-max-input {
+  margin-top: 0.5rem;
+  max-width: 8rem;
+}
+.notebook-tracking-modal__holidays-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.notebook-tracking-modal__add-holiday-row {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.75rem 0 1rem;
+}
+.notebook-tracking-modal__holiday-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.notebook-tracking-modal__holiday-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 0.6rem;
+  border-radius: 10px;
+  background-color: var(--color-bg);
+}
+
 /* Student Notebook Tracker — attached-tab interface (redesign; see ui/student-portal/views/StudentNotebooksView.js). Tab strip + content panel share one visual surface — an "open notebook" metaphor, not four floating buttons above a card. */
 .student-notebook-tabs {
   margin-top: 1rem;

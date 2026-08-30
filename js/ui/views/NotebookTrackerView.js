@@ -183,9 +183,12 @@ function createNotebookTypeCard(subject, notebookType, classroom, onNavigate) {
   const card = document.createElement('button');
   card.type = 'button';
   card.className = 'notebook-tracker__bento-card';
-  card.addEventListener('click', () =>
-    onNavigate(`/classroom/${classroom.id}/notebooks/${subject.id}/${notebookType.id}/checkpoints`)
-  );
+  card.addEventListener('click', () => {
+    // Reusable across any notebook type — never a Handwriting-specific
+    // branch. See models/NotebookType.js/services/dailyCheckService.js.
+    const destination = notebookConfigService.getTrackingMode(notebookType) === 'daily' ? 'daily' : 'checkpoints';
+    onNavigate(`/classroom/${classroom.id}/notebooks/${subject.id}/${notebookType.id}/${destination}`);
+  });
 
   const top = document.createElement('div');
   top.className = 'notebook-tracker__bento-card-top';

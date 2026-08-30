@@ -32,7 +32,8 @@
  *   #/classroom/{id}/notebooks                                       -> notebook tracker list (Subject × Notebook Type)
  *   #/classroom/{id}/work-requests/{requestId}                        -> WorkRequest checking + inline history, one page (see WorkRequestRosterView.js) — no separate Timeline route exists anymore
  *   #/classroom/{id}/notebooks/{subjectId}/{typeId}                  -> create a new WorkRequest (only reached when none is currently open for this Subject x Notebook Type)
- *   #/classroom/{id}/notebooks/{subjectId}/{typeId}/checkpoints       -> the Checkpoint grid for this exact Notebook (Subject x Notebook Type)
+ *   #/classroom/{id}/notebooks/{subjectId}/{typeId}/checkpoints       -> the Checkpoint grid for this exact Notebook (Subject x Notebook Type) — 'checkpoint' trackingMode only
+ *   #/classroom/{id}/notebooks/{subjectId}/{typeId}/daily             -> the Daily Check tracking screen for this exact Notebook — 'daily' trackingMode only (see services/dailyCheckService.js)
  *   #/classroom/{id}/recognition/{period?}/{categoryId?}     -> recognition screen (defaults resolved by the view itself)
  *   #/classroom/{id}/diagnostics               -> TEMPORARY Teacher Diagnostics screen (see
  *                                                 ui/views/TeacherDiagnosticsView.js's own header comment)
@@ -115,6 +116,15 @@ export function resolvePathParts(parts) {
       }
       if (parts[5] === 'checkpoints') {
         return { name: 'notebookCheckpoints', classroomId: parts[1], subjectId, notebookTypeId };
+      }
+      // Daily Check's own tracking screen — see
+      // services/dailyCheckService.js/ui/views/NotebookDailyCheckView.js.
+      // Only ever reached for a notebook type whose own trackingMode is
+      // 'daily' (NotebookTrackerView.js's own card decides which of
+      // this route or 'checkpoints' above to navigate to); reachable
+      // directly by URL too, same as every other sub-route here.
+      if (parts[5] === 'daily') {
+        return { name: 'notebookDailyCheck', classroomId: parts[1], subjectId, notebookTypeId };
       }
       // 'new' is the only sub-route left here — creating a WorkRequest
       // when none is currently open for this Subject x Notebook Type

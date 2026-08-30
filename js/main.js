@@ -73,6 +73,7 @@ import { renderWorkRequestRosterView } from './ui/views/WorkRequestRosterView.js
 import { renderNotebookTrackerView } from './ui/views/NotebookTrackerView.js';
 import { renderWorkRequestCreateView } from './ui/views/WorkRequestCreateView.js';
 import { renderNotebookCheckpointsView } from './ui/views/NotebookCheckpointsView.js';
+import { renderNotebookDailyCheckView } from './ui/views/NotebookDailyCheckView.js';
 import * as workRequestService from './services/workRequestService.js';
 import { renderDashboardView } from './ui/views/DashboardView.js';
 import { renderLearningProgrammesListView } from './ui/views/LearningProgrammesListView.js';
@@ -510,6 +511,7 @@ const CLASSROOM_ROUTE_NAMES = [
   'notebookTracker',
   'workRequestCreate',
   'notebookCheckpoints',
+  'notebookDailyCheck',
   'assessments',
   'goalManagement',
   'learningManagement',
@@ -1142,6 +1144,13 @@ function renderRoute(route, reason = 'unspecified') {
           const returnTo = `/classroom/${classroom.id}/notebooks/${route.subjectId}/${route.notebookTypeId}/checkpoints`;
           router.navigate(`/classroom/${classroom.id}/student/${studentId}?returnTo=${encodeURIComponent(returnTo)}`);
         },
+      });
+    } else if (route.name === 'notebookDailyCheck') {
+      renderNotebookDailyCheckView(appContainer, {
+        classroom,
+        subjectId: route.subjectId,
+        notebookTypeId: route.notebookTypeId,
+        onBack: () => router.navigate(`/classroom/${classroom.id}/notebooks`),
       });
     }
     return;

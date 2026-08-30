@@ -31,6 +31,7 @@ import * as notebookConfigService from '../../services/notebookConfigService.js'
 import { getDisplayName, ClassroomValidationError } from '../../services/classroomService.js';
 import { createIcon } from '../components/Icon.js';
 import { createBackButton } from '../components/BackButton.js';
+import { openNotebookTrackingModal } from '../components/NotebookTrackingModal.js';
 import { MEMBER_ROLES, PERMISSIONS, ROLE_PERMISSIONS } from '../../config/memberRoles.js';
 import { showToast } from '../components/Toast.js';
 
@@ -244,6 +245,23 @@ function createNotebookTypeRow(classroom, type, rerender) {
     workspaceService.saveExplicitly(classroom).catch(() => {});
     rerender();
   }));
+
+  // Reusable across any notebook type — never a Handwriting-specific
+  // control. See ui/components/NotebookTrackingModal.js.
+  const trackingModePill = document.createElement('span');
+  trackingModePill.className = 'settings-notebook-type__tracking-pill';
+  trackingModePill.textContent = notebookConfigService.getTrackingMode(type) === 'daily' ? 'Daily Check' : 'Checkpoints';
+  item.appendChild(trackingModePill);
+
+  const trackingButton = document.createElement('button');
+  trackingButton.type = 'button';
+  trackingButton.className = 'btn btn--text settings-notebook-subject__remove';
+  trackingButton.appendChild(createIcon('settings', { size: 14 }));
+  trackingButton.append(' Tracking');
+  trackingButton.addEventListener('click', () => {
+    openNotebookTrackingModal({ classroom, notebookType: type, onChanged: rerender });
+  });
+  item.appendChild(trackingButton);
 
   const removeButton = document.createElement('button');
   removeButton.type = 'button';
