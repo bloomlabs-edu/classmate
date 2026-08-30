@@ -21,17 +21,28 @@
  * capability, it's simply no longer surfaced on this specific
  * landing page.
  *
- * "⚙ Configure Notebook Types" is deliberately phrased as a doorway
+ * "Configure Notebook Types" is deliberately phrased as a doorway
  * out, not an action that belongs to this screen — per the frozen
  * Operational Work / Configuration boundary, this tracker is
  * operational; adding a new Subject/Notebook Type is configuration,
- * and the link should read as "you are about to leave this space,"
- * not as "this is one more thing this screen does." Visually
- * lightweight and set apart from the card grid by explicit product
- * decision — configuration should recede, not compete with real
- * operational work for attention. It links straight to the existing
- * Settings → Notebooks screen; nothing here duplicates that screen's
- * own creation form.
+ * and the panel should read as "you are about to leave this space,"
+ * not as "this is one more thing this screen does." Visually set
+ * apart from the Notebook card grid by explicit product decision
+ * (dashed border, not a solid card surface) — configuration should
+ * recede, not compete with real operational work for attention. It
+ * links straight to the existing Settings → Notebooks screen; nothing
+ * here duplicates that screen's own creation form.
+ *
+ * Header/typography — per the new UI consistency guidelines
+ * (docs/classmate_ui_consistency_guidelines.md), this screen's own
+ * header no longer uses the shared, older .tracker-header full-width
+ * blue bar: light background, dark title text, matching the "Default
+ * Page Header" pattern those guidelines establish as the default
+ * (Notebook Tracker is explicitly named in that doc's own "Bring
+ * forward" list). This page is also scoped to the newly-approved
+ * Plus Jakarta Sans typeface (see .notebook-tracker-view in
+ * css/styles.css) — deliberately scoped to only this page for now,
+ * not applied app-wide, since no other screen has migrated yet.
  */
 
 import * as workRequestService from '../../services/workRequestService.js';
@@ -39,24 +50,37 @@ import * as notebookConfigService from '../../services/notebookConfigService.js'
 import { getClassroomStudents } from '../../services/assessmentService.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { createBackButton } from '../components/BackButton.js';
+import { createIcon, createIconBadge } from '../components/Icon.js';
 
 export function renderNotebookTrackerView(container, { classroom, onBack, onNavigate, onOpenNotebookConfiguration }) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
-  wrapper.className = 'activities-view';
+  // 'notebook-tracker-view' is this screen's own scoping class — for
+  // the header treatment below (light background, not the shared
+  // .tracker-header's full-width blue bar) and the Plus Jakarta Sans
+  // typeface override, both per the new UI consistency guidelines
+  // (docs/classmate_ui_consistency_guidelines.md's own "Default Page
+  // Header" rule and Notebook Tracker's explicit "Bring forward"
+  // listing) — deliberately NOT applied to the shared .tracker-header/
+  // --font-body used by other screens, which haven't been migrated
+  // yet. 'activities-view' is kept for this page's existing, unrelated
+  // structural/spacing rules, shared with a few sibling views.
+  wrapper.className = 'activities-view notebook-tracker-view';
 
   const header = document.createElement('header');
-  header.className = 'tracker-header';
+  header.className = 'notebook-tracker__page-header';
   const backButton = createBackButton(onBack);
   const title = document.createElement('h1');
-  title.className = 'tracker-header__title';
+  title.className = 'notebook-tracker__page-header-title';
   title.textContent = 'Notebook Tracker';
   header.append(backButton, title);
   wrapper.appendChild(header);
 
   const content = document.createElement('div');
   content.className = 'wizard-step-content notebook-tracker__content';
+
+  content.appendChild(renderPageIntro());
 
   const needsAttention = workRequestService.getStudentsNeedingAttention(classroom);
   if (needsAttention.length > 0) {
@@ -68,17 +92,47 @@ export function renderNotebookTrackerView(container, { classroom, onBack, onNavi
     content.appendChild(createEmptyStateElement({ message: 'No subjects or notebook types configured yet.' }));
   } else {
     const grid = document.createElement('div');
-    grid.className = 'operational-work-grid';
+    grid.className = 'notebook-tracker__bento-grid';
     configuredNotebooks.forEach(({ subject, notebookType }) => {
       grid.appendChild(createNotebookTypeCard(subject, notebookType, classroom, onNavigate));
     });
     content.appendChild(grid);
   }
 
-  content.appendChild(createConfigureNotebookTypesLink(onOpenNotebookConfiguration));
+  content.appendChild(createConfigureNotebookTypesPanel(onOpenNotebookConfiguration));
 
   wrapper.appendChild(content);
   container.appendChild(wrapper);
+}
+
+/**
+ * A compact page introduction — establishes what this screen is
+ * without competing for vertical space with the real content below.
+ * Reuses createIconBadge()'s existing 'notebook' category (see
+ * ui/components/Icon.js's own ICON_CATEGORIES) rather than inventing a
+ * new tint, the same restrained pastel accent every notebook card
+ * below also uses.
+ */
+function renderPageIntro() {
+  const intro = document.createElement('div');
+  intro.className = 'notebook-tracker__intro';
+  intro.appendChild(createIconBadge('notebook-text', 'notebook', { size: 40 }));
+
+  const text = document.createElement('div');
+  text.className = 'notebook-tracker__intro-text';
+
+  const heading = document.createElement('h2');
+  heading.className = 'notebook-tracker__intro-heading';
+  heading.textContent = 'My Notebooks';
+  text.appendChild(heading);
+
+  const subtitle = document.createElement('p');
+  subtitle.className = 'notebook-tracker__intro-subtitle';
+  subtitle.textContent = 'Track and manage notebooks across your classes.';
+  text.appendChild(subtitle);
+
+  intro.appendChild(text);
+  return intro;
 }
 
 /**
@@ -112,25 +166,52 @@ function listConfiguredNotebooks(classroom) {
  * (ui/router.js's own notebookCheckpoints route,
  * ui/views/NotebookCheckpointsView.js) — no new routing, no new
  * model.
+ *
+ * Information hierarchy (redesign): the Subject is the primary,
+ * large-text identity of this card; Notebook Type ("Homework,"
+ * "Classwork," or whatever else a teacher has typed into Settings >
+ * Notebooks) is metadata describing it, shown as a small pill rather
+ * than folded into the title. The same Subject can therefore appear
+ * on more than one card, once per configured Notebook Type -- that is
+ * correct, not a duplicate. No "Active" pill is shown: the current
+ * data model (models/NotebookType.js) has no status/enabled field at
+ * all, and every configured type is implicitly current simply by
+ * existing -- inventing a status label with nothing real behind it
+ * would misrepresent this as tracked data it isn't.
  */
 function createNotebookTypeCard(subject, notebookType, classroom, onNavigate) {
   const card = document.createElement('button');
   card.type = 'button';
-  card.className = 'notebook-tracker__type-card';
+  card.className = 'notebook-tracker__bento-card';
   card.addEventListener('click', () =>
     onNavigate(`/classroom/${classroom.id}/notebooks/${subject.id}/${notebookType.id}/checkpoints`)
   );
 
-  const icon = document.createElement('span');
-  icon.className = 'notebook-tracker__type-card-icon';
-  icon.textContent = '\ud83d\udcd3';
-  icon.setAttribute('aria-hidden', 'true');
-  card.appendChild(icon);
+  const top = document.createElement('div');
+  top.className = 'notebook-tracker__bento-card-top';
+  top.appendChild(createIconBadge('notebook-text', 'notebook', { size: 40 }));
+
+  const arrow = document.createElement('span');
+  arrow.className = 'notebook-tracker__bento-arrow';
+  arrow.setAttribute('aria-hidden', 'true');
+  arrow.appendChild(createIcon('arrow-right', { size: 16 }));
+  top.appendChild(arrow);
+  card.appendChild(top);
 
   const title = document.createElement('span');
-  title.className = 'notebook-tracker__type-card-title';
-  title.textContent = `${subject.name} \u00b7 ${notebookType.name}`;
+  title.className = 'notebook-tracker__bento-title';
+  title.textContent = subject.name;
   card.appendChild(title);
+
+  const pill = document.createElement('span');
+  pill.className = 'notebook-tracker__bento-pill';
+  pill.textContent = notebookType.name;
+  card.appendChild(pill);
+
+  const description = document.createElement('span');
+  description.className = 'notebook-tracker__bento-description';
+  description.textContent = `Track ${notebookType.name.toLowerCase()} notebooks`;
+  card.appendChild(description);
 
   return card;
 }
@@ -172,14 +253,39 @@ function renderNeedsAttentionSection(needsAttention, classroom, onNavigate) {
 /**
  * Deliberately styled and worded as a doorway out of this operational
  * screen, not an action this screen performs — see this file's own
- * header comment for why "⚙ Configure" rather than "+ Add" is the
- * correct grammar here.
+ * header comment for why "Configure" rather than "+ Add" is the
+ * correct grammar here. Redesigned as a large dashed bento-style
+ * action panel, visually set apart from the real Notebook cards above
+ * (a dashed border, not the same solid-surface card treatment) so
+ * configuration still reads as a secondary, administrative doorway
+ * rather than another operational destination competing with them.
+ * Uses the real Lucide 'settings' icon (ui/components/Icon.js) rather
+ * than a plain gear character glyph, matching this app's own
+ * docs/icon-design-guide.md rule that functional icons use the icon
+ * system, not emoji/text glyphs.
  */
-function createConfigureNotebookTypesLink(onOpenNotebookConfiguration) {
-  const link = document.createElement('button');
-  link.type = 'button';
-  link.className = 'notebook-tracker__configure-link';
-  link.textContent = '\u2699 Configure Notebook Types';
-  link.addEventListener('click', () => onOpenNotebookConfiguration());
-  return link;
+function createConfigureNotebookTypesPanel(onOpenNotebookConfiguration) {
+  const panel = document.createElement('div');
+  panel.className = 'notebook-tracker__configure-panel';
+
+  panel.appendChild(createIcon('settings', { size: 24, className: 'notebook-tracker__configure-panel-icon' }));
+
+  const heading = document.createElement('p');
+  heading.className = 'notebook-tracker__configure-panel-heading';
+  heading.textContent = 'Configure Notebook Types';
+  panel.appendChild(heading);
+
+  const description = document.createElement('p');
+  description.className = 'notebook-tracker__configure-panel-description';
+  description.textContent = 'Add, edit or remove notebook types for your classrooms.';
+  panel.appendChild(description);
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn btn--secondary notebook-tracker__configure-panel-button';
+  button.textContent = 'Configure Now →';
+  button.addEventListener('click', () => onOpenNotebookConfiguration());
+  panel.appendChild(button);
+
+  return panel;
 }

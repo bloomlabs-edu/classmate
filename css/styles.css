@@ -9802,25 +9802,6 @@ button.wizard-checklist__row:hover {
   margin: 0;
 }
 
-/* Notebook Tracker's own "Configure Notebook Types" doorway. See
-   ui/views/NotebookTrackerView.js's own header comment for why this
-   is deliberately phrased as leaving the operational screen, not an
-   action the screen itself performs. */
-.notebook-tracker__configure-link {
-  display: block;
-  width: 100%;
-  text-align: center;
-  margin-top: 1.5rem;
-  padding: 0.75rem 1rem;
-  background: none;
-  border: 1px dashed var(--color-border);
-  border-radius: 12px;
-  color: var(--color-muted);
-  font: inherit;
-  font-weight: var(--font-weight-bold);
-  cursor: pointer;
-}
-
 /* Team movement indicator — see ui/components/TeamCard.js's own
    createMovementIndicator(). Communicates change since the current
    period started, not just current score. */
@@ -11977,32 +11958,176 @@ button.wizard-checklist__row:hover {
   }
 }
 
-/* Notebook Type destination cards — see ui/views/NotebookTrackerView.js's createNotebookTypeCard(). Deliberately simpler than .operational-work-card (no status line, no separate button — the whole card is the click target), reusing the exact same border-radius/shadow/blue-accent tokens for visual consistency with the rest of ClassMate. */
-.notebook-tracker__type-card {
-  background-color: #ffffff;
-  border: none;
-  border-radius: 20px;
-  padding: 1.75rem 1.5rem;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+/*
+ * Notebook Tracker — scoped to the newly-approved Plus Jakarta Sans
+ * typeface (docs/ClassMate_Branding_Product_Foundation_v0.1.md),
+ * deliberately only on this one screen for now — the rest of the app
+ * still loads/uses 'Open Sans' (--font-body) and hasn't migrated yet;
+ * applying this app-wide would be a separate, much larger change. The
+ * font file itself is requested in index.html's own preload link,
+ * alongside Open Sans, using the exact same non-render-blocking
+ * preload+swap technique already established there.
+ */
+.notebook-tracker-view {
+  font-family: 'Plus Jakarta Sans', var(--font-body);
+}
+
+/*
+ * Notebook Tracker's own page header — per the new UI consistency
+ * guidelines' "Default Page Header" pattern (light background, dark
+ * title text, ← Back), replacing the older shared .tracker-header
+ * full-width blue bar this screen used to use. Deliberately a new,
+ * page-scoped class rather than changing .tracker-header itself,
+ * which Settings and other screens still use unchanged.
+ */
+.notebook-tracker__page-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  background: transparent;
+}
+.notebook-tracker__page-header-title {
+  margin: 0;
+  font-size: var(--text-2xl);
+  font-weight: var(--font-weight-black);
+  color: var(--color-ink);
+}
+
+/*
+ * Notebook Tracker redesign — bento-style cards matching the same
+ * restrained pastel-card language already established by
+ * .primary-module-card (Dashboard) and .student-home__bento-card
+ * (Student Portal), reusing the same createIconBadge()/ICON_CATEGORIES
+ * 'notebook' pastel accent every card here shares deliberately (per
+ * explicit instruction: calm and cohesive, not one color per card).
+ * See ui/views/NotebookTrackerView.js's renderPageIntro()/
+ * createNotebookTypeCard()/createConfigureNotebookTypesPanel().
+ */
+
+.notebook-tracker__intro {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin: 0.25rem 0 1.25rem;
+}
+.notebook-tracker__intro-text {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  gap: 0.1rem;
+}
+.notebook-tracker__intro-heading {
+  margin: 0;
+  font-size: var(--text-xl, 1.25rem);
+  font-weight: var(--font-weight-black);
+  color: var(--color-ink);
+}
+.notebook-tracker__intro-subtitle {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+}
+
+.notebook-tracker__bento-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin: 0.5rem 0 1.5rem;
+}
+@media (max-width: 900px) {
+  .notebook-tracker__bento-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .notebook-tracker__bento-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.notebook-tracker__bento-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 0.6rem;
+  width: 100%;
+  background-color: var(--color-surface);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  border-radius: 20px;
+  padding: 1.25rem 1.35rem;
   cursor: pointer;
-  text-align: center;
-  transition: transform var(--duration-fast, 0.15s) var(--ease-standard, ease-out);
+  text-align: left;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+  transition: transform var(--duration-fast, 150ms) var(--ease-standard, ease), box-shadow var(--duration-fast, 150ms) var(--ease-standard, ease), border-color var(--duration-fast, 150ms) var(--ease-standard, ease);
 }
-.notebook-tracker__type-card:hover {
+.notebook-tracker__bento-card:hover,
+.notebook-tracker__bento-card:focus-visible {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.09);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.1);
+  border-color: rgba(0, 0, 0, 0.08);
 }
-.notebook-tracker__type-card-icon {
-  font-size: 2rem;
+.notebook-tracker__bento-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
 }
-.notebook-tracker__type-card-title {
+.notebook-tracker__bento-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background-color: var(--color-bg);
+  color: var(--color-muted);
+}
+.notebook-tracker__bento-title {
+  font-size: 1.1rem;
+  font-weight: var(--font-weight-black);
+  color: var(--color-ink);
+}
+.notebook-tracker__bento-pill {
+  display: inline-flex;
+  font-size: 0.75rem;
   font-weight: var(--font-weight-bold);
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-pill);
+  background-color: #eeebfb; /* ICON_CATEGORIES.notebook's own tint (Icon.js) — the same restrained pastel every card's icon badge already uses */
+  color: #6d5ac4; /* ICON_CATEGORIES.notebook's own icon color */
+}
+.notebook-tracker__bento-description {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
+.notebook-tracker__configure-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+  border: 2px dashed rgba(0, 0, 0, 0.12);
+  border-radius: 20px;
+  padding: 1.5rem;
+  margin-top: 0.5rem;
+  color: var(--color-muted);
+}
+.notebook-tracker__configure-panel-icon {
+  margin-bottom: 0.2rem;
+}
+.notebook-tracker__configure-panel-heading {
+  margin: 0;
   font-size: 1rem;
-  color: var(--color-primary, #2e7d9e);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+}
+.notebook-tracker__configure-panel-description {
+  margin: 0 0 0.4rem;
+  font-size: 0.85rem;
+}
+.notebook-tracker__configure-panel-button {
+  align-self: flex-start;
 }
 
 /* Student Notebook Tracker — attached-tab interface (redesign; see ui/student-portal/views/StudentNotebooksView.js). Tab strip + content panel share one visual surface — an "open notebook" metaphor, not four floating buttons above a card. */
