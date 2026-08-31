@@ -8713,14 +8713,8 @@ button.wizard-checklist__row:hover {
   padding: 0 0 0 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
-  border-left: 2px solid var(--color-border);
-}
-.settings-notebook-types-list__item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   gap: 0.6rem;
+  border-left: 2px solid var(--color-border);
 }
 .settings-inline-editable-label__display {
   background: none;
@@ -12238,17 +12232,58 @@ button.wizard-checklist__row:hover {
   text-align: center;
 }
 
-/* Settings > Notebooks — the small "Tracking" affordance and its
-   mode pill added next to each notebook type row. */
-.settings-notebook-type__tracking-pill {
+/* Settings > Notebooks — each notebook type is its own card so its
+   tracking mode and key configuration (working days, scoring) are
+   always visible, never hidden behind a settings icon. "Edit
+   tracking" only expands the editing controls below; the summary
+   above is present regardless (see ui/views/SettingsView.js's own
+   createNotebookTypeRow()). */
+.settings-notebook-type-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  background-color: #ffffff;
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.05);
+}
+.settings-notebook-type-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.settings-notebook-type-card__badge {
   display: inline-flex;
+  flex: none;
   font-size: 0.72rem;
   font-weight: var(--font-weight-bold);
   padding: 0.15rem 0.55rem;
   border-radius: var(--radius-pill);
   background-color: color-mix(in srgb, var(--color-primary-deep) 12%, var(--color-surface));
   color: color-mix(in srgb, var(--color-primary-deep) 80%, black);
-  margin: 0 0.5rem;
+}
+.settings-notebook-type-card__summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.settings-notebook-type-card__line {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--color-muted);
+}
+.settings-notebook-type-card__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.2rem;
+}
+.settings-notebook-type-card__editor {
+  border-top: 1px solid var(--color-border);
+  margin-top: 0.4rem;
+  padding-top: 0.85rem;
 }
 
 /* ui/components/NotebookTrackingModal.js */

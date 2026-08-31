@@ -31,11 +31,16 @@ import * as notebookConfigService from '../../services/notebookConfigService.js'
 import { getDisplayName, ClassroomValidationError } from '../../services/classroomService.js';
 import { createIcon } from '../components/Icon.js';
 import { createBackButton } from '../components/BackButton.js';
-import { openNotebookTrackingModal } from '../components/NotebookTrackingModal.js';
+import { renderTrackingEditor } from '../components/NotebookTrackingModal.js';
 import { MEMBER_ROLES, PERMISSIONS, ROLE_PERMISSIONS } from '../../config/memberRoles.js';
 import { showToast } from '../components/Toast.js';
 
 const SECTIONS = ['class', 'learning', 'classroom'];
+
+// UI-only — which notebook types currently have their tracking editor
+// expanded. Not persisted; same convention as
+// ClassroomManagementView.js's own collapsedGroupIds Set.
+const expandedTrackingRows = new Set();
 
 const SECTION_LABELS = {
   class: { icon: 'users', text: 'Teachers' },
@@ -235,33 +240,70 @@ function createNotebookSubjectRow(classroom, subject, rerender) {
   return item;
 }
 
+/**
+ * Tracking mode fundamentally changes how a notebook type behaves, so
+ * its mode and key configuration are always visible here — never
+ * hidden behind a settings icon. "Edit tracking" only toggles whether
+ * the *editing controls* (ui/components/NotebookTrackingModal.js's
+ * renderTrackingEditor()) are expanded inline; the summary above them
+ * is present regardless. Reusable across any notebook type — never a
+ * Handwriting-specific row.
+ */
 function createNotebookTypeRow(classroom, type, rerender) {
   const item = document.createElement('li');
-  item.className = 'settings-notebook-types-list__item';
+  item.className = 'settings-notebook-type-card';
 
-  item.appendChild(createInlineEditableLabel(type.name, (newName) => {
+  const topRow = document.createElement('div');
+  topRow.className = 'settings-notebook-type-card__top';
+  topRow.appendChild(createInlineEditableLabel(type.name, (newName) => {
     notebookConfigService.renameNotebookType(classroom, type.id, newName);
     workspaceService.markDirty(classroom.id);
     workspaceService.saveExplicitly(classroom).catch(() => {});
     rerender();
   }));
 
-  // Reusable across any notebook type — never a Handwriting-specific
-  // control. See ui/components/NotebookTrackingModal.js.
-  const trackingModePill = document.createElement('span');
-  trackingModePill.className = 'settings-notebook-type__tracking-pill';
-  trackingModePill.textContent = notebookConfigService.getTrackingMode(type) === 'daily' ? 'Daily Check' : 'Checkpoints';
-  item.appendChild(trackingModePill);
+  const trackingMode = notebookConfigService.getTrackingMode(type);
+  const isDaily = trackingMode === 'daily';
+  const dailySettings = type.dailySettings || {};
 
+  const badge = document.createElement('span');
+  badge.className = 'settings-notebook-type-card__badge';
+  badge.textContent = isDaily ? 'Daily Check' : 'Checkpoints';
+  topRow.appendChild(badge);
+  item.appendChild(topRow);
+
+  const summary = document.createElement('div');
+  summary.className = 'settings-notebook-type-card__summary';
+
+  const explanationLine = document.createElement('p');
+  explanationLine.className = 'settings-notebook-type-card__line';
+  explanationLine.textContent = isDaily ? 'Every working day' : 'Track named checkpoints or units';
+  summary.appendChild(explanationLine);
+
+  if (isDaily) {
+    const configLine = document.createElement('p');
+    configLine.className = 'settings-notebook-type-card__line';
+    configLine.textContent = dailySettings.scoringEnabled
+      ? `Scored · ${dailySettings.scoreMax} points`
+      : 'Not scored';
+    summary.appendChild(configLine);
+  }
+  item.appendChild(summary);
+
+  const actionsRow = document.createElement('div');
+  actionsRow.className = 'settings-notebook-type-card__actions';
+
+  const isExpanded = expandedTrackingRows.has(type.id);
   const trackingButton = document.createElement('button');
   trackingButton.type = 'button';
-  trackingButton.className = 'btn btn--text settings-notebook-subject__remove';
-  trackingButton.appendChild(createIcon('settings', { size: 14 }));
-  trackingButton.append(' Tracking');
+  trackingButton.className = 'btn btn--text';
+  trackingButton.textContent = isExpanded ? 'Close tracking editor' : 'Edit tracking';
   trackingButton.addEventListener('click', () => {
-    openNotebookTrackingModal({ classroom, notebookType: type, onChanged: rerender });
+    if (isExpanded) expandedTrackingRows.delete(type.id);
+    else expandedTrackingRows.add(type.id);
+    rerender();
   });
-  item.appendChild(trackingButton);
+  actionsRow.appendChild(trackingButton);
 
   const removeButton = document.createElement('button');
   removeButton.type = 'button';
@@ -273,9 +315,18 @@ function createNotebookTypeRow(classroom, type, rerender) {
     notebookConfigService.removeNotebookType(classroom, type.id);
     workspaceService.markDirty(classroom.id);
     workspaceService.saveExplicitly(classroom).catch(() => {});
+    expandedTrackingRows.delete(type.id);
     rerender();
   });
-  item.appendChild(removeButton);
+  actionsRow.appendChild(removeButton);
+  item.appendChild(actionsRow);
+
+  if (isExpanded) {
+    const editor = document.createElement('div');
+    editor.className = 'settings-notebook-type-card__editor';
+    editor.appendChild(renderTrackingEditor({ classroom, notebookType: type, onChanged: rerender }));
+    item.appendChild(editor);
+  }
 
   return item;
 }
