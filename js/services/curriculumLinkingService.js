@@ -92,6 +92,27 @@ export function findAvailableCurriculumIndexesForSubject(classroom, allCurriculu
   );
 }
 
+/**
+ * The inverse lookup Path B needs (see
+ * ui/components/AssignCurriculumToClassroomModal.js, opened from a
+ * Curriculum Index's own detail page in
+ * ui/views/CurriculumManagementView.js): given a classroom and a
+ * curriculum's canonical `subjectId`, is there already a Subject in
+ * that classroom this curriculum could be assigned to? Returns the
+ * first Subject with a matching `subjectId` and no curriculum linked
+ * yet, or null if the classroom has no such Subject at all — callers
+ * use that null to offer "create the Subject and assign" instead
+ * (services/learningRecordTeacherService.js's createSubject(), same
+ * as Path A's own AddSubjectModal.js). Never matches a Subject that
+ * already has a *different* curriculum linked — assigning here should
+ * only ever fill a genuinely empty slot, not silently replace an
+ * existing assignment; changing an existing assignment stays
+ * "Change Curriculum" on the Subject's own page.
+ */
+export function findAssignableSubjectForCurriculum(classroom, subjectId) {
+  return learningRecordService.getSubjects(classroom).find((subject) => subject.subjectId === subjectId && !subject.linkedCurriculumIndexId) || null;
+}
+
 function buildUnitsFromCurriculumIndex(curriculumIndex) {
   // Not a silent workaround for the reported crash — a Curriculum
   // Index missing `units` or `parts` entirely is a real, honest error
@@ -111,12 +132,6 @@ function buildUnitsFromCurriculumIndex(curriculumIndex) {
   const partNameById = new Map(curriculumIndex.parts.map((part) => [part.id, part.name]));
   const hasMultipleParts = curriculumIndex.parts.length > 1;
 
-  // TEMPORARY DIAGNOSTIC — tracing whether THIS function, in THIS
-  // deployed session, actually has the fixed logic or not. See this
-  // project's own investigation into the partName/undefined Firestore
-  // rejection bug.
-  console.error(`[buildUnitsFromCurriculumIndex] TEMPORARY DIAGNOSTIC \u2014 curriculumIndex.parts.length =`, curriculumIndex.parts.length, `hasMultipleParts =`, hasMultipleParts);
-
   return curriculumIndex.units.map((unit) => {
     const args = {
       title: unit.title,
@@ -131,10 +146,7 @@ function buildUnitsFromCurriculumIndex(curriculumIndex) {
     if (hasMultipleParts) {
       args.partName = partNameById.get(unit.partId);
     }
-    console.error(`[buildUnitsFromCurriculumIndex] TEMPORARY DIAGNOSTIC \u2014 args passed to createLearningUnit() for unit "${unit.title}":`, `'partName' in args?`, 'partName' in args, JSON.stringify(args));
-    const result = createLearningUnit(args);
-    console.error(`[buildUnitsFromCurriculumIndex] TEMPORARY DIAGNOSTIC \u2014 result returned for unit "${unit.title}":`, `'partName' in result?`, 'partName' in result, JSON.stringify(result));
-    return result;
+    return createLearningUnit(args);
   });
 }
 

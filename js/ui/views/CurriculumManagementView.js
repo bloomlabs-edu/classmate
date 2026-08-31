@@ -69,11 +69,13 @@ import * as curriculumIndexRepository from '../../services/curriculumIndexReposi
 import * as curriculumSubmissionsService from '../../services/curriculumSubmissionsService.js';
 import { createCurriculumIndexSession } from '../../services/curriculumIndexSession.js';
 import * as unitPageRangeService from '../../services/unitPageRangeService.js';
+import * as workspaceService from '../../services/workspaceService.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { createBackButton } from '../components/BackButton.js';
 import { getCanonicalSubjects, getCanonicalSubjectById, generateCustomSubjectId } from '../../services/subjectIdentityService.js';
 import { createCurriculumExplorerPanel } from '../components/CurriculumExplorerPanel.js';
 import { createSearchableSelect } from '../components/SearchableSelect.js';
+import { openAssignCurriculumToClassroomModal } from '../components/AssignCurriculumToClassroomModal.js';
 import { GRADE_OPTIONS } from '../../config/gradeOptionsConfig.js';
 import { showToast } from '../components/Toast.js';
 
@@ -326,6 +328,22 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
           isResumingIndex = true;
           showToast(`${indexSession.getIndex().curriculum.name} saved.`);
           rerender();
+        },
+        /**
+         * Path B of curriculum assignment (see
+         * services/curriculumLinkingService.js's own header comment) —
+         * "Assign Curriculum" from this Curriculum Index's own detail
+         * page, rather than from a classroom's Learning Subject page
+         * (Path A, ui/components/AssignCurriculumModal.js). Reads the
+         * live classrooms list at click time, not a stale snapshot
+         * captured when this view first opened.
+         */
+        onOpenAssignCurriculum: () => {
+          openAssignCurriculumToClassroomModal({
+            curriculumIndex: indexSession.getIndex(),
+            classrooms: workspaceService.getState().classrooms,
+            onAssigned: () => rerender(),
+          });
         },
         onOpenUnitConcepts: (unitId) => {
           selectedUnitConceptsId = unitId;
@@ -1285,6 +1303,19 @@ function renderIndexReviewUnitsStep(index, canonicalImportErrors, handlers) {
   // separate, not-yet-scoped piece of work; renaming Parts/Units
   // already works today via their own inline fields above.
   section.appendChild(editButton);
+
+  // Path B of curriculum assignment (see this file's own
+  // onOpenAssignCurriculum handler, and
+  // services/curriculumLinkingService.js's header comment) — a
+  // separate, additive action from editing the Curriculum Index
+  // itself above; assigning it to a classroom/Subject never replaces
+  // or hides "Edit Curriculum".
+  const assignButton = document.createElement('button');
+  assignButton.type = 'button';
+  assignButton.className = 'btn btn--secondary';
+  assignButton.textContent = 'Assign Curriculum';
+  assignButton.addEventListener('click', handlers.onOpenAssignCurriculum);
+  section.appendChild(assignButton);
 
   const zone = document.createElement('div');
   zone.className = 'learning-management__danger-zone';

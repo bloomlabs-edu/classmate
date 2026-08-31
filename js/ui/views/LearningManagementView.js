@@ -8,25 +8,37 @@
  * ui/components/ExistingSubjectsList.js) and nothing else — no
  * suggestions, no placeholders, no empty-state copy of any kind.
  *
- * Creating a Subject and assigning it a curriculum are, once again, one
- * combined step — reverted per explicit product decision: "+ Add
- * Subject" (ui/components/AddSubjectModal.js) runs Choose Subject ->
- * Choose Curriculum, and the Subject is only ever created (via
- * services/curriculumLinkingService.js's createSubjectWithCurriculum())
- * once both are chosen. Cancelling curriculum selection creates
- * nothing. The data flow this maintains: Subject -> Assigned
+ * Creating a Subject and assigning it a curriculum are two separate
+ * steps, on purpose — three distinct concepts: a CURRICULUM RESOURCE
+ * (a Curriculum Index in the library), a CLASSROOM SUBJECT (this
+ * Subject), and a CURRICULUM ASSIGNMENT (the link between them).
+ * "+ Add Subject" (ui/components/AddSubjectModal.js) only ever runs
+ * Choose Subject, creating a bare Subject immediately via
+ * services/learningRecordTeacherService.js's createSubject() — no
+ * curriculum required or implied. Landing directly on that Subject's
+ * own page afterward (see onGoToAddSubject below) is what makes
+ * "Assign curriculum ->" the natural next click, not a forced one:
+ * a Subject with no curriculum assigned is a completely normal,
+ * persistent state (ui/components/CurriculumMetadataLine.js's own
+ * "Curriculum: Not assigned"), not an error condition.
+ *
+ * The data flow once a curriculum IS assigned: Subject -> Assigned
  * Curriculum -> Units -> Concepts. A Subject never owns Units
- * independent of a curriculum; every Unit it has is derived from that
+ * independent of a curriculum unless a teacher adds them manually
+ * (+ Add Unit); every curriculum-derived Unit comes from that
  * curriculum's own data (see
  * services/curriculumLinkingService.js's createSubjectWithCurriculum()
  * and assignCurriculumToSubject()), not hardcoded here.
  *
- * ui/components/AssignCurriculumModal.js and the "no curriculum
- * assigned" state (ui/components/CurriculumMetadataLine.js) still
- * exist, but only for the defensive case now — a Subject whose
- * Curriculum Index was deleted after assignment, or a genuinely
- * legacy Subject predating this reversion — not as part of the normal
- * creation flow.
+ * Both ui/components/AssignCurriculumModal.js's entry points —
+ * Path A, "Learning -> Subject -> Assign curriculum", reached here —
+ * and ui/views/CurriculumManagementView.js's own "Assign Curriculum"
+ * (Path B, from a Curriculum Index's own detail page) read/write the
+ * exact same underlying relationship
+ * (services/curriculumLinkingService.js's
+ * findAvailableCurriculumIndexesForSubject()/assignCurriculumToSubject()/
+ * createSubjectWithCurriculum()) — never two separate assignment
+ * mechanisms.
  *
  * Component hierarchy, and why the Subject Picker can never end up on
  * this home screen by accident:
@@ -35,12 +47,13 @@
  *   ├── ExistingSubjectsList     (persisted Subjects only — no
  *   │                             suggestion data, no fallback list)
  *   ├── "+ Add Subject" button   (trivial — stays inline here)
- *   ├── AddSubjectModal          (Choose Subject -> Choose Curriculum,
- *   │     └── SubjectSelectionList   combined — a Subject is only
- *   │         (the only file that     created once both are chosen)
+ *   ├── AddSubjectModal          (Choose Subject only — creates a
+ *   │     └── SubjectSelectionList   bare Subject, no curriculum step)
+ *   │         (the only file that
  *   │          imports config/commonSubjectsConfig.js)
- *   └── AssignCurriculumModal    (defensive path only now — a legacy
- *                                  or orphaned-curriculum Subject; see
+ *   └── AssignCurriculumModal    (the always-available "Assign
+ *                                  curriculum ->" action on a
+ *                                  Subject's own page; see
  *                                  ui/components/CurriculumMetadataLine.js)
  *
  * This file has no import reaching suggested-subject data anywhere in
@@ -331,16 +344,14 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
       openAddSubjectModal({
         classroom: selectedClassroom,
         existingSubjectTitles,
-        onSubjectAdded: () => {
-          // The modal already persisted and saved the Subject itself
-          // (services/curriculumLinkingService.js's
-          // createSubjectWithCurriculum() + services/workspaceService.js)
-          // — this only needs to re-render so the home screen reads
-          // it back from services/learningRecordService.js, the
-          // single source of truth for what's actually persisted.
-          rerender();
+        onSubjectAdded: (subject) => {
+          // The modal already created and marked the Subject dirty —
+          // land directly on that Subject's own page (not just the
+          // Home list) so "Assign curriculum ->" is the natural next
+          // action, rather than making the teacher find and reopen
+          // the Subject they just added.
+          handlers.onChooseSubject(subject);
         },
-        onOpenCurriculumManagement: () => onOpenCurriculumManagement({ onBack: () => rerender() }),
       });
     },
     onChooseSubject: (subject) => {
@@ -929,17 +940,14 @@ function renderSubjectStep(subject, curriculumState, selectedPartName, selectedU
 
   const hasUnits = subject.units.length > 0;
 
-  // Curriculum metadata (e.g. "Linked to NCERT Science Grade 8") is
-  // still shown when genuinely relevant — but only once real Units
-  // already exist. A brand-new Subject with neither Units nor a
-  // Curriculum shows the plain "No Units yet." message below instead,
-  // per explicit product decision: Curriculum status is no longer
-  // the thing this screen leads with.
-  if (hasUnits) {
-    const metadataSlot = document.createElement('div');
-    renderCurriculumMetadataLine(metadataSlot, { curriculumState });
-    section.appendChild(metadataSlot);
-  }
+  // Curriculum metadata ("Curriculum: Samacheer Kalvi..." or
+  // "Curriculum: Not assigned") is always visible, regardless of
+  // whether Units exist yet — a Subject's curriculum assignment is a
+  // real, always-inspectable state, not something that only becomes
+  // worth showing once Units happen to exist.
+  const metadataSlot = document.createElement('div');
+  renderCurriculumMetadataLine(metadataSlot, { curriculumState });
+  section.appendChild(metadataSlot);
 
   const curriculumActionButton = document.createElement('button');
   curriculumActionButton.type = 'button';
@@ -952,7 +960,7 @@ function renderSubjectStep(subject, curriculumState, selectedPartName, selectedU
     curriculumActionButton.textContent = 'Change Curriculum';
     curriculumActionButton.addEventListener('click', handlers.onManageCurriculum);
   } else if (curriculumState.status === 'none') {
-    curriculumActionButton.textContent = 'Import from Curriculum';
+    curriculumActionButton.textContent = 'Assign curriculum →';
     curriculumActionButton.addEventListener('click', handlers.onGoToAssignCurriculum);
   }
 

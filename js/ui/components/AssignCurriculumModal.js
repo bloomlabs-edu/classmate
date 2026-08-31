@@ -1,12 +1,16 @@
 /**
  * ui/components/AssignCurriculumModal.js
  *
- * "Assign Curriculum" — a separate, explicit action from creating a
- * Subject (see ui/components/AddSubjectModal.js). Triggered from the
- * Subject page (ui/components/CurriculumMetadataLine.js's "Assign
- * Curriculum" button) once a Subject already exists with no
- * curriculum. Shows which of the teacher's own Curriculum Indexes
- * match this Subject's own title (see
+ * "Assign curriculum →" — the always-available, explicit action for
+ * connecting a curriculum to a Subject, separate from creating the
+ * Subject itself (see ui/components/AddSubjectModal.js, which now
+ * only ever creates a bare Subject — never a curriculum together with
+ * it). Triggered from the Subject page
+ * (ui/views/LearningManagementView.js's renderSubjectStep()) whenever
+ * `curriculumState.status === 'none'` — the normal state for any
+ * freshly-created Subject, not just a legacy/defensive edge case.
+ * Shows which of the teacher's own Curriculum Indexes match this
+ * Subject's own canonical subjectId (see
  * services/curriculumLinkingService.js's
  * findAvailableCurriculumIndexesForSubject()), as real radio inputs,
  * with the Subject's name echoed above them.
@@ -94,13 +98,13 @@ export function openAssignCurriculumModal({ classroom, subject, onCurriculumAssi
       if (matches.length === 0) {
         const emptyNote = document.createElement('p');
         emptyNote.className = 'modal__description';
-        emptyNote.textContent = `No curriculum is available for ${subject.title}. You need to create a ${subject.title} curriculum before this Subject can use one.`;
+        emptyNote.textContent = `No curriculum is set up for ${subject.title} yet.`;
         modal.insertBefore(emptyNote, actions);
 
         const openCurriculumManagementButton = document.createElement('button');
         openCurriculumManagementButton.type = 'button';
         openCurriculumManagementButton.className = 'btn btn--primary';
-        openCurriculumManagementButton.textContent = 'Open Curriculum';
+        openCurriculumManagementButton.textContent = 'Open Curriculum Library';
         openCurriculumManagementButton.addEventListener('click', () => {
           close();
           onOpenCurriculumManagement();

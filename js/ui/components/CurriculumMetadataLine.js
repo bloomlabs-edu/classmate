@@ -7,6 +7,13 @@
  * the word "Curriculum" (the label itself is training-wheels a
  * teacher reads past after the first few visits).
  *
+ * "Not assigned" (status 'none') is a real, distinct state shown just
+ * as plainly as an actual assignment — CURRICULUM ASSIGNMENT is its
+ * own relationship, separate from the Subject existing at all (see
+ * ui/components/AddSubjectModal.js's own header comment), so a
+ * brand-new Subject with nothing linked yet should say so, not go
+ * silent.
+ *
  * Pure display only — no buttons live here anymore. Simplified per
  * explicit product decision: the overflow-menu pattern this used to
  * pair with was causing recurring positioning bugs, and this
@@ -32,21 +39,22 @@
 export function renderCurriculumMetadataLine(container, { curriculumState }) {
   container.innerHTML = '';
 
-  if (curriculumState.status === 'none') {
-    // This component is only ever called once real Units already
-    // exist (see ui/views/LearningManagementView.js's own
-    // renderSubjectStep()) — "none" here genuinely means "no
-    // curriculum link exists for this already-populated Subject,"
-    // never "nothing exists at all." There's nothing meaningful to
-    // say about curriculum in that case, so nothing is shown at all
-    // rather than a confusing "Nothing set up" line directly above a
-    // real Units list.
-    return;
-  }
-
   const line = document.createElement('div');
   line.className = 'curriculum-metadata-line';
   container.appendChild(line);
+
+  if (curriculumState.status === 'none') {
+    const icon = document.createElement('span');
+    icon.className = 'curriculum-metadata-line__icon';
+    icon.textContent = '📖';
+    line.appendChild(icon);
+
+    const text = document.createElement('span');
+    text.className = 'curriculum-metadata-line__text curriculum-metadata-line__text--unassigned';
+    text.textContent = 'Curriculum: Not assigned';
+    line.appendChild(text);
+    return;
+  }
 
   if (curriculumState.status === 'loading') {
     const loadingText = document.createElement('span');
@@ -72,6 +80,6 @@ export function renderCurriculumMetadataLine(container, { curriculumState }) {
   const text = document.createElement('span');
   text.className = 'curriculum-metadata-line__text';
   const { curriculumIndex } = curriculumState;
-  text.textContent = `${curriculumIndex.curriculum.name} \u00b7 ${curriculumIndex.curriculum.grade}`;
+  text.textContent = `Curriculum: ${curriculumIndex.curriculum.name} \u00b7 ${curriculumIndex.curriculum.grade}`;
   line.appendChild(text);
 }
