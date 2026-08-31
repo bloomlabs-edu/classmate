@@ -2,8 +2,8 @@
  * ui/components/UserBar.js
  *
  * A small persistent bar (avatar + name + accent-color edit button +
- * a notification-settings bell + a link back to Bloom Labs + Sign
- * Out) shown above every screen once a teacher is signed in — added
+ * a notification-settings bell + a link back to the teacher Overview
+ * + Sign Out) shown above every screen once a teacher is signed in — added
  * once here, in main.js, rather than duplicated into every view's own
  * header.
  *
@@ -16,11 +16,18 @@
  * handleEnableNotifications()/handleDisableNotifications(), matching
  * this file's own "rendering only" role exactly.
  *
- * The "\u2190 Bloom Labs" link exists purely so a signed-in teacher can
- * get back to the platform landing page (and from there, the Student
- * placeholder) without editing the URL by hand — there was previously
- * no in-app way to do this once inside the teacher app. It does not
- * sign anyone out or touch auth state; it's just navigation.
+ * The "\u2190 Overview" link takes a signed-in teacher back to their
+ * own cross-classroom landing page (ui/views/PersonalHubView.js,
+ * route #/teacher) \u2014 NOT the Bloom Labs / Student Portal picker at
+ * the bare #/ route. It used to point there (labeled "Home"), which
+ * meant clicking it from inside a classroom landed on a
+ * portal-selection screen instead of the teacher's own Overview \u2014 a
+ * real, reported navigation bug, not a design choice. That platform
+ * picker still exists and is still reachable through its own intended
+ * flow (opening the app fresh with no hash, or after a full
+ * sign-out); this bar just never sends a signed-in teacher there
+ * anymore. It does not sign anyone out or touch auth state; it's just
+ * navigation.
  *
  * The color edit control is icon-only (a pencil, no "Edit" label) and
  * sits grouped with Sign Out on the right side of the bar, per explicit
@@ -39,7 +46,7 @@ import { ACCENT_COLOR_OPTIONS } from '../../config/accentColorConfig.js';
 import { createSpectrumColorPicker } from './SpectrumColorPicker.js';
 import { createIcon } from './Icon.js';
 
-export function renderUserBar(container, { user, onSignOut, currentAccentColorId, onSelectAccentColor, onSelectCustomAccentColor, onPreviewCustomAccentColor, onBackToLanding, notificationPermissionState, onEnableNotifications, onDisableNotifications, notificationUnreadCount, notifications, hasClassroomContext, onOpenNotification, onNotificationsViewed }) {
+export function renderUserBar(container, { user, onSignOut, currentAccentColorId, onSelectAccentColor, onSelectCustomAccentColor, onPreviewCustomAccentColor, onGoToOverview, notificationPermissionState, onEnableNotifications, onDisableNotifications, notificationUnreadCount, notifications, hasClassroomContext, onOpenNotification, onNotificationsViewed }) {
   container.innerHTML = '';
   if (!user) return;
 
@@ -221,15 +228,15 @@ export function renderUserBar(container, { user, onSignOut, currentAccentColorId
     );
   }
 
-  if (onBackToLanding) {
-    const landingLink = document.createElement('button');
-    landingLink.type = 'button';
-    landingLink.className = 'btn btn--text';
-    landingLink.appendChild(createIcon('arrow-left'));
-    landingLink.append('Home');
-    landingLink.title = 'Back to Home';
-    landingLink.addEventListener('click', onBackToLanding);
-    secondaryMenu.appendChild(landingLink);
+  if (onGoToOverview) {
+    const overviewLink = document.createElement('button');
+    overviewLink.type = 'button';
+    overviewLink.className = 'btn btn--text';
+    overviewLink.appendChild(createIcon('arrow-left'));
+    overviewLink.append('Overview');
+    overviewLink.title = 'Back to Overview';
+    overviewLink.addEventListener('click', onGoToOverview);
+    secondaryMenu.appendChild(overviewLink);
   }
 
   const signOutButton = document.createElement('button');

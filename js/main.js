@@ -135,7 +135,7 @@ function handleSelectAccentColor(colorId) {
   renderUserBar(userBarContainer, {
     user: currentUser,
     onSignOut: handleSignOut,
-    onBackToLanding: () => router.navigate('/'),
+    onGoToOverview: () => router.navigate('/teacher'),
     currentAccentColorId,
     onSelectAccentColor: handleSelectAccentColor,
     onSelectCustomAccentColor: handleSelectCustomAccentColor,
@@ -172,7 +172,7 @@ async function handleEnableNotifications() {
   renderUserBar(userBarContainer, {
     user: currentUser,
     onSignOut: handleSignOut,
-    onBackToLanding: () => router.navigate('/'),
+    onGoToOverview: () => router.navigate('/teacher'),
     currentAccentColorId,
     onSelectAccentColor: handleSelectAccentColor,
     onSelectCustomAccentColor: handleSelectCustomAccentColor,
@@ -195,7 +195,7 @@ async function handleDisableNotifications() {
   renderUserBar(userBarContainer, {
     user: currentUser,
     onSignOut: handleSignOut,
-    onBackToLanding: () => router.navigate('/'),
+    onGoToOverview: () => router.navigate('/teacher'),
     currentAccentColorId,
     onSelectAccentColor: handleSelectAccentColor,
     onSelectCustomAccentColor: handleSelectCustomAccentColor,
@@ -242,7 +242,7 @@ function manageNotificationSubscription(classroomId) {
       renderUserBar(userBarContainer, {
         user: currentUser,
         onSignOut: handleSignOut,
-        onBackToLanding: () => router.navigate('/'),
+        onGoToOverview: () => router.navigate('/teacher'),
         currentAccentColorId,
         onSelectAccentColor: handleSelectAccentColor,
         onSelectCustomAccentColor: handleSelectCustomAccentColor,
@@ -776,7 +776,7 @@ function renderRoute(route, reason = 'unspecified') {
   renderUserBar(userBarContainer, {
     user: currentUser,
     onSignOut: handleSignOut,
-    onBackToLanding: () => router.navigate('/'),
+    onGoToOverview: () => router.navigate('/teacher'),
     currentAccentColorId,
     onSelectAccentColor: handleSelectAccentColor,
     onSelectCustomAccentColor: handleSelectCustomAccentColor,
@@ -1299,7 +1299,7 @@ function init() {
           renderUserBar(userBarContainer, {
             user: currentUser,
             onSignOut: handleSignOut,
-            onBackToLanding: () => router.navigate('/'),
+            onGoToOverview: () => router.navigate('/teacher'),
             currentAccentColorId,
             onSelectAccentColor: handleSelectAccentColor,
             onSelectCustomAccentColor: handleSelectCustomAccentColor,
