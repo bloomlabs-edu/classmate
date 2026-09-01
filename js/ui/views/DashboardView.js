@@ -337,7 +337,6 @@ export function renderDashboardView(container, props) {
       onOpenAssessmentManagement: openAssessmentManagement,
       onOpenGoalManagement: openGoalManagement,
       onOpenNotebookTracker,
-      onOpenFeed: openFeed,
       onOpenLearningProgrammes: openLearningProgrammes,
       attentionById,
     })
@@ -381,12 +380,35 @@ export function renderDashboardView(container, props) {
   const hasSubjectsConfigured = (classroom.notebookConfig?.subjects || []).length > 0;
   const hasRealGroups = classroom.teams.some((team) => !team.isUngrouped);
 
-  if (hasAnyRecognition || hasAnyScoreActivity) {
-    const celebrateGroup = document.createElement('div');
-    celebrateGroup.className = 'dashboard-view__group';
-    if (hasAnyRecognition) celebrateGroup.appendChild(createRecognitionWidgetElement({ classroom, onViewAll: onOpenRecognition, onSelectStudent }));
-    if (hasAnyScoreActivity) celebrateGroup.appendChild(createWeeklySnapshotWidgetElement({ classroom, onSelectStudent }));
-    content.appendChild(celebrateGroup);
+  // Class Feed's own card (see CLASS_FEED_MODULE above) shares this row
+  // with the Recognition Wall, rather than sitting full-width and
+  // mostly empty beside its own compact two-card content — Feed always
+  // renders here regardless of whether there's anything to recognize
+  // yet, exactly as it always rendered unconditionally in the primary
+  // modules grid before this change; only Recognition Wall's own
+  // presence stays gated on hasAnyRecognition, unchanged.
+  const celebrateRow = document.createElement('div');
+  celebrateRow.className = 'dashboard-view__celebrate-row';
+  celebrateRow.appendChild(
+    createPrimaryModuleCard({
+      icon: CLASS_FEED_MODULE.icon,
+      label: CLASS_FEED_MODULE.title,
+      description: CLASS_FEED_MODULE.description,
+      onClick: openFeed,
+      tier: CLASS_FEED_MODULE.tier,
+      accentColor: CLASS_FEED_MODULE.accentColor,
+      attentionText: attentionById.feed,
+    })
+  );
+  if (hasAnyRecognition) celebrateRow.appendChild(createRecognitionWidgetElement({ classroom, onViewAll: onOpenRecognition, onSelectStudent }));
+  content.appendChild(celebrateRow);
+
+  // Weekly Snapshot keeps its own former place in this same reading
+  // order (directly after Recognition) — only its row-mate changed
+  // above, not its own position relative to Pending Tasks/Teaching/
+  // Classroom below.
+  if (hasAnyScoreActivity) {
+    content.appendChild(createWeeklySnapshotWidgetElement({ classroom, onSelectStudent }));
   }
 
   if (hasPendingTasks) {
@@ -502,15 +524,29 @@ const DASHBOARD_MODULES = [
     tier: 'daily',
     accentColor: '#B8630F', // warm amber-orange, distinct from every other card's own color; this screen's existing Notebook Tracker, unchanged, is the destination
   },
-  {
-    id: 'feed',
-    title: 'Class Feed',
-    icon: 'file-text',
-    description: 'See what students are sharing',
-    tier: 'daily',
-    accentColor: '#2E7D9E', // a restrained blue, distinct from every other card's own color; this screen's existing Class Feed, unchanged, is the destination
-  },
 ];
+
+/**
+ * Class Feed — deliberately NOT one of DASHBOARD_MODULES above anymore.
+ * Layout fix (see this file's own CHANGELOG entry): the Recognition
+ * Wall, rendered full-width, left a large empty stretch of horizontal
+ * space beside its own (small, two-card) content once the primary
+ * modules row above it was already full. Feed's card is completely
+ * unchanged — same icon/title/description/accentColor/destination,
+ * still built by the exact same createPrimaryModuleCard() every module
+ * above uses — only *where* it's placed changed: alongside the
+ * Recognition Wall (see renderDashboardView's own celebrateRow, below)
+ * rather than inside this grid, so that row's own width is actually
+ * used instead of left empty.
+ */
+const CLASS_FEED_MODULE = {
+  id: 'feed',
+  title: 'Class Feed',
+  icon: 'file-text',
+  description: 'See what students are sharing',
+  tier: 'daily',
+  accentColor: '#2E7D9E', // a restrained blue, distinct from every other card's own color; this screen's existing Class Feed, unchanged, is the destination
+};
 
 function renderPrimaryModulesSection({
   onOpenClassroomLanding,
@@ -518,7 +554,6 @@ function renderPrimaryModulesSection({
   onOpenAssessmentManagement,
   onOpenGoalManagement,
   onOpenNotebookTracker,
-  onOpenFeed,
   onOpenLearningProgrammes,
   attentionById = {},
 }) {
@@ -533,7 +568,6 @@ function renderPrimaryModulesSection({
     assessments: onOpenAssessmentManagement,
     goals: onOpenGoalManagement,
     notebooks: onOpenNotebookTracker,
-    feed: onOpenFeed,
     learningProgrammes: onOpenLearningProgrammes,
   };
 

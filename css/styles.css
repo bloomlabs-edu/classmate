@@ -4419,6 +4419,31 @@ button.wizard-checklist__row:hover {
 }
 
 /*
+ * Row 2 fix — Class Feed's own module card (see
+ * ui/views/DashboardView.js's CLASS_FEED_MODULE) and the Recognition
+ * Wall now share one row, instead of Recognition Wall sitting
+ * full-width with a large stretch of empty horizontal space beside its
+ * own small, two-card content once the primary modules row above it
+ * was already full. A grid, not flex, so the split is a real,
+ * predictable ~1/3–2/3 rather than however flex-grow happens to
+ * settle; `minmax(220px, 33%)` keeps Feed's card readable down to a
+ * real minimum before wrapping, rather than letting it shrink past
+ * legibility. Grid's own default `align-items: stretch` is what gives
+ * both cards a matching height — no fixed height set anywhere here.
+ */
+.dashboard-view__celebrate-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 33%) 1fr;
+  align-items: stretch;
+  gap: 1rem;
+}
+@media (max-width: 720px) {
+  .dashboard-view__celebrate-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/*
  * Visual refresh — named emotional palettes. Sections CONSUME these
  * rather than owning a color outright, so the same palette can travel
  * to a downstream screen (Recognition Screen, Notebook Tracker,
@@ -4828,6 +4853,13 @@ button.wizard-checklist__row:hover {
  */
 .dashboard-widget--recognition {
   border-top: 3px solid var(--color-primary-deep);
+  /* Row 2 fix (see .dashboard-view__celebrate-row) — this widget's
+     grid cell is stretched to match Class Feed's card height; centering
+     its own (shorter) content vertically avoids just relocating the
+     original empty-space problem to below this widget's heading. */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .dashboard-widget--celebrate .dashboard-widget__heading {
@@ -5018,6 +5050,14 @@ button.wizard-checklist__row:hover {
     0 0 12px 2px color-mix(in srgb, var(--color-accent) 35%, transparent);
 }
 
+/* Row 2 fix (see .dashboard-view__celebrate-row above) — the compact
+   variant now sits in a narrower, shared-row card rather than a
+   full-width one, so its own vertical padding is trimmed to match:
+   less empty air per card, without touching the `--full` variant
+   Recognition Screen uses for its own, deliberately larger cards. */
+.recognition-card--compact {
+  padding: 0.6rem 0.75rem;
+}
 .recognition-card--compact .recognition-card__avatar {
   width: 2rem;
   height: 2rem;
@@ -5175,11 +5215,22 @@ button.wizard-checklist__row:hover {
    and later a single "📚 Curriculum" button). */
 .primary-modules {
   display: grid;
-  /* Wider minimum than before — these are now spacious, left-aligned
-     bento-style cards (icon badge + title + description + optional
-     attention pill), not centered icon-only squares, so each one
-     needs more room to read comfortably. */
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  /* Fixed at exactly six equal-width tracks — DASHBOARD_MODULES
+     (ui/views/DashboardView.js) has exactly six entries today
+     (Classroom, Learning, Assessments, Goals, Teaching Programmes,
+     Notebooks). `auto-fit, minmax(220px, 1fr)` used to decide how many
+     220px+ columns fit on its own — on real desktop-with-sidebar
+     content widths that came out to five, wrapping Notebooks onto its
+     own second row and leaving a large empty gap beside it (a real,
+     reported layout bug) rather than the intentional one-row band this
+     is meant to be. `minmax(0, 1fr)` (not bare `1fr`) is required, not
+     decorative — a grid item's default min-width is `auto` (its own
+     content size), which would otherwise refuse to shrink below that
+     and silently reintroduce the same overflow/wrap this fixes. If a
+     7th module is ever added, this becomes `repeat(7, minmax(0, 1fr))`
+     — a deliberate, disclosed coupling to that array's length, not an
+     oversight. */
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 1rem;
   margin: 1.5rem 0;
   /* Matches .dashboard-widget's own 1rem horizontal padding (see its
@@ -5189,11 +5240,22 @@ button.wizard-checklist__row:hover {
      extend past those edges, a real, reported misalignment. */
   padding: 0 1rem;
 }
-/* Below this width, a spacious two-column (or auto-fit-derived
-   multi-column) layout leaves too little width per card for its own
-   title + description + attention pill to stay readable without
-   awkward wrapping — full-width single-column stacking instead,
-   matching this app's own dominant small-screen breakpoint. */
+/* Tablet range — six fixed tracks would squeeze each card narrower
+   than is comfortable once the sidebar's own fixed width starts
+   eating into a smaller viewport. Falls back to the previous
+   auto-fit/minmax behavior (however many 220px+ columns actually fit,
+   wrapping the rest onto their own row) rather than forcing one row
+   at any cost. */
+@media (max-width: 900px) {
+  .primary-modules {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+}
+/* Below this width, even the auto-fit fallback above leaves too
+   little width per card for its own title + description + attention
+   pill to stay readable without awkward wrapping — full-width
+   single-column stacking instead, matching this app's own dominant
+   small-screen breakpoint. */
 @media (max-width: 640px) {
   .primary-modules {
     grid-template-columns: 1fr;
