@@ -66,6 +66,16 @@ export const PERMISSIONS = Object.freeze({
   REMOVE_TEACHER: 'remove_teacher',
   TRANSFER_OWNERSHIP: 'transfer_ownership', // future
   DELETE_CLASSROOM: 'delete_classroom',
+  // Lesson Planning & Review — deliberately granted to every classroom
+  // TEACHER, not a distinct "reviewer" role: V1's own scope decision is
+  // that a reviewer must be a co-teacher of the SAME classroom (no
+  // School/Programme entity exists yet to ground a cross-classroom
+  // PM/HM scope in — see this file's own PROGRAM_MANAGER/HEAD_MASTER
+  // comment above for the identical gap). Any co-teacher reviewing a
+  // colleague's plan is a real, if imperfect, V1 answer; a true
+  // manager-lens reviewer role is future work, not guessed at here.
+  REVIEW_LESSON_PLAN: 'review_lesson_plan',
+  APPROVE_LESSON_PLAN: 'approve_lesson_plan',
 });
 
 export const ROLE_PERMISSIONS = Object.freeze({
@@ -82,6 +92,8 @@ export const ROLE_PERMISSIONS = Object.freeze({
     PERMISSIONS.REMOVE_TEACHER,
     PERMISSIONS.TRANSFER_OWNERSHIP,
     PERMISSIONS.DELETE_CLASSROOM,
+    PERMISSIONS.REVIEW_LESSON_PLAN,
+    PERMISSIONS.APPROVE_LESSON_PLAN,
   ]),
   [MEMBER_ROLES.TEACHER]: Object.freeze([
     PERMISSIONS.AWARD_POINTS,
@@ -92,6 +104,8 @@ export const ROLE_PERMISSIONS = Object.freeze({
     PERMISSIONS.EDIT_GROUPS,
     PERMISSIONS.MARK_ATTENDANCE,
     PERMISSIONS.CREATE_LEARNING_ACTIVITY,
+    PERMISSIONS.REVIEW_LESSON_PLAN,
+    PERMISSIONS.APPROVE_LESSON_PLAN,
   ]),
   [MEMBER_ROLES.VIEWER]: Object.freeze([]),
   // All four intentionally empty — see file header. Real permissions for

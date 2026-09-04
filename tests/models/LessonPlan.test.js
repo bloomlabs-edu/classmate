@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createLessonPlan, createLessonPlanActivity, LESSON_PLAN_STATUS, getLessonPlanActivityIndex, findLessonPlanActivity } from '../../js/models/LessonPlan.js';
+import { createLessonPlan, createLessonPlanActivity, createLessonPlanComment, LESSON_PLAN_STATUS, getLessonPlanActivityIndex, findLessonPlanActivity } from '../../js/models/LessonPlan.js';
 import * as lessonPlanService from '../../js/services/lessonPlanService.js';
+import { buildActivitySectionKey } from '../../js/services/lessonPlanReviewService.js';
 
 test('createLessonPlan: defaults every dynamic list to empty, status to draft, never undefined anywhere Firestore would reject it', () => {
   const plan = createLessonPlan({ classroomId: 'c1', createdByUid: 'u1' });
@@ -123,6 +124,68 @@ test('removeActivityDifferentiation: collapses differentiation back to null — 
   lessonPlanService.addActivityDifferentiation(plan, activity.id);
   lessonPlanService.removeActivityDifferentiation(plan, activity.id);
   assert.equal(findLessonPlanActivity(plan, activity.id).differentiation, null);
+});
+
+// ---------------------------------------------------------------------
+// Phase 3 — Activity comments stay attached to the ACTIVITY ID, never
+// a positional "Activity N" label, and never leak between a duplicate
+// and its original.
+// ---------------------------------------------------------------------
+
+test('a comment addressed to an activity survives that activity being reordered — sectionKey is id-based, not position-based', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const a = lessonPlanService.addActivity(plan);
+  const b = lessonPlanService.addActivity(plan);
+  plan.activeComments.push(createLessonPlanComment({ sectionKey: buildActivitySectionKey(b.id), text: 'Make the Student Action more observable.', byUid: 'pm-1' }));
+
+  // b starts at position 2 (index 1); move it to position 1.
+  lessonPlanService.moveActivityUp(plan, b.id);
+  assert.deepEqual(plan.activities.map((activity) => activity.id), [b.id, a.id]);
+
+  const comment = plan.activeComments.find((c) => c.sectionKey === buildActivitySectionKey(b.id));
+  assert.ok(comment, 'comment must still be addressed to b\'s own id after reordering');
+  assert.equal(comment.text, 'Make the Student Action more observable.');
+});
+
+test('duplicating an activity does NOT copy the original\'s comments onto the new activity', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const original = lessonPlanService.addActivity(plan);
+  plan.activeComments.push(createLessonPlanComment({ sectionKey: buildActivitySectionKey(original.id), text: 'Fix the Teacher Action.', byUid: 'pm-1' }));
+
+  const duplicate = lessonPlanService.duplicateActivity(plan, original.id);
+
+  const commentsOnDuplicate = plan.activeComments.filter((c) => c.sectionKey === buildActivitySectionKey(duplicate.id));
+  assert.equal(commentsOnDuplicate.length, 0);
+  // The original's own comment must still be exactly where it was.
+  const commentsOnOriginal = plan.activeComments.filter((c) => c.sectionKey === buildActivitySectionKey(original.id));
+  assert.equal(commentsOnOriginal.length, 1);
+});
+
+test('deleting an activity removes its OPEN comments (whole-activity and sub-field) from activeComments, but never touches reviewHistory', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const activity = lessonPlanService.addActivity(plan);
+  const otherActivity = lessonPlanService.addActivity(plan);
+  plan.activeComments.push(
+    createLessonPlanComment({ sectionKey: buildActivitySectionKey(activity.id), text: 'Whole-activity note.', byUid: 'pm-1' }),
+    createLessonPlanComment({ sectionKey: buildActivitySectionKey(activity.id, 'differentiation.greenBucket'), text: 'Clarify the Green Bucket.', byUid: 'pm-1' }),
+    createLessonPlanComment({ sectionKey: buildActivitySectionKey(otherActivity.id), text: 'Unrelated note on a different activity.', byUid: 'pm-1' })
+  );
+  // Simulate a frozen historical round that also mentions this activity —
+  // this must survive the delete completely untouched.
+  plan.reviewHistory.push({
+    id: 'round-1',
+    status: 'changes_requested',
+    byUid: 'pm-1',
+    at: '2026-01-01T00:00:00.000Z',
+    comments: [createLessonPlanComment({ sectionKey: buildActivitySectionKey(activity.id), text: 'Historical note.', byUid: 'pm-1' })],
+  });
+
+  lessonPlanService.deleteActivity(plan, activity.id);
+
+  assert.equal(plan.activeComments.length, 1);
+  assert.equal(plan.activeComments[0].sectionKey, buildActivitySectionKey(otherActivity.id));
+  // reviewHistory is append-only — untouched even though it references a now-deleted activity.
+  assert.equal(plan.reviewHistory[0].comments[0].text, 'Historical note.');
 });
 
 // ---------------------------------------------------------------------

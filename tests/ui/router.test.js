@@ -124,6 +124,21 @@ test('lesson plan builder route', () => {
   });
 });
 
+test('lesson plan review queue route', () => {
+  assert.deepEqual(resolvePathParts(parts('classroom/classroom-1/lesson-plans/review')), {
+    name: 'lessonPlanReviewQueue',
+    classroomId: 'classroom-1',
+  });
+});
+
+test('lesson plan review route: a real lessonPlanId followed by /review opens the reviewer view, not the builder', () => {
+  assert.deepEqual(resolvePathParts(parts('classroom/classroom-1/lesson-plans/plan-1/review')), {
+    name: 'lessonPlanReview',
+    classroomId: 'classroom-1',
+    lessonPlanId: 'plan-1',
+  });
+});
+
 test('pre-existing route: feed', () => {
   assert.deepEqual(resolvePathParts(parts('classroom/classroom-1/feed')), { name: 'feed', classroomId: 'classroom-1' });
 });

@@ -35,7 +35,7 @@ test('ROLE_PERMISSIONS: PROGRAM_MANAGER and HEAD_MASTER grant zero permissions, 
   assert.deepEqual(ROLE_PERMISSIONS[MEMBER_ROLES.PARENT], []);
 });
 
-test('ROLE_PERMISSIONS: existing roles keep their exact existing permission sets', () => {
+test('ROLE_PERMISSIONS: existing roles keep their exact existing permission sets, plus the Lesson Planning & Review additions', () => {
   assert.deepEqual(ROLE_PERMISSIONS[MEMBER_ROLES.OWNER], [
     PERMISSIONS.AWARD_POINTS,
     PERMISSIONS.UNDO,
@@ -49,6 +49,8 @@ test('ROLE_PERMISSIONS: existing roles keep their exact existing permission sets
     PERMISSIONS.REMOVE_TEACHER,
     PERMISSIONS.TRANSFER_OWNERSHIP,
     PERMISSIONS.DELETE_CLASSROOM,
+    PERMISSIONS.REVIEW_LESSON_PLAN,
+    PERMISSIONS.APPROVE_LESSON_PLAN,
   ]);
   assert.deepEqual(ROLE_PERMISSIONS[MEMBER_ROLES.TEACHER], [
     PERMISSIONS.AWARD_POINTS,
@@ -59,6 +61,8 @@ test('ROLE_PERMISSIONS: existing roles keep their exact existing permission sets
     PERMISSIONS.EDIT_GROUPS,
     PERMISSIONS.MARK_ATTENDANCE,
     PERMISSIONS.CREATE_LEARNING_ACTIVITY,
+    PERMISSIONS.REVIEW_LESSON_PLAN,
+    PERMISSIONS.APPROVE_LESSON_PLAN,
   ]);
   assert.deepEqual(ROLE_PERMISSIONS[MEMBER_ROLES.VIEWER], []);
 });

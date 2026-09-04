@@ -24,7 +24,13 @@
  * entirely — "if an activity is deleted, all of its associated content
  * is deleted together" is automatically true here, since there is no
  * separate collection/field anywhere else that could hold orphaned
- * pieces of it.
+ * pieces of it. Duplicating deliberately does NOT copy `activeComments`/
+ * `reviewHistory` targeting the original — a comment is always about a
+ * specific activityId, and the duplicate is a different id, so nothing
+ * has to be filtered out; a reviewer's note on the original was never
+ * about the copy. Deleting DOES need one explicit line (see
+ * deleteActivity() below) — comments live in a different array
+ * entirely, so removing the activity alone would silently strand them.
  */
 
 import {
@@ -36,6 +42,7 @@ import {
   findLessonPlanActivity,
 } from '../models/LessonPlan.js';
 import { getCurrentIsoDate } from '../utils/dateHelpers.js';
+import { buildActivitySectionKey } from './lessonPlanReviewService.js';
 
 function touch(lessonPlan) {
   lessonPlan.updatedAt = getCurrentIsoDate();
@@ -145,11 +152,29 @@ export function updateActivity(lessonPlan, activityId, { title, teacherAction, s
   touch(lessonPlan);
 }
 
-/** Removes one Activity entirely — its differentiation (if any) is part of the same array entry, so nothing is left orphaned. */
+/**
+ * Removes one Activity entirely — its differentiation (if any) is part
+ * of the same array entry, so nothing is left orphaned. Also drops any
+ * still-OPEN comment addressed to this activity (whole-activity or a
+ * sub-field like `differentiation.greenBucket`) from `activeComments` —
+ * an actionable "fix this" note about content that no longer exists is
+ * dead weight a teacher/reviewer could never resolve. Deliberately
+ * leaves `reviewHistory` completely untouched: a past round's frozen
+ * comment snapshot ("in round 1, the reviewer said X about that
+ * activity") stays historically true even after the activity is later
+ * deleted — see this file's own header comment and models/LessonPlan.js's
+ * append-only reviewHistory doc comment.
+ */
 export function deleteActivity(lessonPlan, activityId) {
   const before = lessonPlan.activities.length;
   lessonPlan.activities = lessonPlan.activities.filter((activity) => activity.id !== activityId);
-  if (lessonPlan.activities.length < before) touch(lessonPlan);
+  if (lessonPlan.activities.length === before) return;
+
+  const targetPrefix = buildActivitySectionKey(activityId);
+  lessonPlan.activeComments = lessonPlan.activeComments.filter(
+    (comment) => comment.sectionKey !== targetPrefix && !comment.sectionKey.startsWith(`${targetPrefix}:`)
+  );
+  touch(lessonPlan);
 }
 
 /** Duplicates one Activity's COMPLETE structure (title, TA, SA, and differentiation if present) with a fresh id, inserted immediately after the original — "if an activity is duplicated, its complete structure is duplicated," per explicit product direction. Returns the new Activity. */

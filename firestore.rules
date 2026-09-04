@@ -598,6 +598,121 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Lesson Plan (Phase 2/3 — see models/LessonPlan.js,
+    // services/lessonPlanService.js, services/lessonPlanReviewService.js).
+    // PRE-EXISTING GAP FIXED IN PHASE 3: this collection had no rule at
+    // all since Phase 2 shipped, the exact same "falls through to
+    // deny-by-default" gap this file's own Resource comment (just below)
+    // already documents for that collection — every read/write was
+    // silently non-functional against a real deployed project until now.
+    //
+    // PHASE 3 HARDENING (this version): the first Phase 3 draft of this
+    // rule only checked the TOP-LEVEL `status` field on write, which left
+    // three real holes, closed below:
+    //   1. `create` didn't restrict the INITIAL status/reviewHistory at
+    //      all — a client could create a brand-new document already
+    //      marked `status: 'approved'` with a fabricated reviewHistory,
+    //      skipping the entire review workflow via the create path
+    //      rather than update.
+    //   2. The author's own `update` branch didn't check `resource.data
+    //      .status` at all — an author could keep editing lesson CONTENT
+    //      after submitting (status stays 'submitted'), silently
+    //      changing what a reviewer is looking at mid-review, something
+    //      the UI (LessonPlanBuilderView.js's own `editable` gating)
+    //      already prevents but the data layer did not.
+    //   3. The reviewer's own `update` branch let them change ANY field
+    //      as long as the status transition was legal — nothing stopped
+    //      a compromised/malicious reviewer-role account from rewriting
+    //      lesson CONTENT (topic, activities, etc.) under cover of
+    //      "requesting changes."
+    //
+    // This version fixes all three by checking, per branch, exactly
+    // which fields are allowed to change (`diff().affectedKeys()
+    // .hasOnly([...])`, the same pattern this file's own isSelfOnlyJoin()
+    // helper already established for classrooms) and validating the
+    // shape of whatever gets appended to reviewHistory, matching
+    // services/lessonPlanReviewService.js's actual behavior field-for-
+    // field (its own nextRoundNumber()/closeCurrentRound() split — see
+    // that file's header comment):
+    //
+    //   CREATE: only as 'draft', with empty reviewHistory/activeComments
+    //     — a lesson plan can never be born already submitted/approved.
+    //
+    //   UPDATE, author branch (resource.data.createdByUid == the
+    //     writer): only while resource.data.status is 'draft' or
+    //     'changes_requested' — locked out entirely once SUBMITTED or
+    //     APPROVED, closing hole #2. Two allowed shapes:
+    //       (a) a content edit — status unchanged, reviewHistory
+    //           byte-for-byte unchanged (nothing added, nothing edited),
+    //           activeComments never GROWS (a content edit only ever
+    //           prunes a deleted activity's own open comments, per
+    //           lessonPlanService.js's deleteActivity()).
+    //       (b) a (re)submission — status becomes 'submitted', exactly
+    //           one well-formed SUBMITTED round appended (byUid ==
+    //           the author, comments == [] — matching submitForReview()
+    //           never creating comments of its own), activeComments
+    //           fully cleared.
+    //     Never 'approved' — that transition has no author-branch shape
+    //     at all, so it's rejected by construction, not just excluded.
+    //
+    //   UPDATE, reviewer branch (any OTHER current member whose role
+    //     grants the matching permission — REVIEW_LESSON_PLAN for
+    //     'changes_requested', APPROVE_LESSON_PLAN for 'approved'; both
+    //     currently granted to the same 'owner'/'teacher' roles in
+    //     config/memberRoles.js, kept as two separate literal checks
+    //     below anyway in case a future role split ever gives one
+    //     without the other): only from resource.data.status ==
+    //     'submitted', and ONLY status/reviewerUid/reviewHistory/
+    //     activeComments/updatedAt may change at all — closing hole #3,
+    //     a reviewer's write can never touch lesson content, full stop.
+    //     Exactly one well-formed round appended, byUid == the reviewer,
+    //     never the plan's own author (self-review blocked here too, not
+    //     just in the service). requestChanges requires >=1 comment in
+    //     that round (mirrors the service's own "a bare status flip
+    //     leaves the teacher nothing to act on" refusal); approve clears
+    //     activeComments entirely.
+    //
+    // DISCLOSED, DELIBERATE LIMITATION (not a silent gap): this does NOT
+    // verify that reviewHistory entries OTHER than the newly-appended one
+    // are byte-identical to before (only that the list as a whole grew by
+    // exactly one, well-formed entry) — Firestore rules has no clean
+    // "slice" operation to compare "everything except the last element."
+    // A tampered client could in principle rewrite an EARLIER round's own
+    // recorded text/byUid while otherwise satisfying every check here.
+    // This is the same class of accepted simplification this file's own
+    // classrooms rule already documents (see its KNOWN SIMPLIFICATION
+    // note near the top) — flagged explicitly rather than silently
+    // assumed solved. Full tamper-proofing of historical entries would
+    // need either a Cloud Function-verified write path or per-round
+    // subcollection documents (each individually immutable), neither of
+    // which this phase builds — see the Phase 3 hardening report for the
+    // explicit call to stop and review here rather than overreach.
+    //
+    // Verified against a real Firestore Rules Unit Testing emulator run —
+    // see firebase-rules-verification/lessonPlans.rules.verify.js — not
+    // just reasoned about; see that directory's own README for how to
+    // re-run it.
+    match /classrooms/{classroomId}/lessonPlans/{lessonPlanId} {
+      allow read: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+
+      allow create: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids &&
+        request.resource.data.createdByUid == request.auth.uid &&
+        request.resource.data.status == 'draft' &&
+        request.resource.data.reviewHistory.size() == 0 &&
+        request.resource.data.activeComments.size() == 0;
+
+      allow update: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids &&
+        (
+          isLessonPlanAuthorEdit(resource, request) ||
+          isLessonPlanReviewerAction(resource, request, get(/databases/$(database)/documents/classrooms/$(classroomId)).data.members[request.auth.uid].role)
+        );
+
+      allow delete: if false;
+    }
+
     // Learning Hub — Resource (see models/Resource.js,
     // services/resourceService.js, services/resourceRepository.js).
     // Fixes the exact pre-existing gap flagged in this file's own NOTE
@@ -1119,4 +1234,76 @@ function isSelfOnlyJoin(request, resource) {
     request.resource.data.memberUids.size() == resource.data.memberUids.size() + 1 &&
     request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([request.auth.uid]) &&
     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'memberUids']);
+}
+
+// LessonPlan (Phase 3 hardening) — see that match block's own header
+// comment for the full reasoning behind both functions below.
+//
+// The plan's own author, writing while it's still theirs to write
+// (DRAFT/CHANGES_REQUESTED only — locked out entirely once SUBMITTED/
+// APPROVED). Exactly two legitimate shapes: a plain content edit
+// (status unchanged, reviewHistory byte-for-byte untouched,
+// activeComments never GROWS — matches lessonPlanService.js's own
+// deleteActivity() only ever pruning it), or a (re)submission (status
+// becomes 'submitted', exactly one well-formed SUBMITTED round
+// appended with the author's own uid and zero comments of its own —
+// matches lessonPlanReviewService.js's submitForReview()/
+// closeCurrentRound() exactly).
+function isLessonPlanAuthorEdit(resource, request) {
+  return resource.data.createdByUid == request.auth.uid &&
+    resource.data.status in ['draft', 'changes_requested'] &&
+    request.resource.data.createdByUid == resource.data.createdByUid &&
+    (
+      (
+        request.resource.data.status == resource.data.status &&
+        request.resource.data.reviewHistory == resource.data.reviewHistory &&
+        request.resource.data.activeComments.size() <= resource.data.activeComments.size()
+      ) ||
+      (
+        request.resource.data.status == 'submitted' &&
+        request.resource.data.reviewHistory.size() == resource.data.reviewHistory.size() + 1 &&
+        request.resource.data.reviewHistory[resource.data.reviewHistory.size()].status == 'submitted' &&
+        request.resource.data.reviewHistory[resource.data.reviewHistory.size()].byUid == request.auth.uid &&
+        request.resource.data.reviewHistory[resource.data.reviewHistory.size()].comments.size() == 0 &&
+        request.resource.data.activeComments.size() == 0
+      )
+    );
+}
+
+// Any OTHER current classroom member acting as a reviewer on a
+// SUBMITTED plan — never the plan's own author (checked here too, not
+// just in the service, so self-review can't be spoofed by a tampered
+// client). `reviewerRole` is resolved by the caller
+// (classrooms/{classroomId}'s own members map) and passed in, so this
+// function needs no extra document reads of its own. Can ONLY touch
+// status/reviewerUid/reviewHistory/activeComments/updatedAt — lesson
+// CONTENT is completely off-limits to a reviewer, full stop. Exactly
+// one well-formed round appended, attributed to the actual writer.
+// The 'owner'/'teacher' literal lists below are two SEPARATE checks
+// (not one shared list) on purpose, matching
+// services/lessonPlanReviewService.js's own separate
+// canReviewLessonPlan()/canApproveLessonPlan() functions — today they
+// resolve to the same roles (config/memberRoles.js grants both
+// permissions to the same two roles), but this stays ready for a
+// future split without needing to change shape here.
+function isLessonPlanReviewerAction(resource, request, reviewerRole) {
+  return request.auth.uid != resource.data.createdByUid &&
+    resource.data.status == 'submitted' &&
+    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewerUid', 'reviewHistory', 'activeComments', 'updatedAt']) &&
+    request.resource.data.reviewHistory.size() == resource.data.reviewHistory.size() + 1 &&
+    request.resource.data.reviewHistory[resource.data.reviewHistory.size()].byUid == request.auth.uid &&
+    (
+      (
+        reviewerRole in ['owner', 'teacher'] && // REVIEW_LESSON_PLAN — keep in sync with config/memberRoles.js
+        request.resource.data.status == 'changes_requested' &&
+        request.resource.data.reviewHistory[resource.data.reviewHistory.size()].status == 'changes_requested' &&
+        request.resource.data.reviewHistory[resource.data.reviewHistory.size()].comments.size() >= 1
+      ) ||
+      (
+        reviewerRole in ['owner', 'teacher'] && // APPROVE_LESSON_PLAN — keep in sync with config/memberRoles.js
+        request.resource.data.status == 'approved' &&
+        request.resource.data.reviewHistory[resource.data.reviewHistory.size()].status == 'approved' &&
+        request.resource.data.activeComments.size() == 0
+      )
+    );
 }

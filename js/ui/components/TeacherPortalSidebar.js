@@ -64,6 +64,8 @@ const ROUTE_NAME_TO_NAV_ID = {
   assessments: 'assessments',
   lessonPlansList: 'lessonPlans',
   lessonPlanBuilder: 'lessonPlans',
+  lessonPlanReviewQueue: 'lessonPlans',
+  lessonPlanReview: 'lessonPlans',
   learningProgrammesList: 'teachingProgrammes',
   learningProgrammeOverview: 'teachingProgrammes',
   learningProgrammeSettings: 'teachingProgrammes',

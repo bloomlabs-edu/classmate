@@ -57,6 +57,8 @@ import { renderCurriculumManagementView } from './ui/views/CurriculumManagementV
 import { renderLearningManagementView } from './ui/views/LearningManagementView.js';
 import { renderLessonPlansListView } from './ui/views/LessonPlansListView.js';
 import { renderLessonPlanBuilderView } from './ui/views/LessonPlanBuilderView.js';
+import { renderLessonPlanReviewQueueView } from './ui/views/LessonPlanReviewQueueView.js';
+import { renderLessonPlanReviewView } from './ui/views/LessonPlanReviewView.js';
 import { renderAssessmentManagementView } from './ui/views/AssessmentManagementView.js';
 import { renderGoalManagementView } from './ui/views/GoalManagementView.js';
 import { renderGoalDashboardView } from './ui/views/GoalDashboardView.js';
@@ -519,6 +521,8 @@ const CLASSROOM_ROUTE_NAMES = [
   'learningManagement',
   'lessonPlansList',
   'lessonPlanBuilder',
+  'lessonPlanReviewQueue',
+  'lessonPlanReview',
   'feed',
   'timetable',
   'learningProgrammesList',
@@ -945,6 +949,8 @@ function renderRoute(route, reason = 'unspecified') {
         currentUser,
         onBack: () => router.navigate(`/classroom/${classroom.id}`),
         onOpenLessonPlan: (lessonPlanId) => router.navigate(`/classroom/${classroom.id}/lesson-plans/${lessonPlanId}`),
+        onOpenLessonPlanReview: (lessonPlanId) => router.navigate(`/classroom/${classroom.id}/lesson-plans/${lessonPlanId}/review`),
+        onOpenReviewQueue: () => router.navigate(`/classroom/${classroom.id}/lesson-plans/review`),
       });
     } else if (route.name === 'lessonPlanBuilder') {
       renderLessonPlanBuilderView(appContainer, {
@@ -952,6 +958,20 @@ function renderRoute(route, reason = 'unspecified') {
         currentUser,
         lessonPlanId: route.lessonPlanId,
         onBack: () => router.navigate(`/classroom/${classroom.id}/lesson-plans`),
+      });
+    } else if (route.name === 'lessonPlanReviewQueue') {
+      renderLessonPlanReviewQueueView(appContainer, {
+        classroom,
+        currentUser,
+        onBack: () => router.navigate(`/classroom/${classroom.id}/lesson-plans`),
+        onOpenLessonPlanReview: (lessonPlanId) => router.navigate(`/classroom/${classroom.id}/lesson-plans/${lessonPlanId}/review`),
+      });
+    } else if (route.name === 'lessonPlanReview') {
+      renderLessonPlanReviewView(appContainer, {
+        classroom,
+        currentUser,
+        lessonPlanId: route.lessonPlanId,
+        onBack: () => router.navigate(`/classroom/${classroom.id}/lesson-plans/review`),
       });
     } else if (route.name === 'feed') {
       renderFeedModerationView(appContainer, {

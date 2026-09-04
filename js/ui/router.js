@@ -21,7 +21,9 @@
  *   #/classroom/{id}/goals                     -> Goal Management
  *   #/classroom/{id}/learning                  -> Learning Management
  *   #/classroom/{id}/lesson-plans              -> Lesson Plans list (see ui/views/LessonPlansListView.js)
+ *   #/classroom/{id}/lesson-plans/review       -> Review Queue, same-classroom SUBMITTED plans not your own (see ui/views/LessonPlanReviewQueueView.js)
  *   #/classroom/{id}/lesson-plans/{lessonPlanId} -> the Lesson Plan Builder for one plan (see ui/views/LessonPlanBuilderView.js)
+ *   #/classroom/{id}/lesson-plans/{lessonPlanId}/review -> the reviewer's read+comment+decide view for one plan (see ui/views/LessonPlanReviewView.js)
  *   #/classroom/{id}/learning-programmes                              -> Learning Programmes list (see ui/views/LearningProgrammesListView.js)
  *   #/classroom/{id}/learning-programmes/{programmeId}                -> one programme's overview (see ui/views/LearningProgrammeOverviewView.js)
  *   #/classroom/{id}/learning-programmes/{programmeId}/settings       -> that programme's settings (see ui/views/LearningProgrammeSettingsView.js)
@@ -147,6 +149,12 @@ export function resolvePathParts(parts) {
       return { name: 'learningManagement', classroomId: parts[1] };
     }
     if (parts[2] === 'lesson-plans') {
+      if (parts[3] === 'review' && !parts[4]) {
+        return { name: 'lessonPlanReviewQueue', classroomId: parts[1] };
+      }
+      if (parts[3] && parts[4] === 'review') {
+        return { name: 'lessonPlanReview', classroomId: parts[1], lessonPlanId: parts[3] };
+      }
       if (parts[3]) {
         return { name: 'lessonPlanBuilder', classroomId: parts[1], lessonPlanId: parts[3] };
       }

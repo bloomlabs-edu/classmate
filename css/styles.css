@@ -3006,6 +3006,351 @@ textarea.reading-editor__block-input {
   margin-bottom: 0.5rem;
 }
 
+/* ---- Phase 3: status message + reviewer comments (Builder side) --- */
+
+.lesson-plan-builder__status-message {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  margin: 0.3rem 0 0;
+}
+.lesson-plan-builder__submit-button {
+  margin-top: 0.6rem;
+}
+.lesson-plan-builder__comments {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+.lesson-plan-builder__comment-card {
+  background-color: #EAF2FB;
+  border-left: 3px solid var(--color-primary);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+}
+.lesson-plan-builder__comment-meta {
+  font-size: 0.7rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 0.2rem;
+}
+.lesson-plan-builder__comment-text {
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------------
+   Review Queue (ui/views/LessonPlanReviewQueueView.js) — the same
+   row-list shape as .lesson-plans-list above, its own namespace only
+   because it's a conceptually different list (submitted-by-others,
+   not "everything I own").
+   --------------------------------------------------------------------- */
+
+.lesson-plan-review-queue {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 0 1.5rem 3rem;
+}
+.lesson-plan-review-queue__header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 1.25rem 0 0.25rem;
+}
+.lesson-plan-review-queue__title {
+  font-size: 1.4rem;
+  font-weight: var(--font-weight-black);
+  margin: 0;
+}
+.lesson-plan-review-queue__subtitle {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  margin: 0 0 1rem;
+}
+.lesson-plan-review-queue__loading,
+.lesson-plan-review-queue__error {
+  color: var(--color-muted);
+}
+.lesson-plan-review-queue__empty {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--color-muted);
+  background-color: #ffffff;
+  border-radius: 14px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+}
+.lesson-plan-review-queue__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.lesson-plan-review-queue__row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background-color: #ffffff;
+  border: none;
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+.lesson-plan-review-queue__row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1;
+  min-width: 0;
+}
+.lesson-plan-review-queue__row-title {
+  font-weight: var(--font-weight-bold);
+}
+.lesson-plan-review-queue__row-meta {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+.lesson-plan-review-queue__status-badge {
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  border-radius: var(--radius-pill);
+  padding: 0.3rem 0.7rem;
+  white-space: nowrap;
+  background-color: #EAF2FB;
+  color: var(--color-primary);
+}
+
+/* ---------------------------------------------------------------------
+   Lesson Plan Review (ui/views/LessonPlanReviewView.js) — the reviewer's
+   own read-optimized projection. Deliberately its own namespace, not a
+   reuse of .lesson-plan-builder__* classes: plain text values
+   (.lesson-plan-review__field-value), never form controls, is the
+   whole point of this view existing at all — see that file's own
+   header comment.
+   --------------------------------------------------------------------- */
+
+.lesson-plan-review {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 0 1.5rem 4rem;
+}
+.lesson-plan-review__header {
+  padding: 1.25rem 0 0.5rem;
+}
+.lesson-plan-review__error,
+.lesson-plan-review__loading {
+  color: var(--color-muted);
+}
+.lesson-plan-review__plan-header {
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 1.1rem 1.4rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+  margin-bottom: 1.25rem;
+}
+.lesson-plan-review__title {
+  font-size: 1.4rem;
+  font-weight: var(--font-weight-black);
+  margin: 0 0 0.3rem;
+}
+.lesson-plan-review__meta {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  margin: 0 0 0.6rem;
+}
+.lesson-plan-review__status-badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  border-radius: var(--radius-pill);
+  padding: 0.3rem 0.7rem;
+  background-color: #EBEDEF;
+  color: var(--color-muted);
+}
+.lesson-plan-review__status-badge--submitted {
+  background-color: #EAF2FB;
+  color: var(--color-primary);
+}
+.lesson-plan-review__status-badge--changes_requested {
+  background-color: #FDEEE0;
+  color: var(--color-warning, #BF5F1A);
+}
+.lesson-plan-review__status-badge--approved {
+  background-color: #EAF5E3;
+  color: var(--color-success, #4C9A2A);
+}
+.lesson-plan-review__section {
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 1.25rem 1.4rem 1.5rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+  margin-bottom: 1.25rem;
+}
+.lesson-plan-review__section-heading {
+  font-size: 1.05rem;
+  font-weight: var(--font-weight-black);
+  margin: 0 0 1rem;
+}
+.lesson-plan-review__subheading {
+  font-size: 0.95rem;
+  font-weight: var(--font-weight-bold);
+  margin: 1.25rem 0 0.75rem;
+}
+.lesson-plan-review__field {
+  margin-bottom: 0.9rem;
+}
+.lesson-plan-review__field-label {
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-muted);
+  margin: 0 0 0.2rem;
+}
+.lesson-plan-review__field-value {
+  font-size: 0.95rem;
+  margin: 0;
+  white-space: pre-wrap;
+}
+.lesson-plan-review__field-value--empty {
+  color: var(--color-muted);
+  font-style: italic;
+}
+.lesson-plan-review__swbat-list,
+.lesson-plan-review__assessment-list {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+.lesson-plan-review__activity-card {
+  background-color: #FAFBFC;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  padding: 0.9rem 1rem;
+  margin-bottom: 0.9rem;
+}
+.lesson-plan-review__activity-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+.lesson-plan-review__activity-label {
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary);
+  background-color: #EAF2FB;
+  border-radius: var(--radius-pill);
+  padding: 0.25rem 0.6rem;
+  white-space: nowrap;
+}
+.lesson-plan-review__activity-title {
+  font-weight: var(--font-weight-medium);
+  font-size: 0.98rem;
+}
+.lesson-plan-review__differentiation {
+  background-color: #FDEEE0;
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+  margin-top: 0.5rem;
+}
+
+/* ---- Comment affordance — shared by every section/activity/sub-field ---- */
+
+.lesson-plan-review__comments {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.4rem 0 1rem;
+}
+.lesson-plan-review__comment-card {
+  background-color: #EAF2FB;
+  border-left: 3px solid var(--color-primary);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+}
+.lesson-plan-review__comment-card--pending {
+  background-color: #FBF0D9;
+  border-left-color: #BF5F1A;
+}
+.lesson-plan-review__comment-pending-tag {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: var(--font-weight-bold);
+  color: #8a6a1e;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 0.2rem;
+}
+.lesson-plan-review__comment-text {
+  font-size: 0.85rem;
+  margin: 0 0 0.3rem;
+}
+.lesson-plan-review__add-comment-button {
+  font-size: 0.8rem;
+}
+.lesson-plan-review__comment-form {
+  background-color: var(--color-bg);
+  border-radius: 10px;
+  padding: 0.6rem;
+  margin-top: 0.3rem;
+}
+.lesson-plan-review__comment-input {
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font-family: inherit;
+  font-size: 0.9rem;
+  box-sizing: border-box;
+  resize: vertical;
+}
+.lesson-plan-review__comment-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+/* ---- Review history + actions ---- */
+
+.lesson-plan-review__history {
+  margin-bottom: 1.25rem;
+}
+.lesson-plan-review__history-list {
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+.lesson-plan-review__history-item {
+  margin-bottom: 0.3rem;
+}
+.lesson-plan-review__actions {
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 1.1rem 1.4rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+}
+.lesson-plan-review__actions-note {
+  color: var(--color-muted);
+  margin: 0;
+}
+.lesson-plan-review__actions-error {
+  color: var(--color-warning, #BF5F1A);
+  font-size: 0.85rem;
+  margin: 0 0 0.6rem;
+}
+.lesson-plan-review__actions-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 .settings-add-form {
   display: flex;
   flex-wrap: wrap;

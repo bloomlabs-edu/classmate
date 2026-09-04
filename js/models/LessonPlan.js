@@ -114,8 +114,26 @@ export function createLessonPlanReviewRound({ id, status, byUid, at, comments = 
   };
 }
 
-/** One reviewer comment, addressed to a specific section (see LESSON_PLAN_SECTION_KEYS) — "attached to meaningful sections/components," per explicit product direction, never only a single generic comment field. `resolvedAt` is set (by either side) once a comment no longer needs action; a resolved comment stays visible in review history, it's just no longer "open." */
-export function createLessonPlanComment({ id, sectionKey, text, byUid, createdAt, resolvedAt = null } = {}) {
+/**
+ * One reviewer comment, addressed to a specific section (see
+ * LESSON_PLAN_SECTION_KEYS) — "attached to meaningful sections/
+ * components," per explicit product direction, never only a single
+ * generic comment field. `resolvedAt` is set (by either side) once a
+ * comment no longer needs action; a resolved comment stays visible in
+ * review history, it's just no longer "open."
+ *
+ * `roundNumber` is set ONCE, at creation (by
+ * lessonPlanReviewService.js's requestChanges()/approve() — the only
+ * two places a comment is ever created), to whichever round is being
+ * formed at that exact moment (`reviewHistory.length + 1`). This is
+ * the fix for a real Phase 3 nuance: a comment's round membership must
+ * be decided when the comment is born, never re-derived later from
+ * "whatever happens to still be open when some later round closes" —
+ * that's what let a Round 2 comment get silently re-attached to Round
+ * 3 on resubmit. See lessonPlanReviewService.js's own closeCurrentRound()
+ * comment for the full before/after.
+ */
+export function createLessonPlanComment({ id, sectionKey, text, byUid, createdAt, resolvedAt = null, roundNumber = null } = {}) {
   return {
     id: id || generateId(),
     sectionKey,
@@ -123,6 +141,7 @@ export function createLessonPlanComment({ id, sectionKey, text, byUid, createdAt
     byUid,
     createdAt: createdAt || getCurrentIsoDate(),
     resolvedAt,
+    roundNumber,
   };
 }
 
