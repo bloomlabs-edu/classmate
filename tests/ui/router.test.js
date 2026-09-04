@@ -112,6 +112,18 @@ test('pre-existing route: learning management', () => {
   assert.deepEqual(resolvePathParts(parts('classroom/classroom-1/learning')), { name: 'learningManagement', classroomId: 'classroom-1' });
 });
 
+test('lesson plans list route', () => {
+  assert.deepEqual(resolvePathParts(parts('classroom/classroom-1/lesson-plans')), { name: 'lessonPlansList', classroomId: 'classroom-1' });
+});
+
+test('lesson plan builder route', () => {
+  assert.deepEqual(resolvePathParts(parts('classroom/classroom-1/lesson-plans/plan-1')), {
+    name: 'lessonPlanBuilder',
+    classroomId: 'classroom-1',
+    lessonPlanId: 'plan-1',
+  });
+});
+
 test('pre-existing route: feed', () => {
   assert.deepEqual(resolvePathParts(parts('classroom/classroom-1/feed')), { name: 'feed', classroomId: 'classroom-1' });
 });

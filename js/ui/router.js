@@ -20,6 +20,8 @@
  *   #/classroom/{id}/assessments/{assessmentId?}/{view?} -> Assessment Management — no assessmentId = the list; an assessmentId with no view defaults to the Gradebook (see ui/views/AssessmentManagementView.js)
  *   #/classroom/{id}/goals                     -> Goal Management
  *   #/classroom/{id}/learning                  -> Learning Management
+ *   #/classroom/{id}/lesson-plans              -> Lesson Plans list (see ui/views/LessonPlansListView.js)
+ *   #/classroom/{id}/lesson-plans/{lessonPlanId} -> the Lesson Plan Builder for one plan (see ui/views/LessonPlanBuilderView.js)
  *   #/classroom/{id}/learning-programmes                              -> Learning Programmes list (see ui/views/LearningProgrammesListView.js)
  *   #/classroom/{id}/learning-programmes/{programmeId}                -> one programme's overview (see ui/views/LearningProgrammeOverviewView.js)
  *   #/classroom/{id}/learning-programmes/{programmeId}/settings       -> that programme's settings (see ui/views/LearningProgrammeSettingsView.js)
@@ -143,6 +145,12 @@ export function resolvePathParts(parts) {
     }
     if (parts[2] === 'learning') {
       return { name: 'learningManagement', classroomId: parts[1] };
+    }
+    if (parts[2] === 'lesson-plans') {
+      if (parts[3]) {
+        return { name: 'lessonPlanBuilder', classroomId: parts[1], lessonPlanId: parts[3] };
+      }
+      return { name: 'lessonPlansList', classroomId: parts[1] };
     }
     if (parts[2] === 'feed') {
       return { name: 'feed', classroomId: parts[1] };

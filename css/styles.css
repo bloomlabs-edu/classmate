@@ -2644,6 +2644,368 @@ textarea.reading-editor__block-input {
   box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
 }
 
+/* ---- Lesson Plans List ------------------------------------------- */
+
+.lesson-plans-list {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 0 1.5rem 3rem;
+}
+.lesson-plans-list__header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 1.25rem 0 1rem;
+}
+.lesson-plans-list__title {
+  font-size: 1.4rem;
+  font-weight: var(--font-weight-black);
+  margin: 0;
+  flex: 1;
+}
+.lesson-plans-list__create-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.lesson-plans-list__loading,
+.lesson-plans-list__error {
+  color: var(--color-muted);
+}
+.lesson-plans-list__empty {
+  color: var(--color-muted);
+  background-color: #ffffff;
+  border-radius: 14px;
+  padding: 2rem;
+  text-align: center;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+}
+.lesson-plans-list__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.lesson-plans-list__row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background-color: #ffffff;
+  border: none;
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+.lesson-plans-list__row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1;
+  min-width: 0;
+}
+.lesson-plans-list__row-title {
+  font-weight: var(--font-weight-bold);
+}
+.lesson-plans-list__row-meta {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+.lesson-plans-list__status-badge {
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  border-radius: var(--radius-pill);
+  padding: 0.3rem 0.7rem;
+  white-space: nowrap;
+  background-color: #EBEDEF;
+  color: var(--color-muted);
+}
+.lesson-plans-list__status-badge--submitted {
+  background-color: #EAF2FB;
+  color: var(--color-primary);
+}
+.lesson-plans-list__status-badge--changes_requested {
+  background-color: #FDEEE0;
+  color: var(--color-warning, #BF5F1A);
+}
+.lesson-plans-list__status-badge--approved {
+  background-color: #EAF5E3;
+  color: var(--color-success, #4C9A2A);
+}
+
+/* ---- Lesson Plan Builder ------------------------------------------ */
+
+.lesson-plan-builder {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 0 1.5rem 4rem;
+}
+.lesson-plan-builder__header {
+  padding: 1.25rem 0 0.5rem;
+}
+.lesson-plan-builder__error,
+.lesson-plan-builder__loading {
+  color: var(--color-muted);
+}
+.lesson-plan-builder__title-bar {
+  margin-bottom: 1rem;
+}
+.lesson-plan-builder__title-line {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.lesson-plan-builder__title-input {
+  flex: 1;
+  min-width: 200px;
+  font-size: 1.4rem;
+  font-weight: var(--font-weight-black);
+  border: none;
+  padding: 0.2rem 0;
+  font-family: inherit;
+}
+.lesson-plan-builder__title-input:focus {
+  outline: none;
+  border-bottom: 2px solid var(--color-primary);
+}
+.lesson-plan-builder__status-badge {
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  border-radius: var(--radius-pill);
+  padding: 0.3rem 0.7rem;
+  white-space: nowrap;
+  background-color: #EBEDEF;
+  color: var(--color-muted);
+}
+.lesson-plan-builder__status-badge--submitted {
+  background-color: #EAF2FB;
+  color: var(--color-primary);
+}
+.lesson-plan-builder__status-badge--changes_requested {
+  background-color: #FDEEE0;
+  color: var(--color-warning, #BF5F1A);
+}
+.lesson-plan-builder__status-badge--approved {
+  background-color: #EAF5E3;
+  color: var(--color-success, #4C9A2A);
+}
+.lesson-plan-builder__meta-line {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.4rem;
+}
+.lesson-plan-builder__grade-input {
+  font-size: 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: 0.35rem 0.6rem;
+  font-family: inherit;
+  max-width: 220px;
+}
+.lesson-plan-builder__readiness {
+  display: flex;
+  gap: 0.6rem;
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+}
+.lesson-plan-builder__readiness--ready {
+  align-items: center;
+  background-color: #EAF5E3;
+  color: var(--color-success, #4C9A2A);
+}
+.lesson-plan-builder__readiness--pending {
+  flex-direction: column;
+  background-color: #FBF0D9;
+  color: #8a6a1e;
+}
+.lesson-plan-builder__readiness-heading {
+  font-weight: var(--font-weight-bold);
+  margin: 0 0 0.4rem;
+}
+.lesson-plan-builder__readiness-list {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+.lesson-plan-builder__section {
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 1.25rem 1.4rem 1.5rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+  margin-bottom: 1.25rem;
+}
+.lesson-plan-builder__section-heading {
+  font-size: 1.05rem;
+  font-weight: var(--font-weight-black);
+  margin: 0 0 1rem;
+}
+.lesson-plan-builder__subheading {
+  font-size: 0.95rem;
+  font-weight: var(--font-weight-bold);
+  margin: 1.25rem 0 0.75rem;
+}
+.lesson-plan-builder__subheading:first-child {
+  margin-top: 0;
+}
+.lesson-plan-builder__field {
+  margin-bottom: 0.9rem;
+}
+.lesson-plan-builder__field-label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-muted);
+  margin-bottom: 0.3rem;
+}
+.lesson-plan-builder__textarea {
+  width: 100%;
+  min-height: 3.5rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font-family: inherit;
+  font-size: 0.95rem;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.lesson-plan-builder__dynamic-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.lesson-plan-builder__dynamic-input {
+  flex: 1;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+/* The Spark title reuses this input style standalone (not inside a
+   .dynamic-row), where `flex: 1` has no flex container to size
+   against and the input falls back to the browser's default ~20-
+   character width — this scopes a real width to that one case only,
+   without touching the dynamic-row/remove-button flex layout above. */
+.lesson-plan-builder__field > .lesson-plan-builder__dynamic-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.lesson-plan-builder__dynamic-remove {
+  flex-shrink: 0;
+  color: var(--color-muted);
+}
+.lesson-plan-builder__add-row-button,
+.lesson-plan-builder__add-differentiation-button,
+.lesson-plan-builder__add-activity-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.lesson-plan-builder__add-activity-button {
+  margin-top: 0.5rem;
+}
+.lesson-plan-builder__empty-message {
+  color: var(--color-muted);
+}
+.lesson-plan-builder__activity-card {
+  background-color: #FAFBFC;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  padding: 0.75rem 0.9rem;
+  margin-bottom: 0.75rem;
+}
+.lesson-plan-builder__activity-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.lesson-plan-builder__activity-collapse-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0.2rem;
+  cursor: pointer;
+  color: var(--color-muted);
+  flex-shrink: 0;
+}
+.lesson-plan-builder__activity-collapse-toggle svg {
+  transition: transform var(--duration-fast, 0.15s) var(--ease-standard, ease);
+}
+.lesson-plan-builder__activity-collapse-toggle--expanded svg {
+  transform: rotate(90deg);
+}
+.lesson-plan-builder__activity-label {
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary);
+  background-color: #EAF2FB;
+  border-radius: var(--radius-pill);
+  padding: 0.25rem 0.6rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.lesson-plan-builder__activity-title-input {
+  flex: 1;
+  min-width: 150px;
+  border: none;
+  background: none;
+  font-size: 0.95rem;
+  font-weight: var(--font-weight-medium);
+  padding: 0.2rem 0;
+  font-family: inherit;
+}
+.lesson-plan-builder__activity-title-input:focus {
+  outline: none;
+  border-bottom: 2px solid var(--color-primary);
+}
+.lesson-plan-builder__activity-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex-shrink: 0;
+}
+.lesson-plan-builder__activity-reorder-button {
+  background: none;
+  border: none;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.7rem;
+  color: var(--color-muted);
+  cursor: pointer;
+  line-height: 1;
+}
+.lesson-plan-builder__activity-reorder-button:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.lesson-plan-builder__activity-body {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border);
+}
+.lesson-plan-builder__differentiation {
+  background-color: #FDEEE0;
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+  margin-top: 0.5rem;
+}
+.lesson-plan-builder__differentiation-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-bold);
+  margin-bottom: 0.5rem;
+}
+
 .settings-add-form {
   display: flex;
   flex-wrap: wrap;

@@ -55,6 +55,8 @@ import { renderStudentProfileView as renderStudentPortalProfileView } from './ui
 import { renderPersonalHubView } from './ui/views/PersonalHubView.js';
 import { renderCurriculumManagementView } from './ui/views/CurriculumManagementView.js';
 import { renderLearningManagementView } from './ui/views/LearningManagementView.js';
+import { renderLessonPlansListView } from './ui/views/LessonPlansListView.js';
+import { renderLessonPlanBuilderView } from './ui/views/LessonPlanBuilderView.js';
 import { renderAssessmentManagementView } from './ui/views/AssessmentManagementView.js';
 import { renderGoalManagementView } from './ui/views/GoalManagementView.js';
 import { renderGoalDashboardView } from './ui/views/GoalDashboardView.js';
@@ -515,6 +517,8 @@ const CLASSROOM_ROUTE_NAMES = [
   'assessments',
   'goalManagement',
   'learningManagement',
+  'lessonPlansList',
+  'lessonPlanBuilder',
   'feed',
   'timetable',
   'learningProgrammesList',
@@ -934,6 +938,20 @@ function renderRoute(route, reason = 'unspecified') {
             onOpenLearningManagement: () => router.navigate(`/classroom/${classroom.id}/learning`),
           });
         },
+      });
+    } else if (route.name === 'lessonPlansList') {
+      renderLessonPlansListView(appContainer, {
+        classroom,
+        currentUser,
+        onBack: () => router.navigate(`/classroom/${classroom.id}`),
+        onOpenLessonPlan: (lessonPlanId) => router.navigate(`/classroom/${classroom.id}/lesson-plans/${lessonPlanId}`),
+      });
+    } else if (route.name === 'lessonPlanBuilder') {
+      renderLessonPlanBuilderView(appContainer, {
+        classroom,
+        currentUser,
+        lessonPlanId: route.lessonPlanId,
+        onBack: () => router.navigate(`/classroom/${classroom.id}/lesson-plans`),
       });
     } else if (route.name === 'feed') {
       renderFeedModerationView(appContainer, {
