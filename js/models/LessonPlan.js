@@ -65,6 +65,7 @@ export const LESSON_PLAN_STATUS = Object.freeze({
  * buildActivitySectionKey().
  */
 export const LESSON_PLAN_SECTION_KEYS = Object.freeze({
+  CONTEXT: 'context', // Grade/Subject/Concepts — Phase 4's own Concept-required-for-submission check addresses missing concepts here
   WHY: 'why',
   SELF_OTHERS_INDIA: 'selfOthersIndia',
   ASSESSMENT: 'assessment',
@@ -145,9 +146,30 @@ export function createLessonPlanComment({ id, sectionKey, text, byUid, createdAt
   };
 }
 
-/** Provenance only — which repository Teaching Element this Activity/Spark was copied from, and when. Never a live reference (see services/lessonPlanService.js's own copy-in functions): editing this plan's own copy must never change the original repository element, and vice versa. */
-export function createLessonPlanSourceRef({ resourceId, elementType, copiedAt } = {}) {
-  return { resourceId, elementType, copiedAt: copiedAt || getCurrentIsoDate() };
+/**
+ * Provenance only — lineage, never linkage (see
+ * services/lessonPlanService.js's own copy-in functions): editing this
+ * plan's own copy must never change the original element, and vice
+ * versa; nothing about a LessonPlanSourceRef ever makes the copy
+ * read-only or dependent on the original still existing.
+ *
+ * Two independent origin shapes share this one array/function rather
+ * than a second provenance mechanism (Phase 4's own explicit "extend,
+ * don't create a parallel system" direction):
+ *   - `resourceId` (Phase 1's original shape) — copied from the
+ *     Resource library.
+ *   - `sourceLessonPlanId`/`sourceActivityId` (Phase 4 addition) —
+ *     copied from a Teaching Idea, itself derived from another
+ *     APPROVED LessonPlan (see services/teachingIdeasService.js).
+ *     `sourceActivityId` is null for a Spark/Question/whole-assessment
+ *     copy (nothing to identify below the plan itself); set for an
+ *     Activity or one of its differentiation buckets.
+ * A given ref only ever populates ONE of `resourceId` /
+ * `sourceLessonPlanId` — never both — `elementType` says what kind of
+ * element it is either way.
+ */
+export function createLessonPlanSourceRef({ resourceId = null, sourceLessonPlanId = null, sourceActivityId = null, elementType, copiedAt } = {}) {
+  return { resourceId, sourceLessonPlanId, sourceActivityId, elementType, copiedAt: copiedAt || getCurrentIsoDate() };
 }
 
 export function createLessonPlan({

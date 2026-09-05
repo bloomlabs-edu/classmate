@@ -135,8 +135,8 @@ export async function getResourceById(classroomId, concept, resourceId) {
  *
  * `content` — optional, same "type-specific, this file says nothing about its shape" field models/Resource.js's own doc comment describes (Reading's own editor populates `{ blocks: [...] }` this same way, later, via a separate save path). ui/views/TimetableView.js's own "+ Add resource" form is the first caller to populate this at creation time, for `type: 'external_link'`, as `{ url, description }` — the natural, minimal content shape for a link, not a new Resource architecture.
  */
-export async function createResourceOnConcept(classroomId, concept, { title, type, content = null, addedBy = null }) {
-  const resource = createResource({ title, type, content });
+export async function createResourceOnConcept(classroomId, concept, { title, type, content = null, audience, addedBy = null }) {
+  const resource = createResource({ title, type, content, audience });
   await resourceRepository.saveResource(classroomId, resource);
 
   if (!concept.resourceLinks) concept.resourceLinks = [];

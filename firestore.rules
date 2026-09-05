@@ -713,6 +713,121 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Teaching Ideas (Phase 4 — see services/teachingIdeasService.js,
+    // repositories/teachingIdeasRepository.js). A DELIBERATELY SEPARATE,
+    // TOP-LEVEL collection — never a subcollection of `classrooms`, and
+    // never sharing the `lessonPlans` rule above — because its whole
+    // purpose is different: "APPROVED lessons are globally discoverable
+    // within ClassMate" (explicit Phase 4 product direction) is a
+    // completely different security boundary than "a classroom member
+    // may read their own classroom's lesson plans." Reusing the
+    // `lessonPlans` rule for this would have meant either exposing that
+    // classroom-scoped collection globally (explicitly ruled out) or
+    // leaving Teaching Ideas with no rule of its own — this fixes that
+    // deliberately rather than by accident, matching this file's own
+    // running theme of collections that must never fall through to
+    // deny-by-default unexamined (see the Resource block's own comment
+    // just below for the same lesson learned the hard way once already).
+    //
+    // read: any authenticated ClassMate user, unconditionally — this IS
+    // the "globally discoverable" requirement. A document's own id
+    // isn't guessable/listable in a way that matters here regardless,
+    // since `list` queries are additionally scoped by the `conceptIds`
+    // filter services/teachingIdeasService.js always applies (see
+    // repositories/teachingIdeasRepository.js's own header comment on
+    // why an unbounded "list everything" query isn't offered at the
+    // service layer) — this rule doesn't need to (and structurally
+    // can't cheaply) re-enforce that same scoping itself, since Firestore
+    // rules for `list` apply per-matched-document, not to the query
+    // shape a client chooses to send.
+    //
+    // create: the ONLY way content enters this collection. Required,
+    // all together — this is where "approved-only," "same-classroom-
+    // scoped publisher," and "content and provenance can't be forged"
+    // are actually enforced, not just assumed from how the client-side
+    // publish call happens to build its payload:
+    //   1. The document's own id must equal its own claimed
+    //      `sourceLessonPlanId` — prevents publishing plan A's content
+    //      under plan B's id.
+    //   2. The writer must be a CURRENT member of the classroom the
+    //      projection itself claims as `sourceClassroomId` — a random
+    //      unrelated authenticated user cannot publish an entry
+    //      attributed to a classroom they don't belong to.
+    //   3. The REAL source document at that exact classroom+id must
+    //      ACTUALLY be `status == 'approved'` right now, verified via a
+    //      fresh `get()` on the real `lessonPlans` document — never
+    //      trusted from the write's own payload. A DRAFT/SUBMITTED/
+    //      CHANGES_REQUESTED plan can never be published, no matter
+    //      what the client claims.
+    //   4. EVERY content field in the write must be byte-for-byte
+    //      IDENTICAL to that same real source document's own field —
+    //      see isFaithfulTeachingIdeaProjection() below. This closes a
+    //      real gap an earlier version of this rule left open: checks
+    //      1-3 alone only prove "a real, approved lesson exists at this
+    //      id, and I belong to its classroom" — they say nothing about
+    //      whether the CONTENT being published is that lesson's actual
+    //      content. Without check 4, a classroom member with real,
+    //      legitimate access to any one approved lesson could publish
+    //      ARBITRARY globally-visible content (including a fabricated
+    //      `teacherDisplayName`) under that lesson's real id — global
+    //      readability makes this a materially worse exposure than the
+    //      equivalent gap would be on a classroom-scoped collection.
+    //      `teacherDisplayName` is checked against the real classroom's
+    //      own `members[createdByUid].displayName` for the same reason
+    //      — attribution is content too, not just decoration.
+    //
+    // update/delete: always false. Once published, a Teaching Idea is
+    // permanently immutable — matches Phase 3's own "APPROVED is
+    // terminal, no revision mechanism yet" design exactly, so there is
+    // no "re-publish a changed approved lesson" path to secure or
+    // forget to secure. If a future phase introduces approved-lesson
+    // revisions, THIS is the line that will need deliberate revisiting
+    // — not a gap silently inherited from today.
+    //
+    // Verified against a real Firestore Rules Unit Testing emulator —
+    // see firebase-rules-verification/teachingIdeas.rules.verify.js.
+    match /teachingIdeas/{lessonPlanId} {
+      // NOTE: deliberately nested INSIDE this match block, not a
+      // top-level file function like isLessonPlanAuthorEdit() below —
+      // this one calls get() with a $(database)-relative path, and
+      // `database` is only in scope inside the enclosing
+      // `match /databases/{database}/documents { ... }` block. A
+      // top-level function has no access to that binding at all
+      // (silently resolves to a broken path, not a compile error),
+      // which is exactly the bug this comment exists to prevent
+      // reintroducing.
+      function isFaithfulTeachingIdeaProjection() {
+        let sourcePlan = get(/databases/$(database)/documents/classrooms/$(request.resource.data.sourceClassroomId)/lessonPlans/$(lessonPlanId)).data;
+        let classroomData = get(/databases/$(database)/documents/classrooms/$(request.resource.data.sourceClassroomId)).data;
+        return sourcePlan.status == 'approved' &&
+          request.resource.data.conceptIds == sourcePlan.conceptIds &&
+          request.resource.data.gradeLabel == sourcePlan.gradeLabel &&
+          request.resource.data.subjectId == sourcePlan.subjectId &&
+          request.resource.data.topic == sourcePlan.topic &&
+          request.resource.data.lessonObjective == sourcePlan.lessonObjective &&
+          request.resource.data.bigQuestion == sourcePlan.bigQuestion &&
+          request.resource.data.swbatObjectives == sourcePlan.swbatObjectives &&
+          request.resource.data.selfOthersIndia == sourcePlan.selfOthersIndia &&
+          request.resource.data.assessments == sourcePlan.assessments &&
+          request.resource.data.spark == sourcePlan.spark &&
+          request.resource.data.activities == sourcePlan.activities &&
+          request.resource.data.pairExplanation == sourcePlan.pairExplanation &&
+          request.resource.data.finalQuestion == sourcePlan.finalQuestion &&
+          request.resource.data.teacherLookFors == sourcePlan.teacherLookFors &&
+          request.resource.data.teacherDisplayName == classroomData.members[sourcePlan.createdByUid].displayName;
+      }
+
+      allow read: if request.auth != null;
+
+      allow create: if request.auth != null &&
+        request.resource.data.sourceLessonPlanId == lessonPlanId &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(request.resource.data.sourceClassroomId)).data.memberUids &&
+        isFaithfulTeachingIdeaProjection();
+
+      allow update: if false;
+      allow delete: if false;
+    }
+
     // Learning Hub — Resource (see models/Resource.js,
     // services/resourceService.js, services/resourceRepository.js).
     // Fixes the exact pre-existing gap flagged in this file's own NOTE
@@ -1307,3 +1422,4 @@ function isLessonPlanReviewerAction(resource, request, reviewerRole) {
       )
     );
 }
+

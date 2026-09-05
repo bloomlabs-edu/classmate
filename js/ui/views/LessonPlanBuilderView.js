@@ -63,11 +63,14 @@
 import * as lessonPlanRepository from '../../services/lessonPlanRepository.js';
 import * as lessonPlanService from '../../services/lessonPlanService.js';
 import * as lessonPlanReviewService from '../../services/lessonPlanReviewService.js';
+import * as learningRecordService from '../../services/learningRecordService.js';
 import { LESSON_PLAN_STATUS, LESSON_PLAN_SECTION_KEYS } from '../../models/LessonPlan.js';
 import { getLessonPlanReadiness } from '../../services/lessonPlanValidationService.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createIcon } from '../components/Icon.js';
 import { createSaveIndicatorController } from '../components/ProgrammeSessionSaveIndicator.js';
+import { createCurriculumExplorerPanel } from '../components/CurriculumExplorerPanel.js';
+import { openTeachingIdeasPickerModal } from '../components/TeachingIdeasPickerModal.js';
 
 const STATUS_LABELS = Object.freeze({
   [LESSON_PLAN_STATUS.DRAFT]: 'Draft',
@@ -122,6 +125,8 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
   let loadError = null;
   const collapsedActivityIds = new Set();
   const saveIndicator = createSaveIndicatorController();
+  let isConceptPickerOpen = false; // local UI state only — never persisted
+  let expandedConceptUnitId = null;
 
   function persistAndRerender() {
     saveIndicator.persistPatch(() => lessonPlanRepository.saveLessonPlan(classroom.id, plan));
@@ -173,7 +178,7 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
 
   function rerender() {
     const editable = plan ? lessonPlanReviewService.isLessonPlanEditable(plan) : false;
-    renderBuilder(container, { plan, loadError, collapsedActivityIds, saveIndicatorElement: saveIndicator.element, editable }, {
+    renderBuilder(container, { plan, loadError, collapsedActivityIds, saveIndicatorElement: saveIndicator.element, editable, classroom, isConceptPickerOpen, expandedConceptUnitId }, {
       onBack,
       editable,
       onSubmitForReview: submitForReview,
@@ -187,6 +192,30 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
         lessonPlanService.updateContext(plan, { gradeLabel: value });
         persistOnly();
       },
+      onSubjectChangeForConcepts: (subjectId) => {
+        // Changing Subject clears any previously-picked Concepts — a
+        // Concept belongs to exactly one Subject's tree (see
+        // learningRecordService.js's own Subject -> Unit -> Concept
+        // shape), so a stale conceptId from the old Subject would be
+        // meaningless once the tree it came from is no longer in view.
+        lessonPlanService.updateContext(plan, { subjectId: subjectId || null, conceptIds: [] });
+        expandedConceptUnitId = null;
+        persistAndRerender();
+      },
+      onToggleConceptPickerOpen: () => {
+        isConceptPickerOpen = !isConceptPickerOpen;
+        rerender(); // local UI state only — nothing to persist
+      },
+      onToggleConceptUnit: (unitId) => {
+        expandedConceptUnitId = expandedConceptUnitId === unitId ? null : unitId;
+        rerender(); // local UI state only — nothing to persist
+      },
+      onToggleConcept: (conceptId) => {
+        const current = plan.conceptIds;
+        const next = current.includes(conceptId) ? current.filter((id) => id !== conceptId) : [...current, conceptId];
+        lessonPlanService.updateContext(plan, { conceptIds: next });
+        persistAndRerender();
+      },
 
       // ---- 1. WHY ----
       onLessonObjectiveChange: (value) => {
@@ -196,6 +225,18 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
       onBigQuestionChange: (value) => {
         lessonPlanService.updateWhy(plan, { bigQuestion: value });
         persistOnly();
+      },
+      onOpenBigQuestionPicker: () => {
+        openTeachingIdeasPickerModal({
+          concepts: getPlanConceptsForPicker(),
+          gradeLabel: plan.gradeLabel,
+          subjectId: plan.subjectId,
+          elementTypeFilter: 'question',
+          onCopyElement: (element) => {
+            lessonPlanService.applyQuestionFromTeachingIdea(plan, 'bigQuestion', element.content, { sourceLessonPlanId: element.sourceLessonPlanId });
+            persistAndRerender();
+          },
+        });
       },
       onAddSwbat: () => {
         lessonPlanService.addSwbatObjective(plan, '');
@@ -229,11 +270,35 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
         lessonPlanService.removeAssessmentItem(plan, itemId);
         persistAndRerender();
       },
+      onOpenAssessmentPicker: () => {
+        openTeachingIdeasPickerModal({
+          concepts: getPlanConceptsForPicker(),
+          gradeLabel: plan.gradeLabel,
+          subjectId: plan.subjectId,
+          elementTypeFilter: 'assessment',
+          onCopyElement: (element) => {
+            lessonPlanService.addAssessmentItemFromTeachingIdea(plan, element.content, { sourceLessonPlanId: element.sourceLessonPlanId });
+            persistAndRerender();
+          },
+        });
+      },
 
       // ---- 4. FUN, FAST, EFFECTIVE — Spark ----
       onSparkChange: (field, value) => {
         lessonPlanService.updateSpark(plan, { [field]: value });
         persistOnly();
+      },
+      onOpenSparkPicker: () => {
+        openTeachingIdeasPickerModal({
+          concepts: getPlanConceptsForPicker(),
+          gradeLabel: plan.gradeLabel,
+          subjectId: plan.subjectId,
+          elementTypeFilter: 'spark',
+          onCopyElement: (element) => {
+            lessonPlanService.applySparkFromTeachingIdea(plan, element.content, { sourceLessonPlanId: element.sourceLessonPlanId });
+            persistAndRerender();
+          },
+        });
       },
 
       // ---- 4. FUN, FAST, EFFECTIVE — Activities ----
@@ -241,6 +306,37 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
         const activity = lessonPlanService.addActivity(plan);
         collapsedActivityIds.delete(activity.id); // a brand-new Activity always opens expanded
         persistAndRerender();
+      },
+      onOpenActivityPicker: () => {
+        openTeachingIdeasPickerModal({
+          concepts: getPlanConceptsForPicker(),
+          gradeLabel: plan.gradeLabel,
+          subjectId: plan.subjectId,
+          elementTypeFilter: 'activity',
+          onCopyElement: (element) => {
+            const activity = lessonPlanService.addActivityFromTeachingIdea(plan, element.content, {
+              sourceLessonPlanId: element.sourceLessonPlanId,
+              sourceActivityId: element.sourceActivityId,
+            });
+            collapsedActivityIds.delete(activity.id);
+            persistAndRerender();
+          },
+        });
+      },
+      onOpenDifferentiationPicker: (activityId, bucket) => {
+        openTeachingIdeasPickerModal({
+          concepts: getPlanConceptsForPicker(),
+          gradeLabel: plan.gradeLabel,
+          subjectId: plan.subjectId,
+          elementTypeFilter: 'differentiation',
+          onCopyElement: (element) => {
+            lessonPlanService.applyDifferentiationBucketFromTeachingIdea(plan, activityId, bucket, element.content, {
+              sourceLessonPlanId: element.sourceLessonPlanId,
+              sourceActivityId: element.sourceActivityId,
+            });
+            persistAndRerender();
+          },
+        });
       },
       onToggleActivityCollapse: (activityId) => {
         if (collapsedActivityIds.has(activityId)) collapsedActivityIds.delete(activityId);
@@ -288,7 +384,26 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
         lessonPlanService.updateHelpingEachOtherLearn(plan, { [field]: value });
         persistOnly();
       },
+      onOpenFinalQuestionPicker: () => {
+        openTeachingIdeasPickerModal({
+          concepts: getPlanConceptsForPicker(),
+          gradeLabel: plan.gradeLabel,
+          subjectId: plan.subjectId,
+          elementTypeFilter: 'question',
+          onCopyElement: (element) => {
+            lessonPlanService.applyQuestionFromTeachingIdea(plan, 'finalQuestion', element.content, { sourceLessonPlanId: element.sourceLessonPlanId });
+            persistAndRerender();
+          },
+        });
+      },
     });
+  }
+
+  function getPlanConceptsForPicker() {
+    return plan.conceptIds
+      .map((conceptId) => learningRecordService.getConceptById(classroom, conceptId))
+      .filter(Boolean)
+      .map((concept) => ({ id: concept.id, title: concept.title }));
   }
 
   rerender();
@@ -346,6 +461,7 @@ function renderBuilder(container, state, handlers) {
   const plan = state.plan;
 
   wrapper.appendChild(renderTitleBar(plan, state.saveIndicatorElement, handlers));
+  wrapper.appendChild(renderConceptsField(plan, state.classroom, state, handlers));
   wrapper.appendChild(renderReadinessPanel(plan, handlers));
 
   wrapper.appendChild(
@@ -415,6 +531,132 @@ function renderTitleBar(plan, saveIndicatorElement, handlers) {
   titleBar.appendChild(metaLine);
 
   return titleBar;
+}
+
+/**
+ * Concept picker (Phase 4) — Subject first (a Concept belongs to
+ * exactly one Subject's tree), then a multi-select Curriculum Explorer
+ * scoped to that Subject's own Units. Reuses
+ * ui/components/CurriculumExplorerPanel.js exactly as-is rather than a
+ * new picker, per explicit product direction — this is that shared
+ * component's own already-designed `onClick`-per-concept interactive
+ * mode, just its first real caller (every existing caller today uses
+ * it read-only). A concept is "selected" by being present in
+ * `plan.conceptIds`; clicking a concept again removes it — the panel
+ * itself has no built-in "selected" visual state, so a selected
+ * concept's title is prefixed with a checkmark here instead of forking
+ * the shared component for one new CSS class.
+ *
+ * Deliberately NOT gated by `handlers.editable` the same way every
+ * other field in this view is — per explicit product direction,
+ * concept selection stays available while building even on... no,
+ * actually: this DOES still respect the same SUBMITTED/APPROVED lock
+ * as everything else (a locked plan shouldn't let you change its
+ * concepts either), it just never blocks *starting* a lesson without
+ * one — that's lessonPlanValidationService.js's own submit-time gate,
+ * not a Builder restriction.
+ */
+function renderConceptsField(plan, classroom, state, handlers) {
+  const field = document.createElement('div');
+  field.className = 'lesson-plan-builder__concepts-field';
+
+  const label = document.createElement('label');
+  label.className = 'lesson-plan-builder__field-label';
+  label.textContent = 'Concepts';
+  field.appendChild(label);
+
+  const subjectRow = document.createElement('div');
+  subjectRow.className = 'lesson-plan-builder__concepts-subject-row';
+
+  const subjectSelect = document.createElement('select');
+  subjectSelect.className = 'lesson-plan-builder__concepts-subject-select';
+  subjectSelect.disabled = !handlers.editable;
+  const subjects = learningRecordService.getSubjects(classroom);
+
+  const placeholderOption = document.createElement('option');
+  placeholderOption.value = '';
+  placeholderOption.textContent = subjects.length === 0 ? 'No subjects set up yet' : 'Choose a subject…';
+  subjectSelect.appendChild(placeholderOption);
+  subjects.forEach((subject) => {
+    const option = document.createElement('option');
+    option.value = subject.id;
+    option.textContent = subject.title;
+    if (subject.id === plan.subjectId) option.selected = true;
+    subjectSelect.appendChild(option);
+  });
+  subjectSelect.addEventListener('change', () => handlers.onSubjectChangeForConcepts(subjectSelect.value));
+  subjectRow.appendChild(subjectSelect);
+
+  const selectedSubject = plan.subjectId ? subjects.find((subject) => subject.id === plan.subjectId) : null;
+
+  if (handlers.editable && selectedSubject) {
+    const toggleButton = document.createElement('button');
+    toggleButton.type = 'button';
+    toggleButton.className = 'btn btn--ghost lesson-plan-builder__concepts-toggle-button';
+    toggleButton.textContent = state.isConceptPickerOpen ? 'Done' : '+ Choose Concepts';
+    toggleButton.addEventListener('click', handlers.onToggleConceptPickerOpen);
+    subjectRow.appendChild(toggleButton);
+  }
+
+  field.appendChild(subjectRow);
+
+  const chips = document.createElement('div');
+  chips.className = 'lesson-plan-builder__concept-chips';
+  if (plan.conceptIds.length === 0) {
+    const empty = document.createElement('span');
+    empty.className = 'lesson-plan-builder__concept-chips-empty';
+    empty.textContent = 'No concepts selected yet.';
+    chips.appendChild(empty);
+  } else {
+    plan.conceptIds.forEach((conceptId) => {
+      const concept = learningRecordService.getConceptById(classroom, conceptId);
+      const chip = document.createElement('span');
+      chip.className = 'lesson-plan-builder__concept-chip';
+      const chipLabel = document.createElement('span');
+      chipLabel.textContent = concept?.title || 'Unknown concept';
+      chip.appendChild(chipLabel);
+      if (handlers.editable) {
+        const removeButton = document.createElement('button');
+        removeButton.type = 'button';
+        removeButton.className = 'btn btn--icon-only lesson-plan-builder__concept-chip-remove';
+        removeButton.setAttribute('aria-label', `Remove ${concept?.title || 'concept'}`);
+        removeButton.appendChild(createIcon('x', { size: 12 }));
+        removeButton.addEventListener('click', () => handlers.onToggleConcept(conceptId));
+        chip.appendChild(removeButton);
+      }
+      chips.appendChild(chip);
+    });
+  }
+  field.appendChild(chips);
+
+  if (handlers.editable && selectedSubject && state.isConceptPickerOpen) {
+    const units = selectedSubject.units.map((unit) => ({
+      id: unit.id,
+      title: unit.title,
+      concepts: unit.concepts.map((concept) => ({
+        id: concept.id,
+        title: plan.conceptIds.includes(concept.id) ? `✓ ${concept.title}` : concept.title,
+        onClick: () => handlers.onToggleConcept(concept.id),
+      })),
+    }));
+
+    if (units.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'lesson-plan-builder__concepts-empty-message';
+      empty.textContent = 'No units set up yet for this subject in Learning Management.';
+      field.appendChild(empty);
+    } else {
+      field.appendChild(
+        createCurriculumExplorerPanel({
+          units,
+          expandedUnitId: state.expandedConceptUnitId,
+          onToggleUnit: handlers.onToggleConceptUnit,
+        })
+      );
+    }
+  }
+
+  return field;
 }
 
 /**
@@ -539,15 +781,15 @@ function renderWhySection(plan, handlers) {
     })
   );
 
-  wrap.appendChild(
-    createLabeledTextarea({
-      label: 'Big Question',
-      placeholder: 'The one question this whole lesson is trying to answer',
-      value: plan.bigQuestion,
-      onChange: handlers.onBigQuestionChange,
-      disabled: !handlers.editable,
-    })
-  );
+  const bigQuestionField = createLabeledTextarea({
+    label: 'Big Question',
+    placeholder: 'The one question this whole lesson is trying to answer',
+    value: plan.bigQuestion,
+    onChange: handlers.onBigQuestionChange,
+    disabled: !handlers.editable,
+  });
+  if (handlers.editable) bigQuestionField.appendChild(createFromTeachingIdeasButton(handlers.onOpenBigQuestionPicker));
+  wrap.appendChild(bigQuestionField);
 
   const swbatField = document.createElement('div');
   swbatField.className = 'lesson-plan-builder__field';
@@ -617,7 +859,10 @@ function renderAssessmentSection(plan, handlers) {
     );
   });
 
-  if (handlers.editable) wrap.appendChild(createAddRowButton('+ Add assessment / evidence item', handlers.onAddAssessment));
+  if (handlers.editable) {
+    wrap.appendChild(createAddRowButton('+ Add assessment / evidence item', handlers.onAddAssessment));
+    wrap.appendChild(createFromTeachingIdeasButton(handlers.onOpenAssessmentPicker));
+  }
 
   return wrap;
 }
@@ -660,6 +905,17 @@ function createAddRowButton(label, onClick) {
   return button;
 }
 
+/** Phase 4 — the "+ From Teaching Ideas" affordance, same visual weight as createAddRowButton() above, used everywhere a teacher can browse/copy in reusable content instead of writing it by hand. */
+function createFromTeachingIdeasButton(onClick) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn btn--text lesson-plan-builder__from-teaching-ideas-button';
+  button.appendChild(createIcon('search', { size: 12 }));
+  button.append(' From Teaching Ideas');
+  button.addEventListener('click', onClick);
+  return button;
+}
+
 // ---- 4. FUN, FAST, EFFECTIVE — Spark ---------------------------------
 
 function renderSparkSection(plan, handlers) {
@@ -670,6 +926,8 @@ function renderSparkSection(plan, handlers) {
   heading.className = 'lesson-plan-builder__subheading';
   heading.textContent = 'Spark';
   wrap.appendChild(heading);
+
+  if (handlers.editable) wrap.appendChild(createFromTeachingIdeasButton(handlers.onOpenSparkPicker));
 
   const titleField = document.createElement('div');
   titleField.className = 'lesson-plan-builder__field';
@@ -730,13 +988,26 @@ function renderActivitiesSection(plan, collapsedActivityIds, handlers) {
   });
 
   if (handlers.editable) {
+    const addButtonRow = document.createElement('div');
+    addButtonRow.className = 'lesson-plan-builder__add-activity-row';
+
     const addButton = document.createElement('button');
     addButton.type = 'button';
     addButton.className = 'btn btn--primary lesson-plan-builder__add-activity-button';
     addButton.appendChild(createIcon('plus', { size: 16 }));
-    addButton.append(' Add Activity');
+    addButton.append(' New Activity');
     addButton.addEventListener('click', handlers.onAddActivity);
-    wrap.appendChild(addButton);
+    addButtonRow.appendChild(addButton);
+
+    const fromTeachingIdeasButton = document.createElement('button');
+    fromTeachingIdeasButton.type = 'button';
+    fromTeachingIdeasButton.className = 'btn btn--secondary lesson-plan-builder__add-activity-button';
+    fromTeachingIdeasButton.appendChild(createIcon('search', { size: 14 }));
+    fromTeachingIdeasButton.append(' From Teaching Ideas');
+    fromTeachingIdeasButton.addEventListener('click', handlers.onOpenActivityPicker);
+    addButtonRow.appendChild(fromTeachingIdeasButton);
+
+    wrap.appendChild(addButtonRow);
   }
 
   return wrap;
@@ -887,17 +1158,19 @@ function renderDifferentiationFields(plan, activity, handlers) {
     { field: 'greenBucket', label: 'Green Bucket', placeholder: 'Extra stretch' },
     { field: 'others', label: 'Others', placeholder: 'Any other differentiation' },
   ].forEach(({ field, label, placeholder }) => {
-    wrap.appendChild(
-      createLabeledTextarea({
-        label,
-        placeholder,
-        value: activity.differentiation[field],
-        onChange: (value) => handlers.onActivityDifferentiationChange(activity.id, field, value),
-        disabled: !handlers.editable,
-        plan,
-        sectionKey: lessonPlanReviewService.buildActivitySectionKey(activity.id, `differentiation.${field}`),
-      })
-    );
+    const bucketField = createLabeledTextarea({
+      label,
+      placeholder,
+      value: activity.differentiation[field],
+      onChange: (value) => handlers.onActivityDifferentiationChange(activity.id, field, value),
+      disabled: !handlers.editable,
+      plan,
+      sectionKey: lessonPlanReviewService.buildActivitySectionKey(activity.id, `differentiation.${field}`),
+    });
+    if (handlers.editable) {
+      bucketField.appendChild(createFromTeachingIdeasButton(() => handlers.onOpenDifferentiationPicker(activity.id, field)));
+    }
+    wrap.appendChild(bucketField);
   });
 
   return wrap;
@@ -920,17 +1193,17 @@ function renderHelpingEachOtherLearnSection(plan, handlers) {
       sectionKey: LESSON_PLAN_SECTION_KEYS.PAIR_EXPLANATION,
     })
   );
-  wrap.appendChild(
-    createLabeledTextarea({
-      label: 'Final Question',
-      placeholder: 'One closing question to check understanding',
-      value: plan.finalQuestion,
-      onChange: (value) => handlers.onHelpingEachOtherLearnChange('finalQuestion', value),
-      disabled: !handlers.editable,
-      plan,
-      sectionKey: LESSON_PLAN_SECTION_KEYS.FINAL_QUESTION,
-    })
-  );
+  const finalQuestionField = createLabeledTextarea({
+    label: 'Final Question',
+    placeholder: 'One closing question to check understanding',
+    value: plan.finalQuestion,
+    onChange: (value) => handlers.onHelpingEachOtherLearnChange('finalQuestion', value),
+    disabled: !handlers.editable,
+    plan,
+    sectionKey: LESSON_PLAN_SECTION_KEYS.FINAL_QUESTION,
+  });
+  if (handlers.editable) finalQuestionField.appendChild(createFromTeachingIdeasButton(handlers.onOpenFinalQuestionPicker));
+  wrap.appendChild(finalQuestionField);
   wrap.appendChild(
     createLabeledTextarea({
       label: "Teacher Look-Fors",

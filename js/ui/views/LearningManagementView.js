@@ -831,7 +831,22 @@ function renderChooseClassStep(classrooms, handlers) {
  * The home screen's one responsibility: render exactly the
  * classroom's own persisted Subjects, nothing else. Renders nothing
  * at all beyond "+ Add Subject" when there are none — no heading, no
- * empty-state copy, no suggestions.
+ * empty-state copy, no suggestions (the "Choose a subject to
+ * continue" intro line below is scoped inside the same
+ * `subjects.length > 0` branch as the subject grid itself, for
+ * exactly this reason — there is nothing to "choose" yet when the
+ * list is empty).
+ *
+ * "+ Add Subject" is a secondary management action, never the
+ * loudest thing on this screen — the subject cards themselves are the
+ * primary content (per the ClassMate style guide's own "Action
+ * prominence should reflect action importance" rule). `btn--ghost`
+ * (compact, outlined, blue) replaces the previous full-width
+ * `btn--primary` bar; `existing-subjects__add-subject-button` only
+ * overrides this section's own flex `align-items: stretch` so the
+ * button sizes to its own content instead of stretching to the
+ * section's full width the way every other flex child here still
+ * correctly does (the subject grid itself DOES want that full width).
  */
 function renderHomeStep(classroom, handlers) {
   const section = document.createElement('div');
@@ -839,12 +854,17 @@ function renderHomeStep(classroom, handlers) {
 
   const subjects = learningRecordService.getSubjects(classroom);
   if (subjects.length > 0) {
+    const intro = document.createElement('p');
+    intro.className = 'learning-management__intro';
+    intro.textContent = 'Choose a subject to continue';
+    section.appendChild(intro);
+
     section.appendChild(renderExistingSubjectsList(subjects, handlers.onChooseSubject));
   }
 
   const addSubjectButton = document.createElement('button');
   addSubjectButton.type = 'button';
-  addSubjectButton.className = 'btn btn--primary';
+  addSubjectButton.className = 'btn btn--ghost existing-subjects__add-subject-button';
   addSubjectButton.textContent = '+ Add Subject';
   addSubjectButton.addEventListener('click', handlers.onGoToAddSubject);
   section.appendChild(addSubjectButton);

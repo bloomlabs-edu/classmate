@@ -149,3 +149,34 @@ test('resetLessonForUnitChange: a lesson that already had zero concepts stays at
   assert.equal(lesson.curriculumUnitId, 'unit-fractions');
   assert.deepEqual(lesson.conceptIds, []);
 });
+
+// "None" — the Timetable's own Edit Lesson dropdown clearing a
+// Unit/Topic assigned by accident, e.g. English -> "Poem: Special
+// Hero" — no special-casing in this function itself; `null` is just
+// another `newUnitId`, same as any real unit id.
+test('resetLessonForUnitChange: newUnitId of null (the "None" option) clears curriculumUnitId — the lesson itself, its date, and its teachingSlotId are all untouched', () => {
+  const lesson = createLesson({
+    classroomId: 'c1',
+    date: '2026-09-10',
+    teachingSlotId: 'slot-123',
+    curriculumUnitId: 'unit-poem-special-hero',
+    conceptIds: ['A', 'B'],
+    executedConceptIds: ['A'],
+  });
+
+  resetLessonForUnitChange(lesson, null);
+
+  assert.equal(lesson.curriculumUnitId, null);
+  assert.deepEqual(lesson.conceptIds, []);
+  assert.deepEqual(lesson.executedConceptIds, []);
+  assert.equal(lesson.date, '2026-09-10');
+  assert.equal(lesson.teachingSlotId, 'slot-123');
+  assert.equal(lesson.classroomId, 'c1');
+});
+
+test('resetLessonForUnitChange: an already-unassigned lesson (curriculumUnitId already null) stays null and stays a no-op on its own concept fields', () => {
+  const lesson = createLesson({ classroomId: 'c1', curriculumUnitId: null, conceptIds: [] });
+  resetLessonForUnitChange(lesson, null);
+  assert.equal(lesson.curriculumUnitId, null);
+  assert.deepEqual(lesson.conceptIds, []);
+});

@@ -22,9 +22,10 @@ test('getLessonPlanReadiness: WHY section reports each of objective / big questi
   assert.ok(whyMessages.some((message) => /swbat/i.test(message)));
 });
 
-test('getLessonPlanReadiness: fully completing every section (Spark + one Activity + Helping Each Other Learn + Why + Self/Others/India + Assessment) makes the plan ready', () => {
+test('getLessonPlanReadiness: fully completing every section (Concept + Spark + one Activity + Helping Each Other Learn + Why + Self/Others/India + Assessment) makes the plan ready', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
 
+  lessonPlanService.updateContext(plan, { conceptIds: ['concept-1'] });
   lessonPlanService.updateWhy(plan, { lessonObjective: 'Understand the causes of the revolt.', bigQuestion: 'Why did Kattabomman resist British rule?' });
   lessonPlanService.addSwbatObjective(plan, 'Identify at least two causes of the revolt.');
   lessonPlanService.updateSelfOthersIndia(plan, { self: 'Standing up for what is right.' });
@@ -58,4 +59,30 @@ test('getLessonPlanReadiness: zero activities is itself reported as missing, dyn
   const plan = createLessonPlan({ classroomId: 'c1' });
   const readiness = getLessonPlanReadiness(plan);
   assert.ok(readiness.missing.some((item) => /at least one learning activity/i.test(item.message)));
+});
+
+// ---------------------------------------------------------------------
+// Phase 4 — a Concept is required before submission (product decision:
+// concept selection stays optional/flexible WHILE building; this is a
+// submit-time gate only, enforced here in readiness, never blocking
+// the Builder from being edited without one).
+// ---------------------------------------------------------------------
+
+test('getLessonPlanReadiness: a lesson plan with zero concepts is not ready, with the exact specified teacher-facing message', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const readiness = getLessonPlanReadiness(plan);
+  const conceptIssue = readiness.missing.find((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.CONTEXT);
+  assert.ok(conceptIssue, 'expected a missing-concept readiness item');
+  assert.equal(conceptIssue.message, 'Add at least one Concept before submitting this lesson for review.');
+});
+
+test('getLessonPlanReadiness: adding even one concept clears the missing-concept item (multiple concepts are also fine, not just exactly one)', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.updateContext(plan, { conceptIds: ['concept-1'] });
+  let readiness = getLessonPlanReadiness(plan);
+  assert.ok(!readiness.missing.some((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.CONTEXT));
+
+  lessonPlanService.updateContext(plan, { conceptIds: ['concept-1', 'concept-2'] });
+  readiness = getLessonPlanReadiness(plan);
+  assert.ok(!readiness.missing.some((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.CONTEXT));
 });

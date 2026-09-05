@@ -87,6 +87,25 @@ export async function getLessonsForCycle(classroomId, planningCycleId) {
   return snapshot.docs.map((docSnapshot) => ({ id: docSnapshot.id, ...docSnapshot.data() }));
 }
 
+/**
+ * Every Lesson ever attached to one curriculum Unit, across this
+ * classroom's whole Lesson history — not bounded by any visible date
+ * range. This is what the Timetable Calendar's per-subject curriculum-
+ * progress view (ui/views/TimetableView.js) needs to determine a
+ * Unit's real start/last-taught date: a Unit can span outside
+ * whatever month is currently on screen, and clamping this query to
+ * the visible range would silently misreport a Unit that actually
+ * started in an earlier month as if it started on the 1st. A single-
+ * field equality query, no different in kind from getLessonsForCycle()
+ * above — bounded in practice by however many Lessons this one Unit
+ * was ever taught across, not a full-collection scan.
+ */
+export async function getLessonsForUnit(classroomId, unitId) {
+  const lessonsQuery = query(lessonsCollectionRef(classroomId), where('curriculumUnitId', '==', unitId));
+  const snapshot = await getDocs(lessonsQuery);
+  return snapshot.docs.map((docSnapshot) => ({ id: docSnapshot.id, ...docSnapshot.data() }));
+}
+
 /** The Lesson attached to one concrete Teaching Slot (see services/timetableService.js's buildTeachingSlotId()), or null if that period has no lesson plan attached yet. Used by the Timetable UI to decide "attach a new lesson plan" vs. "open the existing one." */
 export async function getLessonByTeachingSlotId(classroomId, teachingSlotId) {
   const lessonsQuery = query(lessonsCollectionRef(classroomId), where('teachingSlotId', '==', teachingSlotId));

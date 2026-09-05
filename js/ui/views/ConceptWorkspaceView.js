@@ -38,6 +38,9 @@ import { hydrateConceptRecordsForConcepts } from '../../services/conceptRecordHy
 import * as learningRecordTeacherService from '../../services/learningRecordTeacherService.js';
 import * as resourceService from '../../services/resourceService.js';
 import * as resourceRepository from '../../services/resourceRepository.js';
+import * as learningIntegrationService from '../../services/learningIntegrationService.js';
+import * as learningActivityService from '../../services/learningActivityService.js';
+import { getActivityTypeLabel, getExternalProviderLabel } from '../../config/activityTypeConfig.js';
 import { fetchLearningHubCatalogue, groupExperiencesByType } from '../../services/learningHubCatalogueService.js';
 import { openLearningHubPanel } from '../components/LearningHubPanel.js';
 import { getUnderstandingLabel, getNotebookStatusLabel } from '../../config/learningRecordConfig.js';
@@ -55,11 +58,14 @@ import { createIcon } from '../components/Icon.js';
 import { createBackButton } from '../components/BackButton.js';
 import { renderReadingEditorView } from './ReadingEditorView.js';
 import { renderReadingViewerView } from './ReadingViewerView.js';
+import { renderTeachingIdeasBrowser } from '../components/TeachingIdeasBrowser.js';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'learning-record', label: 'Learning Record' },
   { id: 'resources', label: 'Resources' },
+  { id: 'activities', label: 'Activities' },
+  { id: 'teaching-ideas', label: 'Teaching Ideas' },
   { id: 'student-progress', label: 'Student Progress' },
 ];
 
@@ -123,7 +129,16 @@ export function renderConceptWorkspaceView(container, { classroom, subject, unit
     // here rather than scattered through the render tree.
     const resources = await resourceService.getResources(classroom.id, concept);
 
-    renderWorkspace(container, classroom, subject, unit, concept, activeTab, resources, { resourceMode, pendingType, selectedResourceId, pendingLearningHubExperience, editingDescription, descriptionSaveState }, {
+    // Fetched once per render, same "one async boundary, everything
+    // below stays synchronous" shape as `resources` above — the
+    // Activities tab needs both this Concept's own Activity
+    // definitions (models/Activity.js, their own Firestore
+    // subcollection) and the classroom's Assignments linked to it
+    // (models/LearningActivity.js entries whose conceptId matches).
+    const conceptActivities = await learningIntegrationService.getActivitiesForConcept(classroom.id, concept.id);
+    const conceptAssignments = learningActivityService.listActivities(classroom).filter((assignment) => assignment.conceptId === concept.id);
+
+    renderWorkspace(container, classroom, subject, unit, concept, activeTab, resources, { resourceMode, pendingType, selectedResourceId, pendingLearningHubExperience, editingDescription, descriptionSaveState }, conceptActivities, conceptAssignments, {
       onBack,
       rerender,
       onStartEditDescription: () => {
@@ -247,7 +262,7 @@ export function renderConceptWorkspaceView(container, { classroom, subject, unit
   rerender();
 }
 
-function renderWorkspace(container, classroom, subject, unit, concept, activeTab, resources, resourceState, handlers) {
+function renderWorkspace(container, classroom, subject, unit, concept, activeTab, resources, resourceState, conceptActivities, conceptAssignments, handlers) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
@@ -359,6 +374,19 @@ function renderWorkspace(container, classroom, subject, unit, concept, activeTab
     content.appendChild(renderLearningRecordTab(classroom, concept, handlers));
   } else if (activeTab === 'resources') {
     content.appendChild(renderResourcesTab(container, classroom, concept, resources, resourceState, handlers));
+  } else if (activeTab === 'activities') {
+    content.appendChild(renderActivitiesTab(classroom, conceptActivities, conceptAssignments));
+  } else if (activeTab === 'teaching-ideas') {
+    // Phase 4 — discovery/preview only (see
+    // ui/components/TeachingIdeasBrowser.js's own header comment);
+    // insertion into a lesson happens in the Builder, never here. Self-
+    // mounting, same as every renderXView(container, props) elsewhere
+    // in this app — it does its own (globally-scoped, Concept-id-bound)
+    // fetch, independent of this view's own rerender()/resources fetch
+    // above.
+    const teachingIdeasContainer = document.createElement('div');
+    content.appendChild(teachingIdeasContainer);
+    renderTeachingIdeasBrowser(teachingIdeasContainer, { conceptId: concept.id, conceptTitle: concept.title });
   } else if (activeTab === 'student-progress') {
     content.appendChild(renderStudentProgressTab(classroom, concept));
   } else {
@@ -1236,6 +1264,86 @@ function createResourceRenameInput(value, onRename) {
  * models/StudentConceptRecord.js have had since Phase 1, with nothing
  * to show it until now.
  */
+/**
+ * The Activities tab — a minimal, read-only view of this Concept's
+ * linked Activities/Assignments (see
+ * docs/LEARNING_HUB_INTEGRATION_CONTRACT.md), reusing the exact same
+ * row/tag classes renderStudentProgressTab() below already
+ * established rather than introducing new CSS. No creation flow yet —
+ * per explicit task scope, this establishes the model/service
+ * foundation and a visibility point for it, not a new authoring UI.
+ *
+ * One row per Assignment (models/LearningActivity.js) whose
+ * `conceptId` matches this Concept — a legacy/native Assignment (no
+ * `activityId`) shows as a plain "ClassMate" task; one backed by a
+ * models/Activity.js definition shows its real type/provider/points.
+ * The roster tally reuses
+ * services/learningActivityService.js's existing
+ * getActivityRosterSummary() — the same aggregate this app's other
+ * Learning Activity views already compute, not a second
+ * implementation.
+ */
+function renderActivitiesTab(classroom, conceptActivities, conceptAssignments) {
+  const section = document.createElement('div');
+  section.className = 'concept-workspace__section';
+
+  if (conceptAssignments.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'concept-workspace__empty-message';
+    empty.textContent = 'No Activities assigned for this concept yet.';
+    section.appendChild(empty);
+    return section;
+  }
+
+  const activityById = new Map(conceptActivities.map((activity) => [activity.id, activity]));
+
+  const list = document.createElement('div');
+  list.className = 'concept-workspace__progress-list';
+
+  conceptAssignments.forEach((assignment) => {
+    const activity = assignment.activityId ? activityById.get(assignment.activityId) : null;
+
+    const row = document.createElement('div');
+    row.className = 'concept-workspace__progress-row';
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'concept-workspace__progress-name';
+    nameEl.textContent = assignment.title;
+    row.appendChild(nameEl);
+
+    const typeEl = document.createElement('span');
+    typeEl.className = 'concept-workspace__progress-tag';
+    typeEl.textContent = activity
+      ? activity.externalProvider
+        ? `${getActivityTypeLabel(activity.activityType)} · ${getExternalProviderLabel(activity.externalProvider)}`
+        : getActivityTypeLabel(activity.activityType)
+      : getActivityTypeLabel('native');
+    row.appendChild(typeEl);
+
+    if (activity && activity.scoreMax != null) {
+      const scoreEl = document.createElement('span');
+      scoreEl.className = 'concept-workspace__progress-tag';
+      scoreEl.textContent = `${activity.scoreMax} points`;
+      row.appendChild(scoreEl);
+    }
+
+    const summary = learningActivityService.getActivityRosterSummary(classroom, assignment.id);
+    Object.entries(summary)
+      .filter(([, count]) => count > 0)
+      .forEach(([status, count]) => {
+        const tallyEl = document.createElement('span');
+        tallyEl.className = 'concept-workspace__progress-tag';
+        tallyEl.textContent = `${count} ${status}`;
+        row.appendChild(tallyEl);
+      });
+
+    list.appendChild(row);
+  });
+
+  section.appendChild(list);
+  return section;
+}
+
 function renderStudentProgressTab(classroom, concept) {
   const section = document.createElement('div');
   section.className = 'concept-workspace__section';

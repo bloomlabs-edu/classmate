@@ -10,14 +10,20 @@
  * logs a Timeline entry on that student (see services/timelineService.js),
  * so "Homework Submitted" / "Homework Missing" show up in their history
  * automatically.
+ *
+ * `student.submissions[activityId]` is also ClassMate's existing
+ * "Result" record in the docs/LEARNING_HUB_INTEGRATION_CONTRACT.md
+ * sense — see setSubmissionStatus() below for the additive fields
+ * (scoreMax/completedAt/source/conceptId) that extend it for that
+ * contract without changing any existing caller's behavior.
  */
 
 import { createLearningActivity } from '../models/LearningActivity.js';
 import { logEntry } from './timelineService.js';
 
-export function createActivity(classroom, { title, type, dueDate = '' }) {
+export function createActivity(classroom, { title, type, dueDate = '', activityId = null, conceptId = null }) {
   if (!classroom.learningActivities) classroom.learningActivities = [];
-  const activity = createLearningActivity({ title, type, dueDate });
+  const activity = createLearningActivity({ title, type, dueDate, activityId, conceptId });
   classroom.learningActivities.push(activity);
   return activity;
 }
@@ -43,7 +49,18 @@ export function getSubmissionStatus(student, activityId) {
   return student.submissions?.[activityId]?.status || 'Not Assigned';
 }
 
-export function setSubmissionStatus(classroom, student, activityId, status, { feedback = '', score = null } = {}) {
+/**
+ * `scoreMax`/`completedAt`/`source`/`conceptId` are additive Result
+ * fields (see docs/LEARNING_HUB_INTEGRATION_CONTRACT.md) — every
+ * existing caller (the roster-marking UI) omits them and gets exactly
+ * today's behavior. `source` defaults to `'classmate'`: a result set
+ * by a teacher directly in this app, as opposed to one that will
+ * eventually arrive from `'learning_hub'` or `'external'` via
+ * services/learningIntegrationService.js's recordResult() — that
+ * function is the only intended caller that would ever pass a
+ * non-default `source`.
+ */
+export function setSubmissionStatus(classroom, student, activityId, status, { feedback = '', score = null, scoreMax = null, completedAt = null, source = 'classmate', conceptId = null } = {}) {
   if (!student.submissions) student.submissions = {};
 
   const previousStatus = getSubmissionStatus(student, activityId);
@@ -51,6 +68,10 @@ export function setSubmissionStatus(classroom, student, activityId, status, { fe
     status,
     feedback,
     score,
+    scoreMax,
+    completedAt,
+    source,
+    conceptId,
     updatedAt: new Date().toISOString(),
   };
 

@@ -25,11 +25,18 @@
  *   notes       - Note[] (see models/Note.js) — a chronological log of
  *                 short dated notes, not one long free-text field
  *   submissions - { [learningActivityId]: { status, feedback, score,
- *                 updatedAt } } — this student's status against each of
- *                 the classroom's Learning Activities (see
+ *                 scoreMax, completedAt, source, conceptId, updatedAt } }
+ *                 — this student's status against each of the
+ *                 classroom's Learning Activities (see
  *                 models/LearningActivity.js and
  *                 services/learningActivityService.js). An activity with
  *                 no entry here is "Not Assigned" for this student.
+ *                 scoreMax/completedAt/source/conceptId are additive —
+ *                 see setSubmissionStatus()'s own doc comment — and this
+ *                 is also ClassMate's existing per-student "Result"
+ *                 record for the future Learning Hub / external-activity
+ *                 integration (see
+ *                 docs/LEARNING_HUB_INTEGRATION_CONTRACT.md).
  *   learningRecord - { [conceptId]: StudentConceptRecord } — this
  *                 student's own understanding/notebook/helpRequested
  *                 against each concept in the classroom's Learning

@@ -249,8 +249,77 @@ export function updateHelpingEachOtherLearn(lessonPlan, { pairExplanation, final
 // mutator alongside every other section mutator above)
 // ---------------------------------------------------------------------
 
-/** Records that this plan's Spark/an Activity was copied FROM a repository Resource — provenance only, never a live link (see models/LessonPlan.js's own createLessonPlanSourceRef() doc comment). Call this alongside whatever code actually pushes the copied Spark/Activity in; this function only records where it came from. */
-export function recordSourceElement(lessonPlan, { resourceId, elementType }) {
-  lessonPlan.sourceElementRefs.push(createLessonPlanSourceRef({ resourceId, elementType }));
+/** Records that this plan's Spark/an Activity was copied FROM somewhere — a Resource or a Teaching Idea — provenance only, never a live link (see models/LessonPlan.js's own createLessonPlanSourceRef() doc comment). Call this alongside whatever code actually pushes the copied content in; this function only records where it came from. */
+export function recordSourceElement(lessonPlan, { resourceId, sourceLessonPlanId, sourceActivityId, elementType }) {
+  lessonPlan.sourceElementRefs.push(createLessonPlanSourceRef({ resourceId, sourceLessonPlanId, sourceActivityId, elementType }));
+  touch(lessonPlan);
+}
+
+// ---------------------------------------------------------------------
+// Teaching Ideas copy-in (Phase 4) — each function does exactly two
+// things, always together: push the copied content in as ordinary,
+// freely-editable lesson content (a fresh id where one applies, same
+// as duplicateActivity()'s own convention), and record where it came
+// from via recordSourceElement() above. Content and provenance are
+// always written in the same call so a caller can never do one without
+// the other. None of these read the source LessonPlan itself — the
+// caller (the Builder's "From Teaching Ideas" picker) already has the
+// copied content in hand from services/teachingIdeasService.js; this
+// file only ever deals with the DESTINATION plan.
+// ---------------------------------------------------------------------
+
+/** Copies a Teaching Idea Activity in as a brand-new Activity (own id, deep-cloned differentiation) — behaves exactly like a hand-authored Activity from the moment it lands; see duplicateActivity()'s own identical deep-clone reasoning above. */
+export function addActivityFromTeachingIdea(lessonPlan, { title, teacherAction, studentAction, differentiation }, { sourceLessonPlanId, sourceActivityId }) {
+  const activity = createLessonPlanActivity({
+    title,
+    teacherAction,
+    studentAction,
+    differentiation: differentiation ? { ...differentiation } : null,
+  });
+  lessonPlan.activities.push(activity);
+  recordSourceElement(lessonPlan, { sourceLessonPlanId, sourceActivityId, elementType: 'activity' });
+  return activity;
+}
+
+/** Copies a Teaching Idea Spark in, overwriting this plan's own Spark fields — a plan has exactly one Spark, so "copy in" means "replace," the same way a teacher retyping it by hand would. */
+export function applySparkFromTeachingIdea(lessonPlan, { title, teacherAction, studentAction }, { sourceLessonPlanId }) {
+  lessonPlan.spark = { title, teacherAction, studentAction };
+  recordSourceElement(lessonPlan, { sourceLessonPlanId, sourceActivityId: null, elementType: 'spark' });
+  touch(lessonPlan);
+}
+
+/** Copies a Teaching Idea assessment/evidence description in as a new dynamic list item — same shape as addAssessmentItem() above, plus provenance. */
+export function addAssessmentItemFromTeachingIdea(lessonPlan, description, { sourceLessonPlanId }) {
+  const item = addAssessmentItem(lessonPlan, description);
+  recordSourceElement(lessonPlan, { sourceLessonPlanId, sourceActivityId: null, elementType: 'assessment' });
+  return item;
+}
+
+/** Copies a Teaching Idea Question in — `field` is 'bigQuestion' or 'finalQuestion' (the only two single-question fields this model has; see models/LessonPlan.js's own LESSON_PLAN_SECTION_KEYS). Replaces that one field, same "a plan has exactly one, so copy-in means replace" reasoning as the Spark above. */
+export function applyQuestionFromTeachingIdea(lessonPlan, field, text, { sourceLessonPlanId }) {
+  if (field === 'bigQuestion') lessonPlan.bigQuestion = text;
+  else if (field === 'finalQuestion') lessonPlan.finalQuestion = text;
+  recordSourceElement(lessonPlan, { sourceLessonPlanId, sourceActivityId: null, elementType: 'question' });
+  touch(lessonPlan);
+}
+
+/**
+ * Copies a Teaching Idea differentiation strategy into ONE bucket
+ * (`bucket` is 'redBucket'/'greenBucket'/'others') of a specific
+ * Activity ALREADY in this plan — per explicit Phase 4 product
+ * direction, a differentiation strategy is independently reusable,
+ * never tied to copying its sibling buckets along with it. Reveals
+ * the differentiation fields first if this Activity doesn't have them
+ * yet (same progressive-disclosure entry point addActivityDifferentiation()
+ * already establishes), then sets only the one requested bucket —
+ * the other two stay exactly as they were (blank, or whatever the
+ * teacher already wrote).
+ */
+export function applyDifferentiationBucketFromTeachingIdea(lessonPlan, activityId, bucket, text, { sourceLessonPlanId, sourceActivityId }) {
+  const activity = findLessonPlanActivity(lessonPlan, activityId);
+  if (!activity) return;
+  if (!activity.differentiation) activity.differentiation = createLessonPlanDifferentiation();
+  activity.differentiation[bucket] = text;
+  recordSourceElement(lessonPlan, { sourceLessonPlanId, sourceActivityId, elementType: 'differentiation' });
   touch(lessonPlan);
 }

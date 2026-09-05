@@ -17,16 +17,26 @@
  * home screen renders subjects through, and it has no import that
  * could reach suggestion data even if someone tried.
  *
- * Square cards in a grid, deliberately NOT built on
+ * A Bento navigation hub, deliberately NOT built on
  * ui/components/NavigationRow.js — that component is the shared,
  * platform-wide standard for full-width navigation rows across
  * Units, Concepts, Students, and Assessment subjects too; reshaping
  * it here would have changed every one of those other screens as
  * well. This file owns its own small, local card markup instead,
- * scoped to only the one screen a Subject list like this appears on.
+ * scoped to only the one screen a Subject list like this appears on
+ * — matching the same icon-badge + arrow-circle + title composition
+ * ui/views/NotebookTrackerView.js's own bento cards already
+ * established (see css/styles.css's own .existing-subjects__* rules),
+ * not a new card language.
+ *
+ * Every card uses the same 'teacher' icon-badge tint (Icon.js's
+ * ICON_CATEGORIES) — subjects are peers, not tiered by importance, so
+ * no per-subject colour is invented; colour stays restrained per the
+ * ClassMate style guide rather than becoming a second way to
+ * differentiate cards that are otherwise equal.
  */
 
-import { createIcon } from './Icon.js';
+import { createIcon, createIconBadge } from './Icon.js';
 
 export function renderExistingSubjectsList(subjects, onChooseSubject) {
   const grid = document.createElement('div');
@@ -46,7 +56,16 @@ function createSubjectCard(subject, onClick) {
   card.setAttribute('aria-label', subject.title);
   card.addEventListener('click', onClick);
 
-  card.appendChild(createIcon('book-open', { size: 28, className: 'existing-subjects__card-icon' }));
+  const top = document.createElement('div');
+  top.className = 'existing-subjects__card-top';
+  top.appendChild(createIconBadge('book-open', 'teacher', { size: 44 }));
+
+  const arrow = document.createElement('span');
+  arrow.className = 'existing-subjects__card-arrow';
+  arrow.setAttribute('aria-hidden', 'true');
+  arrow.appendChild(createIcon('arrow-right', { size: 16 }));
+  top.appendChild(arrow);
+  card.appendChild(top);
 
   const label = document.createElement('span');
   label.className = 'existing-subjects__card-label';

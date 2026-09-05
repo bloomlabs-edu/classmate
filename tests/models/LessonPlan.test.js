@@ -189,6 +189,105 @@ test('deleting an activity removes its OPEN comments (whole-activity and sub-fie
 });
 
 // ---------------------------------------------------------------------
+// Phase 4 — Teaching Ideas copy-in: new id, deep copy, provenance
+// recorded, source untouched, copy freely editable afterward.
+// ---------------------------------------------------------------------
+
+test('addActivityFromTeachingIdea: copies content as a brand-new Activity with a fresh id and records provenance', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const activity = lessonPlanService.addActivityFromTeachingIdea(
+    plan,
+    { title: 'Human Number Line', teacherAction: 'Mark a line on the floor.', studentAction: 'Stand at your fraction’s position.', differentiation: { redBucket: 'Give a number card.', greenBucket: '', others: '' } },
+    { sourceLessonPlanId: 'other-plan-1', sourceActivityId: 'other-activity-1' }
+  );
+
+  assert.equal(plan.activities.length, 1);
+  assert.notEqual(activity.id, 'other-activity-1');
+  assert.equal(activity.title, 'Human Number Line');
+  assert.deepEqual(activity.differentiation, { redBucket: 'Give a number card.', greenBucket: '', others: '' });
+
+  assert.equal(plan.sourceElementRefs.length, 1);
+  assert.equal(plan.sourceElementRefs[0].elementType, 'activity');
+  assert.equal(plan.sourceElementRefs[0].sourceLessonPlanId, 'other-plan-1');
+  assert.equal(plan.sourceElementRefs[0].sourceActivityId, 'other-activity-1');
+  assert.equal(plan.sourceElementRefs[0].resourceId, null);
+
+  // Mutating the copy must never reach back into the source object passed in.
+  activity.differentiation.redBucket = 'Changed locally';
+  assert.equal(activity.differentiation.redBucket, 'Changed locally');
+});
+
+test('addActivityFromTeachingIdea: copying twice from the same source produces two fully independent activities', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const source = { title: 'Human Number Line', teacherAction: 'TA', studentAction: 'SA', differentiation: null };
+  const first = lessonPlanService.addActivityFromTeachingIdea(plan, source, { sourceLessonPlanId: 'p1', sourceActivityId: 'a1' });
+  const second = lessonPlanService.addActivityFromTeachingIdea(plan, source, { sourceLessonPlanId: 'p1', sourceActivityId: 'a1' });
+  assert.notEqual(first.id, second.id);
+  assert.equal(plan.activities.length, 2);
+  lessonPlanService.updateActivity(plan, first.id, { title: 'Edited copy one' });
+  assert.equal(findLessonPlanActivity(plan, second.id).title, 'Human Number Line');
+});
+
+test('applySparkFromTeachingIdea: replaces this plan\'s own Spark and records provenance', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.applySparkFromTeachingIdea(plan, { title: 'Which fraction is hiding?', teacherAction: 'Cover part of a shape.', studentAction: 'Guess the fraction.' }, { sourceLessonPlanId: 'other-plan-1' });
+  assert.deepEqual(plan.spark, { title: 'Which fraction is hiding?', teacherAction: 'Cover part of a shape.', studentAction: 'Guess the fraction.' });
+  assert.equal(plan.sourceElementRefs[0].elementType, 'spark');
+  assert.equal(plan.sourceElementRefs[0].sourceLessonPlanId, 'other-plan-1');
+  assert.equal(plan.sourceElementRefs[0].sourceActivityId, null);
+});
+
+test('addAssessmentItemFromTeachingIdea: adds a new assessment item and records provenance, same shape as addAssessmentItem', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const item = lessonPlanService.addAssessmentItemFromTeachingIdea(plan, 'Exit ticket: prove 3/4 > 2/3', { sourceLessonPlanId: 'other-plan-1' });
+  assert.equal(plan.assessments.length, 1);
+  assert.equal(plan.assessments[0].id, item.id);
+  assert.equal(plan.sourceElementRefs[0].elementType, 'assessment');
+});
+
+test('applyQuestionFromTeachingIdea: copies into bigQuestion or finalQuestion by field name, and records provenance', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.applyQuestionFromTeachingIdea(plan, 'bigQuestion', 'How can you prove that 3/4 is greater than 2/3?', { sourceLessonPlanId: 'other-plan-1' });
+  assert.equal(plan.bigQuestion, 'How can you prove that 3/4 is greater than 2/3?');
+  assert.equal(plan.finalQuestion, '');
+  assert.equal(plan.sourceElementRefs[0].elementType, 'question');
+
+  lessonPlanService.applyQuestionFromTeachingIdea(plan, 'finalQuestion', 'Which method was fastest?', { sourceLessonPlanId: 'other-plan-2' });
+  assert.equal(plan.finalQuestion, 'Which method was fastest?');
+  assert.equal(plan.sourceElementRefs.length, 2);
+});
+
+test('applyDifferentiationBucketFromTeachingIdea: copies into exactly ONE bucket of an existing activity, leaving the other buckets untouched', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const activity = lessonPlanService.addActivity(plan);
+  lessonPlanService.addActivityDifferentiation(plan, activity.id);
+  lessonPlanService.updateActivityDifferentiation(plan, activity.id, { redBucket: 'Already here', others: 'Also already here' });
+
+  lessonPlanService.applyDifferentiationBucketFromTeachingIdea(plan, activity.id, 'greenBucket', 'Represent the comparison visually before explaining.', {
+    sourceLessonPlanId: 'other-plan-1',
+    sourceActivityId: 'other-activity-1',
+  });
+
+  const updated = findLessonPlanActivity(plan, activity.id);
+  assert.equal(updated.differentiation.greenBucket, 'Represent the comparison visually before explaining.');
+  assert.equal(updated.differentiation.redBucket, 'Already here'); // untouched
+  assert.equal(updated.differentiation.others, 'Also already here'); // untouched
+  assert.equal(plan.sourceElementRefs[0].elementType, 'differentiation');
+});
+
+test('applyDifferentiationBucketFromTeachingIdea: reveals differentiation first if the activity does not have it yet (progressive disclosure preserved)', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const activity = lessonPlanService.addActivity(plan);
+  assert.equal(activity.differentiation, null);
+
+  lessonPlanService.applyDifferentiationBucketFromTeachingIdea(plan, activity.id, 'redBucket', 'Extra scaffolding.', { sourceLessonPlanId: 'p1', sourceActivityId: 'a1' });
+
+  const updated = findLessonPlanActivity(plan, activity.id);
+  assert.equal(updated.differentiation.redBucket, 'Extra scaffolding.');
+  assert.equal(updated.differentiation.greenBucket, '');
+});
+
+// ---------------------------------------------------------------------
 // Assessments / SWBAT — dynamic lists, never a single bare field
 // ---------------------------------------------------------------------
 

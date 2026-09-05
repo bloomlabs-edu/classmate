@@ -38,6 +38,8 @@
 
 import * as lessonPlanRepository from '../../services/lessonPlanRepository.js';
 import * as lessonPlanReviewService from '../../services/lessonPlanReviewService.js';
+import * as teachingIdeasService from '../../services/teachingIdeasService.js';
+import * as teachingIdeasRepository from '../../repositories/teachingIdeasRepository.js';
 import { LESSON_PLAN_STATUS, LESSON_PLAN_SECTION_KEYS } from '../../models/LessonPlan.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createIcon } from '../components/Icon.js';
@@ -121,8 +123,28 @@ export function renderLessonPlanReviewView(container, { classroom, currentUser, 
               byUid: currentUser?.uid || null,
               comments: pendingComments.map(({ sectionKey, text }) => ({ sectionKey, text })),
             });
+            // The LessonPlan's own status change must land in Firestore
+            // BEFORE publishing — the teachingIdeas security rule's own
+            // `create` check re-reads this exact document to confirm
+            // `status == 'approved'` for itself (never trusts the
+            // client's word for it), so publishing first would read the
+            // still-'submitted' document and be correctly denied.
             await lessonPlanRepository.saveLessonPlan(classroom.id, plan);
             pendingComments.length = 0;
+            try {
+              const projection = teachingIdeasService.buildTeachingIdeaProjection(classroom, plan);
+              await teachingIdeasRepository.publishTeachingIdea(projection);
+            } catch (publishError) {
+              // Teaching Ideas is a DERIVED discovery index, not the
+              // source of truth (see services/teachingIdeasService.js's
+              // own header comment) — approval itself already fully
+              // succeeded and is saved; failing to publish the
+              // discovery projection is a real but secondary problem,
+              // logged rather than shown as an approval error (it would
+              // be misleading — the approval the reviewer asked for did
+              // work).
+              console.error('[LessonPlanReviewView] Approved, but failed to publish to Teaching Ideas:', publishError);
+            }
           } catch (error) {
             console.error('[LessonPlanReviewView] Failed to approve:', error);
             actionError = "Couldn't send this — check your connection and try again.";

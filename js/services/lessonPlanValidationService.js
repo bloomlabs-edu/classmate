@@ -34,6 +34,18 @@ function isBlank(value) {
 export function getLessonPlanReadiness(lessonPlan) {
   const missing = [];
 
+  // CONCEPT (Phase 4) — required before submission, per explicit product
+  // direction, even though concept selection itself stays optional/
+  // flexible while the teacher is still building the lesson (this is a
+  // submit-time gate, not a field the Builder blocks editing without —
+  // see ui/views/LessonPlanBuilderView.js's own Concepts field, which
+  // never disables itself based on readiness). Without at least one
+  // concept, an approved lesson would have nothing for Teaching Ideas
+  // discovery (services/teachingIdeasService.js) to key off.
+  if (lessonPlan.conceptIds.length === 0) {
+    missing.push({ sectionKey: LESSON_PLAN_SECTION_KEYS.CONTEXT, message: 'Add at least one Concept before submitting this lesson for review.' });
+  }
+
   // 1. WHY
   if (isBlank(lessonPlan.lessonObjective)) {
     missing.push({ sectionKey: LESSON_PLAN_SECTION_KEYS.WHY, message: 'Add a lesson objective.' });

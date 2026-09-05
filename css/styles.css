@@ -3351,6 +3351,219 @@ textarea.reading-editor__block-input {
   gap: 0.75rem;
 }
 
+/* ---------------------------------------------------------------------
+   Phase 4 — Concept picker (Lesson Plan Builder)
+   --------------------------------------------------------------------- */
+
+.lesson-plan-builder__concepts-field {
+  margin-bottom: 1rem;
+}
+.lesson-plan-builder__concepts-subject-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+.lesson-plan-builder__concepts-subject-select {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+.lesson-plan-builder__concept-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+.lesson-plan-builder__concept-chips-empty {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+.lesson-plan-builder__concept-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background-color: #EAF2FB;
+  color: var(--color-primary);
+  border-radius: var(--radius-pill);
+  padding: 0.3rem 0.5rem 0.3rem 0.7rem;
+  font-size: 0.82rem;
+  font-weight: var(--font-weight-medium);
+}
+.lesson-plan-builder__concept-chip-remove {
+  color: var(--color-primary);
+}
+.lesson-plan-builder__concepts-empty-message {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+
+/* Phase 4 — "+ From Teaching Ideas" affordance, everywhere it appears */
+.lesson-plan-builder__from-teaching-ideas-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  margin-top: 0.3rem;
+}
+.lesson-plan-builder__add-activity-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+/* ---------------------------------------------------------------------
+   Phase 4 — Teaching Ideas discovery (shared by Concept Workspace's own
+   tab and the Builder's "From Teaching Ideas" picker modal)
+   --------------------------------------------------------------------- */
+
+.teaching-ideas-browser__intro {
+  font-size: 0.95rem;
+  color: var(--color-muted);
+  margin: 0 0 0.75rem;
+}
+.teaching-ideas-browser__filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+.teaching-ideas-browser__search-input,
+.teaching-ideas-browser__grade-input {
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+.teaching-ideas-browser__search-input {
+  flex: 1;
+  min-width: 180px;
+}
+.teaching-ideas-browser__grade-input {
+  max-width: 140px;
+}
+.teaching-ideas-browser__loading,
+.teaching-ideas-browser__error {
+  color: var(--color-muted);
+}
+.teaching-ideas-browser__empty {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--color-muted);
+  background-color: var(--color-bg);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+.teaching-ideas-browser__section {
+  margin-bottom: 1.25rem;
+}
+.teaching-ideas-browser__section-heading {
+  font-size: 0.95rem;
+  font-weight: var(--font-weight-bold);
+  margin: 0 0 0.5rem;
+}
+.teaching-ideas-browser__section-empty {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+.teaching-ideas-browser__card-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.6rem;
+}
+.teaching-ideas-browser__card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  text-align: left;
+  background-color: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+  cursor: pointer;
+}
+.teaching-ideas-browser__card:hover {
+  border-color: var(--color-primary);
+}
+.teaching-ideas-browser__card-title {
+  font-weight: var(--font-weight-medium);
+  font-size: 0.92rem;
+}
+.teaching-ideas-browser__card-meta {
+  font-size: 0.78rem;
+  color: var(--color-muted);
+}
+
+/* ---------------------------------------------------------------------
+   Phase 4 — Teaching Idea preview modal (element + complete lesson)
+   --------------------------------------------------------------------- */
+
+.teaching-idea-preview__type-tag {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary);
+  background-color: #EAF2FB;
+  border-radius: var(--radius-pill);
+  padding: 0.25rem 0.6rem;
+  margin-bottom: 0.75rem;
+}
+.teaching-idea-preview__body,
+.teaching-idea-preview__lesson-body {
+  margin-bottom: 0.75rem;
+}
+.teaching-idea-preview__subheading {
+  font-size: 0.9rem;
+  font-weight: var(--font-weight-bold);
+  margin: 1rem 0 0.5rem;
+}
+
+/* Shared read-only lesson content rendering (ui/components/LessonContentReadOnly.js) */
+.lesson-content-readonly__field {
+  margin-bottom: 0.75rem;
+}
+.lesson-content-readonly__field-label {
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-muted);
+  margin: 0 0 0.2rem;
+}
+.lesson-content-readonly__field-value {
+  font-size: 0.92rem;
+  margin: 0;
+  white-space: pre-wrap;
+}
+.lesson-content-readonly__field-value--empty {
+  color: var(--color-muted);
+  font-style: italic;
+}
+.lesson-content-readonly__activity-card {
+  background-color: var(--color-bg);
+  border-radius: 12px;
+  padding: 0.8rem 1rem;
+  margin-bottom: 0.6rem;
+}
+.lesson-content-readonly__activity-title {
+  font-weight: var(--font-weight-bold);
+  margin: 0 0 0.6rem;
+}
+.lesson-content-readonly__differentiation {
+  background-color: #FDEEE0;
+  border-radius: 10px;
+  padding: 0.6rem 0.8rem;
+  margin-top: 0.5rem;
+}
+.lesson-content-readonly__source {
+  font-size: 0.82rem;
+  color: var(--color-muted);
+  font-style: italic;
+}
+
 .settings-add-form {
   display: flex;
   flex-wrap: wrap;
@@ -12428,40 +12641,97 @@ button.wizard-checklist__row:hover {
   background: rgba(46, 125, 158, 0.06);
 }
 
-/* Subject list — square cards (see ui/components/ExistingSubjectsList.js). Deliberately separate from .learning-management__subject-card-list, which the shared NavigationRow still uses for Units/Concepts elsewhere on this same screen. */
+/*
+ * Subject list — a Bento navigation hub (see
+ * ui/components/ExistingSubjectsList.js), matching the same restrained
+ * pastel-card language already established by .primary-module-card
+ * (Dashboard), .student-home__bento-card (Student Portal) and
+ * .notebook-tracker__bento-card — reusing the same createIconBadge()/
+ * ICON_CATEGORIES 'teacher' blue accent every subject card here shares
+ * deliberately (subjects are peers, not tiered by importance, so
+ * every card gets equal visual weight — no per-subject color
+ * invented). Deliberately separate from
+ * .learning-management__subject-card-list, which the shared
+ * NavigationRow still uses for Units/Concepts elsewhere on this same
+ * screen.
+ *
+ * `auto-fit`, not `auto-fill` — the previous bug: auto-fill reserves
+ * empty 140px tracks for as many columns as could fit even with only
+ * 4 real cards, which is exactly what left a wide desktop viewport
+ * mostly blank beside four tiny squares. auto-fit collapses those
+ * unused tracks to zero and lets the real cards' own 1fr share the
+ * freed space instead, so the grid always reads as one full-width,
+ * balanced collection regardless of how many subjects exist or how
+ * wide the viewport is — no hand-tuned breakpoint needed for the
+ * common case. minmax(240px, 1fr) still caps how narrow a card can
+ * get before wrapping, matching this app's own comfortable-touch-
+ * target sizing elsewhere.
+ */
 .existing-subjects__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 0.85rem;
-  margin-bottom: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.25rem;
 }
 .existing-subjects__card {
-  aspect-ratio: 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.6rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 16px;
-  padding: 0.75rem;
+  align-items: flex-start;
+  gap: 0.9rem;
+  width: 100%;
+  background-color: var(--color-surface);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  border-radius: 20px;
+  padding: 1.5rem 1.35rem;
   cursor: pointer;
-  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  text-align: left;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+  transition: transform var(--duration-fast, 150ms) var(--ease-standard, ease), box-shadow var(--duration-fast, 150ms) var(--ease-standard, ease), border-color var(--duration-fast, 150ms) var(--ease-standard, ease);
 }
 .existing-subjects__card:hover,
 .existing-subjects__card:focus-visible {
   transform: translateY(-2px);
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.1);
+  border-color: rgba(0, 0, 0, 0.08);
 }
-.existing-subjects__card-icon {
-  color: var(--color-primary);
+.existing-subjects__card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.existing-subjects__card-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background-color: var(--color-bg);
+  color: var(--color-muted);
 }
 .existing-subjects__card-label {
-  font-weight: var(--font-weight-bold);
-  font-size: 0.92rem;
-  text-align: center;
+  font-weight: var(--font-weight-black);
+  font-size: 1.1rem;
+  color: var(--color-ink);
   line-height: 1.3;
+}
+
+@media (max-width: 640px) {
+  .existing-subjects__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* "+ Add Subject" is a secondary action, not the subject grid — this
+   overrides .learning-management__section's own flex
+   `align-items: stretch` (which the subject grid above deliberately
+   still uses) so the button sizes to its own compact content instead
+   of stretching full-width. See ui/views/LearningManagementView.js's
+   own renderHomeStep() header comment. */
+.existing-subjects__add-subject-button {
+  align-self: flex-start;
 }
 
 /* Student concept map + concept detail (see ui/student-portal/views/StudentLearningView.js) */
@@ -14604,6 +14874,215 @@ button.wizard-checklist__row:hover {
 .timetable-legend__dot--carried { background: var(--color-danger); }
 .timetable-legend__dot--none { background: var(--color-border); }
 
+/* Calendar mode — a true month calendar (ui/views/TimetableView.js's
+   own renderCalendarGrid()), deliberately its own compact visual
+   language rather than the Week/Day period-card treatment: a plain
+   7-column grid of date cells, never the full period card. One
+   canonical visualization regardless of subject filter — see the
+   Unit-strip rules further below (.timetable-view__calendar-week /
+   -strip) for the curriculum-progression layer every Calendar mode
+   now shares. Reuses the same tokens/colors as the rest of this file
+   (--color-surface/--color-border/--color-bg/--color-muted/
+   --color-primary-deep), not a new palette. */
+.timetable-view__calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin-bottom: var(--space-2);
+}
+
+.timetable-view__calendar-weekday {
+  text-align: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-muted);
+  padding: var(--space-1) 0;
+}
+
+.timetable-view__calendar-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  min-height: 72px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: var(--space-2);
+  cursor: pointer;
+  text-align: left;
+}
+
+.timetable-view__calendar-cell:hover {
+  border-color: var(--color-primary-deep);
+}
+
+.timetable-view__calendar-cell--today {
+  background: color-mix(in srgb, var(--color-primary-deep) 8%, var(--color-surface));
+  border-color: var(--color-primary-deep);
+}
+
+.timetable-view__calendar-cell--blank {
+  background: transparent;
+  border-color: transparent;
+  cursor: default;
+}
+
+.timetable-view__calendar-date {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--color-ink);
+}
+
+@media (max-width: 640px) {
+  .timetable-view__calendar-cell {
+    min-height: 52px;
+    padding: var(--space-1);
+  }
+
+  .timetable-view__calendar-weekday {
+    font-size: 0.65rem;
+  }
+
+  .timetable-view__calendar-date {
+    font-size: 0.8rem;
+  }
+}
+
+/* Calendar's subject filter + subject-specific summary
+   (ui/views/TimetableView.js's own renderCalendarFilterRow()/
+   renderCalendarSubjectSummary()). The summary card reuses
+   .timetable-summary-card/__stats verbatim (see that function's own
+   comment) and is the one piece that stays subject-specific-only — a
+   holistic "units completed" count across every subject at once isn't
+   the same question this card answers. Everything else below is the
+   Unit-strip Calendar body, shared by every subject scope. */
+.timetable-view__calendar-filter-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.timetable-view__calendar-filter {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-3);
+  font-family: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.timetable-view__calendar-filter-heading {
+  font-weight: 700;
+  color: var(--color-ink);
+}
+
+.timetable-view__calendar-summary {
+  margin-bottom: var(--space-4);
+}
+
+.timetable-view__calendar-summary-stats {
+  flex-wrap: wrap;
+}
+
+.timetable-view__calendar-summary--empty {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+
+.timetable-view__calendar-summary-comparison {
+  margin: var(--space-3) 0 0;
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
+/*
+ * Integrated curriculum-progression Calendar — the ONE canonical
+ * Calendar visualization, All Subjects included (see
+ * ui/views/TimetableView.js's own renderCalendarProgressionWeeks()/
+ * renderCalendarUnitStrip()), never a separate Gantt chart underneath
+ * and never a second, dot-based visualization for All Subjects. Each
+ * week is its own small CSS grid: row 1 is that week's 7 date cells
+ * (the TIME AXIS); every row after is one Unit-strip lane (the
+ * CURRICULUM PROGRESSION LAYER) — rows are only ever created for
+ * lanes actually in use that week, so an unused lane never wastes
+ * empty vertical space. Blank (out-of-month) cells always carry the
+ * same `--progression` sizing as real date cells (see
+ * ui/views/TimetableView.js's own renderCalendarBlankCell()) — a
+ * mismatched taller blank cell would otherwise stretch its whole
+ * grid row, which is exactly what produced the excess empty height in
+ * a month's opening/closing week before this fix.
+ */
+.timetable-view__calendar-progression-weeks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.timetable-view__calendar-week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  grid-auto-rows: min-content;
+  gap: 3px 6px;
+}
+
+/* A lighter cell than a bare date needs to be on its own — the Unit
+   strips below already carry this view's own information, so this
+   cell only ever needs to hold a day number (and, for a real date,
+   still be clickable through to Day mode). Every cell in row 1,
+   including blank out-of-month ones, gets this same class so no
+   single mismatched-height cell stretches the whole week row. */
+.timetable-view__calendar-cell--progression {
+  min-height: 30px;
+  align-items: flex-start;
+}
+
+/* Completed vs in-progress is never color alone — solid vs dashed
+   border (below) is the redundant, always-visible cue, readable even
+   once ellipsis has clipped away the ✓/→ text mark on a short
+   (single-day) strip. */
+.timetable-view__calendar-strip {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border: 1px dashed;
+  border-radius: 8px;
+  padding: 3px var(--space-2);
+  font-size: 0.72rem;
+  font-weight: var(--font-weight-medium, 600);
+  color: var(--color-ink);
+}
+
+.timetable-view__calendar-strip--completed {
+  border-style: solid;
+}
+
+/* A strip flush against its own edge (no rounded cap, border style
+   unchanged) is this Unit's own "the real span continues past what's
+   visible in THIS week" cue — a Unit that started in an earlier week
+   (or month), or one still in progress, never gets a false rounded
+   "this is where it begins/ends" edge. */
+.timetable-view__calendar-strip--continues-before {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left-style: none;
+}
+
+.timetable-view__calendar-strip--continues-after {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right-style: none;
+}
+
+@media (max-width: 640px) {
+  .timetable-view__calendar-strip {
+    font-size: 0.65rem;
+    padding: 2px 4px;
+  }
+}
+
 .timetable-view__summary-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -14713,28 +15192,52 @@ button.wizard-checklist__row:hover {
   background: var(--color-surface);
 }
 
-.period-detail-panel__create-concept-form {
+/* Unified concept picker — one row IS the "add to this period" action
+   (see ui/views/TimetableView.js's own renderConceptPicker()), never a
+   checkbox plus a separate "Add selected" button. Full-row click
+   target, not a tiny checkbox — per explicit product direction. This
+   list is add-only (already-assigned concepts are filtered out, never
+   shown here to toggle off), so there is no "assigned" modifier. */
+.period-detail-panel__concept-toggle-row {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  border-top: 1px solid var(--color-border);
-  padding-top: var(--space-2);
-}
-
-.period-detail-panel__create-concept-form input[type='text'] {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  text-align: left;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
-  padding: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
   font-size: 0.85rem;
   color: var(--color-ink);
-  background: var(--color-surface);
-  margin-bottom: var(--space-1);
+  cursor: pointer;
 }
 
-.period-detail-panel__create-concept-form-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
+.period-detail-panel__concept-toggle-row:hover {
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+}
+
+.period-detail-panel__concept-toggle-row:active {
+  background: color-mix(in srgb, var(--color-accent) 16%, var(--color-surface));
+}
+
+.period-detail-panel__concept-create-row {
+  width: 100%;
+  text-align: left;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  font-size: 0.85rem;
+  color: var(--color-primary-deep);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+
+.period-detail-panel__concept-create-row:hover {
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));
 }
 
 .period-detail-panel__responded {
@@ -14810,6 +15313,78 @@ button.wizard-checklist__row:hover {
   font-size: 0.75rem;
   color: var(--color-danger);
   font-weight: 600;
+}
+
+/* Concepts tab cards (Phase U redesign) — background-color IS the
+   teaching-status indicator (pending/covered/carried), not a
+   decorative accent, per explicit product direction: a teacher should
+   be able to read a period's progress at a glance. Reuses the exact
+   --color-warning/--color-success tokens already established
+   elsewhere in this app for "pending"/"complete" states — never a new
+   color vocabulary. */
+.period-detail-panel__concept-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.period-detail-panel__concept-card--pending {
+  border-left-color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 12%, var(--color-surface));
+}
+
+.period-detail-panel__concept-card--covered {
+  border-left-color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 12%, var(--color-surface));
+}
+
+.period-detail-panel__concept-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.period-detail-panel__concept-card-title {
+  font-weight: var(--font-weight-medium);
+}
+
+/* A carried-forward concept stays on the same pending (yellow) card —
+   this is only a small, muted secondary tag, never its own background
+   color (see ui/views/TimetableView.js's own renderConceptCard() doc
+   comment for why: the data model guarantees a carried concept is
+   always still un-executed, i.e. still genuinely pending). */
+.period-detail-panel__concept-card-carried-tag {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.period-detail-panel__concept-card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+.period-detail-panel__concept-card-actions-sep {
+  color: var(--color-muted);
+}
+
+.period-detail-panel__concepts-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
 }
 
 .period-detail-panel__reflection textarea {
@@ -14981,9 +15556,29 @@ button.wizard-checklist__row:hover {
 }
 
 /* ---------------------------------------------------------------------
-   Period Detail — Resources tab (Phase P). Reuses the app's own
-   existing empty-state + resource-type icons; no new resource system.
+   Period Detail — Student Resources / Lesson Plan tabs (Phase P).
+   Reuses the app's own existing empty-state + resource-type icons; no
+   new resource system. Two separate tabs, not one combined "Resources"
+   tab (see ui/views/TimetableView.js's own renderResourceTabBody()) —
+   so no divider is needed here; the tab bar itself is the separation.
    --------------------------------------------------------------------- */
+
+.period-detail-panel__resource-group {
+  margin: var(--space-4) 0;
+}
+
+.period-detail-panel__resource-group-description {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+  margin: 0.15rem 0 var(--space-2);
+}
+
+.period-detail-panel__resource-group-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
 
 .period-detail-panel__resource-list {
   display: flex;
@@ -15017,6 +15612,30 @@ button.wizard-checklist__row:hover {
 .period-detail-panel__resource-item-description {
   font-size: 0.75rem;
   color: var(--color-muted);
+}
+
+/* Learning Hub concept card — visually distinct from a plain link
+   (a quiet top-border accent, the same "distinguish without a second
+   card style" convention .dashboard-widget--recognition already uses)
+   but still one row in the same Resources list, per explicit product
+   direction. */
+.period-detail-panel__resource-item--learning-hub {
+  border-top: 2px solid var(--color-accent);
+}
+.period-detail-panel__resource-item-icon-badge {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.period-detail-panel__resource-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.period-detail-panel__resource-divider {
+  width: 100%;
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: var(--space-2) 0;
 }
 
 /* ---------------------------------------------------------------------
@@ -15450,12 +16069,15 @@ button.wizard-checklist__row:hover {
    view on a phone — but Week/Calendar are real, reachable modes too,
    per the approved reference's own "Week | Day | Calendar" selector.
    Phase P fix: the grid table used to be display:none below this
-   width with the Week toggle button hidden alongside it, which also
-   silently broke "Calendar" (an alias for Week — see this file's own
-   SCOPE NOTE) into showing nothing at all when tapped on mobile. Now
-   the table scrolls horizontally within .timetable-view__grid instead
-   of disappearing — same table, same period-card components, no
-   second rendering path. */
+   width with the Week toggle button hidden alongside it, which broke
+   Week into showing nothing at all when tapped on mobile. Now the
+   table scrolls horizontally within .timetable-view__grid instead of
+   disappearing — same table, same period-card components, no second
+   rendering path. Calendar mode has its own, separate mobile rules
+   just below (.timetable-view__calendar-cell etc. in the Calendar
+   block above) — its 7-column grid shrinks in place rather than
+   scrolling, since a date-and-dots cell needs far less width than a
+   full period card. */
 @media (max-width: 640px) {
   .timetable-view__table {
     table-layout: auto;
