@@ -109,11 +109,17 @@ test('getLessonPlanReadiness: adding even one concept clears the missing-concept
 // own missing[] — never a second definition of "done."
 // ---------------------------------------------------------------------
 
-test('getLessonPlanStageCompletion: a brand-new, empty plan has every stage incomplete, in the real 5-Questions order', () => {
+test('getLessonPlanStageCompletion: a brand-new, empty plan has every genuinely-required stage incomplete (Connection is optional, so it starts complete), in the real 5-Questions order', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
   const stages = getLessonPlanStageCompletion(plan);
   assert.equal(stages.length, 6);
-  assert.ok(stages.every((entry) => entry.complete === false));
+  const byStage = Object.fromEntries(stages.map((entry) => [entry.stage, entry.complete]));
+  assert.equal(byStage[LESSON_PLAN_STAGES.CONCEPT], false);
+  assert.equal(byStage[LESSON_PLAN_STAGES.PURPOSE], false);
+  assert.equal(byStage[LESSON_PLAN_STAGES.CONNECTION], true); // optional — never blocks, even brand new
+  assert.equal(byStage[LESSON_PLAN_STAGES.SHOWCASE], false);
+  assert.equal(byStage[LESSON_PLAN_STAGES.EXPERIENCE], false);
+  assert.equal(byStage[LESSON_PLAN_STAGES.HELPING], false);
   assert.deepEqual(
     stages.map((entry) => entry.stage),
     [
@@ -182,7 +188,7 @@ test('getLessonPlanStageCompletion: Helping (Q5) stays incomplete unless Pair Ex
   assert.equal(helping.complete, true);
 });
 
-test('getLessonPlanStageCompletion: Concept/Purpose/Connection are each independently gated by their own real content', () => {
+test('getLessonPlanStageCompletion: Concept and Purpose are each independently gated by their own real content; Connection (optional) never is', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
   lessonPlanService.updateContext(plan, { conceptIds: ['concept-1'] });
   lessonPlanService.addObjective(plan, 'Understand the causes.');
@@ -193,5 +199,62 @@ test('getLessonPlanStageCompletion: Concept/Purpose/Connection are each independ
   const byStage = Object.fromEntries(stages.map((entry) => [entry.stage, entry.complete]));
   assert.equal(byStage[LESSON_PLAN_STAGES.CONCEPT], true);
   assert.equal(byStage[LESSON_PLAN_STAGES.PURPOSE], true);
-  assert.equal(byStage[LESSON_PLAN_STAGES.CONNECTION], false);
+  assert.equal(byStage[LESSON_PLAN_STAGES.CONNECTION], true);
+});
+
+// ---------------------------------------------------------------------
+// Self / Others / India — optional reflection section on the Detailed
+// Lesson Plan (explicit product direction): leaving all three blank,
+// or filling in only one of the three, must never block progression
+// to the next guided stage or the Submit gate. Covers every
+// combination the Builder's own guided flow can actually produce.
+// ---------------------------------------------------------------------
+
+test('Self/Others/India: all three blank never blocks — no missing item, Connection stage complete', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const readiness = getLessonPlanReadiness(plan);
+  assert.ok(!readiness.missing.some((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.SELF_OTHERS_INDIA));
+
+  const stages = getLessonPlanStageCompletion(plan);
+  assert.equal(stages.find((entry) => entry.stage === LESSON_PLAN_STAGES.CONNECTION).complete, true);
+});
+
+test('Self/Others/India: only Self filled never blocks', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.updateSelfOthersIndia(plan, { self: 'Standing up for what is right.' });
+  const readiness = getLessonPlanReadiness(plan);
+  assert.ok(!readiness.missing.some((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.SELF_OTHERS_INDIA));
+  const stages = getLessonPlanStageCompletion(plan);
+  assert.equal(stages.find((entry) => entry.stage === LESSON_PLAN_STAGES.CONNECTION).complete, true);
+});
+
+test('Self/Others/India: only Others filled never blocks', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.updateSelfOthersIndia(plan, { others: 'Understanding a classmate\'s perspective.' });
+  const readiness = getLessonPlanReadiness(plan);
+  assert.ok(!readiness.missing.some((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.SELF_OTHERS_INDIA));
+  const stages = getLessonPlanStageCompletion(plan);
+  assert.equal(stages.find((entry) => entry.stage === LESSON_PLAN_STAGES.CONNECTION).complete, true);
+});
+
+test('Self/Others/India: only India filled never blocks', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.updateSelfOthersIndia(plan, { india: 'Connecting the revolt to the wider freedom struggle.' });
+  const readiness = getLessonPlanReadiness(plan);
+  assert.ok(!readiness.missing.some((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.SELF_OTHERS_INDIA));
+  const stages = getLessonPlanStageCompletion(plan);
+  assert.equal(stages.find((entry) => entry.stage === LESSON_PLAN_STAGES.CONNECTION).complete, true);
+});
+
+test('Self/Others/India: all three filled never blocks either (was always fine, confirmed unaffected)', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.updateSelfOthersIndia(plan, {
+    self: 'Standing up for what is right.',
+    others: 'Understanding a classmate\'s perspective.',
+    india: 'Connecting the revolt to the wider freedom struggle.',
+  });
+  const readiness = getLessonPlanReadiness(plan);
+  assert.ok(!readiness.missing.some((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.SELF_OTHERS_INDIA));
+  const stages = getLessonPlanStageCompletion(plan);
+  assert.equal(stages.find((entry) => entry.stage === LESSON_PLAN_STAGES.CONNECTION).complete, true);
 });

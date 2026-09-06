@@ -57,11 +57,16 @@ export function getLessonPlanReadiness(lessonPlan) {
     missing.push({ sectionKey: LESSON_PLAN_SECTION_KEYS.WHY, message: 'Add a Big Question.' });
   }
 
-  // 2. SELF / OTHERS / INDIA
-  const { self, others, india } = lessonPlan.selfOthersIndia;
-  if (isBlank(self) && isBlank(others) && isBlank(india)) {
-    missing.push({ sectionKey: LESSON_PLAN_SECTION_KEYS.SELF_OTHERS_INDIA, message: 'Add at least one of Self, Others, or India.' });
-  }
+  // 2. SELF / OTHERS / INDIA — deliberately NOT required, per explicit
+  // product direction: this is an optional reflection/planning
+  // section on the Detailed Lesson Plan, not a gate. Never pushes a
+  // missing-item here, regardless of whether Self/Others/India are
+  // all blank, partially filled, or fully filled — so
+  // getLessonPlanStageCompletion()'s own CONNECTION stage is always
+  // complete, and the guided Builder never blocks progression on it.
+  // The fields themselves, their labels, and their save behavior are
+  // completely unchanged — only this submission-readiness gate is
+  // gone.
 
   // 3. ASSESSMENT
   if (!lessonPlan.assessments.some((item) => !isBlank(item.description))) {
