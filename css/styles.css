@@ -3330,24 +3330,34 @@ textarea.reading-editor__block-input {
   flex-direction: column;
   gap: 0.5rem;
 }
-/* Spark + Activities get their own meaningful visual relationship
-   inside the Experience tile — a narrower Spark column (the single
-   opening move) beside a wider Activities column (the several beats
-   that carry the lesson through), not one undifferentiated stack. */
+/* Learning Activities is the primary Experience task; Spark is a
+   quiet, secondary entry point beneath it — a stacked column, not a
+   side-by-side split, so Activities reads as the one thing to work on
+   first (see renderSparkSection()'s own doc comment in
+   ui/views/LessonPlanBuilderView.js for the compact-until-opened
+   behavior this composition sets up). */
 .lesson-plan-builder__experience {
-  display: grid;
-  grid-template-columns: 1fr 1.6fr;
+  display: flex;
+  flex-direction: column;
   gap: 1.5rem;
-  align-items: start;
-}
-.lesson-plan-builder__experience > * {
-  min-width: 0;
 }
 .lesson-plan-builder__experience-intro {
-  grid-column: 1 / -1;
   margin: 0 0 0.25rem;
   color: var(--color-muted);
   font-size: 0.9rem;
+}
+/* Spark's own compact state — a plain heading + one quiet prompt row,
+   no bordered card and no fields rendered at all, so it never competes
+   visually with Activities above it. */
+.lesson-plan-builder__subheading--quiet {
+  color: var(--color-muted);
+  font-weight: var(--font-weight-medium);
+}
+.lesson-plan-builder__spark-prompt-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 .lesson-plan-builder__helping-extra {
   margin-top: 0.5rem;
@@ -3573,9 +3583,6 @@ textarea.reading-editor__block-input {
   }
   .lesson-plan-builder__stage--surface-tile:not(.lesson-plan-builder__stage--compact) {
     padding: 1.1rem 1.25rem;
-  }
-  .lesson-plan-builder__experience {
-    grid-template-columns: 1fr;
   }
 }
 

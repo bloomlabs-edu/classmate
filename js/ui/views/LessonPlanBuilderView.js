@@ -178,6 +178,15 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
   let expandedConceptUnitId = null;
   let isSchedulePickerOpen = false; // local UI state only — never persisted
   let pendingScheduleDate = null; // the date picked but not yet resolved to a period (set only while isSchedulePickerOpen)
+  // Spark stays a quiet, compact entry point within Experience until the
+  // teacher deliberately opens it (or it already has real content — see
+  // renderSparkSection()'s own doc comment) — the same "compact until
+  // interacted with" convention isConceptPickerOpen/isSchedulePickerOpen
+  // already establish, scoped to just this one sub-section rather than
+  // a whole guided stage. Local UI state only — never persisted, and
+  // never affects readiness/progression (services/lessonPlanValidationService.js
+  // never required Spark in the first place).
+  let isSparkOpen = false;
   // Guided-building UI (progressive disclosure) — which already-COMPLETE
   // stage the teacher has manually reopened for editing, or null when
   // none is. One of LESSON_PLAN_STAGES's own values, or 'subject' (the
@@ -254,7 +263,7 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
   function rerender() {
     const editable = plan ? lessonPlanReviewService.isLessonPlanEditable(plan) : false;
     lastRenderedFrontierStage = computeFrontierStage();
-    renderBuilder(container, { plan, loadError, collapsedActivityIds, saveIndicatorElement: saveIndicator.element, editable, classroom, isConceptPickerOpen, expandedConceptUnitId, isSchedulePickerOpen, pendingScheduleDate, reopenedStageKey }, {
+    renderBuilder(container, { plan, loadError, collapsedActivityIds, saveIndicatorElement: saveIndicator.element, editable, classroom, isConceptPickerOpen, expandedConceptUnitId, isSchedulePickerOpen, pendingScheduleDate, reopenedStageKey, isSparkOpen }, {
       onBack,
       editable,
       onSubmitForReview: submitForReview,
@@ -362,6 +371,10 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
       },
       onToggleConceptPickerOpen: () => {
         isConceptPickerOpen = !isConceptPickerOpen;
+        rerender(); // local UI state only — nothing to persist
+      },
+      onToggleSparkOpen: () => {
+        isSparkOpen = !isSparkOpen;
         rerender(); // local UI state only — nothing to persist
       },
       onToggleConceptUnit: (unitId) => {
@@ -727,8 +740,8 @@ function renderBuilder(container, state, handlers) {
     grid.appendChild(withTileSize(renderAssessmentSection(plan, handlers), 'half'));
     const experience = document.createElement('div');
     experience.className = 'lesson-plan-builder__experience';
-    experience.appendChild(renderSparkSection(plan, handlers));
     experience.appendChild(renderActivitiesSection(plan, state.collapsedActivityIds, handlers));
+    experience.appendChild(renderSparkSection(plan, handlers));
     grid.appendChild(withTileSize(withSurfaceTile(experience), 'full'));
     const helping = document.createElement('div');
     helping.appendChild(renderPairExplanationField(plan, handlers));
@@ -809,10 +822,10 @@ function renderBuilder(container, state, handlers) {
         wrap.className = 'lesson-plan-builder__experience';
         const intro = document.createElement('p');
         intro.className = 'lesson-plan-builder__experience-intro';
-        intro.textContent = 'An opportunity to make the lesson memorable — a Spark to open it, and the activities that carry it through.';
+        intro.textContent = 'Design how the lesson actually unfolds — the activities that carry it, with room for a Spark if you want one.';
         wrap.appendChild(intro);
-        wrap.appendChild(renderSparkSection(plan, handlers));
         wrap.appendChild(renderActivitiesSection(plan, state.collapsedActivityIds, handlers));
+        wrap.appendChild(renderSparkSection(plan, handlers, state));
         return wrap;
       },
       getPreview: () => plan.spark.title || (plan.activities.length > 0 ? `${plan.activities.length} activit${plan.activities.length === 1 ? 'y' : 'ies'}` : ''),
@@ -1817,10 +1830,63 @@ function createFromTeachingIdeasButton(onClick) {
 
 // ---- 4. FUN, FAST, EFFECTIVE — Spark ---------------------------------
 
-function renderSparkSection(plan, handlers) {
+/**
+ * Spark — a quiet, secondary entry point next to Learning Activities'
+ * own primary working area (see the freeTextStages EXPERIENCE config's
+ * own renderFull(), which appends Activities first, Spark second).
+ * Deliberately no "Optional"/"Required" label anywhere: the distinction
+ * is entirely behavioral — Spark can be left completely untouched with
+ * no effect on progression (see services/lessonPlanValidationService.js,
+ * which has never gated on it), while at least one valid Activity
+ * genuinely blocks the Experience stage.
+ *
+ * Reuses this Builder's own established "compact until interacted with"
+ * convention (the exact same shape as isConceptPickerOpen/
+ * isSchedulePickerOpen — see renderLessonPlanBuilderView()'s own local
+ * state) rather than inventing a new component: blank AND not opened
+ * -> one quiet prompt row (no fields rendered at all); already has real
+ * content, OR the teacher tapped it open -> the exact same three
+ * fields (title/Teacher Action/Student Action) this section has always
+ * had, completely unchanged. `state` is optional — omitted entirely by
+ * the locked/reviewer flat render (see renderBuilder()'s own
+ * !handlers.editable branch), which always shows the full fields, same
+ * as every other section in that read-only view.
+ */
+function renderSparkSection(plan, handlers, state = null) {
   const wrap = document.createElement('div');
   wrap.className = 'lesson-plan-builder__spark';
 
+  const hasContent = Boolean(plan.spark.title || plan.spark.teacherAction || plan.spark.studentAction);
+  const isOpen = !state || hasContent || state.isSparkOpen;
+
+  if (!isOpen) {
+    const heading = document.createElement('h3');
+    heading.className = 'lesson-plan-builder__subheading lesson-plan-builder__subheading--quiet';
+    heading.textContent = 'Spark';
+    wrap.appendChild(heading);
+
+    const promptRow = document.createElement('div');
+    promptRow.className = 'lesson-plan-builder__spark-prompt-row';
+    const addButton = document.createElement('button');
+    addButton.type = 'button';
+    addButton.className = 'btn btn--text';
+    addButton.textContent = '+ Add a Spark';
+    addButton.addEventListener('click', handlers.onToggleSparkOpen);
+    promptRow.appendChild(addButton);
+    promptRow.appendChild(createFromTeachingIdeasButton(handlers.onOpenSparkPicker));
+    wrap.appendChild(promptRow);
+
+    return wrap;
+  }
+
+  // No collapse-back-to-compact affordance here, deliberately: once
+  // Spark is opened (or already has real content), it just stays open
+  // for the rest of the session — avoids a stale "Done" button that
+  // would otherwise linger after filling a field, since field edits
+  // persist via persistOnly() (a fast path that skips a full rerender
+  // whenever the frontier stage itself hasn't changed — see this
+  // Builder's own persistOnly() doc comment) and Spark never changes
+  // the frontier.
   const heading = document.createElement('h3');
   heading.className = 'lesson-plan-builder__subheading';
   heading.textContent = 'Spark';
