@@ -37,9 +37,12 @@ import {
   createLessonPlanActivity,
   createLessonPlanDifferentiation,
   createLessonPlanAssessmentItem,
+  createLessonPlanObjective,
   createLessonPlanSourceRef,
   getLessonPlanActivityIndex,
   findLessonPlanActivity,
+  getLessonPlanObjectiveIndex,
+  findLessonPlanObjective,
 } from '../models/LessonPlan.js';
 import { getCurrentIsoDate } from '../utils/dateHelpers.js';
 import { buildActivitySectionKey } from './lessonPlanReviewService.js';
@@ -105,10 +108,141 @@ export function updateSchedule(lessonPlan, { scheduledDate, scheduledPeriodNumbe
 // 1. WHY
 // ---------------------------------------------------------------------
 
-export function updateWhy(lessonPlan, { lessonObjective, bigQuestion } = {}) {
-  if (lessonObjective !== undefined) lessonPlan.lessonObjective = lessonObjective;
+/** Big Question only now — `lessonObjective` is legacy (see models/LessonPlan.js's own doc comment on it): no current UI ever writes it again, so this function no longer accepts it either, enforcing that in code rather than only in a comment. */
+export function updateWhy(lessonPlan, { bigQuestion } = {}) {
   if (bigQuestion !== undefined) lessonPlan.bigQuestion = bigQuestion;
   touch(lessonPlan);
+}
+
+// ---- Objectives — first-class, independently-identified list (see
+// models/LessonPlan.js's own createLessonPlanObjective() doc comment)
+// — same add/update/remove/reorder shape as Activities below, since an
+// objective is exactly that kind of thing: a real object with a
+// stable id, never a bare string in an array. ----
+
+/** Appends one new, blank objective — never a fixed count, same convention as addActivity()/addAssessmentItem() below. Returns the new objective so the caller can immediately focus it. */
+export function addObjective(lessonPlan, text = '') {
+  const objective = createLessonPlanObjective({ text });
+  lessonPlan.objectives.push(objective);
+  touch(lessonPlan);
+  return objective;
+}
+
+export function updateObjective(lessonPlan, objectiveId, text) {
+  const objective = findLessonPlanObjective(lessonPlan, objectiveId);
+  if (!objective) return;
+  objective.text = text;
+  touch(lessonPlan);
+}
+
+export function removeObjective(lessonPlan, objectiveId) {
+  const before = lessonPlan.objectives.length;
+  lessonPlan.objectives = lessonPlan.objectives.filter((objective) => objective.id !== objectiveId);
+  if (lessonPlan.objectives.length < before) touch(lessonPlan);
+}
+
+/** Swaps an objective with the one before it. No-op at the top of the list. Not a content edit (see moveActivityUp()'s own identical reasoning below), so it doesn't bump updatedAt. */
+export function moveObjectiveUp(lessonPlan, objectiveId) {
+  const index = getLessonPlanObjectiveIndex(lessonPlan, objectiveId);
+  if (index <= 0) return;
+  [lessonPlan.objectives[index - 1], lessonPlan.objectives[index]] = [lessonPlan.objectives[index], lessonPlan.objectives[index - 1]];
+}
+
+/** Swaps an objective with the one after it. No-op at the bottom of the list. Same "not a content edit" reasoning as moveObjectiveUp(). */
+export function moveObjectiveDown(lessonPlan, objectiveId) {
+  const index = getLessonPlanObjectiveIndex(lessonPlan, objectiveId);
+  if (index === -1 || index >= lessonPlan.objectives.length - 1) return;
+  [lessonPlan.objectives[index], lessonPlan.objectives[index + 1]] = [lessonPlan.objectives[index + 1], lessonPlan.objectives[index]];
+}
+
+/**
+ * Splits one blob of legacy free text into individual objective
+ * strings — used only by migrateLegacyObjectives() below. Handles the
+ * two real shapes this app's own data has actually taken:
+ *   1. One bullet per line (the common case — a teacher typing in a
+ *      multi-line textarea): split on newline, drop a bare "SWBAT"/
+ *      "SWBAT:" header line if present, strip a leading bullet/number
+ *      marker from each remaining line.
+ *   2. Everything on one line with inline "•" separators (the
+ *      placeholder text this app's own Lesson Objective field used to
+ *      suggest, e.g. "SWBAT: • trace... • sequence..."): if newline
+ *      splitting produced only one line, and that line contains 2+
+ *      bullet characters, split on "•" instead.
+ *   3. Plain prose, no bullets at all: the whole trimmed text becomes
+ *      ONE objective — never silently dropped just because it wasn't
+ *      list-formatted.
+ */
+function splitLegacyObjectiveText(text) {
+  const stripMarker = (line) => line.replace(/^[•\-*]\s+/, '').replace(/^\d+[.)]\s+/, '').trim();
+  const isHeaderLine = (line) => /^SWBAT:?$/i.test(line);
+
+  const lines = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !isHeaderLine(line));
+
+  if (lines.length > 1) {
+    return lines.map(stripMarker).filter(Boolean);
+  }
+
+  const whole = lines[0] || text.trim();
+  if (whole.split('•').length > 2) {
+    return whole
+      .split('•')
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .filter((part) => !isHeaderLine(part));
+  }
+
+  return whole ? [whole] : [];
+}
+
+/**
+ * One-time, lossless normalization from this plan's own PRE-Objectives
+ * data into real `objectives[]` entries — see models/LessonPlan.js's
+ * own doc comment on `lessonObjective`/`swbatObjectives` for why those
+ * fields still exist at all. Safe to call unconditionally on every
+ * load (see ui/views/LessonPlanBuilderView.js/LessonPlanReviewView.js's
+ * own load flow): a no-op whenever `objectives` already has real
+ * content, so it can never clobber a plan a teacher has already
+ * started editing under the new model.
+ *
+ * Priority order, favoring whichever legacy source is most reliably
+ * already-separated:
+ *   1. `swbatObjectives[]` (already a real array of strings — no text
+ *      parsing needed at all) — if it has any non-blank entries.
+ *   2. Else, `lessonObjective` (free text, possibly bullet-formatted —
+ *      see splitLegacyObjectiveText() above) — if it has any non-blank
+ *      content.
+ *   3. Else, this plan genuinely has nothing to migrate yet (a brand
+ *      new plan) — `objectives` stays `[]`.
+ *
+ * Deliberately NEVER deletes or rewrites `lessonObjective`/
+ * `swbatObjectives` themselves — those stay exactly as they were,
+ * forever, as an inert historical record; only `objectives` is
+ * populated from them.
+ *
+ * Returns true if real content was migrated (the caller should
+ * persist this), false if there was nothing to do (including the
+ * "already migrated" no-op case) — mirrors ensureJoinCode()'s own
+ * boolean-return convention in services/classroomService.js.
+ */
+export function migrateLegacyObjectives(lessonPlan) {
+  if (Array.isArray(lessonPlan.objectives) && lessonPlan.objectives.length > 0) return false;
+
+  const legacySwbat = (lessonPlan.swbatObjectives || []).filter((text) => text && text.trim());
+  let texts = [];
+  if (legacySwbat.length > 0) {
+    texts = legacySwbat.map((text) => text.trim());
+  } else if (lessonPlan.lessonObjective && lessonPlan.lessonObjective.trim()) {
+    texts = splitLegacyObjectiveText(lessonPlan.lessonObjective);
+  }
+
+  lessonPlan.objectives = texts.map((text) => createLessonPlanObjective({ text }));
+  if (texts.length === 0) return false; // nothing to migrate — just normalized a possibly-undefined field to [] in memory
+  touch(lessonPlan);
+  return true;
 }
 
 export function addSwbatObjective(lessonPlan, text = '') {

@@ -46,13 +46,12 @@ export function getLessonPlanReadiness(lessonPlan) {
     missing.push({ sectionKey: LESSON_PLAN_SECTION_KEYS.CONTEXT, message: 'Add at least one Concept before submitting this lesson for review.' });
   }
 
-  // 1. WHY — Lesson Objective is where SWBAT outcomes live too (see
-  // ui/views/LessonPlanBuilderView.js's own renderWhySection() doc
-  // comment); `swbatObjectives[]` is no longer a separate submission
-  // requirement of its own — a genuinely non-blank Lesson Objective
-  // already covers "has real Q1 content."
-  if (isBlank(lessonPlan.lessonObjective)) {
-    missing.push({ sectionKey: LESSON_PLAN_SECTION_KEYS.WHY, message: 'Add a lesson objective.' });
+  // 1. WHY — Objectives are a dynamic list of first-class objects now
+  // (see models/LessonPlan.js's own createLessonPlanObjective() doc
+  // comment), same "at least one non-blank entry" shape as Assessment
+  // below, never a bare single-field blank check.
+  if (!lessonPlan.objectives.some((objective) => !isBlank(objective.text))) {
+    missing.push({ sectionKey: LESSON_PLAN_SECTION_KEYS.WHY, message: 'Add at least one lesson objective.' });
   }
   if (isBlank(lessonPlan.bigQuestion)) {
     missing.push({ sectionKey: LESSON_PLAN_SECTION_KEYS.WHY, message: 'Add a Big Question.' });

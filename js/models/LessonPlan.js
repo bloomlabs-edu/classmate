@@ -76,6 +76,41 @@ export const LESSON_PLAN_SECTION_KEYS = Object.freeze({
 });
 
 /**
+ * One individual Lesson Objective — a first-class structured object,
+ * per explicit product direction: "each individual lesson objective
+ * [should become] a separate first-class domain object so that its
+ * completion/progress can eventually be tracked independently." Array
+ * position IS order — no separate `order` field — the same convention
+ * `activities[]`/`assessments[]` below already establish for exactly
+ * the same reason (see this file's own header comment): reordering is
+ * array surgery on one list, so order can never drift out of sync with
+ * a redundant integer.
+ *
+ * Deliberately its own domain concept, NOT a LearningConcept
+ * (models/LearningConcept.js) and NOT merged into one — a Concept is
+ * knowledge/content that exists independently of any one lesson and
+ * can appear across many; a LessonObjective is what students are
+ * expected to learn in THIS particular lesson. An objective may one
+ * day reference a concept (a `conceptId` field would be a natural,
+ * additive extension), but the two are never the same entity.
+ *
+ * Deliberately holds no student-specific progress of its own — a
+ * future per-student `StudentObjectiveProgress` belongs on the
+ * STUDENT, keyed by this objective's own `id`, mirroring
+ * models/StudentConceptRecord.js's own established pattern exactly
+ * (`student.learningRecord[conceptId]` there; a future
+ * `student.objectiveRecord[objectiveId]` here) — never a field on this
+ * object itself. This object's only job is to exist, have a stable id,
+ * and hold its own text.
+ */
+export function createLessonPlanObjective({ id, text = '' } = {}) {
+  return {
+    id: id || generateId(),
+    text,
+  };
+}
+
+/**
  * One Learning Activity — a first-class structured object, per
  * explicit product direction, never a bare text field. `differentiation`
  * starts `null` (progressive disclosure: the Red/Green/Other Bucket
@@ -205,9 +240,18 @@ export function createLessonPlan({
   scheduledPeriodNumber = null, // 1-based, matches models/Timetable.js's own TimetablePeriod.periodNumber
 
   // 1. WHY ARE STUDENTS LEARNING WHAT THEY ARE LEARNING TODAY?
+  objectives = [],
+  bigQuestion = '',
+
+  // LEGACY — `lessonObjective`/`swbatObjectives` are the pre-Objectives
+  // shape of Q1 (a single free-text field, at one point also holding a
+  // separately-structured SWBAT string list). Never deleted, never
+  // written to by any current UI — kept only so old data is never
+  // silently discarded (see services/lessonPlanService.js's own
+  // migrateLegacyObjectives(), which reads these ONCE to populate
+  // `objectives` above, the first time an old plan is opened).
   lessonObjective = '',
   swbatObjectives = [],
-  bigQuestion = '',
 
   // 2. WILL IT ADVANCE SELF, OTHERS AND INDIA?
   selfOthersIndia = { self: '', others: '', india: '' },
@@ -248,9 +292,11 @@ export function createLessonPlan({
     scheduledDate,
     scheduledPeriodNumber,
 
+    objectives,
+    bigQuestion,
+
     lessonObjective,
     swbatObjectives,
-    bigQuestion,
 
     selfOthersIndia,
 
@@ -279,4 +325,14 @@ export function getLessonPlanActivityIndex(lessonPlan, activityId) {
 /** One Activity by id, or null. */
 export function findLessonPlanActivity(lessonPlan, activityId) {
   return lessonPlan.activities.find((activity) => activity.id === activityId) || null;
+}
+
+/** Same shape as getLessonPlanActivityIndex() above, for objectives — the one place every objectives-array mutation in lessonPlanService.js looks this up. */
+export function getLessonPlanObjectiveIndex(lessonPlan, objectiveId) {
+  return lessonPlan.objectives.findIndex((objective) => objective.id === objectiveId);
+}
+
+/** One LessonPlanObjective by id, or null. */
+export function findLessonPlanObjective(lessonPlan, objectiveId) {
+  return lessonPlan.objectives.find((objective) => objective.id === objectiveId) || null;
 }

@@ -405,9 +405,25 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
       },
 
       // ---- 1. WHY ----
-      onLessonObjectiveChange: (value) => {
-        lessonPlanService.updateWhy(plan, { lessonObjective: value });
+      onAddObjective: () => {
+        lessonPlanService.addObjective(plan, '');
+        persistAndRerender();
+      },
+      onObjectiveChange: (objectiveId, value) => {
+        lessonPlanService.updateObjective(plan, objectiveId, value);
         persistOnly();
+      },
+      onRemoveObjective: (objectiveId) => {
+        lessonPlanService.removeObjective(plan, objectiveId);
+        persistAndRerender();
+      },
+      onMoveObjectiveUp: (objectiveId) => {
+        lessonPlanService.moveObjectiveUp(plan, objectiveId);
+        persistAndRerender();
+      },
+      onMoveObjectiveDown: (objectiveId) => {
+        lessonPlanService.moveObjectiveDown(plan, objectiveId);
+        persistAndRerender();
       },
       onBigQuestionChange: (value) => {
         lessonPlanService.updateWhy(plan, { bigQuestion: value });
@@ -590,6 +606,8 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
         loadError = "This lesson plan couldn't be found. It may have been deleted.";
       } else {
         plan = fetched;
+        const isEditable = lessonPlanReviewService.isLessonPlanEditable(plan);
+
         // Grade comes from classroom context, never typed by hand (see
         // this file's own renderTitleBar() and classroomService.js's
         // own getGradeLabelForClassroom() doc comment). New plans
@@ -598,10 +616,25 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
         // self-heal for a plan that predates that, or somehow still
         // has none, so the stored field is never left silently blank
         // just because the editable input is gone.
-        if (!plan.gradeLabel && lessonPlanReviewService.isLessonPlanEditable(plan)) {
+        if (!plan.gradeLabel && isEditable) {
           lessonPlanService.updateContext(plan, { gradeLabel: getGradeLabelForClassroom(classroom) });
           lessonPlanRepository.saveLessonPlan(classroom.id, plan).catch((error) => {
             console.error('[LessonPlanBuilderView] Failed to self-heal gradeLabel:', error);
+          });
+        }
+
+        // Objectives — one-time, lossless migration from this plan's
+        // own PRE-Objectives shape (see
+        // lessonPlanService.migrateLegacyObjectives()'s own doc
+        // comment). Always computed in memory (a locked SUBMITTED/
+        // APPROVED plan still needs to render its real historical
+        // objectives correctly), but only persisted back when this
+        // plan can actually still be written to — never rewrites a
+        // locked plan's own stored document.
+        const migratedObjectives = lessonPlanService.migrateLegacyObjectives(plan);
+        if (migratedObjectives && isEditable) {
+          lessonPlanRepository.saveLessonPlan(classroom.id, plan).catch((error) => {
+            console.error('[LessonPlanBuilderView] Failed to self-heal legacy objectives migration:', error);
           });
         }
       }
@@ -732,7 +765,7 @@ function renderBuilder(container, state, handlers) {
       title: 'Why are students learning what they are learning today?',
       sectionKey: LESSON_PLAN_SECTION_KEYS.WHY,
       renderFull: () => renderWhySection(plan, handlers),
-      getPreview: () => plan.lessonObjective || plan.bigQuestion || '',
+      getPreview: () => plan.objectives.find((objective) => objective.text)?.text || plan.bigQuestion || '',
     },
     {
       stage: LESSON_PLAN_STAGES.CONNECTION,
@@ -1528,37 +1561,46 @@ function createLabeledTextarea({ label, placeholder, value, onChange, disabled =
 // ---- 1. WHY --------------------------------------------------------
 
 /**
- * Lesson Objective is the one place the teacher writes both the
- * objective itself AND its SWBAT outcomes (per the real lesson-plan
- * reference — "Lesson Objective" containing a "SWBAT" list, never a
- * separate second question) — one auto-growing writing area, not two
- * fields asking for the same thing. `swbatObjectives[]` (see
- * models/LessonPlan.js) is NOT removed from the model: it's an
- * established, independently-tested field
- * (services/lessonPlanService.js's own addSwbatObjective() etc., still
- * used by Teaching Ideas' whole-lesson snapshot) that a teacher simply
- * no longer edits through a second builder section. Any plan that
- * already has real (non-blank) swbatObjectives content from before
- * this change keeps it exactly as saved and still shows it here — a
- * plain, read-only recap, never a second editable list — so existing
- * saved data is never hidden just because the input that created it is
- * gone; a brand-new plan's empty array renders nothing extra. Same
- * "only when non-empty" treatment as ui/views/LessonPlanReviewView.js's
- * own renderWhySection().
+ * Lesson Objectives — a reorderable list of individual, first-class
+ * objectives (see models/LessonPlan.js's own createLessonPlanObjective()
+ * doc comment), not one big textarea a teacher used to cram bullet
+ * points into. `lessonObjective`/`swbatObjectives` (the old shape)
+ * are never shown here again — by the time this ever renders,
+ * lessonPlanService.migrateLegacyObjectives() (called once, on load —
+ * see this file's own load flow) has already turned whatever old
+ * content existed into real entries in `plan.objectives`, so there is
+ * nothing left to recap separately; the old fields stay in the
+ * document, untouched, purely as an inert historical record.
  */
 function renderWhySection(plan, handlers) {
   const wrap = document.createElement('div');
   wrap.className = 'lesson-plan-builder__why';
 
-  wrap.appendChild(
-    createLabeledTextarea({
-      label: 'Lesson Objective',
-      placeholder: 'What should students understand or be able to do by the end of this lesson? Include SWBAT outcomes, e.g. SWBAT: • trace the causes... • sequence the events... • identify the key figures...',
-      value: plan.lessonObjective,
-      onChange: handlers.onLessonObjectiveChange,
-      disabled: !handlers.editable,
-    })
-  );
+  const objectivesField = document.createElement('div');
+  objectivesField.className = 'lesson-plan-builder__field';
+  const objectivesLabel = document.createElement('label');
+  objectivesLabel.className = 'lesson-plan-builder__field-label';
+  objectivesLabel.textContent = 'Lesson Objectives';
+  objectivesField.appendChild(objectivesLabel);
+
+  plan.objectives.forEach((objective, index) => {
+    objectivesField.appendChild(
+      createDynamicListRow({
+        value: objective.text,
+        placeholder: 'e.g. Explain the causes of the revolt',
+        onChange: (value) => handlers.onObjectiveChange(objective.id, value),
+        onRemove: () => handlers.onRemoveObjective(objective.id),
+        disabled: !handlers.editable,
+        onMoveUp: () => handlers.onMoveObjectiveUp(objective.id),
+        onMoveDown: () => handlers.onMoveObjectiveDown(objective.id),
+        canMoveUp: index > 0,
+        canMoveDown: index < plan.objectives.length - 1,
+      })
+    );
+  });
+
+  if (handlers.editable) objectivesField.appendChild(createAddRowButton('+ Add objective', handlers.onAddObjective));
+  wrap.appendChild(objectivesField);
 
   const bigQuestionField = createLabeledTextarea({
     label: 'Big Question',
@@ -1569,25 +1611,6 @@ function renderWhySection(plan, handlers) {
   });
   if (handlers.editable) bigQuestionField.appendChild(createFromTeachingIdeasButton(handlers.onOpenBigQuestionPicker));
   wrap.appendChild(bigQuestionField);
-
-  const legacySwbat = plan.swbatObjectives.filter((objective) => objective && objective.trim());
-  if (legacySwbat.length > 0) {
-    const swbatField = document.createElement('div');
-    swbatField.className = 'lesson-plan-builder__field';
-    const swbatLabel = document.createElement('label');
-    swbatLabel.className = 'lesson-plan-builder__field-label';
-    swbatLabel.textContent = 'Students Will Be Able To (SWBAT) — saved earlier';
-    swbatField.appendChild(swbatLabel);
-    const list = document.createElement('ul');
-    list.className = 'lesson-plan-builder__swbat-legacy-list';
-    legacySwbat.forEach((objective) => {
-      const item = document.createElement('li');
-      item.textContent = objective;
-      list.appendChild(item);
-    });
-    swbatField.appendChild(list);
-    wrap.appendChild(swbatField);
-  }
 
   return wrap;
 }
@@ -1645,9 +1668,44 @@ function renderAssessmentSection(plan, handlers) {
 
 // ---- Shared: a dynamic list row / add-row button ---------------------
 
-function createDynamicListRow({ value, placeholder, onChange, onRemove, disabled = false }) {
+/**
+ * `onMoveUp`/`onMoveDown` are optional — omitted entirely (as
+ * Assessment items' own call site still does) means no reorder
+ * buttons render at all, so this stays exactly backward-compatible.
+ * When provided (see renderWhySection()'s own Objectives list above),
+ * reuses the exact same ▲/▼ text-button convention
+ * renderActivityCard()'s own reorder buttons already established in
+ * this file, for one consistent reorder affordance across every
+ * reorderable list on this page.
+ */
+function createDynamicListRow({ value, placeholder, onChange, onRemove, disabled = false, onMoveUp, onMoveDown, canMoveUp = false, canMoveDown = false }) {
   const row = document.createElement('div');
   row.className = 'lesson-plan-builder__dynamic-row';
+
+  if (!disabled && (onMoveUp || onMoveDown)) {
+    const reorderGroup = document.createElement('div');
+    reorderGroup.className = 'lesson-plan-builder__dynamic-reorder';
+
+    const upButton = document.createElement('button');
+    upButton.type = 'button';
+    upButton.className = 'lesson-plan-builder__activity-reorder-button';
+    upButton.textContent = '▲';
+    upButton.setAttribute('aria-label', 'Move up');
+    upButton.disabled = !canMoveUp;
+    upButton.addEventListener('click', onMoveUp);
+    reorderGroup.appendChild(upButton);
+
+    const downButton = document.createElement('button');
+    downButton.type = 'button';
+    downButton.className = 'lesson-plan-builder__activity-reorder-button';
+    downButton.textContent = '▼';
+    downButton.setAttribute('aria-label', 'Move down');
+    downButton.disabled = !canMoveDown;
+    downButton.addEventListener('click', onMoveDown);
+    reorderGroup.appendChild(downButton);
+
+    row.appendChild(reorderGroup);
+  }
 
   const input = document.createElement('input');
   input.type = 'text';

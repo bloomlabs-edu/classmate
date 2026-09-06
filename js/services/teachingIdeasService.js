@@ -44,6 +44,37 @@ function isBlank(value) {
   return !value || !String(value).trim();
 }
 
+/**
+ * The one place this file decides what a LessonPlan's objective text
+ * looks like as a single string — `objectives[]` (see
+ * models/LessonPlan.js's own createLessonPlanObjective() doc comment)
+ * is the canonical source now, never the legacy `lessonObjective`
+ * field. A real LessonPlan opened in the Builder at least once already
+ * has `objectives` populated (see
+ * services/lessonPlanService.js's own migrateLegacyObjectives()) —
+ * the legacy string is read here ONLY as a fallback, for the
+ * theoretical case of a plan somehow reaching APPROVED (and so
+ * eligible for publishing) without ever having been opened there.
+ * Never writes back to either field — this is a read-only projection
+ * of whatever the plan already has.
+ *
+ * Multiple objectives are bullet-joined into one readable string
+ * (still a single `lessonObjective`-shaped field in the projection —
+ * see buildTeachingIdeaProjection() below for why the projection's own
+ * shape stays exactly as every existing consumer,
+ * ui/components/TeachingIdeaPreviewModal.js's own renderReadOnlyField()
+ * call, already expects, including its `white-space: pre-wrap` CSS
+ * that already renders embedded newlines as real line breaks); a
+ * single objective is left as plain text, matching how a one-sentence
+ * objective always looked.
+ */
+function getLessonObjectiveText(lessonPlan) {
+  const objectives = (lessonPlan.objectives || []).filter((objective) => objective.text && objective.text.trim());
+  if (objectives.length === 1) return objectives[0].text.trim();
+  if (objectives.length > 1) return objectives.map((objective) => `• ${objective.text.trim()}`).join('\n');
+  return lessonPlan.lessonObjective || '';
+}
+
 /** Only an APPROVED LessonPlan is ever eligible — DRAFT/SUBMITTED/CHANGES_REQUESTED never produce a projection, per explicit Phase 4 product direction. */
 export function isTeachingIdeaEligible(lessonPlan) {
   return lessonPlan.status === LESSON_PLAN_STATUS.APPROVED;
@@ -78,9 +109,19 @@ export function buildTeachingIdeaProjection(classroom, lessonPlan) {
     subjectId: lessonPlan.subjectId,
     topic: lessonPlan.topic,
     teacherDisplayName: classroom.members?.[lessonPlan.createdByUid]?.displayName || 'A teacher',
-    lessonObjective: lessonPlan.lessonObjective,
+    // `lessonObjective` here is the PROJECTION's own field name (kept
+    // exactly as every existing consumer already expects — see
+    // getLessonObjectiveText()'s own doc comment just above) — its
+    // VALUE is now derived from the source plan's canonical
+    // `objectives[]`, never written from the source plan's own legacy
+    // `lessonObjective` field except as that function's own fallback.
+    // `swbatObjectives` is deliberately no longer copied into new
+    // projections at all — nothing has ever read it back off a
+    // projection (only this file's own now-legacy source field used
+    // to hold it), so carrying it forward here would just be a second,
+    // dead representation of the same objective content.
+    lessonObjective: getLessonObjectiveText(lessonPlan),
     bigQuestion: lessonPlan.bigQuestion,
-    swbatObjectives: lessonPlan.swbatObjectives,
     selfOthersIndia: lessonPlan.selfOthersIndia,
     assessments: lessonPlan.assessments,
     spark: lessonPlan.spark,

@@ -13,27 +13,36 @@ test('getLessonPlanReadiness: a brand-new, empty plan is not ready, and reports 
   assert.ok(readiness.missing.every((item) => !/error|field \d+/i.test(item.message)));
 });
 
-test('getLessonPlanReadiness: WHY section reports each of objective / big question independently — SWBAT is no longer a separate requirement, its content lives inside Lesson Objective', () => {
+test('getLessonPlanReadiness: WHY reports a missing objective — objectives are a dynamic list now, same "at least one" shape as Assessment', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
   const readiness = getLessonPlanReadiness(plan);
   const whyMessages = readiness.missing.filter((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.WHY).map((item) => item.message);
   assert.ok(whyMessages.some((message) => /lesson objective/i.test(message)));
   assert.ok(whyMessages.some((message) => /big question/i.test(message)));
-  assert.ok(!whyMessages.some((message) => /swbat/i.test(message)));
 });
 
-test('getLessonPlanReadiness: a non-blank Lesson Objective and Big Question alone satisfy WHY, with no swbatObjectives at all', () => {
+test('getLessonPlanReadiness: at least one non-blank objective, plus a Big Question, satisfies WHY', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
-  lessonPlanService.updateWhy(plan, { lessonObjective: 'Understand the causes.', bigQuestion: 'Why did it happen?' });
+  lessonPlanService.addObjective(plan, 'Understand the causes.');
+  lessonPlanService.updateWhy(plan, { bigQuestion: 'Why did it happen?' });
   const readiness = getLessonPlanReadiness(plan);
   assert.ok(!readiness.missing.some((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.WHY));
+});
+
+test('getLessonPlanReadiness: an objective that exists but is blank text does NOT satisfy WHY — same "non-blank" rule as every other dynamic list', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.addObjective(plan, '   ');
+  lessonPlanService.updateWhy(plan, { bigQuestion: 'Why did it happen?' });
+  const readiness = getLessonPlanReadiness(plan);
+  assert.ok(readiness.missing.some((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.WHY && /lesson objective/i.test(item.message)));
 });
 
 test('getLessonPlanReadiness: fully completing every section (Concept + Spark + one Activity + Helping Each Other Learn + Why + Self/Others/India + Assessment) makes the plan ready', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
 
   lessonPlanService.updateContext(plan, { conceptIds: ['concept-1'] });
-  lessonPlanService.updateWhy(plan, { lessonObjective: 'Understand the causes of the revolt.', bigQuestion: 'Why did Kattabomman resist British rule?' });
+  lessonPlanService.addObjective(plan, 'Understand the causes of the revolt.');
+  lessonPlanService.updateWhy(plan, { bigQuestion: 'Why did Kattabomman resist British rule?' });
   lessonPlanService.updateSelfOthersIndia(plan, { self: 'Standing up for what is right.' });
   lessonPlanService.addAssessmentItem(plan, 'Exit ticket with 2 causes.');
   lessonPlanService.updateSpark(plan, { title: 'Mystery Object', teacherAction: 'Show the object.', studentAction: 'Guess its significance.' });
@@ -121,8 +130,8 @@ test('getLessonPlanStageCompletion: a brand-new, empty plan has every stage inco
 test('getLessonPlanStageCompletion: a fully-completed plan has every stage complete, matching getLessonPlanReadiness().ready', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
   lessonPlanService.updateContext(plan, { conceptIds: ['concept-1'] });
-  lessonPlanService.updateWhy(plan, { lessonObjective: 'Understand the causes.', bigQuestion: 'Why did it happen?' });
-  lessonPlanService.addSwbatObjective(plan, 'Identify two causes.');
+  lessonPlanService.addObjective(plan, 'Understand the causes.');
+  lessonPlanService.updateWhy(plan, { bigQuestion: 'Why did it happen?' });
   lessonPlanService.updateSelfOthersIndia(plan, { self: 'Standing up for what is right.' });
   lessonPlanService.addAssessmentItem(plan, 'Exit ticket.');
   lessonPlanService.updateSpark(plan, { title: 'Mystery Object', teacherAction: 'Show it.', studentAction: 'Guess.' });
@@ -176,8 +185,8 @@ test('getLessonPlanStageCompletion: Helping (Q5) stays incomplete unless Pair Ex
 test('getLessonPlanStageCompletion: Concept/Purpose/Connection are each independently gated by their own real content', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
   lessonPlanService.updateContext(plan, { conceptIds: ['concept-1'] });
-  lessonPlanService.updateWhy(plan, { lessonObjective: 'Understand the causes.', bigQuestion: 'Why did it happen?' });
-  lessonPlanService.addSwbatObjective(plan, 'Identify two causes.');
+  lessonPlanService.addObjective(plan, 'Understand the causes.');
+  lessonPlanService.updateWhy(plan, { bigQuestion: 'Why did it happen?' });
   // Self/Others/India deliberately left blank.
 
   const stages = getLessonPlanStageCompletion(plan);

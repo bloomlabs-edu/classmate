@@ -3275,6 +3275,14 @@ textarea.reading-editor__block-input {
   gap: 0.5rem;
   margin-bottom: 0.5rem;
 }
+/* Optional reorder buttons on a dynamic-row (see Lesson Objectives —
+   the one dynamic list that needs reordering) — stacked vertically,
+   same ▲/▼ buttons Activities already use, just narrower to sit
+   beside a single-line input rather than a whole card's header. */
+.lesson-plan-builder__dynamic-reorder {
+  display: flex;
+  flex-direction: column;
+}
 .lesson-plan-builder__dynamic-input {
   flex: 1;
   padding: 0.5rem 0.7rem;

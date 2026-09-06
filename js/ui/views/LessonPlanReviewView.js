@@ -37,6 +37,7 @@
  */
 
 import * as lessonPlanRepository from '../../services/lessonPlanRepository.js';
+import * as lessonPlanService from '../../services/lessonPlanService.js';
 import * as lessonPlanReviewService from '../../services/lessonPlanReviewService.js';
 import * as teachingIdeasService from '../../services/teachingIdeasService.js';
 import * as teachingIdeasRepository from '../../repositories/teachingIdeasRepository.js';
@@ -165,6 +166,12 @@ export function renderLessonPlanReviewView(container, { classroom, currentUser, 
         loadError = "This lesson plan couldn't be found. It may have been deleted.";
       } else {
         plan = fetched;
+        // In-memory only — this view never persists lesson content (a
+        // reviewer only ever sees a locked SUBMITTED/APPROVED plan
+        // anyway, so there's nothing to write back here); see
+        // lessonPlanService.migrateLegacyObjectives()'s own doc
+        // comment for why this is still safe/necessary to call.
+        lessonPlanService.migrateLegacyObjectives(plan);
       }
       rerender();
     })
@@ -373,39 +380,43 @@ function renderCommentAffordance(sectionKey, plan, state, handlers) {
 // ---- 1. WHY ----------------------------------------------------------
 
 /**
- * SWBAT outcomes now live inside Lesson Objective itself (see
- * ui/views/LessonPlanBuilderView.js's own renderWhySection() doc
- * comment — Lesson Objective and SWBAT were asking for the same
- * thing). `swbatObjectives[]` is shown here ONLY when a plan already
- * has real (non-blank) legacy content in it, so a plan built after
- * that change never shows a redundant empty SWBAT block underneath an
- * objective that already includes its own outcomes — and a plan built
- * before it doesn't lose anything it already has saved.
+ * Objectives are a reorderable list of first-class objects now (see
+ * models/LessonPlan.js's own createLessonPlanObjective() doc comment),
+ * never a single free-text field — shown here read-only, exactly as
+ * `plan.objectives` already stands by the time this renders (this
+ * view's own load flow calls lessonPlanService.migrateLegacyObjectives()
+ * once, in memory, so even a plan that predates this shape still shows
+ * its real historical objectives correctly here).
  */
 function renderWhySection(plan) {
   const wrap = document.createElement('div');
-  wrap.appendChild(renderReadOnlyField('Lesson Objective', plan.lessonObjective));
-  wrap.appendChild(renderReadOnlyField('Big Question', plan.bigQuestion));
 
-  const nonBlankSwbat = plan.swbatObjectives.filter((objective) => objective && objective.trim());
-  if (nonBlankSwbat.length > 0) {
-    const swbatField = document.createElement('div');
-    swbatField.className = 'lesson-plan-review__field';
-    const label = document.createElement('p');
-    label.className = 'lesson-plan-review__field-label';
-    label.textContent = 'Students Will Be Able To (SWBAT)';
-    swbatField.appendChild(label);
+  const objectives = plan.objectives.filter((objective) => objective.text && objective.text.trim());
+  const objectivesField = document.createElement('div');
+  objectivesField.className = 'lesson-plan-review__field';
+  const label = document.createElement('p');
+  label.className = 'lesson-plan-review__field-label';
+  label.textContent = 'Lesson Objectives';
+  objectivesField.appendChild(label);
 
+  if (objectives.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'lesson-plan-review__field-value lesson-plan-review__field-value--empty';
+    empty.textContent = '—';
+    objectivesField.appendChild(empty);
+  } else {
     const list = document.createElement('ul');
     list.className = 'lesson-plan-review__swbat-list';
-    nonBlankSwbat.forEach((objective) => {
+    objectives.forEach((objective) => {
       const item = document.createElement('li');
-      item.textContent = objective;
+      item.textContent = objective.text;
       list.appendChild(item);
     });
-    swbatField.appendChild(list);
-    wrap.appendChild(swbatField);
+    objectivesField.appendChild(list);
   }
+  wrap.appendChild(objectivesField);
+
+  wrap.appendChild(renderReadOnlyField('Big Question', plan.bigQuestion));
 
   return wrap;
 }

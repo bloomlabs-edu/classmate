@@ -51,6 +51,95 @@ test('buildTeachingIdeaProjection: snapshots teacher display name and never incl
 });
 
 // ---------------------------------------------------------------------
+// objectives[] is the canonical source for the projection's own
+// `lessonObjective` field — see teachingIdeasService.js's own
+// getLessonObjectiveText() doc comment for the full reasoning. The
+// projection's field NAME/shape is unchanged (still a single string,
+// still called `lessonObjective`) so every existing consumer
+// (filterLessonExamples()'s own search, ui/components/
+// TeachingIdeaPreviewModal.js's renderReadOnlyField() call) keeps
+// working with zero changes of its own.
+// ---------------------------------------------------------------------
+
+test('buildTeachingIdeaProjection: a new lesson with one real objective in objectives[] becomes the projection\'s own plain lessonObjective text', () => {
+  const classroom = makeClassroom();
+  const plan = makeApprovedPlan();
+  lessonPlanService.addObjective(plan, 'Explain the causes of the revolt.');
+
+  const projection = teachingIdeasService.buildTeachingIdeaProjection(classroom, plan);
+
+  assert.equal(projection.lessonObjective, 'Explain the causes of the revolt.');
+});
+
+test('buildTeachingIdeaProjection: multiple objectives are all represented, bullet-joined into one readable string, in their real order', () => {
+  const classroom = makeClassroom();
+  const plan = makeApprovedPlan();
+  lessonPlanService.addObjective(plan, 'Explain the conflict between Kattabomman and the British');
+  lessonPlanService.addObjective(plan, 'Identify the role of the Nawab of Arcot');
+  lessonPlanService.addObjective(plan, 'Sequence the major events leading to the fall of Panchalamkuruchi');
+
+  const projection = teachingIdeasService.buildTeachingIdeaProjection(classroom, plan);
+
+  assert.equal(
+    projection.lessonObjective,
+    '• Explain the conflict between Kattabomman and the British\n' +
+      '• Identify the role of the Nawab of Arcot\n' +
+      '• Sequence the major events leading to the fall of Panchalamkuruchi'
+  );
+});
+
+test('buildTeachingIdeaProjection: a genuinely legacy plan (empty objectives[], real lessonObjective text) falls back to the legacy field — nothing is silently lost', () => {
+  const classroom = makeClassroom();
+  const plan = makeApprovedPlan();
+  plan.lessonObjective = 'Understand the causes of the Poligars revolt.'; // never migrated — objectives[] stays empty
+
+  const projection = teachingIdeasService.buildTeachingIdeaProjection(classroom, plan);
+
+  assert.equal(projection.lessonObjective, 'Understand the causes of the Poligars revolt.');
+});
+
+test('buildTeachingIdeaProjection: objectives[] takes precedence over a stale legacy lessonObjective when a plan somehow has both', () => {
+  const classroom = makeClassroom();
+  const plan = makeApprovedPlan();
+  plan.lessonObjective = 'Old text that must NOT win once objectives[] is populated';
+  lessonPlanService.addObjective(plan, 'The real, current objective');
+
+  const projection = teachingIdeasService.buildTeachingIdeaProjection(classroom, plan);
+
+  assert.equal(projection.lessonObjective, 'The real, current objective');
+});
+
+test('buildTeachingIdeaProjection: no objectives and no legacy text at all -> an empty string, never a crash or "undefined"', () => {
+  const classroom = makeClassroom();
+  const plan = makeApprovedPlan();
+
+  const projection = teachingIdeasService.buildTeachingIdeaProjection(classroom, plan);
+
+  assert.equal(projection.lessonObjective, '');
+});
+
+test('buildTeachingIdeaProjection: a blank-text objective (added but never filled in) is treated the same as having none — falls back to legacy text if any, otherwise empty', () => {
+  const classroom = makeClassroom();
+  const plan = makeApprovedPlan();
+  plan.lessonObjective = 'Legacy fallback text';
+  lessonPlanService.addObjective(plan, '   ');
+
+  const projection = teachingIdeasService.buildTeachingIdeaProjection(classroom, plan);
+
+  assert.equal(projection.lessonObjective, 'Legacy fallback text');
+});
+
+test('buildTeachingIdeaProjection: never copies the legacy swbatObjectives array into the projection — objectives[] is the one representation now', () => {
+  const classroom = makeClassroom();
+  const plan = makeApprovedPlan();
+  plan.swbatObjectives = ['Some old structured SWBAT text'];
+
+  const projection = teachingIdeasService.buildTeachingIdeaProjection(classroom, plan);
+
+  assert.equal(projection.swbatObjectives, undefined);
+});
+
+// ---------------------------------------------------------------------
 // Extraction — every element type, plus differentiation per bucket
 // ---------------------------------------------------------------------
 
