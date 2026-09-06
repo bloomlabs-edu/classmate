@@ -51,6 +51,35 @@
  *                    services/resourceService.js's getResources(),
  *                    which defaults a missing array to `[]` rather
  *                    than assuming every concept already has one.
+ *   learningHubConcept - `{ conceptId, title } | null`. An optional
+ *                    mapping to the corresponding RepositoryConcept in
+ *                    the separate Learning Hub product, per the joint
+ *                    cross-repo identity audit. Learning Hub's
+ *                    RepositoryConcept is the canonical cross-product
+ *                    Concept identity; THIS field is the one-hop,
+ *                    opaque reference to it — this model's own `id`
+ *                    remains the ClassMate-local identity and is never
+ *                    replaced or reinterpreted by this field.
+ *                    `conceptId` is the authoritative Learning Hub id
+ *                    and must never be parsed, normalized, generated,
+ *                    or derived from a title — it is opaque to
+ *                    ClassMate, exactly like `learningHubPack.packId`
+ *                    on models/LearningUnit.js already is. `title` is a
+ *                    cached DISPLAY value only, never used for identity
+ *                    resolution or matching — two concepts are the same
+ *                    cross-product concept iff their `conceptId`s are
+ *                    equal, never because their titles look alike.
+ *                    Defaults to `null` (not `undefined`, matching
+ *                    `description` below) so a concept created before
+ *                    this field existed, or one nobody has mapped yet,
+ *                    reads as "no Learning Hub mapping," never a
+ *                    fabricated placeholder. Purely additive: nothing
+ *                    reads this field yet (no UI, no matching, no
+ *                    Lesson/carry-forward/feedback involvement) — see
+ *                    docs/UNIFIED_PLATFORM_ARCHITECTURE.md and the
+ *                    Learning Hub integration contract for the seam
+ *                    this sets up. No reverse reference exists on the
+ *                    Learning Hub side.
  *   description   - Phase 5 (Student Learning View) addition. A short,
  *                    optional, teacher-authored plain-text blurb — "A
  *                    force is a push or pull..." — answering "what did
@@ -75,12 +104,13 @@
 
 import { generateId } from '../utils/idGenerator.js';
 
-export function createLearningConcept({ id, title, status = 'not_taught', resourceLinks = [], description = null } = {}) {
+export function createLearningConcept({ id, title, status = 'not_taught', resourceLinks = [], description = null, learningHubConcept = null } = {}) {
   return {
     id: id || generateId(),
     title,
     status,
     resourceLinks,
     description,
+    learningHubConcept,
   };
 }
