@@ -162,6 +162,38 @@ class FirestoreClassroomRepository extends ClassroomRepository {
     return doc(this._getDb(), 'studentJoinCodes', code);
   }
 
+  /**
+   * A third small lookup collection, alongside joinCodes/
+   * studentJoinCodes above — Visitor Access. Deliberately its own
+   * collection, not a third key prefix in either existing one: its
+   * document holds a real (if sanitized) content payload (`snapshot`),
+   * not just a bare classroomId pointer, and it needs its own narrower
+   * update rule (flipping `revoked` only) neither existing collection
+   * supports today. See firestore.rules and services/visitorAccessService.js.
+   */
+  _visitorAccessDoc(code) {
+    return doc(this._getDb(), 'visitorAccessCodes', code);
+  }
+
+  async createVisitorAccess(code, { classroomId, snapshot }) {
+    await setDoc(this._visitorAccessDoc(code), {
+      classroomId,
+      snapshot,
+      createdAt: new Date().toISOString(),
+      revoked: false,
+    });
+  }
+
+  async getVisitorAccessByCode(code) {
+    const docSnapshot = await getDoc(this._visitorAccessDoc(code));
+    return docSnapshot.exists() ? docSnapshot.data() : null;
+  }
+
+  /** Only ever flips `revoked` to true — matches the narrow update firestore.rules' own visitorAccessCodes rule permits. */
+  async revokeVisitorAccess(code) {
+    await updateDoc(this._visitorAccessDoc(code), { revoked: true });
+  }
+
   _classroomRefsCollection(uid) {
     return collection(this._getDb(), 'users', uid, 'classroomRefs');
   }

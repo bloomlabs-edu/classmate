@@ -8274,6 +8274,121 @@ button.wizard-checklist__row:hover {
   align-items: center;
 }
 
+/*
+ * Classroom Access — a Bento-style access hub (see
+ * ui/views/StudentAccessView.js's own header comment): three tiles
+ * with three genuinely different visual weights (Students large/
+ * primary, Co-Teacher and Visitor medium/supporting), never three
+ * identically-styled cards. Same quiet-surface, restrained-accent
+ * language as .primary-module-card (Dashboard) — no shadows/gradients,
+ * hierarchy from size and typography, not decoration.
+ */
+.classroom-access-bento {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+.classroom-access-bento__tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 1.5rem;
+  border-radius: 20px;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  text-align: left;
+}
+.classroom-access-bento__tile--primary {
+  grid-column: 1 / -1;
+  background-color: color-mix(in srgb, var(--color-primary-deep) 10%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-primary-deep) 28%, transparent);
+  padding: 2rem;
+}
+@media (min-width: 640px) {
+  .classroom-access-bento__tile--primary .invite-students-card__actions {
+    flex-direction: row;
+  }
+}
+@media (max-width: 640px) {
+  .classroom-access-bento {
+    grid-template-columns: 1fr;
+  }
+}
+.classroom-access-bento__icon-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background-color: color-mix(in srgb, var(--color-primary-deep) 16%, var(--color-surface));
+  color: var(--color-primary-deep);
+}
+.classroom-access-bento__tile--primary .classroom-access-bento__icon-badge {
+  width: 52px;
+  height: 52px;
+}
+.classroom-access-bento__icon-badge--co-teacher {
+  background-color: #E6F1FB;
+  color: #5ea6da;
+}
+.classroom-access-bento__icon-badge--visitor {
+  background-color: #E1F5F1;
+  color: #0F9E8E;
+}
+.classroom-access-bento__heading {
+  font-size: 1rem;
+  font-weight: var(--font-weight-black);
+  margin: 0;
+}
+.classroom-access-bento__tile--primary .classroom-access-bento__heading {
+  font-size: 1.3rem;
+}
+.classroom-access-bento__description {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  line-height: 1.4;
+  margin: 0 0 0.4rem;
+}
+
+/* Visitor's own read-only demo screen — see ui/views/VisitorAccessView.js */
+.visitor-access__loading {
+  padding: 2rem;
+  text-align: center;
+  color: var(--color-muted);
+}
+.visitor-access__banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background-color: #E1F5F1;
+  color: #0F9E8E;
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-medium);
+  padding: 0.6rem 1rem;
+  border-radius: var(--radius-pill);
+  margin: 0 0 1rem;
+}
+.visitor-access__subject {
+  margin-bottom: 1.25rem;
+}
+.visitor-access__unit {
+  margin: 0.3rem 0 0;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+.visitor-access__timetable-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.visitor-access__timetable-row {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
 /* Curriculum Management v1 — see ui/views/CurriculumManagementView.js */
 .curriculum-management {
   max-width: 720px;

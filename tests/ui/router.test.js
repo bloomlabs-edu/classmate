@@ -168,3 +168,11 @@ test('pre-existing route: teacher home', () => {
 test('pre-existing route: bare root is landing', () => {
   assert.deepEqual(resolvePathParts([]), { name: 'landing' });
 });
+
+test('visitor access route: a code in the path resolves to visitorAccess with that code', () => {
+  assert.deepEqual(resolvePathParts(parts('visitor/ABCD12')), { name: 'visitorAccess', code: 'ABCD12' });
+});
+
+test('visitor access route: no code falls back to null, not a thrown error — the view itself prompts for one', () => {
+  assert.deepEqual(resolvePathParts(parts('visitor')), { name: 'visitorAccess', code: null });
+});

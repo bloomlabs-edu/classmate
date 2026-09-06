@@ -238,6 +238,19 @@ export function resolvePathParts(parts) {
     return { name: 'studentPortal', section, param };
   }
 
+  // Visitor Access (see services/visitorAccessService.js) — a
+  // no-sign-in, read-only demo link, same "no classroom context needed
+  // upfront" shape as `student` above: the code itself resolves which
+  // classroom's sanitized snapshot to show, so this route carries no
+  // classroomId of its own. `code` is optional — the view itself
+  // prompts for one if it's missing, matching
+  // ui/student-portal/onboarding/StudentJoinClassroomView.js's own
+  // "type it in" fallback for a bare `#/student` visit.
+  if (parts[0] === 'visitor') {
+    const code = parts[1] || null;
+    return { name: 'visitorAccess', code };
+  }
+
   if (parts.length === 0) {
     return { name: 'landing' };
   }

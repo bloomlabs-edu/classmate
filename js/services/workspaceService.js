@@ -634,6 +634,48 @@ export async function resolveStudentJoinCode(code) {
 }
 
 /**
+ * Fire-and-forget, matching createJoinCodeMapping()'s own pattern —
+ * called once, right after generating a new visitorAccessCode (see
+ * classroomService.ensureVisitorAccessCode()), to persist the
+ * sanitized snapshot a Visitor will actually read (see
+ * services/visitorAccessService.js's own buildVisitorSnapshot()).
+ */
+export function createVisitorAccess(code, classroomId, snapshot) {
+  repository.createVisitorAccess(code, { classroomId, snapshot }).catch((error) => {
+    console.error('[workspaceService] Failed to create Visitor Access:', error);
+  });
+}
+
+/**
+ * Resolves a Visitor Access code — read-only, no membership, no
+ * account, exactly like resolveStudentJoinCode() above but for the
+ * separate visitorAccessCodes lookup collection. Returns
+ * `{ classroomId, snapshot, createdAt, revoked }`, or null if the code
+ * doesn't exist. The caller (ui/views/VisitorAccessView.js) is
+ * responsible for treating a `revoked: true` result as invalid — this
+ * only resolves whatever's currently stored; firestore.rules' own
+ * `visitorAccessCodes` read rule is the actual enforcement point that
+ * stops a revoked code from resolving at all once revokeVisitorAccess()
+ * below has run.
+ */
+export async function resolveVisitorAccessCode(code) {
+  const normalizedCode = code.trim().toUpperCase();
+  if (!normalizedCode) return null;
+  return repository.getVisitorAccessByCode(normalizedCode);
+}
+
+/**
+ * Marks a Visitor Access code permanently revoked. Unlike the
+ * fire-and-forget mappings above, this is awaited and its result
+ * surfaced to the caller (see ui/views/StudentAccessView.js's own
+ * Visitor tile) — revocation is a deliberate security action a teacher
+ * needs to know actually succeeded, not a background nicety.
+ */
+export async function revokeVisitorAccess(code) {
+  await repository.revokeVisitorAccess(code);
+}
+
+/**
  * The one shared, teacher-visible write in this whole flow: marks a
  * specific student as having opened the Portal at least once. This is
  * what lets Student Access show anything at all — without it, a

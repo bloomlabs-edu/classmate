@@ -157,6 +157,46 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Visitor Access — a read-only "show a classroom to another
+    // teacher without making them a co-teacher" link (see
+    // services/visitorAccessService.js's own header comment). Unlike
+    // joinCodes/studentJoinCodes above, this document's own `snapshot`
+    // field IS the content a Visitor reads — deliberately built to
+    // contain only curriculum/timetable STRUCTURE, never real student
+    // data (see buildVisitorSnapshot()) — so it's safe for this rule
+    // to allow no-sign-in reads the same way studentJoinCodes does,
+    // without needing a role-based read restriction on the real
+    // classroom document (see this file's own header comment on why
+    // that distinction isn't built yet — this sidesteps that gap
+    // entirely rather than depending on it).
+    match /visitorAccessCodes/{code} {
+      // A revoked code stops resolving here, not just in the app's own
+      // UI — checked server-side so an old shared link genuinely stops
+      // working the moment a teacher revokes it, even for someone who
+      // already has the link.
+      allow read: if resource.data.revoked == false;
+
+      // Only an existing member of the classroom this code is FOR may
+      // create one — stricter than joinCodes/studentJoinCodes' own
+      // `request.auth != null` (no membership check at all), since this
+      // document carries a real content payload worth gating more
+      // tightly than a bare classroomId pointer.
+      allow create: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(request.resource.data.classroomId)).data.memberUids;
+
+      // The only legal update, ever, is an existing member of that same
+      // classroom flipping `revoked` from false to true — never
+      // un-revoking, never touching classroomId/snapshot/createdAt
+      // after creation.
+      allow update: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(resource.data.classroomId)).data.memberUids &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['revoked']) &&
+        request.resource.data.revoked == true;
+
+      allow list: if false;
+      allow delete: if false;
+    }
+
     // NOT YET SUPPORTED: markStudentJoinedPortal() in workspaceService.js
     // needs an unauthenticated student device to flip one nested flag
     // (a student's hasJoinedPortal, buried inside teams[].students[])

@@ -72,6 +72,7 @@ import { renderSettingsView } from './ui/views/SettingsView.js';
 import { renderSetupWizardView } from './ui/views/SetupWizardView.js';
 import { renderStudentProfileView } from './ui/views/StudentProfileView.js';
 import { renderStudentAccessView } from './ui/views/StudentAccessView.js';
+import { renderVisitorAccessView } from './ui/views/VisitorAccessView.js';
 import { renderActivitiesListView, renderActivityRosterView } from './ui/views/ActivitiesView.js';
 import { renderWorkRequestRosterView } from './ui/views/WorkRequestRosterView.js';
 import { renderNotebookTrackerView } from './ui/views/NotebookTrackerView.js';
@@ -771,6 +772,19 @@ function renderRoute(route, reason = 'unspecified') {
         });
         renderStudentPortalMain(route);
       },
+    });
+    return;
+  }
+
+  // Visitor Access — no sign-in required, checked before the auth gate
+  // below for the same reason 'studentPortal' is (see that branch's own
+  // comment): this is a read-only demo link, never gated on having a
+  // ClassMate account at all.
+  if (route.name === 'visitorAccess') {
+    userBarContainer.innerHTML = '';
+    renderVisitorAccessView(appContainer, {
+      code: route.code,
+      onBack: () => router.navigate('/'),
     });
     return;
   }

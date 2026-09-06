@@ -311,6 +311,33 @@ export function regenerateDeviceResetPin(classroom) {
 }
 
 /**
+ * Same lazy-generation pattern as ensureJoinCode()/ensureStudentJoinCode()/
+ * ensureDeviceResetPin() above, for the Visitor Access code (see
+ * models/Classroom.js's own `visitorAccessCode` doc comment). The
+ * caller is also responsible for writing this code's own
+ * `visitorAccessCodes/{code}` lookup document (see
+ * services/workspaceService.js's createVisitorAccess()) — this
+ * function only ever touches the in-memory classroom.
+ */
+export function ensureVisitorAccessCode(classroom) {
+  if (classroom.visitorAccessCode) return false;
+  classroom.visitorAccessCode = generateJoinCode();
+  return true;
+}
+
+/**
+ * Clears this classroom's own pointer to its Visitor Access code — the
+ * caller is also responsible for marking that code's own
+ * `visitorAccessCodes/{code}` lookup document `revoked: true` (see
+ * services/workspaceService.js's revokeVisitorAccess()), so an old
+ * shared link stops resolving even for someone who still has it, not
+ * just stops showing up here.
+ */
+export function revokeVisitorAccessCode(classroom) {
+  classroom.visitorAccessCode = null;
+}
+
+/**
  * Every other feature in this app (Class Mode, Recognition, Notebook
  * Tracker, Reports, Weekly Snapshot) already reads students via
  * classroom.teams.flatMap(t => t.students) — rewriting that

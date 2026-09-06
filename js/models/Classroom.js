@@ -181,6 +181,28 @@
  *                    Firestore write of its own — see
  *                    services/classroomService.js's
  *                    ensureDeviceResetPin().
+ *   visitorAccessCode - a fourth, separately-scoped code: a read-only
+ *                    "show a classroom to another teacher without
+ *                    making them a co-teacher" link (see
+ *                    services/classroomService.js's
+ *                    ensureVisitorAccessCode()/revokeVisitorAccessCode(),
+ *                    services/visitorAccessService.js's
+ *                    buildVisitorSnapshot(), and
+ *                    ui/views/StudentAccessView.js's Visitor tile).
+ *                    Deliberately NOT a `members` entry and NOT
+ *                    interchangeable with classroomJoinCode above —
+ *                    redeeming it never adds anyone to this document at
+ *                    all. Resolving the code reads a SEPARATE,
+ *                    deliberately sanitized snapshot document
+ *                    (`visitorAccessCodes/{code}` — see
+ *                    firestore.rules) built once at creation time from
+ *                    curriculum/timetable structure only; it never
+ *                    contains this classroom's own live document, and
+ *                    so never contains real student names, scores,
+ *                    notebooks, or goals. Revoking sets this field back
+ *                    to null AND marks that lookup document `revoked`,
+ *                    so an old shared link stops resolving even for
+ *                    someone who still has it.
  *   settings       - classroom-level settings: bucket scoring, point
  *                    scoring, badge catalog, and Setup Wizard progress —
  *                    see config/classroomDefaults.js for the defaults,
@@ -230,6 +252,7 @@ export function createClassroom({
   classroomJoinCode = null,
   classroomStudentJoinCode = null,
   deviceResetPin = null,
+  visitorAccessCode = null,
   seatingConfig = null,
   currentScoringPeriodStartedAt = null,
   settings = buildDefaultSettings(),
@@ -260,6 +283,7 @@ export function createClassroom({
     classroomJoinCode,
     classroomStudentJoinCode,
     deviceResetPin,
+    visitorAccessCode,
     seatingConfig,
     currentScoringPeriodStartedAt,
     settings,

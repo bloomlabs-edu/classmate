@@ -170,6 +170,29 @@ export class ClassroomRepository {
   }
 
   /**
+   * Writes the `visitorAccessCodes/{code}` lookup document a Visitor
+   * resolves with no sign-in required — see
+   * services/visitorAccessService.js's own buildVisitorSnapshot() for
+   * what `snapshot` does and does not contain.
+   */
+  // eslint-disable-next-line no-unused-vars
+  async createVisitorAccess(code, { classroomId, snapshot }) {
+    throw new Error('ClassroomRepository.createVisitorAccess() must be implemented by a subclass');
+  }
+
+  /** Resolves a Visitor Access code to its lookup document (`{ classroomId, snapshot, createdAt, revoked }`), or null if the code doesn't exist. */
+  // eslint-disable-next-line no-unused-vars
+  async getVisitorAccessByCode(code) {
+    throw new Error('ClassroomRepository.getVisitorAccessByCode() must be implemented by a subclass');
+  }
+
+  /** Marks a Visitor Access code permanently revoked — see services/classroomService.js's own revokeVisitorAccessCode(). */
+  // eslint-disable-next-line no-unused-vars
+  async revokeVisitorAccess(code) {
+    throw new Error('ClassroomRepository.revokeVisitorAccess() must be implemented by a subclass');
+  }
+
+  /**
    * Atomically appends one or more StudentEvents to classroom.studentEvents,
    * touching no other field — for a caller (like Class Feed's
    * createPostAsTeacher()) that has no live, already-loaded classroom
