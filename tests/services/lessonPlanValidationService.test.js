@@ -4,7 +4,15 @@ import { createLessonPlan, LESSON_PLAN_SECTION_KEYS } from '../../js/models/Less
 import * as lessonPlanService from '../../js/services/lessonPlanService.js';
 import { getLessonPlanReadiness, getLessonPlanStageCompletion, LESSON_PLAN_STAGES } from '../../js/services/lessonPlanValidationService.js';
 
-test('getLessonPlanReadiness: a brand-new, empty plan is not ready, and reports one friendly message per genuinely missing item', () => {
+// ---------------------------------------------------------------------
+// Concept and WHY (Objectives/Big Question) moved to the separate
+// Weekly Plan tier (see services/weeklyPlanValidationService.js and
+// docs/CLASSMATE_WEEKLY_PLAN_AND_LESSON_PLAN_ARCHITECTURE.md) — a
+// Detailed Lesson Plan's OWN readiness no longer gates on either, even
+// though the fields themselves still exist and are still editable here.
+// ---------------------------------------------------------------------
+
+test('getLessonPlanReadiness: a brand-new, empty plan is not ready (Activities/Helping still required), and reports one friendly message per genuinely missing item', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
   const readiness = getLessonPlanReadiness(plan);
   assert.equal(readiness.ready, false);
@@ -13,39 +21,31 @@ test('getLessonPlanReadiness: a brand-new, empty plan is not ready, and reports 
   assert.ok(readiness.missing.every((item) => !/error|field \d+/i.test(item.message)));
 });
 
-test('getLessonPlanReadiness: WHY reports a missing objective — objectives are a dynamic list now, same "at least one" shape as Assessment', () => {
+test('getLessonPlanReadiness: zero concepts and blank Objectives/Big Question are NOT reported — that moved to the Weekly Plan tier', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
   const readiness = getLessonPlanReadiness(plan);
-  const whyMessages = readiness.missing.filter((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.WHY).map((item) => item.message);
-  assert.ok(whyMessages.some((message) => /lesson objective/i.test(message)));
-  assert.ok(whyMessages.some((message) => /big question/i.test(message)));
-});
-
-test('getLessonPlanReadiness: at least one non-blank objective, plus a Big Question, satisfies WHY', () => {
-  const plan = createLessonPlan({ classroomId: 'c1' });
-  lessonPlanService.addObjective(plan, 'Understand the causes.');
-  lessonPlanService.updateWhy(plan, { bigQuestion: 'Why did it happen?' });
-  const readiness = getLessonPlanReadiness(plan);
+  assert.ok(!readiness.missing.some((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.CONTEXT));
   assert.ok(!readiness.missing.some((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.WHY));
 });
 
-test('getLessonPlanReadiness: an objective that exists but is blank text does NOT satisfy WHY — same "non-blank" rule as every other dynamic list', () => {
+test('getLessonPlanReadiness: Spark is deliberately NOT required — blank Spark never blocks, same treatment as Connection/Showcase', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
-  lessonPlanService.addObjective(plan, '   ');
-  lessonPlanService.updateWhy(plan, { bigQuestion: 'Why did it happen?' });
+  const activity = lessonPlanService.addActivity(plan);
+  lessonPlanService.updateActivity(plan, activity.id, { title: 'Timeline Building', teacherAction: 'Circulate and support.', studentAction: 'Sequence events.' });
+  lessonPlanService.updateHelpingEachOtherLearn(plan, {
+    pairExplanation: 'Explain the timeline to a partner.',
+    finalQuestion: 'What would you have done differently?',
+    teacherLookFors: 'Correct sequencing and reasoning.',
+  });
+  // Spark, Concepts, Objectives, Big Question, Connection, Showcase all deliberately left blank.
+
   const readiness = getLessonPlanReadiness(plan);
-  assert.ok(readiness.missing.some((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.WHY && /lesson objective/i.test(item.message)));
+  assert.ok(!readiness.missing.some((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.SPARK && /spark/i.test(item.message)));
+  assert.equal(readiness.ready, true);
 });
 
-test('getLessonPlanReadiness: fully completing every section (Concept + Spark + one Activity + Helping Each Other Learn + Why + Self/Others/India + Assessment) makes the plan ready', () => {
+test('getLessonPlanReadiness: fully completing Activities + Helping makes the plan ready, even with Concept/WHY/Connection/Showcase/Spark all left blank', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
-
-  lessonPlanService.updateContext(plan, { conceptIds: ['concept-1'] });
-  lessonPlanService.addObjective(plan, 'Understand the causes of the revolt.');
-  lessonPlanService.updateWhy(plan, { bigQuestion: 'Why did Kattabomman resist British rule?' });
-  lessonPlanService.updateSelfOthersIndia(plan, { self: 'Standing up for what is right.' });
-  lessonPlanService.addAssessmentItem(plan, 'Exit ticket with 2 causes.');
-  lessonPlanService.updateSpark(plan, { title: 'Mystery Object', teacherAction: 'Show the object.', studentAction: 'Guess its significance.' });
   const activity = lessonPlanService.addActivity(plan);
   lessonPlanService.updateActivity(plan, activity.id, { title: 'Timeline Building', teacherAction: 'Circulate and support.', studentAction: 'Sequence events.' });
   lessonPlanService.updateHelpingEachOtherLearn(plan, {
@@ -77,45 +77,19 @@ test('getLessonPlanReadiness: zero activities is itself reported as missing, dyn
 });
 
 // ---------------------------------------------------------------------
-// Phase 4 — a Concept is required before submission (product decision:
-// concept selection stays optional/flexible WHILE building; this is a
-// submit-time gate only, enforced here in readiness, never blocking
-// the Builder from being edited without one).
-// ---------------------------------------------------------------------
-
-test('getLessonPlanReadiness: a lesson plan with zero concepts is not ready, with the exact specified teacher-facing message', () => {
-  const plan = createLessonPlan({ classroomId: 'c1' });
-  const readiness = getLessonPlanReadiness(plan);
-  const conceptIssue = readiness.missing.find((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.CONTEXT);
-  assert.ok(conceptIssue, 'expected a missing-concept readiness item');
-  assert.equal(conceptIssue.message, 'Add at least one Concept before submitting this lesson for review.');
-});
-
-test('getLessonPlanReadiness: adding even one concept clears the missing-concept item (multiple concepts are also fine, not just exactly one)', () => {
-  const plan = createLessonPlan({ classroomId: 'c1' });
-  lessonPlanService.updateContext(plan, { conceptIds: ['concept-1'] });
-  let readiness = getLessonPlanReadiness(plan);
-  assert.ok(!readiness.missing.some((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.CONTEXT));
-
-  lessonPlanService.updateContext(plan, { conceptIds: ['concept-1', 'concept-2'] });
-  readiness = getLessonPlanReadiness(plan);
-  assert.ok(!readiness.missing.some((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.CONTEXT));
-});
-
-// ---------------------------------------------------------------------
 // getLessonPlanStageCompletion — the guided-building Builder's own
 // progress indicator and "which stage is the current focus" both
 // derive from this, which itself derives from getLessonPlanReadiness()'s
 // own missing[] — never a second definition of "done."
 // ---------------------------------------------------------------------
 
-test('getLessonPlanStageCompletion: a brand-new, empty plan has every genuinely-required stage incomplete (Connection and Showcase are optional, so they start complete), in the real 5-Questions order', () => {
+test('getLessonPlanStageCompletion: a brand-new, empty plan — Concept/Purpose/Connection/Showcase all start complete (moved to Weekly Plan, or already optional); Experience/Helping start incomplete', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
   const stages = getLessonPlanStageCompletion(plan);
   assert.equal(stages.length, 6);
   const byStage = Object.fromEntries(stages.map((entry) => [entry.stage, entry.complete]));
-  assert.equal(byStage[LESSON_PLAN_STAGES.CONCEPT], false);
-  assert.equal(byStage[LESSON_PLAN_STAGES.PURPOSE], false);
+  assert.equal(byStage[LESSON_PLAN_STAGES.CONCEPT], true);
+  assert.equal(byStage[LESSON_PLAN_STAGES.PURPOSE], true);
   assert.equal(byStage[LESSON_PLAN_STAGES.CONNECTION], true); // optional — never blocks, even brand new
   assert.equal(byStage[LESSON_PLAN_STAGES.SHOWCASE], true); // optional — never blocks, even brand new
   assert.equal(byStage[LESSON_PLAN_STAGES.EXPERIENCE], false);
@@ -133,14 +107,29 @@ test('getLessonPlanStageCompletion: a brand-new, empty plan has every genuinely-
   );
 });
 
-test('getLessonPlanStageCompletion: a fully-completed plan has every stage complete, matching getLessonPlanReadiness().ready', () => {
+test('getLessonPlanStageCompletion: Experience (Q4) is complete on Activity content alone — Spark blank never blocks it', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
-  lessonPlanService.updateContext(plan, { conceptIds: ['concept-1'] });
-  lessonPlanService.addObjective(plan, 'Understand the causes.');
-  lessonPlanService.updateWhy(plan, { bigQuestion: 'Why did it happen?' });
-  lessonPlanService.updateSelfOthersIndia(plan, { self: 'Standing up for what is right.' });
-  lessonPlanService.addAssessmentItem(plan, 'Exit ticket.');
+  const activity = lessonPlanService.addActivity(plan);
+  lessonPlanService.updateActivity(plan, activity.id, { title: 'Timeline', teacherAction: 'Circulate.', studentAction: 'Sequence.' });
+  // Spark deliberately left blank.
+
+  const stages = getLessonPlanStageCompletion(plan);
+  const byStage = Object.fromEntries(stages.map((entry) => [entry.stage, entry.complete]));
+  assert.equal(byStage[LESSON_PLAN_STAGES.EXPERIENCE], true);
+  assert.equal(byStage[LESSON_PLAN_STAGES.HELPING], false);
+});
+
+test('getLessonPlanStageCompletion: Experience (Q4) stays incomplete with zero activities, even if Spark is fully filled in', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
   lessonPlanService.updateSpark(plan, { title: 'Mystery Object', teacherAction: 'Show it.', studentAction: 'Guess.' });
+  // Activities deliberately left empty.
+
+  const stages = getLessonPlanStageCompletion(plan);
+  assert.equal(stages.find((entry) => entry.stage === LESSON_PLAN_STAGES.EXPERIENCE).complete, false);
+});
+
+test('getLessonPlanStageCompletion: a fully-completed plan (Activities + Helping only) has every stage complete, matching getLessonPlanReadiness().ready', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
   const activity = lessonPlanService.addActivity(plan);
   lessonPlanService.updateActivity(plan, activity.id, { title: 'Timeline', teacherAction: 'Circulate.', studentAction: 'Sequence.' });
   lessonPlanService.updateHelpingEachOtherLearn(plan, { pairExplanation: 'Explain to a partner.', finalQuestion: 'What next?', teacherLookFors: 'Correct sequencing.' });
@@ -148,19 +137,6 @@ test('getLessonPlanStageCompletion: a fully-completed plan has every stage compl
   const stages = getLessonPlanStageCompletion(plan);
   assert.ok(stages.every((entry) => entry.complete === true));
   assert.equal(getLessonPlanReadiness(plan).ready, true);
-});
-
-test('getLessonPlanStageCompletion: Experience (Q4 — Spark + Activities) is complete on Spark + Activity content alone, never gated by Pair Explanation anymore', () => {
-  const plan = createLessonPlan({ classroomId: 'c1' });
-  lessonPlanService.updateSpark(plan, { title: 'Mystery Object', teacherAction: 'Show it.', studentAction: 'Guess.' });
-  const activity = lessonPlanService.addActivity(plan);
-  lessonPlanService.updateActivity(plan, activity.id, { title: 'Timeline', teacherAction: 'Circulate.', studentAction: 'Sequence.' });
-  // pairExplanation/finalQuestion/teacherLookFors deliberately left blank — those are Q5 (Helping) now, not Q4.
-
-  const stages = getLessonPlanStageCompletion(plan);
-  const byStage = Object.fromEntries(stages.map((entry) => [entry.stage, entry.complete]));
-  assert.equal(byStage[LESSON_PLAN_STAGES.EXPERIENCE], true);
-  assert.equal(byStage[LESSON_PLAN_STAGES.HELPING], false);
 });
 
 test('getLessonPlanStageCompletion: Showcase (Q3 — Assessment) is its own stage, and stays complete regardless of content, independently of Spark/Activities/Helping', () => {
@@ -236,20 +212,6 @@ test('getLessonPlanStageCompletion: Helping (Q5) stays incomplete unless Pair Ex
   stages = getLessonPlanStageCompletion(plan);
   helping = stages.find((entry) => entry.stage === LESSON_PLAN_STAGES.HELPING);
   assert.equal(helping.complete, true);
-});
-
-test('getLessonPlanStageCompletion: Concept and Purpose are each independently gated by their own real content; Connection (optional) never is', () => {
-  const plan = createLessonPlan({ classroomId: 'c1' });
-  lessonPlanService.updateContext(plan, { conceptIds: ['concept-1'] });
-  lessonPlanService.addObjective(plan, 'Understand the causes.');
-  lessonPlanService.updateWhy(plan, { bigQuestion: 'Why did it happen?' });
-  // Self/Others/India deliberately left blank.
-
-  const stages = getLessonPlanStageCompletion(plan);
-  const byStage = Object.fromEntries(stages.map((entry) => [entry.stage, entry.complete]));
-  assert.equal(byStage[LESSON_PLAN_STAGES.CONCEPT], true);
-  assert.equal(byStage[LESSON_PLAN_STAGES.PURPOSE], true);
-  assert.equal(byStage[LESSON_PLAN_STAGES.CONNECTION], true);
 });
 
 // ---------------------------------------------------------------------

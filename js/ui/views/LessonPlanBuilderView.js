@@ -1829,10 +1829,17 @@ function renderSparkSection(plan, handlers) {
   const wrap = document.createElement('div');
   wrap.className = 'lesson-plan-builder__spark';
 
+  const headingRow = document.createElement('div');
+  headingRow.className = 'lesson-plan-builder__stage-title-group';
   const heading = document.createElement('h3');
   heading.className = 'lesson-plan-builder__subheading';
   heading.textContent = 'Spark';
-  wrap.appendChild(heading);
+  headingRow.appendChild(heading);
+  const optionalTag = document.createElement('span');
+  optionalTag.className = 'lesson-plan-builder__optional-tag';
+  optionalTag.textContent = 'Optional';
+  headingRow.appendChild(optionalTag);
+  wrap.appendChild(headingRow);
 
   if (handlers.editable) wrap.appendChild(createFromTeachingIdeasButton(handlers.onOpenSparkPicker));
 

@@ -8,13 +8,27 @@
  * Assessment? / Fun-Fast-Effective? / Helping-each-other-learn?.
  *
  * Deliberately its OWN entity, not an extension of models/Lesson.js —
- * the Timetable's `Lesson` is a scheduled OCCURRENCE (one dated period,
- * `teachingSlotId`, taught/not-taught status); a LessonPlan is a
- * reusable, structured PLANNING DOCUMENT with its own review lifecycle.
- * Nothing here assumes a LessonPlan is ever attached to a specific
- * Timetable period — `curriculumUnitId`/`conceptIds` are the same kind
- * of optional context reference `Lesson` already uses, resolved live
- * against the same Curriculum tree, never copied.
+ * the Timetable's `Lesson` is the lightweight WEEKLY PLAN for a
+ * scheduled OCCURRENCE (one dated period, `teachingSlotId`, concepts,
+ * its own `objectives[]`/`bigQuestion`, taught/not-taught status); a
+ * LessonPlan is the separate, OPTIONAL, structured DETAILED PLANNING
+ * DOCUMENT with its own review lifecycle — created lazily, only when a
+ * teacher chooses to prepare one (see
+ * services/timetableLessonService.js's own buildDetailedLessonPlanFromLesson()),
+ * never merely because a period exists. See
+ * docs/CLASSMATE_WEEKLY_PLAN_AND_LESSON_PLAN_ARCHITECTURE.md for the
+ * full Weekly Plan <-> Detailed Lesson Plan relationship.
+ *
+ * *Is* a LessonPlan ever attached to a specific Timetable period?
+ * Yes — via `scheduledDate`/`scheduledPeriodNumber` below, a live-
+ * resolved reference exactly like `curriculumUnitId`/`conceptIds`
+ * already are (resolved against the same Curriculum tree / Timetable,
+ * never copied). A LessonPlan created via buildDetailedLessonPlanFromLesson()
+ * is additionally cross-referenced from its originating Lesson (see
+ * `Lesson.lessonPlanId`) — but a LessonPlan can still exist unattached
+ * to any Lesson at all (the older, free-standing "+ New Lesson Plan"
+ * flow in ui/views/LessonPlansListView.js), so nothing here assumes
+ * that link is always present either.
  *
  * `activities[]` is the one part of this model that matters most: an
  * ordered list of real, structured, first-class objects (see

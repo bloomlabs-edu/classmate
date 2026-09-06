@@ -923,7 +923,12 @@ function renderRoute(route, reason = 'unspecified') {
       // reason (a genuine 'url-route-changed' navigation, sign-in,
       // etc.) still gets TimetableView's normal clean-slate mount — see
       // that view's own renderTimetableView() header comment.
-      renderTimetableView(appContainer, { classroom, currentUser, preserveState: reason === 'workspace-init-onchange' });
+      renderTimetableView(appContainer, {
+        classroom,
+        currentUser,
+        preserveState: reason === 'workspace-init-onchange',
+        onOpenLessonPlan: (lessonPlanId) => router.navigate(`/classroom/${classroom.id}/lesson-plans/${lessonPlanId}`),
+      });
     } else if (route.name === 'assessments') {
       renderAssessmentManagementView(appContainer, {
         classroom,

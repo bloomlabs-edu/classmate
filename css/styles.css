@@ -16272,6 +16272,60 @@ button.wizard-checklist__row:hover {
   font-family: inherit;
 }
 
+/* ---------------------------------------------------------------------
+   Period Detail — Plan tab (Weekly Plan objectives/Big Question +
+   the Detailed Lesson Plan bridge). See
+   docs/CLASSMATE_WEEKLY_PLAN_AND_LESSON_PLAN_ARCHITECTURE.md.
+   --------------------------------------------------------------------- */
+
+.period-detail-panel__plan-objectives {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.period-detail-panel__plan-objective-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.period-detail-panel__plan-objective-row input {
+  flex: 1;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font-family: inherit;
+}
+
+.period-detail-panel__plan-big-question {
+  width: 100%;
+  min-height: 60px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: var(--space-2);
+  font-family: inherit;
+  box-sizing: border-box;
+  margin-bottom: var(--space-2);
+}
+
+.period-detail-panel__plan-status {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-warning, #BF5F1A);
+}
+
+.period-detail-panel__plan-status--ready {
+  color: var(--color-success, #4C9A2A);
+}
+
+.period-detail-panel__plan-detailed {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+}
+
 .period-detail-panel__concept-picker {
   display: flex;
   flex-direction: column;

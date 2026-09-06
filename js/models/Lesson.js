@@ -46,6 +46,29 @@
  * PlanningCycle at all, and null is the correct, real value for it —
  * never a fabricated placeholder id.
  *
+ * `objectives`/`bigQuestion` — the WEEKLY PLAN's own lightweight
+ * content (see docs/CLASSMATE_WEEKLY_PLAN_AND_LESSON_PLAN_ARCHITECTURE.md):
+ * "why are students learning this" reduced to what a routine,
+ * non-observed period actually needs — a concept, at least one real
+ * objective, and a Big Question. Same shape as
+ * models/LessonPlan.js's own `objectives[]`/`bigQuestion` (reuses
+ * `createLessonPlanObjective()` directly — one shared shape, not a
+ * parallel one) but this is NOT a live reference to any LessonPlan;
+ * it's this Lesson's own copy, editable independently, entered directly
+ * on the Timetable's Period Detail panel. Most periods stop here —
+ * see services/weeklyPlanValidationService.js's own getWeeklyPlanReadiness().
+ *
+ * `lessonPlanId` — nullable. Set exactly once, the moment a teacher
+ * chooses "Build Detailed Lesson Plan" for this period (see
+ * services/timetableLessonService.js's own buildDetailedLessonPlanFromLesson()) —
+ * that action creates a real models/LessonPlan.js document, SEEDED from
+ * this Lesson's own conceptIds/curriculumUnitId/objectives/bigQuestion,
+ * and records its id here so the Period Detail panel can tell "no
+ * detailed plan yet" from "one already exists" with a single field
+ * check, never a live query. `null` is the default, expected state for
+ * most periods — a Lesson is never required to grow a LessonPlan just
+ * because it exists.
+ *
  * `executedConceptIds` — subset of `conceptIds`: which of the PLANNED
  * concepts were actually taught in this specific occurrence (see
  * services/timetableLessonService.js's markConceptsExecuted(), which
@@ -63,6 +86,7 @@
  */
 
 import { generateId } from '../utils/idGenerator.js';
+import { createLessonPlanObjective } from './LessonPlan.js';
 
 export function createLesson({
   id,
@@ -75,6 +99,9 @@ export function createLesson({
   executedConceptIds = [],
   carriedForwardConceptIds = [],
   conceptProvenance = {},
+  objectives = [],
+  bigQuestion = '',
+  lessonPlanId = null,
   // Pre-existing latent bug, fixed here: with no default, this stayed
   // `undefined` for any Lesson created outside services/plannerStrategies/
   // balancedStrategy.js (the only caller that ever explicitly supplies
@@ -117,6 +144,9 @@ export function createLesson({
     // later without inspecting anything beyond these two Lessons — see
     // services/carryForwardService.js.
     conceptProvenance,
+    objectives,
+    bigQuestion,
+    lessonPlanId,
     sequenceIndex,
     estimatedMinutes,
     actualMinutes,

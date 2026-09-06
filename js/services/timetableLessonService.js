@@ -25,7 +25,9 @@
  */
 
 import { createLesson, findInvalidExecutedConceptIds, getFeedbackEligibleConceptIds } from '../models/Lesson.js';
+import { createLessonPlan, createLessonPlanObjective, getLessonPlanObjectiveIndex, findLessonPlanObjective } from '../models/LessonPlan.js';
 import * as plannerRepository from './plannerRepository.js';
+import * as lessonPlanRepository from './lessonPlanRepository.js';
 import * as learningRecordTeacherService from './learningRecordTeacherService.js';
 import * as studentEventService from './studentEventService.js';
 import { STUDENT_EVENT_CATEGORIES } from '../config/studentEventCategories.js';
@@ -79,6 +81,116 @@ export async function markConceptsExecuted(classroom, lesson, executedConceptIds
 
   await plannerRepository.saveLesson(classroom.id, lesson);
   return lesson;
+}
+
+// ---------------------------------------------------------------------
+// Weekly Plan content — a Lesson's own `objectives[]`/`bigQuestion`
+// (see models/Lesson.js's own doc comment on why these live here, not
+// as a live reference to any LessonPlan). Mutate-then-save, the same
+// convention every other function in this file already follows.
+// Objective mutations reuse models/LessonPlan.js's own
+// createLessonPlanObjective()/getLessonPlanObjectiveIndex()/
+// findLessonPlanObjective() directly — the `{id, text}` shape and "find
+// by id" logic are generic, not LessonPlan-specific, so this is the
+// same shape, not a duplicated one.
+// ---------------------------------------------------------------------
+
+export async function updateLessonBigQuestion(classroom, lesson, bigQuestion) {
+  lesson.bigQuestion = bigQuestion;
+  await plannerRepository.saveLesson(classroom.id, lesson);
+  return lesson;
+}
+
+export async function addLessonObjective(classroom, lesson, text = '') {
+  lesson.objectives = [...lesson.objectives, createLessonPlanObjective({ text })];
+  await plannerRepository.saveLesson(classroom.id, lesson);
+  return lesson;
+}
+
+export async function updateLessonObjective(classroom, lesson, objectiveId, text) {
+  const objective = findLessonPlanObjective(lesson, objectiveId);
+  if (!objective) return lesson;
+  objective.text = text;
+  await plannerRepository.saveLesson(classroom.id, lesson);
+  return lesson;
+}
+
+export async function removeLessonObjective(classroom, lesson, objectiveId) {
+  lesson.objectives = lesson.objectives.filter((objective) => objective.id !== objectiveId);
+  await plannerRepository.saveLesson(classroom.id, lesson);
+  return lesson;
+}
+
+/** Swaps an objective with the one before it. No-op at the top of the list — not a content edit, so callers don't need to await a save that never happens. */
+export async function moveLessonObjectiveUp(classroom, lesson, objectiveId) {
+  const index = getLessonPlanObjectiveIndex(lesson, objectiveId);
+  if (index <= 0) return lesson;
+  [lesson.objectives[index - 1], lesson.objectives[index]] = [lesson.objectives[index], lesson.objectives[index - 1]];
+  await plannerRepository.saveLesson(classroom.id, lesson);
+  return lesson;
+}
+
+/** Swaps an objective with the one after it. No-op at the bottom of the list, same reasoning as moveLessonObjectiveUp() above. */
+export async function moveLessonObjectiveDown(classroom, lesson, objectiveId) {
+  const index = getLessonPlanObjectiveIndex(lesson, objectiveId);
+  if (index === -1 || index >= lesson.objectives.length - 1) return lesson;
+  [lesson.objectives[index], lesson.objectives[index + 1]] = [lesson.objectives[index + 1], lesson.objectives[index]];
+  await plannerRepository.saveLesson(classroom.id, lesson);
+  return lesson;
+}
+
+/**
+ * "Build Detailed Lesson Plan" — the one bridge between the Weekly
+ * Plan (this Lesson) and the separate, optional Detailed Lesson Plan
+ * (models/LessonPlan.js), per
+ * docs/CLASSMATE_WEEKLY_PLAN_AND_LESSON_PLAN_ARCHITECTURE.md. Creates a
+ * REAL LessonPlan document, seeded from this Lesson's own context so
+ * the teacher never re-types what's already known, and links it back
+ * via `lesson.lessonPlanId` so the Period Detail panel can tell "no
+ * detailed plan yet" from "one already exists" with a single field
+ * check next time.
+ *
+ * Deliberately does NOT enforce services/weeklyPlanValidationService.js's
+ * own getWeeklyPlanReadiness() here — that's a UI-level gate (disable
+ * the button until ready), not a data invariant this function itself
+ * must re-check; seeding whatever the Lesson currently has (even if
+ * incomplete) is still correct and harmless.
+ *
+ * Throws if this Lesson already has one — callers should route to
+ * opening the existing LessonPlan instead of calling this again; a
+ * second call would silently orphan the first document.
+ *
+ * `learningSubjectId` is the Learning Management Subject RECORD id
+ * (never the canonical subjectId — see models/LessonPlan.js's own
+ * `subjectId` doc comment for why those are two different things) —
+ * callers resolve it the same way ui/views/TimetableView.js's own
+ * openEditLessonUnitFlow()/openAddConceptFlow() already do, via
+ * timetableDisplayService.findLearningSubjectByCanonicalId().
+ */
+export async function buildDetailedLessonPlanFromLesson(classroom, lesson, { learningSubjectId, periodNumber, createdByUid, gradeLabel, topic }) {
+  if (lesson.lessonPlanId) {
+    throw new Error('This period already has a Detailed Lesson Plan — open it instead of building a new one.');
+  }
+
+  const plan = createLessonPlan({
+    classroomId: classroom.id,
+    createdByUid,
+    gradeLabel,
+    topic: topic || '',
+    subjectId: learningSubjectId,
+    curriculumUnitId: lesson.curriculumUnitId,
+    conceptIds: [...lesson.conceptIds],
+    objectives: lesson.objectives.map((objective) => ({ id: objective.id, text: objective.text })),
+    bigQuestion: lesson.bigQuestion,
+    scheduledDate: lesson.date,
+    scheduledPeriodNumber: periodNumber,
+  });
+  await lessonPlanRepository.saveLessonPlan(classroom.id, plan);
+
+  lesson.lessonPlanId = plan.id;
+  await plannerRepository.saveLesson(classroom.id, lesson);
+
+  return plan;
 }
 
 /**

@@ -1,13 +1,23 @@
 /**
  * services/lessonPlanValidationService.js
  *
- * Whether a LessonPlan is ready to submit for review — understanding
- * the required CONTENT STRUCTURE (per the "5 Questions" framework
- * this whole feature is built around), never a bare field count. Pure
- * and dependency-free (no Firestore import), matching this app's own
- * established "stays directly unit-testable" convention (see
+ * Whether a LessonPlan (the separate, optional DETAILED tier — see
+ * docs/CLASSMATE_WEEKLY_PLAN_AND_LESSON_PLAN_ARCHITECTURE.md) is ready
+ * to submit for review — understanding the required CONTENT STRUCTURE
+ * (per the "5 Questions" framework this whole feature is built
+ * around), never a bare field count. Pure and dependency-free (no
+ * Firestore import), matching this app's own established "stays
+ * directly unit-testable" convention (see
  * services/timetableDisplayService.js's own header comment for the
  * same reasoning applied elsewhere).
+ *
+ * Deliberately does NOT check Concept/Objectives/Big Question anymore
+ * — those moved to the separate, lighter Weekly Plan tier (see
+ * services/weeklyPlanValidationService.js's own getWeeklyPlanReadiness(),
+ * which gates a Lesson, not a LessonPlan). This function only ever
+ * gates what's genuinely specific to the DETAILED plan: Activities and
+ * Helping (Pair Explanation/Final Question/Teacher Look-Fors) are
+ * required; Connection, Showcase, and Spark are optional enrichment.
  *
  * Messaging is deliberately specific and encouraging, per explicit
  * product direction — "Your lesson is almost ready. Add a Student
@@ -34,28 +44,21 @@ function isBlank(value) {
 export function getLessonPlanReadiness(lessonPlan) {
   const missing = [];
 
-  // CONCEPT (Phase 4) — required before submission, per explicit product
-  // direction, even though concept selection itself stays optional/
-  // flexible while the teacher is still building the lesson (this is a
-  // submit-time gate, not a field the Builder blocks editing without —
-  // see ui/views/LessonPlanBuilderView.js's own Concepts field, which
-  // never disables itself based on readiness). Without at least one
-  // concept, an approved lesson would have nothing for Teaching Ideas
-  // discovery (services/teachingIdeasService.js) to key off.
-  if (lessonPlan.conceptIds.length === 0) {
-    missing.push({ sectionKey: LESSON_PLAN_SECTION_KEYS.CONTEXT, message: 'Add at least one Concept before submitting this lesson for review.' });
-  }
-
-  // 1. WHY — Objectives are a dynamic list of first-class objects now
-  // (see models/LessonPlan.js's own createLessonPlanObjective() doc
-  // comment), same "at least one non-blank entry" shape as Assessment
-  // below, never a bare single-field blank check.
-  if (!lessonPlan.objectives.some((objective) => !isBlank(objective.text))) {
-    missing.push({ sectionKey: LESSON_PLAN_SECTION_KEYS.WHY, message: 'Add at least one lesson objective.' });
-  }
-  if (isBlank(lessonPlan.bigQuestion)) {
-    missing.push({ sectionKey: LESSON_PLAN_SECTION_KEYS.WHY, message: 'Add a Big Question.' });
-  }
+  // CONCEPT and 1. WHY — MOVED to the separate Weekly Plan tier, per
+  // docs/CLASSMATE_WEEKLY_PLAN_AND_LESSON_PLAN_ARCHITECTURE.md. A
+  // Detailed Lesson Plan is only ever created (via
+  // services/timetableLessonService.js's own
+  // buildDetailedLessonPlanFromLesson()) from a Lesson whose own
+  // services/weeklyPlanValidationService.js's getWeeklyPlanReadiness()
+  // already required a Concept, at least one real Objective, and a Big
+  // Question — so re-checking them here would just be re-validating an
+  // invariant the Weekly Plan tier already owns. This is a deliberate
+  // narrowing of what THIS function gates, not a removed requirement:
+  // Concept/Objectives/Big Question still exist as real, editable
+  // content on this document (see ui/views/LessonPlanBuilderView.js's
+  // own Concepts/Purpose stages) — they simply no longer block THIS
+  // submission gate, the same treatment Self/Others/India and
+  // Assessment already have below.
 
   // 2. SELF / OTHERS / INDIA — deliberately NOT required, per explicit
   // product direction: this is an optional reflection/planning
@@ -79,18 +82,16 @@ export function getLessonPlanReadiness(lessonPlan) {
   // Teaching Ideas" are all still exactly as they were — only this
   // submission-readiness gate is gone.
 
-  // 4. FUN, FAST, EFFECTIVE — Spark
-  if (isBlank(lessonPlan.spark.title)) {
-    missing.push({ sectionKey: LESSON_PLAN_SECTION_KEYS.SPARK, message: 'Add a title for the Spark.' });
-  }
-  if (isBlank(lessonPlan.spark.teacherAction)) {
-    missing.push({ sectionKey: LESSON_PLAN_SECTION_KEYS.SPARK, message: 'Add a Teacher Action to the Spark.' });
-  }
-  if (isBlank(lessonPlan.spark.studentAction)) {
-    missing.push({ sectionKey: LESSON_PLAN_SECTION_KEYS.SPARK, message: 'Add a Student Action to the Spark.' });
-  }
+  // 4. FUN, FAST, EFFECTIVE — Spark is deliberately NOT required, per
+  // explicit product direction: it's an enrichment layer on top of
+  // Activities ("make it memorable"), not a structural requirement,
+  // same treatment as Self/Others/India and Assessment above. Never
+  // pushes a missing-item here regardless of whether Spark is blank or
+  // fully filled in.
 
-  // 4. FUN, FAST, EFFECTIVE — Activities (dynamic count, never assumed)
+  // 4. FUN, FAST, EFFECTIVE — Activities (dynamic count, never assumed) —
+  // still required: real, observation-grade instructional detail a
+  // Detailed Lesson Plan exists to capture.
   if (lessonPlan.activities.length === 0) {
     missing.push({ sectionKey: LESSON_PLAN_SECTION_KEYS.SPARK, message: 'Add at least one Learning Activity.' });
   }
@@ -120,19 +121,21 @@ export function getLessonPlanReadiness(lessonPlan) {
  * The guided-building STAGES ui/views/LessonPlanBuilderView.js's own
  * progressive-disclosure UI walks through, in order — Subject and
  * Schedule aren't listed here at all, since neither is gated by
- * submission readiness (Concept is the earliest real requirement
- * above), so neither has a "completion" this function needs to
- * define. Grouped exactly along the same sectionKeys
+ * submission readiness, so neither has a "completion" this function
+ * needs to define. Grouped exactly along the same sectionKeys
  * getLessonPlanReadiness() already checks — see stageForMissingItem()
  * below — so the Builder's progress indicator and "what's the next
  * incomplete stage" logic never invent a second definition of "done."
  *
- * PURPOSE/CONNECTION/SHOWCASE/EXPERIENCE/HELPING are exactly the real
- * "5 Questions" lesson-planning framework this whole feature is named
- * after (see models/LessonPlan.js's own header comment) — CONCEPT is
- * the one stage that isn't literally one of the 5 Questions, but a
- * required prerequisite before Question 1 can mean anything (a lesson
- * has to be ABOUT some concept first).
+ * CONCEPT and PURPOSE are now ALWAYS complete (getLessonPlanReadiness()
+ * no longer checks either — see that function's own doc comment on why
+ * this moved to the separate Weekly Plan tier) — kept as real, visible
+ * stages here (not deleted) because a Detailed Lesson Plan still shows
+ * and lets a teacher edit its own Concepts/Objectives/Big Question,
+ * just never blocked on them. In practice they arrive already filled
+ * in (seeded from the originating Lesson), so they read as
+ * already-done from the very first render — the same "complete from
+ * the start" treatment CONNECTION/SHOWCASE already have below.
  */
 export const LESSON_PLAN_STAGES = Object.freeze({
   CONCEPT: 'concept',
@@ -147,15 +150,18 @@ export const LESSON_PLAN_STAGES = Object.freeze({
  * Which guided stage one getLessonPlanReadiness() `missing` entry
  * belongs to — a direct, 1:1 mapping onto the real 5 Questions
  * framework (see LESSON_PLAN_STAGES's own doc comment just above):
- * Showcase is Assessment alone (Q3); Experience is Spark + every
- * Activity alone (Q4, "is it fun/fast/effective" — never anything
- * about helping others learn); Helping bundles Pair Explanation +
- * Final Question + Teacher Look-Fors (Q5's own three fields,
- * unchanged, just co-located under their real question rather than
- * split across two other stages). The underlying fields, labels, and
- * `LESSON_PLAN_SECTION_KEYS` themselves are completely unchanged —
- * this only changes which UI stage each one's completion counts
- * toward.
+ * Showcase is Assessment alone (Q3); Experience is every Activity
+ * alone now (Q4, "is it fun/fast/effective" — Spark no longer gates
+ * anything, same treatment as Self/Others/India/Assessment); Helping
+ * bundles Pair Explanation + Final Question + Teacher Look-Fors (Q5's
+ * own three fields, unchanged, just co-located under their real
+ * question rather than split across two other stages). The CONTEXT/WHY
+ * branches below are unreachable in practice (getLessonPlanReadiness()
+ * never produces those sectionKeys anymore) but kept, harmlessly, as a
+ * defensive mapping rather than deleted outright. The underlying
+ * fields, labels, and `LESSON_PLAN_SECTION_KEYS` themselves are
+ * completely unchanged — this only changes which UI stage each one's
+ * completion counts toward.
  */
 function stageForMissingItem({ sectionKey }) {
   if (sectionKey === LESSON_PLAN_SECTION_KEYS.CONTEXT) return LESSON_PLAN_STAGES.CONCEPT;

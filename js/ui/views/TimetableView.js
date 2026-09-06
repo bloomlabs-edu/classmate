@@ -53,6 +53,8 @@ import { MEMBER_ROLES } from '../../config/memberRoles.js';
 import { createTimetablePeriod, createTimetableSlot } from '../../models/Timetable.js';
 import { hydrateConceptRecordsForConcepts } from '../../services/conceptRecordHydrationService.js';
 import { getFeedbackEligibleConceptIds, resetLessonForUnitChange } from '../../models/Lesson.js';
+import { getWeeklyPlanReadiness } from '../../services/weeklyPlanValidationService.js';
+import { getGradeLabelForClassroom } from '../../services/classroomService.js';
 import { getTimetableSubjectColor, getTimetableSubjectWash } from '../../config/timetableSubjectColors.js';
 import {
   getWeekRange,
@@ -95,7 +97,7 @@ function isNarrowViewport() {
  */
 let preservedState = null; // { classroomId, state } | null
 
-export async function renderTimetableView(container, { classroom, preserveState = false }) {
+export async function renderTimetableView(container, { classroom, currentUser, preserveState = false, onOpenLessonPlan = () => {} }) {
   const state =
     preserveState && preservedState && preservedState.classroomId === classroom.id
       ? preservedState.state
@@ -107,7 +109,7 @@ export async function renderTimetableView(container, { classroom, preserveState 
           calendarProgress: null, // populated by loadCalendarUnitProgress() below, only when calendarSubjectFilter is set and viewMode === 'calendar'
           lessonsByTeachingSlotId: {},
           selectedTeachingSlotId: null,
-          activeDetailTab: 'overview', // 'overview' | 'concepts' | 'studentResources' | 'lessonPlan' | 'reflection' — Phase P; studentResources/lessonPlan were one combined 'resources' tab until the explicit IA split below (student-facing vs teacher-facing are two different tabs, never one "Resources" tab containing both)
+          activeDetailTab: 'overview', // 'overview' | 'concepts' | 'plan' | 'studentResources' | 'lessonPlan' | 'reflection' — Phase P; studentResources/lessonPlan were one combined 'resources' tab until the explicit IA split below (student-facing vs teacher-facing are two different tabs, never one "Resources" tab containing both). 'plan' (Weekly Plan objectives/Big Question + the Detailed Lesson Plan bridge) is additive, separate from the pre-existing 'lessonPlan' tab (which is actually a teacher-facing resource-link list, unrelated despite the name — see docs/CLASSMATE_WEEKLY_PLAN_AND_LESSON_PLAN_ARCHITECTURE.md).
         };
   preservedState = { classroomId: classroom.id, state };
 
@@ -1058,6 +1060,7 @@ export async function renderTimetableView(container, { classroom, preserveState 
     const tabs = [
       { id: 'overview', label: 'Overview' },
       { id: 'concepts', label: `Concepts (${concepts.length})` },
+      { id: 'plan', label: 'Plan' },
       { id: 'studentResources', label: 'Student Resources' },
       { id: 'lessonPlan', label: 'Lesson Plan' },
       { id: 'reflection', label: 'Reflection' },
@@ -1082,6 +1085,8 @@ export async function renderTimetableView(container, { classroom, preserveState 
     tabContent.className = 'period-detail-panel__tab-content';
     if (state.activeDetailTab === 'concepts') {
       tabContent.appendChild(renderConceptsTab(slot, lesson));
+    } else if (state.activeDetailTab === 'plan') {
+      tabContent.appendChild(renderPlanTab(slot, lesson));
     } else if (state.activeDetailTab === 'studentResources') {
       tabContent.appendChild(renderResourcesTabPlaceholder());
       loadStudentResourcesTab(tabContent, slot, lesson);
@@ -1138,6 +1143,159 @@ export async function renderTimetableView(container, { classroom, preserveState 
 
     const carryCallout = renderCarryForwardCallout(slot, lesson);
     if (carryCallout) wrapper.appendChild(carryCallout);
+
+    return wrapper;
+  }
+
+  /**
+   * "Plan" — the Weekly Plan's own lightweight content (Objectives +
+   * Big Question, see models/Lesson.js's own doc comment) plus the
+   * bridge into the separate, OPTIONAL Detailed Lesson Plan (see
+   * docs/CLASSMATE_WEEKLY_PLAN_AND_LESSON_PLAN_ARCHITECTURE.md for the
+   * full relationship). Most periods stop here — nothing on this tab
+   * ever creates a models/LessonPlan.js document until "Build Detailed
+   * Lesson Plan" is tapped, and that button stays disabled until the
+   * Weekly Plan itself (Concepts + at least one Objective + a Big
+   * Question) is actually complete — services/weeklyPlanValidationService.js's
+   * own getWeeklyPlanReadiness() is the single source of truth for
+   * that, never a second readiness check invented here.
+   *
+   * Objective rows save immediately on blur/change (no separate Save
+   * step — matches every other short-field edit already in this file,
+   * e.g. openEditLessonUnitFlow()'s own unit picker); Big Question uses
+   * the same explicit-Save-button pattern renderReflectionSection()
+   * already established for its own multi-line free text. Deliberately
+   * no reorder affordance for objectives here (unlike the Detailed
+   * Builder's own Objectives list) — a routine weekly plan rarely has
+   * more than one or two, and reordering becomes available the moment
+   * a Detailed Lesson Plan exists.
+   */
+  function renderPlanTab(slot, lesson) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'period-detail-panel__plan';
+
+    const objectivesLabel = document.createElement('p');
+    objectivesLabel.className = 'period-detail-panel__attach-label';
+    objectivesLabel.textContent = 'Objectives';
+    wrapper.appendChild(objectivesLabel);
+
+    const objectivesList = document.createElement('div');
+    objectivesList.className = 'period-detail-panel__plan-objectives';
+    lesson.objectives.forEach((objective) => {
+      const row = document.createElement('div');
+      row.className = 'period-detail-panel__plan-objective-row';
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = objective.text;
+      input.placeholder = 'e.g. Explain the causes of the revolt';
+      input.addEventListener('change', () =>
+        runAction(async () => {
+          await timetableLessonService.updateLessonObjective(classroom, lesson, objective.id, input.value);
+          await loadAndRender();
+        })
+      );
+      row.appendChild(input);
+
+      const removeButton = document.createElement('button');
+      removeButton.type = 'button';
+      removeButton.className = 'btn btn--icon-only';
+      removeButton.setAttribute('aria-label', 'Remove objective');
+      removeButton.appendChild(createIcon('x', { size: 14 }));
+      removeButton.addEventListener('click', () =>
+        runAction(async () => {
+          await timetableLessonService.removeLessonObjective(classroom, lesson, objective.id);
+          await loadAndRender();
+        })
+      );
+      row.appendChild(removeButton);
+
+      objectivesList.appendChild(row);
+    });
+    wrapper.appendChild(objectivesList);
+
+    const addObjectiveButton = document.createElement('button');
+    addObjectiveButton.type = 'button';
+    addObjectiveButton.className = 'btn btn--ghost';
+    addObjectiveButton.textContent = '+ Add objective';
+    addObjectiveButton.addEventListener('click', () =>
+      runAction(async () => {
+        await timetableLessonService.addLessonObjective(classroom, lesson, '');
+        await loadAndRender();
+      })
+    );
+    wrapper.appendChild(addObjectiveButton);
+
+    const bigQuestionLabel = document.createElement('p');
+    bigQuestionLabel.className = 'period-detail-panel__attach-label';
+    bigQuestionLabel.textContent = 'Big Question';
+    wrapper.appendChild(bigQuestionLabel);
+
+    const bigQuestionTextarea = document.createElement('textarea');
+    bigQuestionTextarea.className = 'period-detail-panel__plan-big-question';
+    bigQuestionTextarea.value = lesson.bigQuestion || '';
+    bigQuestionTextarea.placeholder = 'The one question this lesson is trying to answer';
+    wrapper.appendChild(bigQuestionTextarea);
+
+    const saveBigQuestionButton = document.createElement('button');
+    saveBigQuestionButton.type = 'button';
+    saveBigQuestionButton.className = 'btn btn--ghost';
+    saveBigQuestionButton.textContent = 'Save Big Question';
+    saveBigQuestionButton.addEventListener('click', () =>
+      runAction(async () => {
+        await timetableLessonService.updateLessonBigQuestion(classroom, lesson, bigQuestionTextarea.value);
+        await loadAndRender();
+      })
+    );
+    wrapper.appendChild(saveBigQuestionButton);
+
+    const readiness = getWeeklyPlanReadiness(lesson);
+    const statusBanner = document.createElement('p');
+    statusBanner.className = 'period-detail-panel__plan-status' + (readiness.ready ? ' period-detail-panel__plan-status--ready' : '');
+    statusBanner.textContent = readiness.ready ? 'Weekly Plan complete.' : `Weekly Plan incomplete — ${readiness.missing.map((item) => item.message).join(' ')}`;
+    wrapper.appendChild(statusBanner);
+
+    const detailedSection = document.createElement('div');
+    detailedSection.className = 'period-detail-panel__plan-detailed';
+
+    if (lesson.lessonPlanId) {
+      const openButton = document.createElement('button');
+      openButton.type = 'button';
+      openButton.className = 'btn btn--primary';
+      openButton.textContent = 'Open Detailed Lesson Plan';
+      openButton.addEventListener('click', () => onOpenLessonPlan(lesson.lessonPlanId));
+      detailedSection.appendChild(openButton);
+    } else {
+      const buildButton = document.createElement('button');
+      buildButton.type = 'button';
+      buildButton.className = 'btn btn--secondary';
+      buildButton.textContent = 'Build Detailed Lesson Plan';
+      buildButton.disabled = !readiness.ready;
+      detailedSection.appendChild(buildButton);
+
+      const hint = document.createElement('p');
+      hint.className = 'period-detail-panel__attach-hint';
+      hint.textContent = readiness.ready
+        ? 'Optional — only needed if this period will be observed.'
+        : 'Complete the Weekly Plan above first.';
+      detailedSection.appendChild(hint);
+
+      buildButton.addEventListener('click', () =>
+        runAction(async () => {
+          const learningSubject = timetableDisplayService.findLearningSubjectByCanonicalId(classroom, slot.subjectId);
+          const topic = timetableDisplayService.resolveLessonTopic(classroom, lesson);
+          const plan = await timetableLessonService.buildDetailedLessonPlanFromLesson(classroom, lesson, {
+            learningSubjectId: learningSubject?.id || null,
+            periodNumber: slot.periodNumber,
+            createdByUid: currentUser?.uid || null,
+            gradeLabel: getGradeLabelForClassroom(classroom),
+            topic,
+          });
+          onOpenLessonPlan(plan.id);
+        })
+      );
+    }
+    wrapper.appendChild(detailedSection);
 
     return wrapper;
   }

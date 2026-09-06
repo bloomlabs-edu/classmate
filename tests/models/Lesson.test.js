@@ -18,6 +18,35 @@ test('createLesson: executedConceptIds/carriedForwardConceptIds/conceptProvenanc
   assert.deepEqual(lesson.conceptIds, ['A', 'B']);
 });
 
+// ---------------------------------------------------------------------
+// Weekly Plan content — objectives[]/bigQuestion/lessonPlanId (see
+// docs/CLASSMATE_WEEKLY_PLAN_AND_LESSON_PLAN_ARCHITECTURE.md). This
+// Lesson is the Weekly Plan; the Detailed Lesson Plan is a separate,
+// optional document created lazily and cross-referenced via
+// lessonPlanId.
+// ---------------------------------------------------------------------
+
+test('createLesson: objectives/bigQuestion default to empty, lessonPlanId defaults to null (never undefined)', () => {
+  const lesson = createLesson({ classroomId: 'c1', conceptIds: [] });
+  assert.deepEqual(lesson.objectives, []);
+  assert.equal(lesson.bigQuestion, '');
+  assert.equal(lesson.lessonPlanId, null);
+  assert.notEqual(lesson.lessonPlanId, undefined);
+});
+
+test('createLesson: objectives/bigQuestion/lessonPlanId are stored as supplied', () => {
+  const lesson = createLesson({
+    classroomId: 'c1',
+    conceptIds: ['A'],
+    objectives: [{ id: 'obj-1', text: 'Explain the causes of the revolt.' }],
+    bigQuestion: 'Why did Kattabomman resist British rule?',
+    lessonPlanId: 'plan-1',
+  });
+  assert.deepEqual(lesson.objectives, [{ id: 'obj-1', text: 'Explain the causes of the revolt.' }]);
+  assert.equal(lesson.bigQuestion, 'Why did Kattabomman resist British rule?');
+  assert.equal(lesson.lessonPlanId, 'plan-1');
+});
+
 test('findInvalidExecutedConceptIds: empty result when every executed id is actually planned', () => {
   const lesson = createLesson({ classroomId: 'c1', conceptIds: ['A', 'B', 'C'] });
   assert.deepEqual(findInvalidExecutedConceptIds(lesson, ['A', 'B']), []);
