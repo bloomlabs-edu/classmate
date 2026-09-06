@@ -254,6 +254,137 @@ export function getTodaySchedule(classrooms, uid, dateKey = getTodayDateKey()) {
 }
 
 /**
+ * Whether `dateKey`'s own weekday is a real "working day" at all —
+ * i.e. at least one of these classrooms' own recurring Timetable
+ * pattern (services/timetableService.js) has ANY slot configured for
+ * that weekday, for anyone (never filtered to this one uid, unlike
+ * getTodaySchedule() above). This is the one distinction between "a
+ * genuinely non-scheduled day" (a classroom's own configured week
+ * simply never has periods on this weekday — e.g. Saturday, or
+ * whatever this school's own real pattern happens to be) and "a
+ * working weekday where this particular uid just has nothing
+ * personally assigned today" — deliberately NOT the same signal as
+ * `getTodaySchedule(...).length === 0`, which conflates both.
+ *
+ * Sourced entirely from the classrooms' own already-configured
+ * Timetable data — never a hardcoded Saturday/Sunday assumption, and
+ * never a second/invented "working day" concept: this app has no
+ * classroom-level holiday/school-calendar entity to reuse (see this
+ * file's own header comment on what already exists), so "did this
+ * school ever put periods on this weekday" is the most faithful
+ * definition available without inventing new data.
+ */
+export function isWorkingDay(classrooms, dateKey) {
+  const weekday = timetableService.weekdayOfDateKey(dateKey);
+  return classrooms.some((classroom) => timetableService.getSlotsForWeekday(classroom, weekday).length > 0);
+}
+
+/**
+ * Scans forward day by day from `afterDateKey` (exclusive) for the
+ * next date with at least one of this uid's own scheduled periods —
+ * same "bounded day-by-day scan" shape
+ * services/timetableService.js's own getNextFutureSlotForSubject()
+ * already uses, just across every classroom instead of one subject in
+ * one classroom. Returns `null` if nothing turns up within
+ * `horizonDays` (default 14 — two full weeks, comfortably beyond any
+ * weekly-recurring pattern with at least one scheduled day) — a
+ * classroom set with genuinely no upcoming periods at all is a real
+ * state this must represent, not scan forever for.
+ */
+export function getNextScheduledDay(classrooms, uid, { afterDateKey = getTodayDateKey(), horizonDays = 14 } = {}) {
+  for (let offset = 1; offset <= horizonDays; offset += 1) {
+    const dateKey = shiftDateKey(afterDateKey, offset);
+    const entries = buildScheduleEntries(classrooms, dateKey, dateKey, uid);
+    if (entries.length > 0) return { dateKey, entries };
+  }
+  return null;
+}
+
+/**
+ * What the Today strip should actually display — resolves the exact
+ * three-way behavior the Dashboard timetable preview needs:
+ *   1. Today has this uid's own periods -> show Today, as always.
+ *   2. Today is a real working day (see isWorkingDay() above) but
+ *      genuinely has none -> still show Today, with its own real
+ *      empty result; NEVER auto-advance past a day that's genuinely
+ *      just quiet (a snow day, an exam day with periods removed,
+ *      etc. all look the same as "not a working day" from raw period
+ *      counts alone, but isWorkingDay() is what tells these apart).
+ *   3. Today is not a working day at all (Saturday, Sunday, or
+ *      whatever this school's own configured week excludes) -> show
+ *      the next real scheduled day instead, never a blank "Today".
+ * If no future scheduled day exists within the horizon either (a
+ * classroom set with no configured recurring periods at all, say),
+ * falls back to Today's own (empty) result rather than showing
+ * nothing — the caller's existing "No periods scheduled today" empty
+ * state already handles that gracefully.
+ *
+ * `isToday` on the result is what callers must gate any "current
+ * period"/"Now" highlighting on — a future day's periods are never
+ * "in progress" no matter the current time.
+ */
+export function resolveTodayStripSchedule(classrooms, uid, todayDateKey = getTodayDateKey()) {
+  const todayEntries = getTodaySchedule(classrooms, uid, todayDateKey);
+  if (todayEntries.length > 0 || isWorkingDay(classrooms, todayDateKey)) {
+    return { dateKey: todayDateKey, entries: todayEntries, isToday: true };
+  }
+  const next = getNextScheduledDay(classrooms, uid, { afterDateKey: todayDateKey });
+  if (next) {
+    return { dateKey: next.dateKey, entries: next.entries, isToday: false };
+  }
+  return { dateKey: todayDateKey, entries: todayEntries, isToday: true };
+}
+
+/**
+ * One period's own [start, end) as real Date objects on `dateKey` —
+ * `entry.duration` (minutes, see models/TeachingSlot.js) is the only
+ * place a period's real length lives once resolved to a concrete slot,
+ * so end time is always derived from start + duration, never a second
+ * stored value that could drift from it. Entries with no resolvable
+ * start time (a period whose own TimetablePeriod definition went
+ * missing) return null — callers skip those rather than guessing.
+ */
+function resolvePeriodTimeRange(entry, dateKey) {
+  if (!entry.startTime || typeof entry.duration !== 'number') return null;
+  const [hour, minute] = entry.startTime.split(':').map(Number);
+  const start = new Date(`${dateKey}T00:00:00`);
+  start.setHours(hour, minute, 0, 0);
+  const end = new Date(start.getTime() + entry.duration * 60000);
+  return { start, end };
+}
+
+/**
+ * The index of the one entry currently in progress at `now`, or -1 if
+ * none is (before the first period, between periods, or after the
+ * last one has finished — all correctly "nothing is current" rather
+ * than guessing). End time is treated as exclusive (`now < end`) so
+ * two back-to-back periods never both appear "in progress" at their
+ * shared boundary instant.
+ */
+export function resolveCurrentPeriodIndex(entries, dateKey, now = new Date()) {
+  for (let i = 0; i < entries.length; i += 1) {
+    const range = resolvePeriodTimeRange(entries[i], dateKey);
+    if (range && now >= range.start && now < range.end) return i;
+  }
+  return -1;
+}
+
+/**
+ * The index of the next period that hasn't started yet, or -1 if
+ * every period today has already started (including "none are left
+ * today" once the last one is also underway or finished) — the
+ * subtle "upcoming" indicator for whenever nothing is currently in
+ * progress (before the first period, or in the gap between two).
+ */
+export function resolveNextUpcomingPeriodIndex(entries, dateKey, now = new Date()) {
+  for (let i = 0; i < entries.length; i += 1) {
+    const range = resolvePeriodTimeRange(entries[i], dateKey);
+    if (range && now < range.start) return i;
+  }
+  return -1;
+}
+
+/**
  * This uid's own aggregated timetable for the Monday-start week
  * containing `dateKey` (defaults to the current week): every concrete
  * TeachingSlot (see services/timetableService.js) across every

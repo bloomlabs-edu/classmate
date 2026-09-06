@@ -789,6 +789,38 @@ select:focus-visible,
 .hub-today-card:hover {
   border-color: var(--color-primary);
 }
+/* Current/upcoming period — same subtle tinted-pill language
+   ui/components/TodaysScheduleWidget.js's own "In progress" status
+   pill already uses (see .todays-schedule-widget__status--in-progress
+   below), reused here rather than inventing a second visual
+   vocabulary for the same idea. "Now" is the stronger of the two;
+   "Next" (only shown when nothing is currently in progress) stays
+   noticeably quieter — a hint, not a second "Now". */
+.hub-today-card--now {
+  border-color: var(--color-primary);
+  background-color: color-mix(in srgb, var(--color-primary-deep) 6%, var(--color-surface));
+}
+.hub-today-card--next {
+  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-border));
+}
+.hub-today-card__badge {
+  margin-left: auto;
+  font-size: 0.65rem;
+  font-weight: var(--font-weight-bold);
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.hub-today-card__badge--now {
+  background: color-mix(in srgb, var(--color-primary-deep) 15%, var(--color-surface));
+  color: var(--color-primary-deep);
+}
+.hub-today-card__badge--next {
+  background: var(--color-bg);
+  color: var(--color-muted);
+}
 .hub-today-card__chevron {
   position: absolute;
   right: var(--space-3);
@@ -827,6 +859,16 @@ select:focus-visible,
   color: var(--color-muted);
   font-size: 0.82rem;
   margin: 0;
+}
+/* Shown only when the strip is displaying the next scheduled day
+   instead of an empty Today (see PersonalHubView.js's own
+   renderTodaySection()) — small and muted, same weight as
+   .hub-today-helper below, so it reads as a supporting caption rather
+   than competing with the section title above it. */
+.hub-today-sublabel {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+  margin: -0.25rem 0 0.75rem;
 }
 
 /* My Week (full grid) */

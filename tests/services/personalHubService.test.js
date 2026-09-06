@@ -312,3 +312,125 @@ test('countPeriodsThisWeek: reflects this uid\'s own filtered count once the cla
   assert.equal(personalHubService.countPeriodsThisWeek([classroom], OWNER_UID, MONDAY), 3); // Science x2 + Social Science x1
   assert.equal(personalHubService.countPeriodsThisWeek([classroom], CO_FELLOW_UID, MONDAY), 2); // English + Mathematics
 });
+
+// ---------------------------------------------------------------------
+// Dashboard "Today" strip — non-working-day fallback and current/next
+// period highlighting (resolveTodayStripSchedule, isWorkingDay,
+// getNextScheduledDay, resolveCurrentPeriodIndex,
+// resolveNextUpcomingPeriodIndex). Real weekdays, not invented ones:
+// 2026-08-22 = Saturday, 2026-08-23 = Sunday, 2026-08-24 = Monday
+// (MONDAY above), 2026-08-25 = Tuesday.
+// ---------------------------------------------------------------------
+const SATURDAY = '2026-08-22';
+const SUNDAY = '2026-08-23';
+const TUESDAY = '2026-08-25';
+
+test('isWorkingDay: true for a weekday any classroom has real slots on, false for one none do — never a hardcoded Saturday/Sunday assumption', () => {
+  const classroom = ownedClassroom({ id: 'c1' });
+  timetableService.setPeriods(classroom, [{ periodNumber: 1, startTime: '09:00', endTime: '09:40' }]);
+  timetableService.upsertSlot(classroom, { weekday: 1, periodNumber: 1, subjectId: 'science' }); // Monday only
+
+  assert.equal(personalHubService.isWorkingDay([classroom], MONDAY), true);
+  assert.equal(personalHubService.isWorkingDay([classroom], SATURDAY), false);
+  assert.equal(personalHubService.isWorkingDay([classroom], SUNDAY), false);
+});
+
+test('isWorkingDay: a classroom that DOES schedule Saturdays makes Saturday a real working day — the definition is data-driven, not calendar-day-of-week', () => {
+  const classroom = ownedClassroom({ id: 'c1' });
+  timetableService.setPeriods(classroom, [{ periodNumber: 1, startTime: '09:00', endTime: '09:40' }]);
+  timetableService.upsertSlot(classroom, { weekday: 6, periodNumber: 1, subjectId: 'science' }); // Saturday
+
+  assert.equal(personalHubService.isWorkingDay([classroom], SATURDAY), true);
+});
+
+test('getNextScheduledDay: scans forward and finds the next real occurrence, skipping non-scheduled days in between', () => {
+  const classroom = ownedClassroom({ id: 'c1' });
+  timetableService.setPeriods(classroom, [{ periodNumber: 1, startTime: '09:00', endTime: '09:40' }]);
+  timetableService.upsertSlot(classroom, { weekday: 1, periodNumber: 1, subjectId: 'science' }); // Monday only
+
+  const next = personalHubService.getNextScheduledDay([classroom], OWNER_UID, { afterDateKey: SATURDAY });
+  assert.equal(next.dateKey, MONDAY);
+  assert.equal(next.entries.length, 1);
+});
+
+test('getNextScheduledDay: no future scheduled period at all within the horizon -> null, handled gracefully rather than scanning forever', () => {
+  const classroom = ownedClassroom({ id: 'c1' }); // no periods, no slots configured at all
+  const next = personalHubService.getNextScheduledDay([classroom], OWNER_UID, { afterDateKey: SATURDAY, horizonDays: 5 });
+  assert.equal(next, null);
+});
+
+test('resolveTodayStripSchedule: a working day with real periods -> shows Today, isToday true', () => {
+  const classroom = ownedClassroom({ id: 'c1' });
+  timetableService.setPeriods(classroom, [{ periodNumber: 1, startTime: '09:00', endTime: '09:40' }]);
+  timetableService.upsertSlot(classroom, { weekday: 1, periodNumber: 1, subjectId: 'science' });
+
+  const result = personalHubService.resolveTodayStripSchedule([classroom], OWNER_UID, MONDAY);
+  assert.equal(result.isToday, true);
+  assert.equal(result.dateKey, MONDAY);
+  assert.equal(result.entries.length, 1);
+});
+
+test('resolveTodayStripSchedule: a working day with genuinely nothing for this uid stays "Today" (never auto-advances) — distinct from a non-working day', () => {
+  const classroom = ownedClassroom({ id: 'c1' });
+  memberService.addMember(classroom, CO_FELLOW_UID, MEMBER_ROLES.TEACHER, 'Co Fellow');
+  timetableService.setPeriods(classroom, [{ periodNumber: 1, startTime: '09:00', endTime: '09:40' }]);
+  // Tuesday is a real, configured working day for this classroom — just not for OWNER_UID.
+  timetableService.upsertSlot(classroom, { weekday: 2, periodNumber: 1, subjectId: 'english', teacherUid: CO_FELLOW_UID });
+
+  const result = personalHubService.resolveTodayStripSchedule([classroom], OWNER_UID, TUESDAY);
+  assert.equal(result.isToday, true);
+  assert.equal(result.dateKey, TUESDAY);
+  assert.deepEqual(result.entries, []);
+});
+
+test('resolveTodayStripSchedule: a non-working day (no classroom schedules anything on it) advances to the next real scheduled day instead', () => {
+  const classroom = ownedClassroom({ id: 'c1' });
+  timetableService.setPeriods(classroom, [{ periodNumber: 1, startTime: '09:00', endTime: '09:40' }]);
+  timetableService.upsertSlot(classroom, { weekday: 1, periodNumber: 1, subjectId: 'science' }); // Monday only
+
+  const result = personalHubService.resolveTodayStripSchedule([classroom], OWNER_UID, SATURDAY);
+  assert.equal(result.isToday, false);
+  assert.equal(result.dateKey, MONDAY);
+  assert.equal(result.entries.length, 1);
+});
+
+test('resolveTodayStripSchedule: no future scheduled period exists at all -> gracefully falls back to Today\'s own empty result', () => {
+  const classroom = ownedClassroom({ id: 'c1' }); // nothing configured anywhere
+  const result = personalHubService.resolveTodayStripSchedule([classroom], OWNER_UID, SATURDAY);
+  assert.equal(result.isToday, true);
+  assert.equal(result.dateKey, SATURDAY);
+  assert.deepEqual(result.entries, []);
+});
+
+test('resolveCurrentPeriodIndex/resolveNextUpcomingPeriodIndex: correctly identify "in progress" vs "upcoming" vs "nothing" across a day\'s periods', () => {
+  const entries = [
+    { startTime: '09:00', duration: 40 }, // 09:00-09:40
+    { startTime: '10:00', duration: 40 }, // 10:00-10:40
+    { startTime: '11:00', duration: 40 }, // 11:00-11:40
+  ];
+  const dateKey = MONDAY;
+  function atTime(hour, minute = 0) {
+    const d = new Date(`${dateKey}T00:00:00`);
+    d.setHours(hour, minute, 0, 0);
+    return d;
+  }
+
+  // Before the first period -> nothing current, period 0 is upcoming.
+  const before = atTime(8, 30);
+  assert.equal(personalHubService.resolveCurrentPeriodIndex(entries, dateKey, before), -1);
+  assert.equal(personalHubService.resolveNextUpcomingPeriodIndex(entries, dateKey, before), 0);
+
+  // During period 2 (10:00-10:40) -> period 1 is current.
+  const duringPeriod2 = atTime(10, 15);
+  assert.equal(personalHubService.resolveCurrentPeriodIndex(entries, dateKey, duringPeriod2), 1);
+
+  // Between period 1 and period 2 -> nothing current, period 1 is upcoming.
+  const betweenPeriods = atTime(9, 50);
+  assert.equal(personalHubService.resolveCurrentPeriodIndex(entries, dateKey, betweenPeriods), -1);
+  assert.equal(personalHubService.resolveNextUpcomingPeriodIndex(entries, dateKey, betweenPeriods), 1);
+
+  // After the last period has finished -> nothing current, nothing upcoming either.
+  const afterAll = atTime(12, 0);
+  assert.equal(personalHubService.resolveCurrentPeriodIndex(entries, dateKey, afterAll), -1);
+  assert.equal(personalHubService.resolveNextUpcomingPeriodIndex(entries, dateKey, afterAll), -1);
+});

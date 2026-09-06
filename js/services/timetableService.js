@@ -106,7 +106,8 @@ export function buildTeachingSlotId(classroomId, dateKey, periodNumber) {
   return `${classroomId}_${dateKey}_p${periodNumber}`;
 }
 
-function weekdayOfDateKey(dateKey) {
+/** A dateKey's own day-of-week (0=Sun..6=Sat) — exported so callers needing "which weekday is this date" (e.g. services/personalHubService.js's own working-day check) reuse this one conversion rather than each writing their own. */
+export function weekdayOfDateKey(dateKey) {
   const [year, month, day] = dateKey.split('-').map(Number);
   return new Date(year, month - 1, day).getDay();
 }

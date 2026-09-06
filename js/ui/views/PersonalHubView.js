@@ -293,10 +293,19 @@ export function renderPersonalHubView(
     const title = document.createElement('h2');
     title.className = 'hub-section__title';
     const todayKey = getTodayDateKey();
-    title.textContent = `Today · ${new Date(`${todayKey}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}`;
+    // Resolves the exact 3-way behavior this strip needs (see
+    // services/personalHubService.js's own header comment on
+    // resolveTodayStripSchedule() for the full reasoning): Today's own
+    // schedule whenever there's anything to show OR today is a real
+    // working day with genuinely nothing on it, otherwise the next
+    // real scheduled day — never a blank "Today" on a non-working day,
+    // and never a second/invented definition of "working day" (reuses
+    // the classrooms' own already-configured Timetable pattern).
+    const result = personalHubService.resolveTodayStripSchedule(classrooms, uid, todayKey);
+    const { dateKey, entries, isToday } = result;
+    const dateLabel = new Date(`${dateKey}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
+    title.textContent = `${isToday ? 'Today' : 'Next'} · ${dateLabel}`;
     header.appendChild(title);
-
-    const entries = personalHubService.getTodaySchedule(classrooms, uid, todayKey);
 
     const viewFullButton = document.createElement('button');
     viewFullButton.type = 'button';
@@ -309,10 +318,28 @@ export function renderPersonalHubView(
     header.appendChild(viewFullButton);
     section.appendChild(header);
 
+    if (!isToday) {
+      // Today is a non-working day (see isWorkingDay() above) — this
+      // whole strip is a different real day's schedule, not "Today"'s
+      // own, so it's labeled accordingly rather than looking like a
+      // silent date mismatch.
+      const sublabel = document.createElement('p');
+      sublabel.className = 'hub-today-sublabel';
+      sublabel.textContent = 'Your next scheduled periods';
+      section.appendChild(sublabel);
+    }
+
     if (entries.length === 0) {
       section.appendChild(createEmptyStateElement({ message: 'No periods scheduled today.' }));
       return section;
     }
+
+    // "Now"/"Next" highlighting only ever applies to Today's own real
+    // schedule — a future day's periods are never "in progress"
+    // regardless of what the clock says right now (see
+    // resolveTodayStripSchedule()'s own isToday flag).
+    const currentPeriodIndex = isToday ? personalHubService.resolveCurrentPeriodIndex(entries, dateKey) : -1;
+    const nextPeriodIndex = isToday && currentPeriodIndex === -1 ? personalHubService.resolveNextUpcomingPeriodIndex(entries, dateKey) : -1;
 
     const stripWrapper = document.createElement('div');
     stripWrapper.className = 'hub-today-strip-wrapper';
@@ -320,10 +347,13 @@ export function renderPersonalHubView(
     const strip = document.createElement('div');
     strip.className = 'hub-today-strip';
 
-    entries.forEach((entry) => {
+    entries.forEach((entry, index) => {
+      const isCurrent = index === currentPeriodIndex;
+      const isNext = index === nextPeriodIndex;
+
       const card = document.createElement('button');
       card.type = 'button';
-      card.className = 'hub-today-card';
+      card.className = 'hub-today-card' + (isCurrent ? ' hub-today-card--now' : isNext ? ' hub-today-card--next' : '');
       card.addEventListener('click', () => onOpenTimetable(entry.classroomId));
 
       const top = document.createElement('span');
@@ -343,6 +373,21 @@ export function renderPersonalHubView(
       time.className = 'hub-today-card__time';
       time.textContent = entry.startTime ? personalHubService.formatPeriodTime(entry.startTime) : '';
       top.append(dot, time);
+
+      // A small, subtle "Now"/"Next" indicator — same tinted-pill
+      // language ui/components/TodaysScheduleWidget.js's own
+      // "In progress" status pill already uses (see that file's own
+      // .todays-schedule-widget__status--in-progress rule), so this
+      // reads as the same visual vocabulary rather than a new one.
+      // "Next" only ever shows when nothing is currently in progress
+      // (see currentPeriodIndex/nextPeriodIndex above) — never both at
+      // once, and never on a future (non-Today) day at all.
+      if (isCurrent || isNext) {
+        const badge = document.createElement('span');
+        badge.className = isCurrent ? 'hub-today-card__badge hub-today-card__badge--now' : 'hub-today-card__badge hub-today-card__badge--next';
+        badge.textContent = isCurrent ? 'Now' : 'Next';
+        top.appendChild(badge);
+      }
 
       const subject = document.createElement('span');
       subject.className = 'hub-today-card__subject';
