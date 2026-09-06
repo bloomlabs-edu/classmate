@@ -2920,13 +2920,17 @@ textarea.reading-editor__block-input {
   gap: 0.75rem;
   margin-top: 0.4rem;
 }
-.lesson-plan-builder__grade-input {
-  font-size: 0.85rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  padding: 0.35rem 0.6rem;
-  font-family: inherit;
-  max-width: 220px;
+/* Plain, non-editable metadata — Grade comes from the classroom, never
+   typed here (see ui/views/LessonPlanBuilderView.js's own
+   renderTitleBar()) — a quiet pill, not an input, so it never invites
+   a tap. */
+.lesson-plan-builder__grade-badge {
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-muted);
+  background-color: var(--color-bg);
+  border-radius: var(--radius-pill);
+  padding: 0.3rem 0.7rem;
 }
 /*
  * Guided building (the redesigned Lesson Plan Builder) — a growing
@@ -3230,7 +3234,12 @@ textarea.reading-editor__block-input {
   /* Generous, composing-a-lesson writing space — not a cramped
      database-field input (see the redesign's own "Writing Areas"
      direction) — never changes what's actually saved, only how much
-     room there is to write it. */
+     room there is to write it. Auto-grows with content (see
+     ui/components/AutoGrowTextarea.js) — `resize: none` because a
+     manual drag handle would fight that script's own height;
+     `overflow: hidden` because height always tracks scrollHeight, so
+     there's never a real internal scrollbar to see during normal
+     editing. */
   min-height: 6rem;
   padding: 0.7rem 0.85rem;
   border: 1px solid var(--color-border);
@@ -3238,16 +3247,17 @@ textarea.reading-editor__block-input {
   font-family: inherit;
   font-size: 1rem;
   line-height: 1.5;
-  resize: vertical;
+  resize: none;
+  overflow: hidden;
   box-sizing: border-box;
 }
 .lesson-plan-builder__experience,
-.lesson-plan-builder__evidence {
+.lesson-plan-builder__helping {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
-.lesson-plan-builder__evidence-extra {
+.lesson-plan-builder__helping-extra {
   margin-top: 0.5rem;
 }
 .lesson-plan-builder__dynamic-row {
@@ -8715,6 +8725,28 @@ button.wizard-checklist__row:hover {
   border-radius: 10px;
   background-color: #F9FAFB;
   color: var(--color-muted);
+}
+/* "+ Add concept" — a concept the displayed curriculum list doesn't
+   have yet, added inline without leaving this unit's own list (see
+   ui/components/CurriculumExplorerPanel.js's own onAddConcept doc
+   comment). Same row rhythm as a concept option above it, not a
+   separate boxed form. */
+.curriculum-explorer-panel__add-concept-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.2rem;
+}
+.curriculum-explorer-panel__add-concept-input {
+  flex: 1;
+  padding: 0.55rem 0.7rem;
+  border: 1px dashed var(--color-border);
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+.curriculum-explorer-panel__add-concept-button {
+  white-space: nowrap;
 }
 
 /* The one-time "Assign Curriculum" nudge on a classroom's Dashboard

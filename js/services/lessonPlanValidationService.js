@@ -115,24 +115,33 @@ export function getLessonPlanReadiness(lessonPlan) {
  * getLessonPlanReadiness() already checks — see stageForMissingItem()
  * below — so the Builder's progress indicator and "what's the next
  * incomplete stage" logic never invent a second definition of "done."
+ *
+ * PURPOSE/CONNECTION/SHOWCASE/EXPERIENCE/HELPING are exactly the real
+ * "5 Questions" lesson-planning framework this whole feature is named
+ * after (see models/LessonPlan.js's own header comment) — CONCEPT is
+ * the one stage that isn't literally one of the 5 Questions, but a
+ * required prerequisite before Question 1 can mean anything (a lesson
+ * has to be ABOUT some concept first).
  */
 export const LESSON_PLAN_STAGES = Object.freeze({
   CONCEPT: 'concept',
-  PURPOSE: 'purpose',
-  CONNECTION: 'connection',
-  EXPERIENCE: 'experience',
-  EVIDENCE: 'evidence',
+  PURPOSE: 'purpose', // Q1: Why are students learning what they're learning today?
+  CONNECTION: 'connection', // Q2: Will it advance Self, Others, and India?
+  SHOWCASE: 'showcase', // Q3: Are students showcasing learning and applying it in and beyond class?
+  EXPERIENCE: 'experience', // Q4: Is it fun, fast, effective?
+  HELPING: 'helping', // Q5: Are students helping me and others learn?
 });
 
 /**
  * Which guided stage one getLessonPlanReadiness() `missing` entry
- * belongs to. Experience bundles Spark + every Activity + Pair
- * Explanation (the "what students actually do" arc); Evidence bundles
- * Assessment + Final Question + Teacher Look-Fors (the "how you know
- * it worked" arc) — a deliberate regrouping of the original 5
- * Questions' own 5th question (Helping Each Other Learn, whose three
- * fields this splits across Experience/Evidence) for the guided
- * flow's own narrative order; the underlying fields, labels, and
+ * belongs to — a direct, 1:1 mapping onto the real 5 Questions
+ * framework (see LESSON_PLAN_STAGES's own doc comment just above):
+ * Showcase is Assessment alone (Q3); Experience is Spark + every
+ * Activity alone (Q4, "is it fun/fast/effective" — never anything
+ * about helping others learn); Helping bundles Pair Explanation +
+ * Final Question + Teacher Look-Fors (Q5's own three fields,
+ * unchanged, just co-located under their real question rather than
+ * split across two other stages). The underlying fields, labels, and
  * `LESSON_PLAN_SECTION_KEYS` themselves are completely unchanged —
  * this only changes which UI stage each one's completion counts
  * toward.
@@ -141,15 +150,16 @@ function stageForMissingItem({ sectionKey }) {
   if (sectionKey === LESSON_PLAN_SECTION_KEYS.CONTEXT) return LESSON_PLAN_STAGES.CONCEPT;
   if (sectionKey === LESSON_PLAN_SECTION_KEYS.WHY) return LESSON_PLAN_STAGES.PURPOSE;
   if (sectionKey === LESSON_PLAN_SECTION_KEYS.SELF_OTHERS_INDIA) return LESSON_PLAN_STAGES.CONNECTION;
-  if (sectionKey === LESSON_PLAN_SECTION_KEYS.SPARK || sectionKey === LESSON_PLAN_SECTION_KEYS.PAIR_EXPLANATION || getActivityIdFromSectionKey(sectionKey)) {
+  if (sectionKey === LESSON_PLAN_SECTION_KEYS.ASSESSMENT) return LESSON_PLAN_STAGES.SHOWCASE;
+  if (sectionKey === LESSON_PLAN_SECTION_KEYS.SPARK || getActivityIdFromSectionKey(sectionKey)) {
     return LESSON_PLAN_STAGES.EXPERIENCE;
   }
   if (
-    sectionKey === LESSON_PLAN_SECTION_KEYS.ASSESSMENT ||
+    sectionKey === LESSON_PLAN_SECTION_KEYS.PAIR_EXPLANATION ||
     sectionKey === LESSON_PLAN_SECTION_KEYS.FINAL_QUESTION ||
     sectionKey === LESSON_PLAN_SECTION_KEYS.TEACHER_LOOK_FORS
   ) {
-    return LESSON_PLAN_STAGES.EVIDENCE;
+    return LESSON_PLAN_STAGES.HELPING;
   }
   return null; // never crash on an unrecognized key — just doesn't count toward any stage's completion
 }

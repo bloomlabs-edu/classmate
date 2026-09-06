@@ -29,22 +29,35 @@
  *
  * `onClick` omitted (or `readOnly: true` passed) means that concept
  * renders as inert text, not a button.
+ *
+ * `onAddConcept` (optional) — when provided, an expanded unit's own
+ * concept list ends with an inline "+ Add concept" row (a text input +
+ * explicit Add button; Enter also submits), for a caller that lets a
+ * teacher add a concept the displayed curriculum list doesn't have yet
+ * without leaving whatever screen this panel is embedded in. Called as
+ * `onAddConcept(unitId, title)` — creating/persisting the concept, and
+ * whatever else the caller wants to do with it (e.g. also selecting it),
+ * is entirely the caller's own job; this component only collects the
+ * typed title. Omitted (the default) reproduces this component's
+ * original behavior exactly — both of this panel's other two callers
+ * (ui/views/LearningManagementView.js, ui/views/CurriculumManagementView.js)
+ * never pass it, so neither one's rendering changes at all.
  */
 
 import { createIcon } from './Icon.js';
 
-export function createCurriculumExplorerPanel({ units, expandedUnitId, onToggleUnit, readOnly = false }) {
+export function createCurriculumExplorerPanel({ units, expandedUnitId, onToggleUnit, readOnly = false, onAddConcept = null }) {
   const accordion = document.createElement('div');
   accordion.className = 'curriculum-explorer-panel';
 
   units.forEach((unit) => {
-    accordion.appendChild(createUnitRow(unit, expandedUnitId === unit.id, onToggleUnit, readOnly));
+    accordion.appendChild(createUnitRow(unit, expandedUnitId === unit.id, onToggleUnit, readOnly, onAddConcept));
   });
 
   return accordion;
 }
 
-function createUnitRow(unit, isExpanded, onToggleUnit, readOnly) {
+function createUnitRow(unit, isExpanded, onToggleUnit, readOnly, onAddConcept) {
   const row = document.createElement('div');
   row.className = 'curriculum-explorer-panel__unit-row';
 
@@ -86,7 +99,43 @@ function createUnitRow(unit, isExpanded, onToggleUnit, readOnly) {
       }
     });
 
+    if (onAddConcept && !readOnly) {
+      conceptList.appendChild(createAddConceptRow(unit.id, onAddConcept));
+    }
+
     row.appendChild(conceptList);
+  }
+
+  return row;
+}
+
+function createAddConceptRow(unitId, onAddConcept) {
+  const row = document.createElement('div');
+  row.className = 'curriculum-explorer-panel__add-concept-row';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'curriculum-explorer-panel__add-concept-input';
+  input.placeholder = '+ Add concept';
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      submit();
+    }
+  });
+  row.appendChild(input);
+
+  const addButton = document.createElement('button');
+  addButton.type = 'button';
+  addButton.className = 'btn btn--text curriculum-explorer-panel__add-concept-button';
+  addButton.textContent = 'Add';
+  addButton.addEventListener('click', submit);
+  row.appendChild(addButton);
+
+  function submit() {
+    const title = input.value.trim();
+    if (!title) return;
+    onAddConcept(unitId, title);
   }
 
   return row;

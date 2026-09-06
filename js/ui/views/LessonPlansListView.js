@@ -25,6 +25,7 @@
 
 import * as lessonPlanRepository from '../../services/lessonPlanRepository.js';
 import * as lessonPlanReviewService from '../../services/lessonPlanReviewService.js';
+import { getGradeLabelForClassroom } from '../../services/classroomService.js';
 import { canPerformAsUid } from '../../services/permissionService.js';
 import { PERMISSIONS } from '../../config/memberRoles.js';
 import { createLessonPlan, LESSON_PLAN_STATUS } from '../../models/LessonPlan.js';
@@ -53,7 +54,14 @@ export function renderLessonPlansListView(container, { classroom, currentUser, o
         else onOpenLessonPlanReview(plan.id);
       },
       onCreate: async () => {
-        const plan = createLessonPlan({ classroomId: classroom.id, createdByUid: currentUser?.uid || null });
+        // Grade comes from the classroom itself, never typed by hand —
+        // see classroomService.js's own getGradeLabelForClassroom() doc
+        // comment.
+        const plan = createLessonPlan({
+          classroomId: classroom.id,
+          createdByUid: currentUser?.uid || null,
+          gradeLabel: getGradeLabelForClassroom(classroom),
+        });
         try {
           await lessonPlanRepository.saveLessonPlan(classroom.id, plan);
         } catch (error) {

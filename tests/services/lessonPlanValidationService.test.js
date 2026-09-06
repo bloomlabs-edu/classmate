@@ -94,14 +94,21 @@ test('getLessonPlanReadiness: adding even one concept clears the missing-concept
 // own missing[] — never a second definition of "done."
 // ---------------------------------------------------------------------
 
-test('getLessonPlanStageCompletion: a brand-new, empty plan has every stage incomplete', () => {
+test('getLessonPlanStageCompletion: a brand-new, empty plan has every stage incomplete, in the real 5-Questions order', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
   const stages = getLessonPlanStageCompletion(plan);
-  assert.equal(stages.length, 5);
+  assert.equal(stages.length, 6);
   assert.ok(stages.every((entry) => entry.complete === false));
   assert.deepEqual(
     stages.map((entry) => entry.stage),
-    [LESSON_PLAN_STAGES.CONCEPT, LESSON_PLAN_STAGES.PURPOSE, LESSON_PLAN_STAGES.CONNECTION, LESSON_PLAN_STAGES.EXPERIENCE, LESSON_PLAN_STAGES.EVIDENCE]
+    [
+      LESSON_PLAN_STAGES.CONCEPT,
+      LESSON_PLAN_STAGES.PURPOSE,
+      LESSON_PLAN_STAGES.CONNECTION,
+      LESSON_PLAN_STAGES.SHOWCASE,
+      LESSON_PLAN_STAGES.EXPERIENCE,
+      LESSON_PLAN_STAGES.HELPING,
+    ]
   );
 });
 
@@ -122,26 +129,42 @@ test('getLessonPlanStageCompletion: a fully-completed plan has every stage compl
   assert.equal(getLessonPlanReadiness(plan).ready, true);
 });
 
-test('getLessonPlanStageCompletion: Experience stays incomplete if Pair Explanation is blank, even with a complete Spark and Activity — the regrouped field still gates its NEW stage', () => {
+test('getLessonPlanStageCompletion: Experience (Q4 — Spark + Activities) is complete on Spark + Activity content alone, never gated by Pair Explanation anymore', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
   lessonPlanService.updateSpark(plan, { title: 'Mystery Object', teacherAction: 'Show it.', studentAction: 'Guess.' });
   const activity = lessonPlanService.addActivity(plan);
   lessonPlanService.updateActivity(plan, activity.id, { title: 'Timeline', teacherAction: 'Circulate.', studentAction: 'Sequence.' });
-  // pairExplanation deliberately left blank.
+  // pairExplanation/finalQuestion/teacherLookFors deliberately left blank — those are Q5 (Helping) now, not Q4.
 
   const stages = getLessonPlanStageCompletion(plan);
-  const experience = stages.find((entry) => entry.stage === LESSON_PLAN_STAGES.EXPERIENCE);
-  assert.equal(experience.complete, false);
+  const byStage = Object.fromEntries(stages.map((entry) => [entry.stage, entry.complete]));
+  assert.equal(byStage[LESSON_PLAN_STAGES.EXPERIENCE], true);
+  assert.equal(byStage[LESSON_PLAN_STAGES.HELPING], false);
 });
 
-test('getLessonPlanStageCompletion: Evidence stays incomplete if Final Question or Teacher Look-Fors is blank, even with a complete Assessment — the regrouped fields still gate its NEW stage', () => {
+test('getLessonPlanStageCompletion: Showcase (Q3 — Assessment) is its own stage, complete independently of Spark/Activities/Helping', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
   lessonPlanService.addAssessmentItem(plan, 'Exit ticket.');
-  lessonPlanService.updateHelpingEachOtherLearn(plan, { finalQuestion: '', teacherLookFors: '' });
+  // Spark/Activities/Helping deliberately left blank.
 
   const stages = getLessonPlanStageCompletion(plan);
-  const evidence = stages.find((entry) => entry.stage === LESSON_PLAN_STAGES.EVIDENCE);
-  assert.equal(evidence.complete, false);
+  const byStage = Object.fromEntries(stages.map((entry) => [entry.stage, entry.complete]));
+  assert.equal(byStage[LESSON_PLAN_STAGES.SHOWCASE], true);
+  assert.equal(byStage[LESSON_PLAN_STAGES.EXPERIENCE], false);
+});
+
+test('getLessonPlanStageCompletion: Helping (Q5) stays incomplete unless Pair Explanation, Final Question, AND Teacher Look-Fors are all filled', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.updateHelpingEachOtherLearn(plan, { pairExplanation: 'Explain to a partner.', finalQuestion: '', teacherLookFors: '' });
+
+  let stages = getLessonPlanStageCompletion(plan);
+  let helping = stages.find((entry) => entry.stage === LESSON_PLAN_STAGES.HELPING);
+  assert.equal(helping.complete, false);
+
+  lessonPlanService.updateHelpingEachOtherLearn(plan, { finalQuestion: 'What next?', teacherLookFors: 'Correct sequencing.' });
+  stages = getLessonPlanStageCompletion(plan);
+  helping = stages.find((entry) => entry.stage === LESSON_PLAN_STAGES.HELPING);
+  assert.equal(helping.complete, true);
 });
 
 test('getLessonPlanStageCompletion: Concept/Purpose/Connection are each independently gated by their own real content', () => {

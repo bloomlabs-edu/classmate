@@ -228,6 +228,28 @@ export function getDisplaySubtitle(classroom) {
   return classroom.schoolName;
 }
 
+/**
+ * A normalized "Grade N" label derived from this classroom's own
+ * gradeSection (e.g. "Grade 8A" -> "Grade 8") — lets
+ * models/LessonPlan.js's own `gradeLabel` be filled in automatically
+ * from classroom context (see ui/views/LessonPlansListView.js's own
+ * plan-creation call and ui/views/LessonPlanBuilderView.js's own
+ * read-only Grade display) instead of asking a teacher to retype
+ * information the classroom already has. Strips the Section letter
+ * specifically because services/teachingIdeasService.js's own
+ * gradeLabel-based matching is meant to find ideas across every
+ * section of the same grade, not just one exact section — the same
+ * normalization a teacher would otherwise have had to remember to type
+ * by hand ("Grade 8", never "Grade 8A"). Falls back to the full
+ * gradeSection unchanged when there's no leading grade number to strip
+ * (e.g. "Science Club").
+ */
+export function getGradeLabelForClassroom(classroom) {
+  const gradeSection = classroom?.gradeSection || '';
+  const match = gradeSection.match(/^(Grade\s+\d+)/i);
+  return match ? match[1] : gradeSection;
+}
+
 /** Total number of students across every team in a classroom. */
 export function getStudentCount(classroom) {
   return classroom.teams.reduce((sum, team) => sum + team.students.length, 0);

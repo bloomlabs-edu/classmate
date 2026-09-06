@@ -64,9 +64,12 @@ import * as lessonPlanRepository from '../../services/lessonPlanRepository.js';
 import * as lessonPlanService from '../../services/lessonPlanService.js';
 import * as lessonPlanReviewService from '../../services/lessonPlanReviewService.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
+import * as learningRecordTeacherService from '../../services/learningRecordTeacherService.js';
 import * as timetableService from '../../services/timetableService.js';
 import * as timetableDisplayService from '../../services/timetableDisplayService.js';
 import * as personalHubService from '../../services/personalHubService.js';
+import * as workspaceService from '../../services/workspaceService.js';
+import { getGradeLabelForClassroom } from '../../services/classroomService.js';
 import { getTodayDateKey } from '../../utils/dateHelpers.js';
 import { LESSON_PLAN_STATUS, LESSON_PLAN_SECTION_KEYS } from '../../models/LessonPlan.js';
 import { getLessonPlanReadiness, getLessonPlanStageCompletion, LESSON_PLAN_STAGES } from '../../services/lessonPlanValidationService.js';
@@ -76,6 +79,7 @@ import { createIcon } from '../components/Icon.js';
 import { createSaveIndicatorController } from '../components/ProgrammeSessionSaveIndicator.js';
 import { createCurriculumExplorerPanel } from '../components/CurriculumExplorerPanel.js';
 import { openTeachingIdeasPickerModal } from '../components/TeachingIdeasPickerModal.js';
+import { attachAutoGrowTextarea } from '../components/AutoGrowTextarea.js';
 
 const STATUS_LABELS = Object.freeze({
   [LESSON_PLAN_STATUS.DRAFT]: 'Draft',
@@ -260,10 +264,6 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
         lessonPlanService.updateContext(plan, { topic: value });
         persistOnly();
       },
-      onGradeLabelChange: (value) => {
-        lessonPlanService.updateContext(plan, { gradeLabel: value });
-        persistOnly();
-      },
       onSelectSubject: (learningSubjectId) => {
         // Changing Subject clears any previously-picked Concepts — a
         // Concept belongs to exactly one Subject's tree (see
@@ -372,6 +372,35 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
         const current = plan.conceptIds;
         const next = current.includes(conceptId) ? current.filter((id) => id !== conceptId) : [...current, conceptId];
         lessonPlanService.updateContext(plan, { conceptIds: next });
+        persistAndRerender();
+      },
+      /**
+       * "+ Add concept" (see ui/components/CurriculumExplorerPanel.js's
+       * own onAddConcept doc comment) — a teacher typing a concept
+       * that isn't in the displayed curriculum list yet. Reuses
+       * services/learningRecordTeacherService.js's own createConcept(),
+       * the exact same mutation Learning Management's syllabus editor
+       * and ui/views/TimetableView.js's own inline concept-create flow
+       * already use — never a second, parallel concept system. A
+       * concept lives on the CLASSROOM (learningRecord), not on this
+       * plan, so it's persisted via workspaceService.save(classroom)
+       * (same two-write shape as TimetableView.js's own
+       * createAndAssignConcept()); a defensive case-insensitive
+       * title match against this unit's existing concepts guards
+       * against ever creating a visible duplicate. The new concept is
+       * then immediately selected onto THIS plan's own conceptIds and
+       * persisted the normal way, so it shows up among the selected
+       * lesson concepts right away, not just in the library.
+       */
+      onAddConcept: (unitId, title) => {
+        const unit = learningRecordService.getUnitById(classroom, unitId);
+        if (!unit) return;
+        const existing = unit.concepts.find((concept) => concept.title.trim().toLowerCase() === title.trim().toLowerCase());
+        const concept = existing || learningRecordTeacherService.createConcept(classroom, unitId, { title });
+        if (!existing) workspaceService.save(classroom);
+        if (!plan.conceptIds.includes(concept.id)) {
+          lessonPlanService.updateContext(plan, { conceptIds: [...plan.conceptIds, concept.id] });
+        }
         persistAndRerender();
       },
 
@@ -573,6 +602,20 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
         loadError = "This lesson plan couldn't be found. It may have been deleted.";
       } else {
         plan = fetched;
+        // Grade comes from classroom context, never typed by hand (see
+        // this file's own renderTitleBar() and classroomService.js's
+        // own getGradeLabelForClassroom() doc comment). New plans
+        // already get this at creation time
+        // (ui/views/LessonPlansListView.js) — this is a one-time
+        // self-heal for a plan that predates that, or somehow still
+        // has none, so the stored field is never left silently blank
+        // just because the editable input is gone.
+        if (!plan.gradeLabel && lessonPlanReviewService.isLessonPlanEditable(plan)) {
+          lessonPlanService.updateContext(plan, { gradeLabel: getGradeLabelForClassroom(classroom) });
+          lessonPlanRepository.saveLessonPlan(classroom.id, plan).catch((error) => {
+            console.error('[LessonPlanBuilderView] Failed to self-heal gradeLabel:', error);
+          });
+        }
       }
       rerender();
     })
@@ -645,15 +688,19 @@ function renderBuilder(container, state, handlers) {
     // teacher themselves needs to see the complete real content — never
     // a partial reveal gated on a "current stage" that no longer means
     // anything once the plan is locked.
+    // Order matches the real 5 Questions framework (Q1 Why -> Q2 Self/
+    // Others/India -> Q3 Showcasing learning -> Q4 Fun/Fast/Effective ->
+    // Q5 Helping each other learn), the same order the guided flow
+    // below uses — never two different orderings for the same content.
     wrapper.appendChild(renderSubjectStage(plan, classroom, guidedState, handlers));
     wrapper.appendChild(renderScheduleSection(plan, classroom, guidedState, handlers));
     wrapper.appendChild(renderConceptsField(plan, classroom, guidedState, handlers));
     wrapper.appendChild(renderWhySection(plan, handlers));
     wrapper.appendChild(renderSelfOthersIndiaSection(plan, handlers));
+    wrapper.appendChild(renderAssessmentSection(plan, handlers));
     wrapper.appendChild(renderSparkSection(plan, handlers));
     wrapper.appendChild(renderActivitiesSection(plan, state.collapsedActivityIds, handlers));
     wrapper.appendChild(renderPairExplanationField(plan, handlers));
-    wrapper.appendChild(renderAssessmentSection(plan, handlers));
     wrapper.appendChild(renderFinalQuestionAndLookForsFields(plan, handlers));
     container.appendChild(wrapper);
     return;
@@ -685,53 +732,64 @@ function renderBuilder(container, state, handlers) {
     return; // Concept itself is still incomplete — nothing past it yet.
   }
 
-  // PURPOSE / CONNECTION / EXPERIENCE / EVIDENCE — the original 5
-  // Questions' own content (models/LessonPlan.js), regrouped into the
-  // guided flow's own narrative order (see
-  // renderPairExplanationField()'s doc comment for exactly what moved
-  // where, and why). Reveals up to and including the current frontier
-  // stage, then stops — the next one doesn't exist on screen yet.
+  // Q1-Q5 — the real "5 Questions" lesson-planning framework itself
+  // (models/LessonPlan.js's own header comment), in the framework's own
+  // order, each stage's title the actual question a teacher is
+  // answering — never a generic "Section 4" label. Reveals up to and
+  // including the current frontier stage, then stops — the next one
+  // doesn't exist on screen yet.
   const freeTextStages = [
     {
       stage: LESSON_PLAN_STAGES.PURPOSE,
-      title: 'Why are students learning this?',
+      title: 'Why are students learning what they are learning today?',
       sectionKey: LESSON_PLAN_SECTION_KEYS.WHY,
       renderFull: () => renderWhySection(plan, handlers),
       getPreview: () => plan.lessonObjective || plan.bigQuestion || '',
     },
     {
       stage: LESSON_PLAN_STAGES.CONNECTION,
-      title: 'Will it advance Self, Others, and India?',
+      title: 'Will it advance self, others and India?',
       sectionKey: LESSON_PLAN_SECTION_KEYS.SELF_OTHERS_INDIA,
       renderFull: () => renderSelfOthersIndiaSection(plan, handlers),
       getPreview: () => plan.selfOthersIndia.self || plan.selfOthersIndia.others || plan.selfOthersIndia.india || '',
     },
     {
+      stage: LESSON_PLAN_STAGES.SHOWCASE,
+      title: 'Are students showcasing learning and applying the content in and beyond class?',
+      sectionKey: LESSON_PLAN_SECTION_KEYS.ASSESSMENT,
+      renderFull: () => renderAssessmentSection(plan, handlers),
+      getPreview: () => plan.assessments.find((item) => item.description)?.description || '',
+    },
+    {
       stage: LESSON_PLAN_STAGES.EXPERIENCE,
-      title: 'What will the learning experience be?',
+      title: 'Is it fun, fast, effective?',
       sectionKey: LESSON_PLAN_SECTION_KEYS.SPARK,
       renderFull: () => {
         const wrap = document.createElement('div');
         wrap.className = 'lesson-plan-builder__experience';
         wrap.appendChild(renderSparkSection(plan, handlers));
         wrap.appendChild(renderActivitiesSection(plan, state.collapsedActivityIds, handlers));
-        wrap.appendChild(renderPairExplanationField(plan, handlers));
         return wrap;
       },
       getPreview: () => plan.spark.title || (plan.activities.length > 0 ? `${plan.activities.length} activit${plan.activities.length === 1 ? 'y' : 'ies'}` : ''),
     },
     {
-      stage: LESSON_PLAN_STAGES.EVIDENCE,
-      title: 'How will you know it worked?',
-      sectionKey: LESSON_PLAN_SECTION_KEYS.ASSESSMENT,
+      stage: LESSON_PLAN_STAGES.HELPING,
+      title: 'Are students helping me and others learn?',
+      // No single sectionKey for this stage's own outer comment list —
+      // Pair Explanation / Final Question / Teacher Look-Fors each
+      // already render their OWN comments inline (see
+      // renderPairExplanationField()/renderFinalQuestionAndLookForsFields()),
+      // so a second, stage-level list here would just duplicate them.
+      sectionKey: null,
       renderFull: () => {
         const wrap = document.createElement('div');
-        wrap.className = 'lesson-plan-builder__evidence';
-        wrap.appendChild(renderAssessmentSection(plan, handlers));
+        wrap.className = 'lesson-plan-builder__helping';
+        wrap.appendChild(renderPairExplanationField(plan, handlers));
         wrap.appendChild(renderFinalQuestionAndLookForsFields(plan, handlers));
         return wrap;
       },
-      getPreview: () => plan.assessments.find((item) => item.description)?.description || '',
+      getPreview: () => plan.pairExplanation || plan.finalQuestion || '',
     },
   ];
 
@@ -779,14 +837,17 @@ function renderTitleBar(plan, stageCompletion, state, handlers) {
   const metaLine = document.createElement('div');
   metaLine.className = 'lesson-plan-builder__meta-line';
 
-  const gradeInput = document.createElement('input');
-  gradeInput.type = 'text';
-  gradeInput.className = 'lesson-plan-builder__grade-input';
-  gradeInput.placeholder = 'Grade (e.g. Grade 8)';
-  gradeInput.value = plan.gradeLabel;
-  gradeInput.disabled = !handlers.editable;
-  gradeInput.addEventListener('change', () => handlers.onGradeLabelChange(gradeInput.value));
-  metaLine.appendChild(gradeInput);
+  // Grade is classroom context, not something a teacher types here —
+  // see classroomService.js's own getGradeLabelForClassroom() doc
+  // comment and this view's own gradeLabel self-heal-on-load. Plain,
+  // non-editable metadata; never a completion task (getLessonPlanReadiness()
+  // never checks it).
+  if (plan.gradeLabel) {
+    const gradeBadge = document.createElement('span');
+    gradeBadge.className = 'lesson-plan-builder__grade-badge';
+    gradeBadge.textContent = plan.gradeLabel;
+    metaLine.appendChild(gradeBadge);
+  }
 
   metaLine.appendChild(saveIndicatorElement);
 
@@ -1312,6 +1373,7 @@ function renderConceptsField(plan, classroom, state, handlers) {
           units,
           expandedUnitId: state.expandedConceptUnitId,
           onToggleUnit: handlers.onToggleConceptUnit,
+          onAddConcept: handlers.onAddConcept,
         })
       );
     }
@@ -1464,6 +1526,7 @@ function createLabeledTextarea({ label, placeholder, value, onChange, disabled =
   textarea.value = value;
   textarea.disabled = disabled;
   textarea.addEventListener('change', () => onChange(textarea.value));
+  attachAutoGrowTextarea(textarea); // every long-form field grows with its content — see AutoGrowTextarea.js's own doc comment
   field.appendChild(textarea);
 
   if (plan && sectionKey) {
@@ -1888,16 +1951,17 @@ function renderDifferentiationFields(plan, activity, handlers) {
 // ---- 5. HELPING EACH OTHER LEARN -------------------------------------
 
 /**
- * Pair Explanation — the one field of the original 5 Questions'
- * "Helping Each Other Learn" (models/LessonPlan.js's own 5th question)
- * that the guided flow regroups into EXPERIENCE, alongside Spark and
- * Activities (see services/lessonPlanValidationService.js's own
- * getLessonPlanStageCompletion() doc comment for the full reasoning:
- * this is "what students actually do," narratively). The field
- * itself, its label, its placeholder, its mutation
- * (lessonPlanService.updateHelpingEachOtherLearn()), and its own
- * sectionKey (LESSON_PLAN_SECTION_KEYS.PAIR_EXPLANATION) are all
- * completely unchanged — only which stage's UI renders it moved.
+ * Pair Explanation — one of the three fields of Question 5, "Are
+ * students helping me and others learn?" (models/LessonPlan.js's own
+ * 5th question; see services/lessonPlanValidationService.js's own
+ * LESSON_PLAN_STAGES.HELPING). The field itself, its label, its
+ * placeholder, its mutation (lessonPlanService.updateHelpingEachOtherLearn()),
+ * and its own sectionKey (LESSON_PLAN_SECTION_KEYS.PAIR_EXPLANATION)
+ * are unchanged — this and renderFinalQuestionAndLookForsFields() below
+ * are kept as two separate functions (rather than merged into one)
+ * purely because they predate the guided redesign; both are always
+ * rendered together under the same Question 5 stage now (see
+ * renderBuilder()'s own freeTextStages array).
  */
 function renderPairExplanationField(plan, handlers) {
   return createLabeledTextarea({
@@ -1912,16 +1976,13 @@ function renderPairExplanationField(plan, handlers) {
 }
 
 /**
- * Final Question + Teacher Look-Fors — the other two fields of the
- * original 5th Question, regrouped into EVIDENCE alongside Assessment
- * (see renderPairExplanationField()'s own doc comment above for the
- * full split reasoning: this half is "how you know it worked").
- * Unchanged fields/labels/mutation/sectionKeys — only which stage's
- * UI renders them moved.
+ * Final Question + Teacher Look-Fors — the other two fields of
+ * Question 5 (see renderPairExplanationField()'s own doc comment
+ * above). Unchanged fields/labels/mutation/sectionKeys.
  */
 function renderFinalQuestionAndLookForsFields(plan, handlers) {
   const wrap = document.createElement('div');
-  wrap.className = 'lesson-plan-builder__evidence-extra';
+  wrap.className = 'lesson-plan-builder__helping-extra';
 
   const finalQuestionField = createLabeledTextarea({
     label: 'Final Question',
