@@ -2859,7 +2859,7 @@ textarea.reading-editor__block-input {
 /* ---- Lesson Plan Builder ------------------------------------------ */
 
 .lesson-plan-builder {
-  max-width: 780px;
+  max-width: 860px;
   margin: 0 auto;
   padding: 0 1.5rem 4rem;
 }
@@ -2870,8 +2870,16 @@ textarea.reading-editor__block-input {
 .lesson-plan-builder__loading {
   color: var(--color-muted);
 }
+/* Hero — title, status, grade and the visual progress bar composed as
+   one quiet block (a wash + generous padding, not a bordered card) so
+   the page opens with a single confident anchor rather than a row of
+   stacked form fields. */
 .lesson-plan-builder__title-bar {
-  margin-bottom: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 1.5rem 1.75rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
 }
 .lesson-plan-builder__title-line {
   display: flex;
@@ -2882,9 +2890,11 @@ textarea.reading-editor__block-input {
 .lesson-plan-builder__title-input {
   flex: 1;
   min-width: 200px;
-  font-size: 1.4rem;
+  font-size: 1.75rem;
   font-weight: var(--font-weight-black);
+  letter-spacing: -0.01em;
   border: none;
+  background: none;
   padding: 0.2rem 0;
   font-family: inherit;
 }
@@ -2966,12 +2976,54 @@ textarea.reading-editor__block-input {
   padding: 1.25rem 1.5rem;
   margin: 0.5rem 0;
 }
+/* Subject + Schedule composed as a two-up context row (see
+   ui/views/LessonPlanBuilderView.js's own wrapInContextRow()) — each
+   child keeps its own .lesson-plan-builder__stage border/padding, this
+   just places them side by side. Collapses to one column under the
+   page's own narrow breakpoint, or whenever either child is actively
+   being edited/expanded (--primary or --reopened): a picker in an open
+   state needs its full-width layout, not a squeezed half-column. */
+.lesson-plan-builder__context-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 2rem;
+  align-items: start;
+}
+.lesson-plan-builder__context-row > .lesson-plan-builder__stage {
+  border-bottom: none;
+}
+.lesson-plan-builder__context-row:has(> .lesson-plan-builder__stage--primary),
+.lesson-plan-builder__context-row:has(> .lesson-plan-builder__stage--reopened) {
+  grid-template-columns: 1fr;
+}
+/* Concepts — a stronger, foundational tile (quiet wash + generous
+   padding, no shadow) since every other stage builds on it; the
+   section's own render function (renderConceptsField()) is untouched,
+   this is purely an externally-applied surface. Excluded when compact
+   (:not(...--compact)) so the collapsed "✓ Concepts" summary still
+   reads as the same quiet one-line row every other collapsed stage
+   uses, not a heavy tile shrunk around one line of text. */
+.lesson-plan-builder__stage--concepts-tile:not(.lesson-plan-builder__stage--compact) {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  border-bottom: none;
+  padding: 1.75rem;
+  margin: 0.5rem 0 1.5rem;
+}
 .lesson-plan-builder__stage-heading-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 1rem;
+}
+.lesson-plan-builder__stage-title-group {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 .lesson-plan-builder__stage-heading {
   font-size: 1rem;
@@ -2983,6 +3035,16 @@ textarea.reading-editor__block-input {
   font-size: 1.5rem;
   font-weight: var(--font-weight-black);
   letter-spacing: -0.01em;
+}
+.lesson-plan-builder__optional-tag {
+  font-size: 0.7rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-muted);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: 0.15rem 0.55rem;
+  white-space: nowrap;
 }
 .lesson-plan-builder__stage-collapse-button {
   font-size: 0.85rem;
@@ -3266,14 +3328,35 @@ textarea.reading-editor__block-input {
   flex-direction: column;
   gap: 0.5rem;
 }
+.lesson-plan-builder__experience-intro {
+  margin: 0 0 0.25rem;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
 .lesson-plan-builder__helping-extra {
   margin-top: 0.5rem;
 }
+/* Dynamic list rows (Lesson Objectives + Assessment/evidence items
+   share this one shell — see createDynamicListRow()) — a quiet tile
+   per item rather than a bare input, so a list of objectives reads as
+   distinct pieces of the lesson being assembled. */
 .lesson-plan-builder__dynamic-row {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   margin-bottom: 0.5rem;
+  padding: 0.35rem;
+  background-color: #FAFBFC;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+.lesson-plan-builder__dynamic-row .lesson-plan-builder__dynamic-input {
+  border-color: transparent;
+  background: none;
+}
+.lesson-plan-builder__dynamic-row .lesson-plan-builder__dynamic-input:focus {
+  border-color: var(--color-primary);
+  background-color: var(--color-surface);
 }
 /* Optional reorder buttons on a dynamic-row (see Lesson Objectives —
    the one dynamic list that needs reordering) — stacked vertically,
@@ -3443,6 +3526,25 @@ textarea.reading-editor__block-input {
 .lesson-plan-builder__comment-text {
   font-size: 0.85rem;
   margin: 0;
+}
+
+/* Narrow screens — the context row and hero/concepts tiles lose their
+   desktop-only padding and column layout so nothing overflows and
+   every control stays full-width and easy to tap; everything else on
+   this page was already single-column. */
+@media (max-width: 640px) {
+  .lesson-plan-builder__context-row {
+    grid-template-columns: 1fr;
+  }
+  .lesson-plan-builder__title-bar {
+    padding: 1.1rem 1.25rem;
+  }
+  .lesson-plan-builder__title-input {
+    font-size: 1.4rem;
+  }
+  .lesson-plan-builder__stage--concepts-tile:not(.lesson-plan-builder__stage--compact) {
+    padding: 1.1rem 1.25rem;
+  }
 }
 
 /* ---------------------------------------------------------------------

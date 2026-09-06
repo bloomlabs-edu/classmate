@@ -713,9 +713,8 @@ function renderBuilder(container, state, handlers) {
     // Others/India -> Q3 Showcasing learning -> Q4 Fun/Fast/Effective ->
     // Q5 Helping each other learn), the same order the guided flow
     // below uses — never two different orderings for the same content.
-    wrapper.appendChild(renderSubjectStage(plan, classroom, guidedState, handlers));
-    wrapper.appendChild(renderScheduleSection(plan, classroom, guidedState, handlers));
-    wrapper.appendChild(renderConceptsField(plan, classroom, guidedState, handlers));
+    wrapper.appendChild(renderContextRow(plan, classroom, guidedState, handlers));
+    wrapper.appendChild(renderConceptsTile(plan, classroom, guidedState, handlers));
     wrapper.appendChild(renderWhySection(plan, handlers));
     wrapper.appendChild(renderSelfOthersIndiaSection(plan, handlers));
     wrapper.appendChild(renderAssessmentSection(plan, handlers));
@@ -729,10 +728,14 @@ function renderBuilder(container, state, handlers) {
 
   // Guided building — Subject always first; nothing past it renders at
   // all until it's chosen (see this file's own header comment: "SUBJECT
-  // MUST COME BEFORE SCHEDULE").
-  wrapper.appendChild(renderSubjectStage(plan, classroom, guidedState, handlers));
+  // MUST COME BEFORE SCHEDULE"). Subject + Schedule are composed as a
+  // single two-up "context row" (see renderContextRow()'s own doc
+  // comment) — purely a wrapping/layout choice made here in the
+  // orchestrator; neither section's own render function changes.
+  const subjectTile = renderSubjectStage(plan, classroom, guidedState, handlers);
 
   if (!plan.subjectId) {
+    wrapper.appendChild(subjectTile);
     container.appendChild(wrapper);
     return;
   }
@@ -740,13 +743,16 @@ function renderBuilder(container, state, handlers) {
   // Schedule — optional, never gates anything after it (see
   // renderScheduleSection()'s own doc comment); always shown once
   // Subject is known.
-  wrapper.appendChild(renderScheduleSection(plan, classroom, guidedState, handlers));
+  const scheduleTile = renderScheduleSection(plan, classroom, guidedState, handlers);
+  wrapper.appendChild(wrapInContextRow(subjectTile, scheduleTile));
 
   // CONCEPT — its own bespoke stage (chips + Curriculum Explorer, not a
   // plain textarea), always shown once Subject is known; still
   // respects the same frontier-stops-the-reveal rule as the free-text
-  // stages below it.
-  wrapper.appendChild(renderConceptsField(plan, classroom, guidedState, handlers));
+  // stages below it. Given a stronger "tile" surface externally (see
+  // wrapInConceptsTile()) since Concepts anchors everything else on
+  // the page — its own render function is untouched.
+  wrapper.appendChild(wrapInConceptsTile(renderConceptsField(plan, classroom, guidedState, handlers)));
 
   if (frontierStage === LESSON_PLAN_STAGES.CONCEPT) {
     container.appendChild(wrapper);
@@ -773,6 +779,7 @@ function renderBuilder(container, state, handlers) {
       sectionKey: LESSON_PLAN_SECTION_KEYS.SELF_OTHERS_INDIA,
       renderFull: () => renderSelfOthersIndiaSection(plan, handlers),
       getPreview: () => plan.selfOthersIndia.self || plan.selfOthersIndia.others || plan.selfOthersIndia.india || '',
+      isOptional: true,
     },
     {
       stage: LESSON_PLAN_STAGES.SHOWCASE,
@@ -780,6 +787,7 @@ function renderBuilder(container, state, handlers) {
       sectionKey: LESSON_PLAN_SECTION_KEYS.ASSESSMENT,
       renderFull: () => renderAssessmentSection(plan, handlers),
       getPreview: () => plan.assessments.find((item) => item.description)?.description || '',
+      isOptional: true,
     },
     {
       stage: LESSON_PLAN_STAGES.EXPERIENCE,
@@ -788,6 +796,10 @@ function renderBuilder(container, state, handlers) {
       renderFull: () => {
         const wrap = document.createElement('div');
         wrap.className = 'lesson-plan-builder__experience';
+        const intro = document.createElement('p');
+        intro.className = 'lesson-plan-builder__experience-intro';
+        intro.textContent = 'An opportunity to make the lesson memorable — a Spark to open it, and the activities that carry it through.';
+        wrap.appendChild(intro);
         wrap.appendChild(renderSparkSection(plan, handlers));
         wrap.appendChild(renderActivitiesSection(plan, state.collapsedActivityIds, handlers));
         return wrap;
@@ -917,6 +929,40 @@ function renderProgressBar(stageCompletion) {
   });
 
   return bar;
+}
+
+/**
+ * Composition-only Bento helpers — purely wrap/tag DOM elements that
+ * renderSubjectStage()/renderConceptsField() already return; neither
+ * of those functions' own internals change. Subject + Schedule become
+ * a single two-up "context row" tile pair (collapses to one column on
+ * narrow screens, or whenever either child is actively being edited —
+ * see the CSS `:has()` rule alongside `.lesson-plan-builder__context-row`)
+ * and Concepts gets a stronger tile surface, since it's the one piece
+ * of context every other stage depends on.
+ */
+function wrapInContextRow(subjectEl, scheduleEl) {
+  const row = document.createElement('div');
+  row.className = 'lesson-plan-builder__context-row';
+  row.appendChild(subjectEl);
+  row.appendChild(scheduleEl);
+  return row;
+}
+
+function renderContextRow(plan, classroom, state, handlers) {
+  return wrapInContextRow(
+    renderSubjectStage(plan, classroom, state, handlers),
+    renderScheduleSection(plan, classroom, state, handlers)
+  );
+}
+
+function wrapInConceptsTile(conceptsEl) {
+  conceptsEl.classList.add('lesson-plan-builder__stage--concepts-tile');
+  return conceptsEl;
+}
+
+function renderConceptsTile(plan, classroom, state, handlers) {
+  return wrapInConceptsTile(renderConceptsField(plan, classroom, state, handlers));
 }
 
 /**
@@ -1470,7 +1516,7 @@ function renderReadinessPanel(plan, handlers) {
  * .lesson-plan-builder__stage* rules) so the guided trail reads as one
  * consistent system regardless of which stage produced it.
  */
-function renderGuidedContentStage({ stage, title, sectionKey, plan, state, handlers, renderFull, getPreview }) {
+function renderGuidedContentStage({ stage, title, sectionKey, plan, state, handlers, renderFull, getPreview, isOptional = false }) {
   const isComplete = Boolean(state.stageCompletionByKey[stage]);
   const isFrontier = state.frontierStage === stage;
   const isReopened = state.reopenedStageKey === stage;
@@ -1508,10 +1554,19 @@ function renderGuidedContentStage({ stage, title, sectionKey, plan, state, handl
 
   const headingRow = document.createElement('div');
   headingRow.className = 'lesson-plan-builder__stage-heading-row';
+  const titleGroup = document.createElement('div');
+  titleGroup.className = 'lesson-plan-builder__stage-title-group';
   const heading = document.createElement('h2');
   heading.className = isFrontier ? 'lesson-plan-builder__stage-heading lesson-plan-builder__stage-heading--primary' : 'lesson-plan-builder__stage-heading';
   heading.textContent = title;
-  headingRow.appendChild(heading);
+  titleGroup.appendChild(heading);
+  if (isOptional) {
+    const optionalTag = document.createElement('span');
+    optionalTag.className = 'lesson-plan-builder__optional-tag';
+    optionalTag.textContent = 'Optional';
+    titleGroup.appendChild(optionalTag);
+  }
+  headingRow.appendChild(titleGroup);
   if (isReopened && !isFrontier) {
     const doneButton = document.createElement('button');
     doneButton.type = 'button';
