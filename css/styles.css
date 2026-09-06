@@ -2928,53 +2928,180 @@ textarea.reading-editor__block-input {
   font-family: inherit;
   max-width: 220px;
 }
-/* Schedule — its own small block between Grade and Concepts (see
-   ui/views/LessonPlanBuilderView.js's own renderScheduleSection()),
-   useful metadata rather than another large planning section: a
-   quiet heading, compact controls, and a plain-text resolved summary
-   (never an editable-looking field — it's read-only, derived fresh
-   from the Timetable every render; only the date/period choice
-   itself, via the picker, is ever directly editable). Matches this
-   screen's existing muted-heading/helper-text conventions
-   (.lesson-plan-builder__readiness-heading, .grade-input) rather than
-   introducing new type scale or color. */
-.lesson-plan-builder__schedule-section {
-  margin: 0.75rem 0 1.25rem;
+/*
+ * Guided building (the redesigned Lesson Plan Builder) — a growing
+ * TRAIL of stages, not a stack of boxed form sections. Deliberately no
+ * card/border/shadow per stage (see the redesign's own "Bento as a
+ * compositional system, not every field in a rounded rectangle"
+ * direction): hierarchy comes from typography and whitespace, not
+ * decoration. Every guided stage (Subject/Schedule/Concept/Purpose/
+ * Connection/Experience/Evidence — see
+ * ui/views/LessonPlanBuilderView.js's own renderSubjectStage()/
+ * renderScheduleSection()/renderConceptsField()/
+ * renderGuidedContentStage()) shares this exact same shell, so the
+ * whole thing reads as one consistent system rather than five
+ * different UI patterns bolted together.
+ */
+.lesson-plan-builder__stage {
+  padding: 1.5rem 0;
+  border-bottom: 1px solid var(--color-border);
 }
-.lesson-plan-builder__schedule-heading {
-  font-weight: var(--font-weight-bold);
-  font-size: 0.85rem;
-  color: var(--color-muted);
-  margin: 0 0 0.4rem;
+.lesson-plan-builder__stage:last-child {
+  border-bottom: none;
 }
-.lesson-plan-builder__schedule-note {
-  font-size: 0.85rem;
-  color: var(--color-muted);
-  margin: 0;
+.lesson-plan-builder__stage--primary {
+  padding: 2rem 0 2.25rem;
 }
-.lesson-plan-builder__schedule-summary {
+.lesson-plan-builder__stage--compact {
+  padding: 0.6rem 0;
+}
+.lesson-plan-builder__stage--reopened {
+  background-color: var(--color-bg);
+  border-radius: 16px;
+  border-bottom: none;
+  padding: 1.25rem 1.5rem;
+  margin: 0.5rem 0;
+}
+.lesson-plan-builder__stage-heading-row {
   display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
 }
-.lesson-plan-builder__schedule-summary-date {
-  font-size: 0.95rem;
+.lesson-plan-builder__stage-heading {
+  font-size: 1rem;
   font-weight: var(--font-weight-bold);
   color: var(--color-ink);
   margin: 0;
 }
-.lesson-plan-builder__schedule-summary-period {
+.lesson-plan-builder__stage-heading--primary {
+  font-size: 1.5rem;
+  font-weight: var(--font-weight-black);
+  letter-spacing: -0.01em;
+}
+.lesson-plan-builder__stage-collapse-button {
   font-size: 0.85rem;
-  color: var(--color-muted);
+  flex-shrink: 0;
+}
+/* The compact "✓ Title / preview" row every completed stage collapses
+   to — a plain full-width button (not a card), so a whole trail of
+   completed stages reads as a quiet, scannable list rather than a
+   stack of boxes. Clicking reopens that exact stage's own full editor
+   in place, per explicit product direction — nothing else on screen
+   moves or resets when it does. */
+.lesson-plan-builder__stage-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  margin: 0 -0.5rem;
+  border: none;
+  border-radius: var(--radius-control);
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lesson-plan-builder__stage-summary:hover:not(:disabled) {
+  background-color: var(--color-bg);
+}
+.lesson-plan-builder__stage-summary:disabled {
+  cursor: default;
+}
+.lesson-plan-builder__stage-summary--static {
+  cursor: default;
+  padding: 0.4rem 0;
   margin: 0;
 }
-.lesson-plan-builder__schedule-summary-period--stale {
+.lesson-plan-builder__stage-summary-check {
+  flex-shrink: 0;
+  color: var(--color-success, #4C9A2A);
+}
+.lesson-plan-builder__stage-summary-check--stale {
   color: var(--color-warning, #BF5F1A);
+}
+.lesson-plan-builder__stage-summary-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.lesson-plan-builder__stage-summary-title {
+  font-weight: var(--font-weight-bold);
+  font-size: 0.95rem;
+  color: var(--color-ink);
+}
+.lesson-plan-builder__stage-summary-preview {
+  font-size: 0.82rem;
+  color: var(--color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lesson-plan-builder__stage-summary-preview--stale {
+  color: var(--color-warning, #BF5F1A);
+  white-space: normal;
+}
+
+/* Subject — tappable blocks, not a <select> (see
+   ui/views/LessonPlanBuilderView.js's own renderSubjectStage()).
+   --subject-accent/--subject-wash are set inline per-subject from
+   config/timetableSubjectColors.js, the same accent every other
+   subject-aware surface in this app already uses. Selection is never
+   color-only: a border-width change plus a checkmark icon plus
+   aria-pressed all carry the same signal. */
+.lesson-plan-builder__subject-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
+.lesson-plan-builder__subject-block {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.9rem 1rem;
+  border: 1.5px solid var(--color-border);
+  border-radius: 14px;
+  background-color: var(--subject-wash, var(--color-surface));
+  font: inherit;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+.lesson-plan-builder__subject-block:hover:not(:disabled) {
+  border-color: var(--subject-accent, var(--color-primary));
+}
+.lesson-plan-builder__subject-block--selected {
+  border-width: 2px;
+  border-color: var(--subject-accent, var(--color-primary));
+}
+.lesson-plan-builder__subject-block-check {
+  flex-shrink: 0;
+  color: var(--subject-accent, var(--color-primary));
+}
+.lesson-plan-builder__subject-block:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+/* Schedule — always shown once Subject is known, but never gates
+   anything after it (see renderScheduleSection()'s own doc comment).
+   Shares the general .lesson-plan-builder__stage* shell above; these
+   are just its own inner pieces. */
+.lesson-plan-builder__schedule-note {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  margin: 0.25rem 0 0;
 }
 .lesson-plan-builder__schedule-actions {
   display: flex;
   gap: 0.5rem;
-  margin-top: 0.4rem;
+  margin-top: 0.6rem;
 }
 .lesson-plan-builder__schedule-action {
   font-size: 0.85rem;
@@ -2983,59 +3110,102 @@ textarea.reading-editor__block-input {
 }
 .lesson-plan-builder__schedule-picker {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 0.5rem;
 }
 .lesson-plan-builder__schedule-picker-label {
   font-size: 0.8rem;
   color: var(--color-muted);
 }
-.lesson-plan-builder__schedule-date-input,
-.lesson-plan-builder__schedule-period-select {
+.lesson-plan-builder__schedule-date-input {
   font-size: 0.85rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   padding: 0.35rem 0.6rem;
   font-family: inherit;
 }
-.lesson-plan-builder__readiness {
+/* Period — tappable blocks, not a dropdown (see
+   renderSchedulePicker()). Filtered to this plan's own Subject before
+   these are ever built, so this grid is always small (this classroom's
+   real relevant periods on this one date), never every period the
+   classroom happens to teach that day. */
+.lesson-plan-builder__period-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 0.6rem;
+  width: 100%;
+}
+.lesson-plan-builder__period-block {
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  padding: 0.65rem 0.85rem;
+  border: 1.5px solid var(--color-border);
+  border-radius: 12px;
+  background-color: var(--color-surface);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lesson-plan-builder__period-block:hover {
+  border-color: var(--color-primary);
+}
+.lesson-plan-builder__period-block--selected {
+  border-width: 2px;
+  border-color: var(--color-primary);
+}
+.lesson-plan-builder__period-block-time {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: var(--font-weight-bold);
+  font-size: 0.9rem;
+}
+.lesson-plan-builder__period-block-check {
+  color: var(--color-primary);
+}
+.lesson-plan-builder__period-block-subject {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
+/* The Submit action — same quiet green treatment as before; this is
+   the ONE panel that still renders as a distinct surface, since it's
+   a real call to action, not a planning stage. The "not ready yet"
+   checklist/warning that used to live here is gone entirely — see
+   renderReadinessPanel()'s own doc comment. */
+.lesson-plan-builder__readiness--ready {
+  display: flex;
+  align-items: center;
   gap: 0.6rem;
   border-radius: 14px;
   padding: 0.85rem 1rem;
-  margin-bottom: 1.5rem;
+  margin-top: 1rem;
   font-size: 0.9rem;
-}
-.lesson-plan-builder__readiness--ready {
-  align-items: center;
   background-color: #EAF5E3;
   color: var(--color-success, #4C9A2A);
 }
-.lesson-plan-builder__readiness--pending {
-  flex-direction: column;
-  background-color: #FBF0D9;
-  color: #8a6a1e;
+
+/* The quiet visual progress indicator (see
+   ui/views/LessonPlanBuilderView.js's own renderProgressBar()) —
+   segments, not a percentage or a count anywhere in view. Muted until
+   complete, then a restrained shift toward the same green the ready
+   banner above already uses — never the loudest thing on the page. */
+.lesson-plan-builder__progress-bar {
+  display: flex;
+  gap: 4px;
+  margin-top: 0.85rem;
 }
-.lesson-plan-builder__readiness-heading {
-  font-weight: var(--font-weight-bold);
-  margin: 0 0 0.4rem;
+.lesson-plan-builder__progress-segment {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background-color: var(--color-border);
 }
-.lesson-plan-builder__readiness-list {
-  margin: 0;
-  padding-left: 1.2rem;
-}
-.lesson-plan-builder__section {
-  background-color: #ffffff;
-  border-radius: 16px;
-  padding: 1.25rem 1.4rem 1.5rem;
-  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
-  margin-bottom: 1.25rem;
-}
-.lesson-plan-builder__section-heading {
-  font-size: 1.05rem;
-  font-weight: var(--font-weight-black);
-  margin: 0 0 1rem;
+.lesson-plan-builder__progress-segment--complete {
+  background-color: var(--color-success, #4C9A2A);
 }
 .lesson-plan-builder__subheading {
   font-size: 0.95rem;
@@ -3057,14 +3227,28 @@ textarea.reading-editor__block-input {
 }
 .lesson-plan-builder__textarea {
   width: 100%;
-  min-height: 3.5rem;
-  padding: 0.55rem 0.75rem;
+  /* Generous, composing-a-lesson writing space — not a cramped
+     database-field input (see the redesign's own "Writing Areas"
+     direction) — never changes what's actually saved, only how much
+     room there is to write it. */
+  min-height: 6rem;
+  padding: 0.7rem 0.85rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   font-family: inherit;
-  font-size: 0.95rem;
+  font-size: 1rem;
+  line-height: 1.5;
   resize: vertical;
   box-sizing: border-box;
+}
+.lesson-plan-builder__experience,
+.lesson-plan-builder__evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.lesson-plan-builder__evidence-extra {
+  margin-top: 0.5rem;
 }
 .lesson-plan-builder__dynamic-row {
   display: flex;
@@ -3548,21 +3732,8 @@ textarea.reading-editor__block-input {
    Phase 4 — Concept picker (Lesson Plan Builder)
    --------------------------------------------------------------------- */
 
-.lesson-plan-builder__concepts-field {
-  margin-bottom: 1rem;
-}
-.lesson-plan-builder__concepts-subject-row {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin-bottom: 0.5rem;
-}
-.lesson-plan-builder__concepts-subject-select {
-  padding: 0.45rem 0.6rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  font-family: inherit;
-  font-size: 0.9rem;
+.lesson-plan-builder__concepts-toggle-button {
+  margin-bottom: 0.75rem;
 }
 .lesson-plan-builder__concept-chips {
   display: flex;

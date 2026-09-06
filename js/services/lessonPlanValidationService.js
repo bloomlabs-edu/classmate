@@ -20,7 +20,7 @@
  */
 
 import { LESSON_PLAN_SECTION_KEYS } from '../models/LessonPlan.js';
-import { buildActivitySectionKey } from './lessonPlanReviewService.js';
+import { buildActivitySectionKey, getActivityIdFromSectionKey } from './lessonPlanReviewService.js';
 
 function isBlank(value) {
   return !value || !String(value).trim();
@@ -103,4 +103,69 @@ export function getLessonPlanReadiness(lessonPlan) {
   }
 
   return { ready: missing.length === 0, missing };
+}
+
+/**
+ * The guided-building STAGES ui/views/LessonPlanBuilderView.js's own
+ * progressive-disclosure UI walks through, in order — Subject and
+ * Schedule aren't listed here at all, since neither is gated by
+ * submission readiness (Concept is the earliest real requirement
+ * above), so neither has a "completion" this function needs to
+ * define. Grouped exactly along the same sectionKeys
+ * getLessonPlanReadiness() already checks — see stageForMissingItem()
+ * below — so the Builder's progress indicator and "what's the next
+ * incomplete stage" logic never invent a second definition of "done."
+ */
+export const LESSON_PLAN_STAGES = Object.freeze({
+  CONCEPT: 'concept',
+  PURPOSE: 'purpose',
+  CONNECTION: 'connection',
+  EXPERIENCE: 'experience',
+  EVIDENCE: 'evidence',
+});
+
+/**
+ * Which guided stage one getLessonPlanReadiness() `missing` entry
+ * belongs to. Experience bundles Spark + every Activity + Pair
+ * Explanation (the "what students actually do" arc); Evidence bundles
+ * Assessment + Final Question + Teacher Look-Fors (the "how you know
+ * it worked" arc) — a deliberate regrouping of the original 5
+ * Questions' own 5th question (Helping Each Other Learn, whose three
+ * fields this splits across Experience/Evidence) for the guided
+ * flow's own narrative order; the underlying fields, labels, and
+ * `LESSON_PLAN_SECTION_KEYS` themselves are completely unchanged —
+ * this only changes which UI stage each one's completion counts
+ * toward.
+ */
+function stageForMissingItem({ sectionKey }) {
+  if (sectionKey === LESSON_PLAN_SECTION_KEYS.CONTEXT) return LESSON_PLAN_STAGES.CONCEPT;
+  if (sectionKey === LESSON_PLAN_SECTION_KEYS.WHY) return LESSON_PLAN_STAGES.PURPOSE;
+  if (sectionKey === LESSON_PLAN_SECTION_KEYS.SELF_OTHERS_INDIA) return LESSON_PLAN_STAGES.CONNECTION;
+  if (sectionKey === LESSON_PLAN_SECTION_KEYS.SPARK || sectionKey === LESSON_PLAN_SECTION_KEYS.PAIR_EXPLANATION || getActivityIdFromSectionKey(sectionKey)) {
+    return LESSON_PLAN_STAGES.EXPERIENCE;
+  }
+  if (
+    sectionKey === LESSON_PLAN_SECTION_KEYS.ASSESSMENT ||
+    sectionKey === LESSON_PLAN_SECTION_KEYS.FINAL_QUESTION ||
+    sectionKey === LESSON_PLAN_SECTION_KEYS.TEACHER_LOOK_FORS
+  ) {
+    return LESSON_PLAN_STAGES.EVIDENCE;
+  }
+  return null; // never crash on an unrecognized key — just doesn't count toward any stage's completion
+}
+
+/**
+ * `[{ stage, complete }]`, one entry per LESSON_PLAN_STAGES value, in
+ * that same order — reuses getLessonPlanReadiness()'s own `missing[]`
+ * as the sole source of truth for "complete": a stage is complete iff
+ * NONE of its own sectionKeys appear in `missing`. Never a bare
+ * boolean/percentage on its own — the Builder derives both its
+ * progress indicator (fraction complete) and its "which stage is the
+ * current guided focus" (first entry with complete: false) from this
+ * one array, so the two can never disagree with each other.
+ */
+export function getLessonPlanStageCompletion(lessonPlan) {
+  const { missing } = getLessonPlanReadiness(lessonPlan);
+  const incompleteStages = new Set(missing.map(stageForMissingItem).filter(Boolean));
+  return Object.values(LESSON_PLAN_STAGES).map((stage) => ({ stage, complete: !incompleteStages.has(stage) }));
 }

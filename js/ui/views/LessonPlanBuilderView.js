@@ -69,7 +69,8 @@ import * as timetableDisplayService from '../../services/timetableDisplayService
 import * as personalHubService from '../../services/personalHubService.js';
 import { getTodayDateKey } from '../../utils/dateHelpers.js';
 import { LESSON_PLAN_STATUS, LESSON_PLAN_SECTION_KEYS } from '../../models/LessonPlan.js';
-import { getLessonPlanReadiness } from '../../services/lessonPlanValidationService.js';
+import { getLessonPlanReadiness, getLessonPlanStageCompletion, LESSON_PLAN_STAGES } from '../../services/lessonPlanValidationService.js';
+import { getTimetableSubjectColor, getTimetableSubjectWash } from '../../config/timetableSubjectColors.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createIcon } from '../components/Icon.js';
 import { createSaveIndicatorController } from '../components/ProgrammeSessionSaveIndicator.js';
@@ -82,6 +83,46 @@ const STATUS_LABELS = Object.freeze({
   [LESSON_PLAN_STATUS.CHANGES_REQUESTED]: 'Changes requested',
   [LESSON_PLAN_STATUS.APPROVED]: 'Approved',
 });
+
+/**
+ * `plan.subjectId` (and the tappable Subject blocks' own onClick
+ * values) are a Learning-Management Subject's own RECORD id
+ * (models/LearningSubject.js's `id`) — a different thing from the
+ * CANONICAL subject identity (`LearningSubject.subjectId`, e.g.
+ * "mathematics") every Timetable-side lookup actually keys off
+ * (services/timetableService.js's slot.subjectId,
+ * getNextFutureSlotForSubject(), config/timetableSubjectColors.js,
+ * services/timetableDisplayService.js's resolveSubjectTitle() — see
+ * that model's own doc comment for the full reasoning on why these
+ * are two separate ids). Every place this view needs to match or
+ * color a Subject against the Timetable resolves the real canonical
+ * id via this one function first, rather than passing
+ * `plan.subjectId` straight through and silently never matching
+ * anything real.
+ */
+function resolveCanonicalSubjectId(classroom, learningSubjectId) {
+  if (!learningSubjectId) return null;
+  return learningRecordService.getSubjectById(classroom, learningSubjectId)?.subjectId || null;
+}
+
+/**
+ * Every real concrete TeachingSlot on `dateKey` whose subject matches
+ * THIS plan's own Subject — never every period the classroom happens
+ * to teach that day (see this file's own header comment on
+ * subject-first scheduling). Falls back to every slot that day,
+ * unfiltered, only when this plan's Subject has no resolvable
+ * canonical id at all (e.g. a legacy classroom whose one-time
+ * subjectId backfill — see services/subjectIdMigrationService.js —
+ * hasn't run yet this session): showing nothing at all in that edge
+ * case would look like the classroom has no timetable, which isn't
+ * true.
+ */
+function getRelevantScheduleSlots(classroom, plan, dateKey) {
+  const allSlots = timetableService.getConcreteSlotsForDateRange(classroom, dateKey, dateKey);
+  const canonicalSubjectId = resolveCanonicalSubjectId(classroom, plan.subjectId);
+  if (!canonicalSubjectId) return allSlots;
+  return allSlots.filter((slot) => slot.subjectId === canonicalSubjectId);
+}
 
 /** One friendly status line under the badge — never "Submission rejected"/"Form incomplete", per this feature's own explicit product direction on tone. */
 function getStatusMessage(plan) {
@@ -133,6 +174,24 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
   let expandedConceptUnitId = null;
   let isSchedulePickerOpen = false; // local UI state only — never persisted
   let pendingScheduleDate = null; // the date picked but not yet resolved to a period (set only while isSchedulePickerOpen)
+  // Guided-building UI (progressive disclosure) — which already-COMPLETE
+  // stage the teacher has manually reopened for editing, or null when
+  // none is. One of LESSON_PLAN_STAGES's own values, or 'subject' (the
+  // one guided stage that isn't gated by submission readiness at all —
+  // see services/lessonPlanValidationService.js's own
+  // getLessonPlanStageCompletion() doc comment for why Subject/Schedule
+  // aren't part of that list). Purely local UI state, never persisted:
+  // reopening a completed stage to look at/edit it again is not itself
+  // a content change.
+  let reopenedStageKey = null;
+  // The guided stage that was the "current focus" as of the last real
+  // render — see persistOnly() below for exactly why this is tracked.
+  let lastRenderedFrontierStage = undefined;
+
+  function computeFrontierStage() {
+    if (!plan) return null;
+    return getLessonPlanStageCompletion(plan).find((entry) => !entry.complete)?.stage || null;
+  }
 
   function persistAndRerender() {
     saveIndicator.persistPatch(() => lessonPlanRepository.saveLessonPlan(classroom.id, plan));
@@ -141,33 +200,39 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
 
   /**
    * For a plain content edit (a field's text changed, nothing added/
-   * removed/reordered) — persists and refreshes only the readiness
-   * panel, WITHOUT tearing down and rebuilding the rest of the canvas.
+   * removed/reordered) — persists, then either refreshes only the
+   * readiness panel or does a real rerender(), depending on whether
+   * THIS edit just changed which guided stage is the current focus.
    *
-   * This is what actually fixes the click-swallowing race: every field
-   * here fires on `change` (blur), so clicking any action button
-   * elsewhere starts with a blur on whatever field the teacher was just
-   * typing in. If that blur triggered a full `container.innerHTML = ''`
-   * rebuild (persistAndRerender()'s old behavior for these handlers),
-   * the button being clicked would be destroyed and replaced mid-click
-   * — a browser only fires `click` when mousedown and mouseup land on
-   * the SAME element, so the click would silently do nothing. A content
-   * edit never needs to touch the DOM at all (the input already shows
-   * what the teacher typed; nothing else on screen echoes that value)
-   * except the readiness checklist, so this only ever swaps that one
-   * node — the action button a teacher clicks next is never disturbed,
-   * and the click fires normally on the first try.
+   * The "only refresh readiness" fast path is what fixes a real
+   * click-swallowing race: every field here fires on `change` (blur),
+   * so clicking any action button elsewhere starts with a blur on
+   * whatever field the teacher was just typing in. If that blur
+   * triggered a full `container.innerHTML = ''` rebuild on EVERY
+   * keystroke's blur, the button being clicked would be destroyed and
+   * replaced mid-click — a browser only fires `click` when mousedown
+   * and mouseup land on the SAME element, so the click would silently
+   * do nothing.
    *
-   * Structural changes (add/remove/reorder/duplicate an Activity or a
-   * dynamic list row, reveal/collapse differentiation) still go through
-   * persistAndRerender() — they need new/removed DOM nodes regardless,
-   * and by the time THEIR click handler runs the click has already
-   * fired successfully, so rebuilding in response to it is never in the
-   * way of anything.
+   * But the guided-building redesign means a content edit CAN change
+   * what's on screen after all: finishing the one field that made a
+   * stage complete must reveal the next stage and collapse this one —
+   * exactly the "next meaningful task is revealed naturally" behavior
+   * this whole redesign exists for. Comparing the frontier stage
+   * before/after is what tells these two cases apart: most edits
+   * (typing the 2nd/3rd word of an already-in-progress field) don't
+   * change it, and stay on the fast, race-safe path; the one edit that
+   * completes a stage does, and gets a real rerender() — by then the
+   * teacher's own next click hasn't happened yet, so there's nothing
+   * to swallow.
    */
   function persistOnly() {
     saveIndicator.persistPatch(() => lessonPlanRepository.saveLessonPlan(classroom.id, plan));
-    refreshReadinessPanel();
+    if (computeFrontierStage() !== lastRenderedFrontierStage) {
+      rerender();
+    } else {
+      refreshReadinessPanel();
+    }
   }
 
   function submitForReview() {
@@ -184,7 +249,8 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
 
   function rerender() {
     const editable = plan ? lessonPlanReviewService.isLessonPlanEditable(plan) : false;
-    renderBuilder(container, { plan, loadError, collapsedActivityIds, saveIndicatorElement: saveIndicator.element, editable, classroom, isConceptPickerOpen, expandedConceptUnitId, isSchedulePickerOpen, pendingScheduleDate }, {
+    lastRenderedFrontierStage = computeFrontierStage();
+    renderBuilder(container, { plan, loadError, collapsedActivityIds, saveIndicatorElement: saveIndicator.element, editable, classroom, isConceptPickerOpen, expandedConceptUnitId, isSchedulePickerOpen, pendingScheduleDate, reopenedStageKey }, {
       onBack,
       editable,
       onSubmitForReview: submitForReview,
@@ -198,14 +264,15 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
         lessonPlanService.updateContext(plan, { gradeLabel: value });
         persistOnly();
       },
-      onSubjectChangeForConcepts: (subjectId) => {
+      onSelectSubject: (learningSubjectId) => {
         // Changing Subject clears any previously-picked Concepts — a
         // Concept belongs to exactly one Subject's tree (see
         // learningRecordService.js's own Subject -> Unit -> Concept
         // shape), so a stale conceptId from the old Subject would be
         // meaningless once the tree it came from is no longer in view.
-        lessonPlanService.updateContext(plan, { subjectId: subjectId || null, conceptIds: [] });
+        lessonPlanService.updateContext(plan, { subjectId: learningSubjectId || null, conceptIds: [] });
         expandedConceptUnitId = null;
+        reopenedStageKey = null; // selecting a subject always re-collapses it, whether this was the first pick or a reopened "Change"
 
         // New-lesson-plan default: once a real Subject is known for the
         // FIRST time (this plan has never had a schedule of its own —
@@ -218,9 +285,22 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
         // invents a subject or a schedule: if there's no future
         // occurrence configured at all, this plan simply stays
         // unscheduled, exactly as it already does today.
-        if (subjectId && !plan.scheduledDate) {
+        //
+        // IMPORTANT: getNextFutureSlotForSubject() (like every other
+        // Timetable-side lookup) matches against the CANONICAL subject
+        // identity (services/subjectIdentityService.js — e.g.
+        // "mathematics"), never a Learning-Management Subject's own
+        // record id (`learningSubjectId` above, a generated id local to
+        // this classroom's syllabus tree — see models/LearningSubject.js's
+        // own doc comment on why those are two different things). This
+        // resolves the real canonical id via the Subject record itself
+        // before ever touching timetableService — passing
+        // `learningSubjectId` straight through here would silently
+        // never match any real Timetable slot.
+        const canonicalSubjectId = resolveCanonicalSubjectId(classroom, learningSubjectId);
+        if (canonicalSubjectId && !plan.scheduledDate) {
           const suggestion = timetableService.getNextFutureSlotForSubject(classroom, {
-            subjectId,
+            subjectId: canonicalSubjectId,
             afterDateKey: getTodayDateKey(),
             afterPeriodNumber: 0,
           });
@@ -230,6 +310,10 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
         }
 
         persistAndRerender();
+      },
+      onToggleReopenStage: (stageKey) => {
+        reopenedStageKey = reopenedStageKey === stageKey ? null : stageKey;
+        rerender(); // local UI state only — nothing to persist
       },
       // ---- Schedule ----
       onToggleSchedulePickerOpen: () => {
@@ -243,15 +327,19 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
       },
       onScheduleDateChange: (dateKey) => {
         pendingScheduleDate = dateKey || null;
-        // Exactly one relevant period that day -> resolve immediately,
-        // no separate period step the teacher has to also click
-        // through. Multiple (or zero) -> renderTitleBar's own picker
-        // shows the period choices (or the "no matching period" note)
-        // and waits for onSchedulePeriodChange below.
+        // Subject-first filtering (see this file's own header comment
+        // and getRelevantScheduleSlots() below): only THIS plan's own
+        // Subject's periods count here, never every period the
+        // classroom happens to teach that day. Exactly one relevant
+        // period -> resolve immediately, no separate period step the
+        // teacher has to also click through. Multiple (or zero) ->
+        // renderSchedulePicker's own tappable period blocks (or the
+        // "no matching period" note) take over and wait for
+        // onSchedulePeriodChange below.
         if (pendingScheduleDate) {
-          const availableSlots = timetableService.getConcreteSlotsForDateRange(classroom, pendingScheduleDate, pendingScheduleDate);
-          if (availableSlots.length === 1) {
-            lessonPlanService.updateSchedule(plan, { scheduledDate: pendingScheduleDate, scheduledPeriodNumber: availableSlots[0].periodNumber });
+          const relevantSlots = getRelevantScheduleSlots(classroom, plan, pendingScheduleDate);
+          if (relevantSlots.length === 1) {
+            lessonPlanService.updateSchedule(plan, { scheduledDate: pendingScheduleDate, scheduledPeriodNumber: relevantSlots[0].periodNumber });
             isSchedulePickerOpen = false;
             pendingScheduleDate = null;
             persistAndRerender();
@@ -529,35 +617,137 @@ function renderBuilder(container, state, handlers) {
   }
 
   const plan = state.plan;
+  const classroom = state.classroom;
 
-  wrapper.appendChild(renderTitleBar(plan, state, handlers));
-  wrapper.appendChild(renderScheduleSection(plan, state.classroom, state, handlers));
-  wrapper.appendChild(renderConceptsField(plan, state.classroom, state, handlers));
-  wrapper.appendChild(renderReadinessPanel(plan, handlers));
+  // Stage completion — the SAME submission-readiness rules
+  // (services/lessonPlanValidationService.js's getLessonPlanReadiness())
+  // grouped by guided stage, never a second definition of "done" (see
+  // that file's own getLessonPlanStageCompletion() doc comment).
+  // `frontierStage` is the first incomplete one, in guided order — the
+  // one guided CONTENT stage that gets the full/primary writing
+  // treatment; everything before it (already complete) compresses to a
+  // compact summary, and nothing after it renders at all yet. `null`
+  // once every stage is complete (nothing left to reveal — just the
+  // Submit action below).
+  const stageCompletion = getLessonPlanStageCompletion(plan);
+  const stageCompletionByKey = Object.fromEntries(stageCompletion.map((entry) => [entry.stage, entry.complete]));
+  const frontierStage = stageCompletion.find((entry) => !entry.complete)?.stage || null;
+  const guidedState = { ...state, stageCompletionByKey, frontierStage };
 
-  wrapper.appendChild(
-    renderSection('1. Why are students learning this?', [renderWhySection(plan, handlers)], plan, LESSON_PLAN_SECTION_KEYS.WHY)
-  );
-  wrapper.appendChild(
-    renderSection('2. Will it advance Self, Others, and India?', [renderSelfOthersIndiaSection(plan, handlers)], plan, LESSON_PLAN_SECTION_KEYS.SELF_OTHERS_INDIA)
-  );
-  wrapper.appendChild(
-    renderSection('3. Are students showcasing their learning?', [renderAssessmentSection(plan, handlers)], plan, LESSON_PLAN_SECTION_KEYS.ASSESSMENT)
-  );
-  wrapper.appendChild(
-    renderSection('4. Is it fun, fast, and effective?', [
-      renderSparkSection(plan, handlers),
-      renderActivitiesSection(plan, state.collapsedActivityIds, handlers),
-    ], plan, LESSON_PLAN_SECTION_KEYS.SPARK)
-  );
-  wrapper.appendChild(
-    renderSection('5. Are students helping me and each other learn?', [renderHelpingEachOtherLearnSection(plan, handlers)], plan, null)
-  );
+  wrapper.appendChild(renderTitleBar(plan, stageCompletion, state, handlers));
+
+  if (!handlers.editable) {
+    // Locked (SUBMITTED/APPROVED) — a completed artifact to review now,
+    // not something still being "built." Progressive disclosure is
+    // deliberately a DRAFT-building UX pattern (see this file's own
+    // header comment); once there's no more building happening, every
+    // stage renders in full, flat, exactly as a reviewer or the
+    // teacher themselves needs to see the complete real content — never
+    // a partial reveal gated on a "current stage" that no longer means
+    // anything once the plan is locked.
+    wrapper.appendChild(renderSubjectStage(plan, classroom, guidedState, handlers));
+    wrapper.appendChild(renderScheduleSection(plan, classroom, guidedState, handlers));
+    wrapper.appendChild(renderConceptsField(plan, classroom, guidedState, handlers));
+    wrapper.appendChild(renderWhySection(plan, handlers));
+    wrapper.appendChild(renderSelfOthersIndiaSection(plan, handlers));
+    wrapper.appendChild(renderSparkSection(plan, handlers));
+    wrapper.appendChild(renderActivitiesSection(plan, state.collapsedActivityIds, handlers));
+    wrapper.appendChild(renderPairExplanationField(plan, handlers));
+    wrapper.appendChild(renderAssessmentSection(plan, handlers));
+    wrapper.appendChild(renderFinalQuestionAndLookForsFields(plan, handlers));
+    container.appendChild(wrapper);
+    return;
+  }
+
+  // Guided building — Subject always first; nothing past it renders at
+  // all until it's chosen (see this file's own header comment: "SUBJECT
+  // MUST COME BEFORE SCHEDULE").
+  wrapper.appendChild(renderSubjectStage(plan, classroom, guidedState, handlers));
+
+  if (!plan.subjectId) {
+    container.appendChild(wrapper);
+    return;
+  }
+
+  // Schedule — optional, never gates anything after it (see
+  // renderScheduleSection()'s own doc comment); always shown once
+  // Subject is known.
+  wrapper.appendChild(renderScheduleSection(plan, classroom, guidedState, handlers));
+
+  // CONCEPT — its own bespoke stage (chips + Curriculum Explorer, not a
+  // plain textarea), always shown once Subject is known; still
+  // respects the same frontier-stops-the-reveal rule as the free-text
+  // stages below it.
+  wrapper.appendChild(renderConceptsField(plan, classroom, guidedState, handlers));
+
+  if (frontierStage === LESSON_PLAN_STAGES.CONCEPT) {
+    container.appendChild(wrapper);
+    return; // Concept itself is still incomplete — nothing past it yet.
+  }
+
+  // PURPOSE / CONNECTION / EXPERIENCE / EVIDENCE — the original 5
+  // Questions' own content (models/LessonPlan.js), regrouped into the
+  // guided flow's own narrative order (see
+  // renderPairExplanationField()'s doc comment for exactly what moved
+  // where, and why). Reveals up to and including the current frontier
+  // stage, then stops — the next one doesn't exist on screen yet.
+  const freeTextStages = [
+    {
+      stage: LESSON_PLAN_STAGES.PURPOSE,
+      title: 'Why are students learning this?',
+      sectionKey: LESSON_PLAN_SECTION_KEYS.WHY,
+      renderFull: () => renderWhySection(plan, handlers),
+      getPreview: () => plan.lessonObjective || plan.bigQuestion || '',
+    },
+    {
+      stage: LESSON_PLAN_STAGES.CONNECTION,
+      title: 'Will it advance Self, Others, and India?',
+      sectionKey: LESSON_PLAN_SECTION_KEYS.SELF_OTHERS_INDIA,
+      renderFull: () => renderSelfOthersIndiaSection(plan, handlers),
+      getPreview: () => plan.selfOthersIndia.self || plan.selfOthersIndia.others || plan.selfOthersIndia.india || '',
+    },
+    {
+      stage: LESSON_PLAN_STAGES.EXPERIENCE,
+      title: 'What will the learning experience be?',
+      sectionKey: LESSON_PLAN_SECTION_KEYS.SPARK,
+      renderFull: () => {
+        const wrap = document.createElement('div');
+        wrap.className = 'lesson-plan-builder__experience';
+        wrap.appendChild(renderSparkSection(plan, handlers));
+        wrap.appendChild(renderActivitiesSection(plan, state.collapsedActivityIds, handlers));
+        wrap.appendChild(renderPairExplanationField(plan, handlers));
+        return wrap;
+      },
+      getPreview: () => plan.spark.title || (plan.activities.length > 0 ? `${plan.activities.length} activit${plan.activities.length === 1 ? 'y' : 'ies'}` : ''),
+    },
+    {
+      stage: LESSON_PLAN_STAGES.EVIDENCE,
+      title: 'How will you know it worked?',
+      sectionKey: LESSON_PLAN_SECTION_KEYS.ASSESSMENT,
+      renderFull: () => {
+        const wrap = document.createElement('div');
+        wrap.className = 'lesson-plan-builder__evidence';
+        wrap.appendChild(renderAssessmentSection(plan, handlers));
+        wrap.appendChild(renderFinalQuestionAndLookForsFields(plan, handlers));
+        return wrap;
+      },
+      getPreview: () => plan.assessments.find((item) => item.description)?.description || '',
+    },
+  ];
+
+  for (const config of freeTextStages) {
+    wrapper.appendChild(renderGuidedContentStage({ ...config, plan, state: guidedState, handlers }));
+    if (config.stage === frontierStage) break; // stop right after the current stage — nothing beyond it yet
+  }
+
+  if (!frontierStage) {
+    wrapper.appendChild(renderReadinessPanel(plan, handlers));
+  }
 
   container.appendChild(wrapper);
 }
 
-function renderTitleBar(plan, state, handlers) {
+function renderTitleBar(plan, stageCompletion, state, handlers) {
   const { saveIndicatorElement } = state;
   const titleBar = document.createElement('div');
   titleBar.className = 'lesson-plan-builder__title-bar';
@@ -602,7 +792,143 @@ function renderTitleBar(plan, state, handlers) {
 
   titleBar.appendChild(metaLine);
 
+  titleBar.appendChild(renderProgressBar(stageCompletion));
+
   return titleBar;
+}
+
+/**
+ * The visual progress indicator — a quiet, segmented bar (one segment
+ * per guided CONTENT stage; see services/lessonPlanValidationService.js's
+ * getLessonPlanStageCompletion(), the exact same submission-readiness
+ * grouping the guided flow itself uses, never a second definition of
+ * "done"). Deliberately no numbers, no "N things left," no fraction
+ * text anywhere — per explicit product direction, this communicates
+ * "you're building something," not "you still have chores." Subject/
+ * Schedule aren't part of it at all (neither is gated by submission
+ * readiness — see that function's own doc comment), so a plan that's
+ * only just started (Subject picked, nothing else yet) correctly shows
+ * an all-quiet bar rather than looking further along than it is.
+ *
+ * Accessible interpretation: the bar itself carries `role="progressbar"`
+ * with real `aria-valuenow`/`aria-valuemax` (segment counts) and a
+ * plain-language `aria-label` — a screen reader gets an honest,
+ * literal completion state even though sighted users never see a
+ * number rendered on screen.
+ */
+function renderProgressBar(stageCompletion) {
+  const completedCount = stageCompletion.filter((entry) => entry.complete).length;
+  const total = stageCompletion.length;
+
+  const bar = document.createElement('div');
+  bar.className = 'lesson-plan-builder__progress-bar';
+  bar.setAttribute('role', 'progressbar');
+  bar.setAttribute('aria-valuemin', '0');
+  bar.setAttribute('aria-valuemax', String(total));
+  bar.setAttribute('aria-valuenow', String(completedCount));
+  bar.setAttribute('aria-label', `Lesson plan progress: ${completedCount} of ${total} stages complete`);
+
+  stageCompletion.forEach((entry) => {
+    const segment = document.createElement('span');
+    segment.className = 'lesson-plan-builder__progress-segment' + (entry.complete ? ' lesson-plan-builder__progress-segment--complete' : '');
+    bar.appendChild(segment);
+  });
+
+  return bar;
+}
+
+/**
+ * SUBJECT — always the FIRST guided stage (see this file's own header
+ * comment: Subject must be known before Schedule/Concepts can mean
+ * anything real). Tappable blocks, one per Subject already configured
+ * in this classroom's own Learning Management
+ * (learningRecordService.getSubjects()) — never a `<select>`. Colored
+ * via the exact same Timetable subject-accent convention every other
+ * subject-aware surface in this app already uses
+ * (config/timetableSubjectColors.js's getTimetableSubjectColor()/
+ * getTimetableSubjectWash()) — never a new color system. Selection
+ * (never color alone) is also shown via a checkmark icon,
+ * `aria-pressed`, and a visibly different border, so it reads without
+ * relying on color perception. Selecting persists immediately via the
+ * existing onSelectSubject handler (services/lessonPlanService.js's
+ * updateContext()) and collapses to a compact summary; clicking that
+ * summary again reopens the block grid to change it.
+ */
+function renderSubjectStage(plan, classroom, state, handlers) {
+  const subjects = learningRecordService.getSubjects(classroom);
+  const selectedSubject = plan.subjectId ? subjects.find((subject) => subject.id === plan.subjectId) : null;
+  const isReopened = state.reopenedStageKey === 'subject';
+
+  const wrap = document.createElement('section');
+  wrap.className = 'lesson-plan-builder__stage';
+
+  if (selectedSubject && !isReopened) {
+    wrap.classList.add('lesson-plan-builder__stage--compact');
+    const summary = document.createElement('button');
+    summary.type = 'button';
+    summary.className = 'lesson-plan-builder__stage-summary';
+    summary.disabled = !handlers.editable;
+    summary.addEventListener('click', () => handlers.onToggleReopenStage('subject'));
+    summary.appendChild(createIcon('check', { size: 16, className: 'lesson-plan-builder__stage-summary-check' }));
+    const textWrap = document.createElement('span');
+    textWrap.className = 'lesson-plan-builder__stage-summary-text';
+    const titleEl = document.createElement('span');
+    titleEl.className = 'lesson-plan-builder__stage-summary-title';
+    titleEl.textContent = selectedSubject.title;
+    textWrap.appendChild(titleEl);
+    summary.appendChild(textWrap);
+    wrap.appendChild(summary);
+    return wrap;
+  }
+
+  wrap.classList.add(selectedSubject ? 'lesson-plan-builder__stage--reopened' : 'lesson-plan-builder__stage--primary');
+
+  const headingRow = document.createElement('div');
+  headingRow.className = 'lesson-plan-builder__stage-heading-row';
+  const heading = document.createElement('h2');
+  heading.className = selectedSubject ? 'lesson-plan-builder__stage-heading' : 'lesson-plan-builder__stage-heading lesson-plan-builder__stage-heading--primary';
+  heading.textContent = 'What are you teaching?';
+  headingRow.appendChild(heading);
+  if (selectedSubject) {
+    const doneButton = document.createElement('button');
+    doneButton.type = 'button';
+    doneButton.className = 'btn btn--text lesson-plan-builder__stage-collapse-button';
+    doneButton.textContent = 'Done';
+    doneButton.addEventListener('click', () => handlers.onToggleReopenStage('subject'));
+    headingRow.appendChild(doneButton);
+  }
+  wrap.appendChild(headingRow);
+
+  if (subjects.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'lesson-plan-builder__empty-message';
+    empty.textContent = 'No subjects set up yet in Learning Management.';
+    wrap.appendChild(empty);
+    return wrap;
+  }
+
+  const grid = document.createElement('div');
+  grid.className = 'lesson-plan-builder__subject-grid';
+  subjects.forEach((subject) => {
+    const isSelected = subject.id === plan.subjectId;
+    const color = getTimetableSubjectColor(subject.subjectId);
+    const block = document.createElement('button');
+    block.type = 'button';
+    block.className = 'lesson-plan-builder__subject-block' + (isSelected ? ' lesson-plan-builder__subject-block--selected' : '');
+    block.style.setProperty('--subject-accent', color.text);
+    block.style.setProperty('--subject-wash', getTimetableSubjectWash(subject.subjectId));
+    block.disabled = !handlers.editable;
+    block.setAttribute('aria-pressed', String(isSelected));
+    if (isSelected) block.appendChild(createIcon('check', { size: 14, className: 'lesson-plan-builder__subject-block-check' }));
+    const label = document.createElement('span');
+    label.textContent = subject.title;
+    block.appendChild(label);
+    block.addEventListener('click', () => handlers.onSelectSubject(subject.id));
+    grid.appendChild(block);
+  });
+  wrap.appendChild(grid);
+
+  return wrap;
 }
 
 /** "Monday, 7 Sept 2026" — a pure locale-formatting of an already-known date key, never date arithmetic (see this file's own header comment on reusing utils/dateHelpers.js's date-key conventions). */
@@ -610,7 +936,7 @@ function formatScheduleDateLabel(dateKey) {
   return new Date(`${dateKey}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-/** "P2 · 09:45 AM · Science" — the one shared label format for a resolved period, used identically in the compact summary and every option in the period picker below, so a teacher sees the exact same wording either way. */
+/** "P2 · 09:45 AM · Science" — the one shared label format for a resolved period, used identically in the compact summary and every tappable period block below, so a teacher sees the exact same wording either way. */
 function formatResolvedPeriodLabel(classroom, resolved) {
   const subjectTitle = timetableDisplayService.resolveSubjectTitle(classroom, resolved.subjectId);
   return `P${resolved.periodNumber} · ${personalHubService.formatPeriodTime(resolved.startTime)} · ${subjectTitle}`;
@@ -624,9 +950,16 @@ function formatResolvedPeriodLabel(classroom, resolved) {
  * never a copy of subject/time/teacher, so a later Timetable edit
  * (periods restructured, a slot's subject changed) is reflected
  * automatically the very next time this renders, with no migration.
- * Deliberately its own small section between Grade and Concepts, not
- * folded into the meta-line — useful metadata, not another large
- * planning section, per explicit product direction.
+ * Only ever shown once Subject is chosen (see renderBuilder()) — this
+ * is the "SUBJECT before SCHEDULE" ordering the guided flow requires,
+ * and it's also what lets period choices below be filtered to this
+ * plan's own Subject at all.
+ *
+ * Optional, so this never gates anything else the way the guided
+ * CONTENT stages do (see LESSON_PLAN_STAGES) — visually it still
+ * reads as "primary" for as long as it's genuinely unscheduled (the
+ * natural next thing to do right after Subject), and "compact" the
+ * moment it has a real value, but nothing downstream ever waits on it.
  *
  * Four states:
  *   1. This classroom has no Timetable periods configured at all yet
@@ -635,26 +968,24 @@ function formatResolvedPeriodLabel(classroom, resolved) {
  *   3. Scheduled and still resolves -> the compact two-line summary
  *      (date, then "P2 · 09:45 AM · Science") plus Change/Clear.
  *   4. Scheduled but no longer resolves (the Timetable was
- *      reconfigured since) -> a clear, non-blocking warning instead of
- *      silently dropping or rewriting what this plan actually has
- *      stored — the stored (date, periodNumber) itself is NEVER
- *      touched just because it stopped resolving; only an explicit
- *      Change/Clear here ever changes it.
+ *      reconfigured since) -> "Schedule needs attention" and a calm,
+ *      non-blocking warning instead of silently dropping or rewriting
+ *      what this plan actually has stored — the stored (date,
+ *      periodNumber) itself is NEVER touched just because it stopped
+ *      resolving; only an explicit Change/Clear here ever changes it.
  * The inline picker (state.isSchedulePickerOpen) replaces whichever of
- * the above is showing, in place — same "small inline panel, not a
- * modal" pattern the Concept picker just below this already
- * establishes in this same file.
+ * the above is showing, in place.
  */
 function renderScheduleSection(plan, classroom, state, handlers) {
-  const section = document.createElement('div');
-  section.className = 'lesson-plan-builder__schedule-section';
-
-  const heading = document.createElement('p');
-  heading.className = 'lesson-plan-builder__schedule-heading';
-  heading.textContent = 'Schedule';
-  section.appendChild(heading);
+  const section = document.createElement('section');
+  section.className = 'lesson-plan-builder__stage';
 
   if (timetableService.getPeriods(classroom).length === 0) {
+    section.classList.add('lesson-plan-builder__stage--compact');
+    const heading = document.createElement('p');
+    heading.className = 'lesson-plan-builder__stage-summary-title';
+    heading.textContent = 'Schedule';
+    section.appendChild(heading);
     const note = document.createElement('p');
     note.className = 'lesson-plan-builder__schedule-note';
     note.textContent = "Scheduling isn't available yet — this classroom's timetable hasn't been set up.";
@@ -663,39 +994,74 @@ function renderScheduleSection(plan, classroom, state, handlers) {
   }
 
   if (state.isSchedulePickerOpen) {
+    section.classList.add('lesson-plan-builder__stage--reopened');
+    const headingRow = document.createElement('div');
+    headingRow.className = 'lesson-plan-builder__stage-heading-row';
+    const heading = document.createElement('h2');
+    heading.className = 'lesson-plan-builder__stage-heading';
+    heading.textContent = 'Schedule';
+    headingRow.appendChild(heading);
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'btn btn--text lesson-plan-builder__stage-collapse-button';
+    cancelButton.textContent = 'Cancel';
+    cancelButton.addEventListener('click', handlers.onToggleSchedulePickerOpen);
+    headingRow.appendChild(cancelButton);
+    section.appendChild(headingRow);
     section.appendChild(renderSchedulePicker(plan, classroom, state, handlers));
     return section;
   }
 
   if (!plan.scheduledDate) {
+    section.classList.add('lesson-plan-builder__stage--primary');
+    const heading = document.createElement('h2');
+    heading.className = 'lesson-plan-builder__stage-heading lesson-plan-builder__stage-heading--primary';
+    heading.textContent = 'When are you teaching it?';
+    section.appendChild(heading);
     section.appendChild(createAddRowButton('+ Add to timetable', handlers.onToggleSchedulePickerOpen));
     return section;
   }
 
   const resolved = timetableService.resolveScheduledSlot(classroom, plan.scheduledDate, plan.scheduledPeriodNumber);
 
-  const summary = document.createElement('div');
-  summary.className = 'lesson-plan-builder__schedule-summary';
+  section.classList.add('lesson-plan-builder__stage--compact');
 
-  const dateLine = document.createElement('p');
-  dateLine.className = 'lesson-plan-builder__schedule-summary-date';
-  dateLine.textContent = formatScheduleDateLabel(plan.scheduledDate);
-  summary.appendChild(dateLine);
+  const summary = document.createElement('div');
+  summary.className = 'lesson-plan-builder__stage-summary lesson-plan-builder__stage-summary--static';
 
   if (resolved) {
-    const periodLine = document.createElement('p');
-    periodLine.className = 'lesson-plan-builder__schedule-summary-period';
+    summary.appendChild(createIcon('check', { size: 16, className: 'lesson-plan-builder__stage-summary-check' }));
+  } else {
+    summary.appendChild(createIcon('alert-triangle', { size: 16, className: 'lesson-plan-builder__stage-summary-check lesson-plan-builder__stage-summary-check--stale' }));
+  }
+
+  const textWrap = document.createElement('span');
+  textWrap.className = 'lesson-plan-builder__stage-summary-text';
+
+  const titleEl = document.createElement('span');
+  titleEl.className = 'lesson-plan-builder__stage-summary-title';
+  titleEl.textContent = resolved ? 'Schedule' : 'Schedule needs attention';
+  textWrap.appendChild(titleEl);
+
+  const dateLine = document.createElement('span');
+  dateLine.className = 'lesson-plan-builder__stage-summary-preview';
+  dateLine.textContent = formatScheduleDateLabel(plan.scheduledDate);
+  textWrap.appendChild(dateLine);
+
+  const periodLine = document.createElement('span');
+  if (resolved) {
+    periodLine.className = 'lesson-plan-builder__stage-summary-preview';
     periodLine.textContent = formatResolvedPeriodLabel(classroom, resolved);
-    summary.appendChild(periodLine);
   } else {
     // Stale — the Timetable no longer has this exact (date, period)
     // configured. The stored schedule itself is untouched; this is
     // only ever a display-time warning.
-    const warning = document.createElement('p');
-    warning.className = 'lesson-plan-builder__schedule-summary-period lesson-plan-builder__schedule-summary-period--stale';
-    warning.textContent = 'This period is no longer configured in the timetable.';
-    summary.appendChild(warning);
+    periodLine.className = 'lesson-plan-builder__stage-summary-preview lesson-plan-builder__stage-summary-preview--stale';
+    periodLine.textContent = `Period ${plan.scheduledPeriodNumber} is no longer configured in the timetable.`;
   }
+  textWrap.appendChild(periodLine);
+
+  summary.appendChild(textWrap);
   section.appendChild(summary);
 
   const actionsRow = document.createElement('div');
@@ -724,16 +1090,14 @@ function renderScheduleSection(plan, classroom, state, handlers) {
 
 /**
  * The inline Date -> Period picker — date first, always; the period
- * choices below it are always derived from THAT date, never entered
- * manually (see this file's own header comment: "do not make the
- * teacher manually enter a period number"). `state.pendingScheduleDate`
- * is the date currently chosen but not yet resolved to a period —
- * only ever non-null while this picker is open (see
- * onToggleSchedulePickerOpen/onScheduleDateChange). Period choices
- * come straight from services/timetableService.js's
- * getConcreteSlotsForDateRange() for this exact single date — the
- * same function the Dashboard/Personal Hub Today strip already uses
- * for "what's really scheduled on this date," not a second lookup.
+ * choices below it are always derived from THAT date AND filtered to
+ * this plan's own Subject (see getRelevantScheduleSlots()), never
+ * entered manually and never every period the classroom happens to
+ * teach that day. Tappable period BLOCKS, not a dropdown — per
+ * explicit product direction. `state.pendingScheduleDate` is the date
+ * currently chosen but not yet resolved to a period — only ever
+ * non-null while this picker is open (see
+ * onToggleSchedulePickerOpen/onScheduleDateChange).
  */
 function renderSchedulePicker(plan, classroom, state, handlers) {
   const picker = document.createElement('div');
@@ -752,133 +1116,150 @@ function renderSchedulePicker(plan, classroom, state, handlers) {
   picker.appendChild(dateInput);
 
   if (state.pendingScheduleDate) {
-    const availableSlots = timetableService.getConcreteSlotsForDateRange(classroom, state.pendingScheduleDate, state.pendingScheduleDate);
+    const relevantSlots = getRelevantScheduleSlots(classroom, plan, state.pendingScheduleDate);
 
-    if (availableSlots.length === 0) {
+    if (relevantSlots.length === 0) {
+      const subject = plan.subjectId ? learningRecordService.getSubjectById(classroom, plan.subjectId) : null;
       const noneMessage = document.createElement('p');
       noneMessage.className = 'lesson-plan-builder__schedule-note';
-      noneMessage.textContent = 'No periods scheduled on this day.';
+      noneMessage.textContent = subject
+        ? `No ${subject.title} periods scheduled on this day.`
+        : 'No periods scheduled on this day.';
       picker.appendChild(noneMessage);
     } else {
       // Reached only when re-opening the picker on a date whose own
-      // available-period count has since changed to more than one
+      // relevant-period count has since changed to more than one
       // (onScheduleDateChange already auto-resolves the single-period
-      // case immediately, without ever showing this select) — real
+      // case immediately, without ever showing these blocks) — a real
       // choice when there's more than one relevant period that day.
       const periodLabel = document.createElement('label');
       periodLabel.className = 'lesson-plan-builder__schedule-picker-label';
       periodLabel.textContent = 'Period';
       picker.appendChild(periodLabel);
 
-      const periodSelect = document.createElement('select');
-      periodSelect.className = 'lesson-plan-builder__schedule-period-select';
-      const placeholderOption = document.createElement('option');
-      placeholderOption.value = '';
-      placeholderOption.textContent = '— Choose a period —';
-      placeholderOption.disabled = true;
-      placeholderOption.selected = true;
-      periodSelect.appendChild(placeholderOption);
+      const periodGrid = document.createElement('div');
+      periodGrid.className = 'lesson-plan-builder__period-grid';
 
-      let hasCurrentSelection = false;
-      availableSlots.forEach((slot) => {
+      relevantSlots.forEach((slot) => {
         const resolved = timetableService.resolveScheduledSlot(classroom, state.pendingScheduleDate, slot.periodNumber);
-        const option = document.createElement('option');
-        option.value = String(slot.periodNumber);
-        option.textContent = resolved ? formatResolvedPeriodLabel(classroom, resolved) : `P${slot.periodNumber}`;
-        // Reopening "Change" on the date it's already scheduled for
-        // keeps the real current period selected, rather than
-        // silently resetting to the placeholder every time.
-        if (state.pendingScheduleDate === plan.scheduledDate && slot.periodNumber === plan.scheduledPeriodNumber) {
-          option.selected = true;
-          hasCurrentSelection = true;
-        }
-        periodSelect.appendChild(option);
+        const isCurrent = state.pendingScheduleDate === plan.scheduledDate && slot.periodNumber === plan.scheduledPeriodNumber;
+        const block = document.createElement('button');
+        block.type = 'button';
+        block.className = 'lesson-plan-builder__period-block' + (isCurrent ? ' lesson-plan-builder__period-block--selected' : '');
+        block.setAttribute('aria-pressed', String(isCurrent));
+        if (isCurrent) block.appendChild(createIcon('check', { size: 12, className: 'lesson-plan-builder__period-block-check' }));
+        const timeLine = document.createElement('span');
+        timeLine.className = 'lesson-plan-builder__period-block-time';
+        timeLine.textContent = resolved ? `P${resolved.periodNumber} · ${personalHubService.formatPeriodTime(resolved.startTime)}` : `P${slot.periodNumber}`;
+        block.appendChild(timeLine);
+        const subjectLine = document.createElement('span');
+        subjectLine.className = 'lesson-plan-builder__period-block-subject';
+        subjectLine.textContent = resolved ? timetableDisplayService.resolveSubjectTitle(classroom, resolved.subjectId) : '';
+        block.appendChild(subjectLine);
+        block.addEventListener('click', () => handlers.onSchedulePeriodChange(slot.periodNumber));
+        periodGrid.appendChild(block);
       });
-      if (hasCurrentSelection) placeholderOption.selected = false;
 
-      periodSelect.addEventListener('change', () => {
-        if (periodSelect.value) handlers.onSchedulePeriodChange(Number(periodSelect.value));
-      });
-      picker.appendChild(periodSelect);
+      picker.appendChild(periodGrid);
     }
   }
-
-  const cancelButton = document.createElement('button');
-  cancelButton.type = 'button';
-  cancelButton.className = 'btn btn--text lesson-plan-builder__schedule-action';
-  cancelButton.textContent = 'Cancel';
-  cancelButton.addEventListener('click', handlers.onToggleSchedulePickerOpen);
-  picker.appendChild(cancelButton);
 
   return picker;
 }
 
 /**
- * Concept picker (Phase 4) — Subject first (a Concept belongs to
- * exactly one Subject's tree), then a multi-select Curriculum Explorer
- * scoped to that Subject's own Units. Reuses
+ * CONCEPT — the guided stage right after Subject/Schedule ("What are
+ * students learning?"). Subject is already fixed by the time this
+ * ever renders (see renderBuilder()'s own ordering), so this is just
+ * the Curriculum Explorer scoped straight to that Subject's own Units
+ * — no second subject picker here anymore (Phase 4's original
+ * dropdown-in-this-field is gone; Subject is chosen earlier now, once,
+ * by renderSubjectStage()). Reuses
  * ui/components/CurriculumExplorerPanel.js exactly as-is rather than a
- * new picker, per explicit product direction — this is that shared
+ * new picker, per explicit product direction — that shared
  * component's own already-designed `onClick`-per-concept interactive
- * mode, just its first real caller (every existing caller today uses
- * it read-only). A concept is "selected" by being present in
- * `plan.conceptIds`; clicking a concept again removes it — the panel
- * itself has no built-in "selected" visual state, so a selected
- * concept's title is prefixed with a checkmark here instead of forking
- * the shared component for one new CSS class.
+ * mode. A concept is "selected" by being present in `plan.conceptIds`;
+ * clicking a concept again removes it — the panel itself has no
+ * built-in "selected" visual state, so a selected concept's title is
+ * prefixed with a checkmark here instead of forking the shared
+ * component for one new CSS class.
  *
- * Deliberately NOT gated by `handlers.editable` the same way every
- * other field in this view is — per explicit product direction,
- * concept selection stays available while building even on... no,
- * actually: this DOES still respect the same SUBMITTED/APPROVED lock
- * as everything else (a locked plan shouldn't let you change its
- * concepts either), it just never blocks *starting* a lesson without
- * one — that's lessonPlanValidationService.js's own submit-time gate,
- * not a Builder restriction.
+ * Compact/primary treatment matches every other guided CONTENT stage
+ * (see renderGuidedContentStage()) — this one is just bespoke rather
+ * than going through that shared helper, since its "full" content
+ * needs the chips + explorer-panel structure below, not a plain
+ * textarea.
  */
 function renderConceptsField(plan, classroom, state, handlers) {
-  const field = document.createElement('div');
-  field.className = 'lesson-plan-builder__concepts-field';
+  const isComplete = plan.conceptIds.length > 0;
+  const isFrontier = state.frontierStage === LESSON_PLAN_STAGES.CONCEPT;
+  const isReopened = state.reopenedStageKey === LESSON_PLAN_STAGES.CONCEPT;
 
-  const label = document.createElement('label');
-  label.className = 'lesson-plan-builder__field-label';
-  label.textContent = 'Concepts';
-  field.appendChild(label);
+  const field = document.createElement('section');
+  field.className = 'lesson-plan-builder__stage';
 
-  const subjectRow = document.createElement('div');
-  subjectRow.className = 'lesson-plan-builder__concepts-subject-row';
+  // Unlike the free-text stages, Concept is a multi-select — picking
+  // ONE concept already satisfies "complete" (submission readiness
+  // only asks for at least one), but that must never auto-collapse
+  // this stage out from under a teacher who is still actively
+  // choosing more. `state.isConceptPickerOpen` (the explorer panel's
+  // own explicit open/closed toggle) overrides the usual "complete
+  // stages compress" rule for exactly this reason.
+  if (isComplete && !isFrontier && !isReopened && !state.isConceptPickerOpen) {
+    field.classList.add('lesson-plan-builder__stage--compact');
+    const summary = document.createElement('button');
+    summary.type = 'button';
+    summary.className = 'lesson-plan-builder__stage-summary';
+    summary.disabled = !handlers.editable;
+    summary.addEventListener('click', () => handlers.onToggleReopenStage(LESSON_PLAN_STAGES.CONCEPT));
+    summary.appendChild(createIcon('check', { size: 16, className: 'lesson-plan-builder__stage-summary-check' }));
+    const textWrap = document.createElement('span');
+    textWrap.className = 'lesson-plan-builder__stage-summary-text';
+    const titleEl = document.createElement('span');
+    titleEl.className = 'lesson-plan-builder__stage-summary-title';
+    titleEl.textContent = 'Concepts';
+    textWrap.appendChild(titleEl);
+    const preview = document.createElement('span');
+    preview.className = 'lesson-plan-builder__stage-summary-preview';
+    preview.textContent = plan.conceptIds
+      .map((conceptId) => learningRecordService.getConceptById(classroom, conceptId)?.title)
+      .filter(Boolean)
+      .join(', ');
+    textWrap.appendChild(preview);
+    summary.appendChild(textWrap);
+    field.appendChild(summary);
+    return field;
+  }
 
-  const subjectSelect = document.createElement('select');
-  subjectSelect.className = 'lesson-plan-builder__concepts-subject-select';
-  subjectSelect.disabled = !handlers.editable;
+  field.classList.add(isFrontier ? 'lesson-plan-builder__stage--primary' : 'lesson-plan-builder__stage--reopened');
+
+  const headingRow = document.createElement('div');
+  headingRow.className = 'lesson-plan-builder__stage-heading-row';
+  const heading = document.createElement('h2');
+  heading.className = isFrontier ? 'lesson-plan-builder__stage-heading lesson-plan-builder__stage-heading--primary' : 'lesson-plan-builder__stage-heading';
+  heading.textContent = 'What are students learning?';
+  headingRow.appendChild(heading);
+  if (isReopened && !isFrontier) {
+    const doneButton = document.createElement('button');
+    doneButton.type = 'button';
+    doneButton.className = 'btn btn--text lesson-plan-builder__stage-collapse-button';
+    doneButton.textContent = 'Done';
+    doneButton.addEventListener('click', () => handlers.onToggleReopenStage(LESSON_PLAN_STAGES.CONCEPT));
+    headingRow.appendChild(doneButton);
+  }
+  field.appendChild(headingRow);
+
   const subjects = learningRecordService.getSubjects(classroom);
-
-  const placeholderOption = document.createElement('option');
-  placeholderOption.value = '';
-  placeholderOption.textContent = subjects.length === 0 ? 'No subjects set up yet' : 'Choose a subject…';
-  subjectSelect.appendChild(placeholderOption);
-  subjects.forEach((subject) => {
-    const option = document.createElement('option');
-    option.value = subject.id;
-    option.textContent = subject.title;
-    if (subject.id === plan.subjectId) option.selected = true;
-    subjectSelect.appendChild(option);
-  });
-  subjectSelect.addEventListener('change', () => handlers.onSubjectChangeForConcepts(subjectSelect.value));
-  subjectRow.appendChild(subjectSelect);
-
   const selectedSubject = plan.subjectId ? subjects.find((subject) => subject.id === plan.subjectId) : null;
 
   if (handlers.editable && selectedSubject) {
     const toggleButton = document.createElement('button');
     toggleButton.type = 'button';
     toggleButton.className = 'btn btn--ghost lesson-plan-builder__concepts-toggle-button';
-    toggleButton.textContent = state.isConceptPickerOpen ? 'Done' : '+ Choose Concepts';
+    toggleButton.textContent = state.isConceptPickerOpen ? 'Done choosing' : '+ Choose Concepts';
     toggleButton.addEventListener('click', handlers.onToggleConceptPickerOpen);
-    subjectRow.appendChild(toggleButton);
+    field.appendChild(toggleButton);
   }
-
-  field.appendChild(subjectRow);
 
   const chips = document.createElement('div');
   chips.className = 'lesson-plan-builder__concept-chips';
@@ -949,6 +1330,22 @@ function renderConceptsField(plan, classroom, state, handlers) {
  * (it couldn't have been submitted otherwise) and has nothing left to
  * offer here — renderTitleBar's own status message covers that case.
  */
+/**
+ * The "ready for review"/Submit action — per this feature's own
+ * product direction, submitting is the readiness checklist's own
+ * final step, never a separate screen or a button bolted on
+ * somewhere else. Deliberately renders NOTHING at all when not ready
+ * (no "Almost there — N things left" list anymore — see this file's
+ * own header comment on why): the guided flow itself is what surfaces
+ * what's still incomplete (the frontier stage is sitting there,
+ * uncollapsed, asking for attention), so a second, separate warning
+ * panel repeating the same information would just be the "still have
+ * chores" anxiety this whole redesign explicitly set out to remove.
+ * Submission validation itself (services/lessonPlanValidationService.js's
+ * getLessonPlanReadiness()) is completely unchanged — same
+ * requirements, same gate on the Submit button — only the missing-item
+ * checklist UI is gone.
+ */
 function renderReadinessPanel(plan, handlers) {
   // Not editable (SUBMITTED/APPROVED) — nothing actionable left to show
   // here; renderTitleBar's own status message already covers "what's
@@ -956,68 +1353,100 @@ function renderReadinessPanel(plan, handlers) {
   if (!handlers.editable) return document.createComment('lesson plan locked — no readiness action to show');
 
   const readiness = getLessonPlanReadiness(plan);
+  if (!readiness.ready) return document.createComment('not yet ready — the guided flow itself surfaces what is still incomplete');
+
   const panel = document.createElement('div');
-  panel.className = readiness.ready
-    ? 'lesson-plan-builder__readiness lesson-plan-builder__readiness--ready'
-    : 'lesson-plan-builder__readiness lesson-plan-builder__readiness--pending';
+  panel.className = 'lesson-plan-builder__readiness lesson-plan-builder__readiness--ready';
 
-  if (readiness.ready) {
-    panel.appendChild(createIcon('check-circle-2', { size: 16 }));
-    const text = document.createElement('span');
-    text.textContent = plan.status === LESSON_PLAN_STATUS.CHANGES_REQUESTED ? 'Ready to resubmit.' : 'Ready for review.';
-    panel.appendChild(text);
+  panel.appendChild(createIcon('check-circle-2', { size: 16 }));
+  const text = document.createElement('span');
+  text.textContent = plan.status === LESSON_PLAN_STATUS.CHANGES_REQUESTED ? 'Ready to resubmit.' : 'Ready for review.';
+  panel.appendChild(text);
 
-    const submitButton = document.createElement('button');
-    submitButton.type = 'button';
-    submitButton.className = 'btn btn--primary lesson-plan-builder__submit-button';
-    submitButton.textContent = plan.status === LESSON_PLAN_STATUS.CHANGES_REQUESTED ? 'Resubmit for Review' : 'Submit for Review';
-    submitButton.addEventListener('click', handlers.onSubmitForReview);
-    panel.appendChild(submitButton);
-
-    return panel;
-  }
-
-  const heading = document.createElement('p');
-  heading.className = 'lesson-plan-builder__readiness-heading';
-  heading.textContent = `Almost there — ${readiness.missing.length} thing${readiness.missing.length === 1 ? '' : 's'} left:`;
-  panel.appendChild(heading);
-
-  const list = document.createElement('ul');
-  list.className = 'lesson-plan-builder__readiness-list';
-  readiness.missing.forEach((item) => {
-    const entry = document.createElement('li');
-    entry.textContent = item.message;
-    list.appendChild(entry);
-  });
-  panel.appendChild(list);
+  const submitButton = document.createElement('button');
+  submitButton.type = 'button';
+  submitButton.className = 'btn btn--primary lesson-plan-builder__submit-button';
+  submitButton.textContent = plan.status === LESSON_PLAN_STATUS.CHANGES_REQUESTED ? 'Resubmit for Review' : 'Submit for Review';
+  submitButton.addEventListener('click', handlers.onSubmitForReview);
+  panel.appendChild(submitButton);
 
   return panel;
 }
 
-function renderSection(heading, children, plan, sectionKey) {
-  const section = document.createElement('section');
-  section.className = 'lesson-plan-builder__section';
+/**
+ * Shared shell for the 4 free-text guided CONTENT stages (Purpose/
+ * Connection/Experience/Evidence) — a compact "✓ Title" summary once
+ * complete (unless it's the current guided focus or has been manually
+ * reopened), a full writing area otherwise. "Complete" comes from
+ * services/lessonPlanValidationService.js's own
+ * getLessonPlanStageCompletion() — the exact same submission-readiness
+ * rules, never a second definition of "done." Subject/Schedule/Concept
+ * each have their own bespoke render function instead of this one
+ * (their "full" content isn't a plain textarea), but all of them share
+ * this same visual language (see css/styles.css's own
+ * .lesson-plan-builder__stage* rules) so the guided trail reads as one
+ * consistent system regardless of which stage produced it.
+ */
+function renderGuidedContentStage({ stage, title, sectionKey, plan, state, handlers, renderFull, getPreview }) {
+  const isComplete = Boolean(state.stageCompletionByKey[stage]);
+  const isFrontier = state.frontierStage === stage;
+  const isReopened = state.reopenedStageKey === stage;
 
-  const headingEl = document.createElement('h2');
-  headingEl.className = 'lesson-plan-builder__section-heading';
-  headingEl.textContent = heading;
-  section.appendChild(headingEl);
+  const wrap = document.createElement('section');
+  wrap.className = 'lesson-plan-builder__stage';
 
-  children.forEach((child) => section.appendChild(child));
-
-  // Section-level reviewer comments (WHY/SELF·OTHERS·INDIA/ASSESSMENT/
-  // SPARK each have exactly one LESSON_PLAN_SECTION_KEYS entry covering
-  // the whole section — matching that existing granularity, not a new
-  // one). Section 5's own three fields are each addressed individually
-  // instead (see createLabeledTextarea's own sectionKey param) since
-  // they have three separate keys of their own; this call site passes
-  // `null` for that section for exactly that reason.
-  if (sectionKey && plan) {
-    const comments = renderCommentsList(plan, sectionKey);
-    if (comments) section.appendChild(comments);
+  if (isComplete && !isFrontier && !isReopened) {
+    wrap.classList.add('lesson-plan-builder__stage--compact');
+    const summary = document.createElement('button');
+    summary.type = 'button';
+    summary.className = 'lesson-plan-builder__stage-summary';
+    summary.disabled = !handlers.editable;
+    summary.addEventListener('click', () => handlers.onToggleReopenStage(stage));
+    summary.appendChild(createIcon('check', { size: 16, className: 'lesson-plan-builder__stage-summary-check' }));
+    const textWrap = document.createElement('span');
+    textWrap.className = 'lesson-plan-builder__stage-summary-text';
+    const titleEl = document.createElement('span');
+    titleEl.className = 'lesson-plan-builder__stage-summary-title';
+    titleEl.textContent = title;
+    textWrap.appendChild(titleEl);
+    const previewText = getPreview(plan);
+    if (previewText) {
+      const preview = document.createElement('span');
+      preview.className = 'lesson-plan-builder__stage-summary-preview';
+      preview.textContent = previewText.length > 90 ? `${previewText.slice(0, 90)}…` : previewText;
+      textWrap.appendChild(preview);
+    }
+    summary.appendChild(textWrap);
+    wrap.appendChild(summary);
+    return wrap;
   }
 
-  return section;
+  wrap.classList.add(isFrontier ? 'lesson-plan-builder__stage--primary' : 'lesson-plan-builder__stage--reopened');
+
+  const headingRow = document.createElement('div');
+  headingRow.className = 'lesson-plan-builder__stage-heading-row';
+  const heading = document.createElement('h2');
+  heading.className = isFrontier ? 'lesson-plan-builder__stage-heading lesson-plan-builder__stage-heading--primary' : 'lesson-plan-builder__stage-heading';
+  heading.textContent = title;
+  headingRow.appendChild(heading);
+  if (isReopened && !isFrontier) {
+    const doneButton = document.createElement('button');
+    doneButton.type = 'button';
+    doneButton.className = 'btn btn--text lesson-plan-builder__stage-collapse-button';
+    doneButton.textContent = 'Done';
+    doneButton.addEventListener('click', () => handlers.onToggleReopenStage(stage));
+    headingRow.appendChild(doneButton);
+  }
+  wrap.appendChild(headingRow);
+
+  wrap.appendChild(renderFull());
+
+  if (sectionKey) {
+    const comments = renderCommentsList(plan, sectionKey);
+    if (comments) wrap.appendChild(comments);
+  }
+
+  return wrap;
 }
 
 function createLabeledTextarea({ label, placeholder, value, onChange, disabled = false, plan = null, sectionKey = null }) {
@@ -1458,21 +1887,42 @@ function renderDifferentiationFields(plan, activity, handlers) {
 
 // ---- 5. HELPING EACH OTHER LEARN -------------------------------------
 
-function renderHelpingEachOtherLearnSection(plan, handlers) {
-  const wrap = document.createElement('div');
-  wrap.className = 'lesson-plan-builder__helping-each-other-learn';
+/**
+ * Pair Explanation — the one field of the original 5 Questions'
+ * "Helping Each Other Learn" (models/LessonPlan.js's own 5th question)
+ * that the guided flow regroups into EXPERIENCE, alongside Spark and
+ * Activities (see services/lessonPlanValidationService.js's own
+ * getLessonPlanStageCompletion() doc comment for the full reasoning:
+ * this is "what students actually do," narratively). The field
+ * itself, its label, its placeholder, its mutation
+ * (lessonPlanService.updateHelpingEachOtherLearn()), and its own
+ * sectionKey (LESSON_PLAN_SECTION_KEYS.PAIR_EXPLANATION) are all
+ * completely unchanged — only which stage's UI renders it moved.
+ */
+function renderPairExplanationField(plan, handlers) {
+  return createLabeledTextarea({
+    label: 'Pair Explanation',
+    placeholder: 'How will students explain their learning to a partner?',
+    value: plan.pairExplanation,
+    onChange: (value) => handlers.onHelpingEachOtherLearnChange('pairExplanation', value),
+    disabled: !handlers.editable,
+    plan,
+    sectionKey: LESSON_PLAN_SECTION_KEYS.PAIR_EXPLANATION,
+  });
+}
 
-  wrap.appendChild(
-    createLabeledTextarea({
-      label: 'Pair Explanation',
-      placeholder: 'How will students explain their learning to a partner?',
-      value: plan.pairExplanation,
-      onChange: (value) => handlers.onHelpingEachOtherLearnChange('pairExplanation', value),
-      disabled: !handlers.editable,
-      plan,
-      sectionKey: LESSON_PLAN_SECTION_KEYS.PAIR_EXPLANATION,
-    })
-  );
+/**
+ * Final Question + Teacher Look-Fors — the other two fields of the
+ * original 5th Question, regrouped into EVIDENCE alongside Assessment
+ * (see renderPairExplanationField()'s own doc comment above for the
+ * full split reasoning: this half is "how you know it worked").
+ * Unchanged fields/labels/mutation/sectionKeys — only which stage's
+ * UI renders them moved.
+ */
+function renderFinalQuestionAndLookForsFields(plan, handlers) {
+  const wrap = document.createElement('div');
+  wrap.className = 'lesson-plan-builder__evidence-extra';
+
   const finalQuestionField = createLabeledTextarea({
     label: 'Final Question',
     placeholder: 'One closing question to check understanding',
@@ -1484,6 +1934,7 @@ function renderHelpingEachOtherLearnSection(plan, handlers) {
   });
   if (handlers.editable) finalQuestionField.appendChild(createFromTeachingIdeasButton(handlers.onOpenFinalQuestionPicker));
   wrap.appendChild(finalQuestionField);
+
   wrap.appendChild(
     createLabeledTextarea({
       label: "Teacher Look-Fors",
