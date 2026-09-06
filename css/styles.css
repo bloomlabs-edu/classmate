@@ -2916,6 +2916,7 @@ textarea.reading-editor__block-input {
 .lesson-plan-builder__meta-line {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.75rem;
   margin-top: 0.4rem;
 }
@@ -2926,6 +2927,77 @@ textarea.reading-editor__block-input {
   padding: 0.35rem 0.6rem;
   font-family: inherit;
   max-width: 220px;
+}
+/* Schedule — its own small block between Grade and Concepts (see
+   ui/views/LessonPlanBuilderView.js's own renderScheduleSection()),
+   useful metadata rather than another large planning section: a
+   quiet heading, compact controls, and a plain-text resolved summary
+   (never an editable-looking field — it's read-only, derived fresh
+   from the Timetable every render; only the date/period choice
+   itself, via the picker, is ever directly editable). Matches this
+   screen's existing muted-heading/helper-text conventions
+   (.lesson-plan-builder__readiness-heading, .grade-input) rather than
+   introducing new type scale or color. */
+.lesson-plan-builder__schedule-section {
+  margin: 0.75rem 0 1.25rem;
+}
+.lesson-plan-builder__schedule-heading {
+  font-weight: var(--font-weight-bold);
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  margin: 0 0 0.4rem;
+}
+.lesson-plan-builder__schedule-note {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  margin: 0;
+}
+.lesson-plan-builder__schedule-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.lesson-plan-builder__schedule-summary-date {
+  font-size: 0.95rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+  margin: 0;
+}
+.lesson-plan-builder__schedule-summary-period {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  margin: 0;
+}
+.lesson-plan-builder__schedule-summary-period--stale {
+  color: var(--color-warning, #BF5F1A);
+}
+.lesson-plan-builder__schedule-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+.lesson-plan-builder__schedule-action {
+  font-size: 0.85rem;
+  padding: 0.2rem 0.4rem;
+  white-space: nowrap;
+}
+.lesson-plan-builder__schedule-picker {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.lesson-plan-builder__schedule-picker-label {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+.lesson-plan-builder__schedule-date-input,
+.lesson-plan-builder__schedule-period-select {
+  font-size: 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: 0.35rem 0.6rem;
+  font-family: inherit;
 }
 .lesson-plan-builder__readiness {
   display: flex;

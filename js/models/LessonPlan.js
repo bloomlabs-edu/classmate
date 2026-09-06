@@ -188,6 +188,22 @@ export function createLessonPlan({
   gradeLabel = '',
   topic = '',
 
+  // Scheduling — a durable (date, period number) REFERENCE into the
+  // classroom's own recurring Timetable (see services/timetableService.js),
+  // resolved live at read time, exactly like curriculumUnitId/conceptIds
+  // above never copy their own title/subject either. Deliberately NOT a
+  // teachingSlotId (models/TeachingSlot.js's own concrete occurrences
+  // are regenerated on demand and have no stable identity across
+  // renders) and NOT subject/time/teacher fields copied onto this plan
+  // — those stay the Timetable's own job to answer, every time, so a
+  // later Timetable edit is reflected automatically rather than this
+  // plan quietly going stale. Both fields are set/cleared together,
+  // never one without the other (see services/lessonPlanService.js's
+  // own updateSchedule()) — a lone periodNumber with no date, or vice
+  // versa, is not a valid state this model ever represents.
+  scheduledDate = null, // "YYYY-MM-DD", or null if not scheduled
+  scheduledPeriodNumber = null, // 1-based, matches models/Timetable.js's own TimetablePeriod.periodNumber
+
   // 1. WHY ARE STUDENTS LEARNING WHAT THEY ARE LEARNING TODAY?
   lessonObjective = '',
   swbatObjectives = [],
@@ -228,6 +244,9 @@ export function createLessonPlan({
     conceptIds,
     gradeLabel,
     topic,
+
+    scheduledDate,
+    scheduledPeriodNumber,
 
     lessonObjective,
     swbatObjectives,

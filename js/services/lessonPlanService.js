@@ -63,6 +63,45 @@ export function updateContext(lessonPlan, { subjectId, curriculumUnitId, concept
 }
 
 // ---------------------------------------------------------------------
+// Scheduling — see models/LessonPlan.js's own scheduledDate/
+// scheduledPeriodNumber doc comment for the full reasoning
+// ---------------------------------------------------------------------
+
+/**
+ * Sets or clears this plan's own (scheduledDate, scheduledPeriodNumber)
+ * pair — deliberately its own dedicated mutator, not folded into
+ * updateContext() above, since scheduling is a different kind of
+ * decision (a Timetable reference) than Grade/Subject/Concepts/Topic
+ * (this plan's own content).
+ *
+ * Unlike every `!== undefined`-merge updater elsewhere in this file,
+ * this one does NOT support updating just one field — both must be
+ * supplied together, and either both are real values (scheduling) or
+ * both are `null` (clearing). This is the one invariant the whole
+ * feature depends on: a lone date with no period, or a lone period
+ * with no date, is never a state this model represents (see
+ * models/LessonPlan.js's own doc comment) — so an attempt to set only
+ * one is rejected as a no-op here rather than silently left half-set,
+ * the same "guard clause, no-op, no throw" convention
+ * updateSwbatObjective()/removeAssessmentItem() above already use for
+ * invalid input from this same file. The Builder UI is expected to
+ * never actually construct an invalid partial call (see
+ * ui/views/LessonPlanBuilderView.js's own date/period picker, which
+ * always resolves both together, or clears both together) — this
+ * check exists as this model's own last line of defense, not as the
+ * primary place invalid input is expected to be caught.
+ */
+export function updateSchedule(lessonPlan, { scheduledDate, scheduledPeriodNumber } = {}) {
+  const clearingBoth = scheduledDate == null && scheduledPeriodNumber == null;
+  const settingBoth = scheduledDate != null && scheduledPeriodNumber != null;
+  if (!clearingBoth && !settingBoth) return;
+
+  lessonPlan.scheduledDate = scheduledDate ?? null;
+  lessonPlan.scheduledPeriodNumber = scheduledPeriodNumber ?? null;
+  touch(lessonPlan);
+}
+
+// ---------------------------------------------------------------------
 // 1. WHY
 // ---------------------------------------------------------------------
 

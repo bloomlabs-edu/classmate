@@ -64,6 +64,10 @@ import * as lessonPlanRepository from '../../services/lessonPlanRepository.js';
 import * as lessonPlanService from '../../services/lessonPlanService.js';
 import * as lessonPlanReviewService from '../../services/lessonPlanReviewService.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
+import * as timetableService from '../../services/timetableService.js';
+import * as timetableDisplayService from '../../services/timetableDisplayService.js';
+import * as personalHubService from '../../services/personalHubService.js';
+import { getTodayDateKey } from '../../utils/dateHelpers.js';
 import { LESSON_PLAN_STATUS, LESSON_PLAN_SECTION_KEYS } from '../../models/LessonPlan.js';
 import { getLessonPlanReadiness } from '../../services/lessonPlanValidationService.js';
 import { createBackButton } from '../components/BackButton.js';
@@ -127,6 +131,8 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
   const saveIndicator = createSaveIndicatorController();
   let isConceptPickerOpen = false; // local UI state only — never persisted
   let expandedConceptUnitId = null;
+  let isSchedulePickerOpen = false; // local UI state only — never persisted
+  let pendingScheduleDate = null; // the date picked but not yet resolved to a period (set only while isSchedulePickerOpen)
 
   function persistAndRerender() {
     saveIndicator.persistPatch(() => lessonPlanRepository.saveLessonPlan(classroom.id, plan));
@@ -178,7 +184,7 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
 
   function rerender() {
     const editable = plan ? lessonPlanReviewService.isLessonPlanEditable(plan) : false;
-    renderBuilder(container, { plan, loadError, collapsedActivityIds, saveIndicatorElement: saveIndicator.element, editable, classroom, isConceptPickerOpen, expandedConceptUnitId }, {
+    renderBuilder(container, { plan, loadError, collapsedActivityIds, saveIndicatorElement: saveIndicator.element, editable, classroom, isConceptPickerOpen, expandedConceptUnitId, isSchedulePickerOpen, pendingScheduleDate }, {
       onBack,
       editable,
       onSubmitForReview: submitForReview,
@@ -200,6 +206,70 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
         // meaningless once the tree it came from is no longer in view.
         lessonPlanService.updateContext(plan, { subjectId: subjectId || null, conceptIds: [] });
         expandedConceptUnitId = null;
+
+        // New-lesson-plan default: once a real Subject is known for the
+        // FIRST time (this plan has never had a schedule of its own —
+        // never overridden by picking/changing Subject again later),
+        // default the schedule to the next real Timetable occurrence of
+        // that subject. Reuses the exact same bounded forward-scan
+        // ui/views/TimetableView.js's own Carry Forward suggestions
+        // already use (services/timetableService.js's
+        // getNextFutureSlotForSubject()) — not a second search. Never
+        // invents a subject or a schedule: if there's no future
+        // occurrence configured at all, this plan simply stays
+        // unscheduled, exactly as it already does today.
+        if (subjectId && !plan.scheduledDate) {
+          const suggestion = timetableService.getNextFutureSlotForSubject(classroom, {
+            subjectId,
+            afterDateKey: getTodayDateKey(),
+            afterPeriodNumber: 0,
+          });
+          if (suggestion) {
+            lessonPlanService.updateSchedule(plan, { scheduledDate: suggestion.date, scheduledPeriodNumber: suggestion.periodNumber });
+          }
+        }
+
+        persistAndRerender();
+      },
+      // ---- Schedule ----
+      onToggleSchedulePickerOpen: () => {
+        isSchedulePickerOpen = !isSchedulePickerOpen;
+        // Seeds the picker with whatever's already scheduled (so
+        // reopening it to change the date shows the real current
+        // value, not a blank field) — cleared again on close so a
+        // cancelled picker never leaves stray local state behind.
+        pendingScheduleDate = isSchedulePickerOpen ? plan.scheduledDate : null;
+        rerender(); // local UI state only — nothing to persist
+      },
+      onScheduleDateChange: (dateKey) => {
+        pendingScheduleDate = dateKey || null;
+        // Exactly one relevant period that day -> resolve immediately,
+        // no separate period step the teacher has to also click
+        // through. Multiple (or zero) -> renderTitleBar's own picker
+        // shows the period choices (or the "no matching period" note)
+        // and waits for onSchedulePeriodChange below.
+        if (pendingScheduleDate) {
+          const availableSlots = timetableService.getConcreteSlotsForDateRange(classroom, pendingScheduleDate, pendingScheduleDate);
+          if (availableSlots.length === 1) {
+            lessonPlanService.updateSchedule(plan, { scheduledDate: pendingScheduleDate, scheduledPeriodNumber: availableSlots[0].periodNumber });
+            isSchedulePickerOpen = false;
+            pendingScheduleDate = null;
+            persistAndRerender();
+            return;
+          }
+        }
+        rerender(); // local UI state only (date chosen, period still pending, or cleared) — nothing to persist yet
+      },
+      onSchedulePeriodChange: (periodNumber) => {
+        lessonPlanService.updateSchedule(plan, { scheduledDate: pendingScheduleDate, scheduledPeriodNumber: periodNumber });
+        isSchedulePickerOpen = false;
+        pendingScheduleDate = null;
+        persistAndRerender();
+      },
+      onClearSchedule: () => {
+        lessonPlanService.updateSchedule(plan, { scheduledDate: null, scheduledPeriodNumber: null });
+        isSchedulePickerOpen = false;
+        pendingScheduleDate = null;
         persistAndRerender();
       },
       onToggleConceptPickerOpen: () => {
@@ -460,7 +530,8 @@ function renderBuilder(container, state, handlers) {
 
   const plan = state.plan;
 
-  wrapper.appendChild(renderTitleBar(plan, state.saveIndicatorElement, handlers));
+  wrapper.appendChild(renderTitleBar(plan, state, handlers));
+  wrapper.appendChild(renderScheduleSection(plan, state.classroom, state, handlers));
   wrapper.appendChild(renderConceptsField(plan, state.classroom, state, handlers));
   wrapper.appendChild(renderReadinessPanel(plan, handlers));
 
@@ -486,7 +557,8 @@ function renderBuilder(container, state, handlers) {
   container.appendChild(wrapper);
 }
 
-function renderTitleBar(plan, saveIndicatorElement, handlers) {
+function renderTitleBar(plan, state, handlers) {
+  const { saveIndicatorElement } = state;
   const titleBar = document.createElement('div');
   titleBar.className = 'lesson-plan-builder__title-bar';
 
@@ -531,6 +603,214 @@ function renderTitleBar(plan, saveIndicatorElement, handlers) {
   titleBar.appendChild(metaLine);
 
   return titleBar;
+}
+
+/** "Monday, 7 Sept 2026" — a pure locale-formatting of an already-known date key, never date arithmetic (see this file's own header comment on reusing utils/dateHelpers.js's date-key conventions). */
+function formatScheduleDateLabel(dateKey) {
+  return new Date(`${dateKey}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+/** "P2 · 09:45 AM · Science" — the one shared label format for a resolved period, used identically in the compact summary and every option in the period picker below, so a teacher sees the exact same wording either way. */
+function formatResolvedPeriodLabel(classroom, resolved) {
+  const subjectTitle = timetableDisplayService.resolveSubjectTitle(classroom, resolved.subjectId);
+  return `P${resolved.periodNumber} · ${personalHubService.formatPeriodTime(resolved.startTime)} · ${subjectTitle}`;
+}
+
+/**
+ * "Schedule" — a durable (scheduledDate, scheduledPeriodNumber)
+ * reference into the classroom's own real Timetable (see
+ * models/LessonPlan.js's own doc comment), resolved live here via
+ * services/timetableService.js's resolveScheduledSlot() every render —
+ * never a copy of subject/time/teacher, so a later Timetable edit
+ * (periods restructured, a slot's subject changed) is reflected
+ * automatically the very next time this renders, with no migration.
+ * Deliberately its own small section between Grade and Concepts, not
+ * folded into the meta-line — useful metadata, not another large
+ * planning section, per explicit product direction.
+ *
+ * Four states:
+ *   1. This classroom has no Timetable periods configured at all yet
+ *      -> a plain explanatory note, nothing to pick from.
+ *   2. Not yet scheduled -> a single "+ Add to timetable" action.
+ *   3. Scheduled and still resolves -> the compact two-line summary
+ *      (date, then "P2 · 09:45 AM · Science") plus Change/Clear.
+ *   4. Scheduled but no longer resolves (the Timetable was
+ *      reconfigured since) -> a clear, non-blocking warning instead of
+ *      silently dropping or rewriting what this plan actually has
+ *      stored — the stored (date, periodNumber) itself is NEVER
+ *      touched just because it stopped resolving; only an explicit
+ *      Change/Clear here ever changes it.
+ * The inline picker (state.isSchedulePickerOpen) replaces whichever of
+ * the above is showing, in place — same "small inline panel, not a
+ * modal" pattern the Concept picker just below this already
+ * establishes in this same file.
+ */
+function renderScheduleSection(plan, classroom, state, handlers) {
+  const section = document.createElement('div');
+  section.className = 'lesson-plan-builder__schedule-section';
+
+  const heading = document.createElement('p');
+  heading.className = 'lesson-plan-builder__schedule-heading';
+  heading.textContent = 'Schedule';
+  section.appendChild(heading);
+
+  if (timetableService.getPeriods(classroom).length === 0) {
+    const note = document.createElement('p');
+    note.className = 'lesson-plan-builder__schedule-note';
+    note.textContent = "Scheduling isn't available yet — this classroom's timetable hasn't been set up.";
+    section.appendChild(note);
+    return section;
+  }
+
+  if (state.isSchedulePickerOpen) {
+    section.appendChild(renderSchedulePicker(plan, classroom, state, handlers));
+    return section;
+  }
+
+  if (!plan.scheduledDate) {
+    section.appendChild(createAddRowButton('+ Add to timetable', handlers.onToggleSchedulePickerOpen));
+    return section;
+  }
+
+  const resolved = timetableService.resolveScheduledSlot(classroom, plan.scheduledDate, plan.scheduledPeriodNumber);
+
+  const summary = document.createElement('div');
+  summary.className = 'lesson-plan-builder__schedule-summary';
+
+  const dateLine = document.createElement('p');
+  dateLine.className = 'lesson-plan-builder__schedule-summary-date';
+  dateLine.textContent = formatScheduleDateLabel(plan.scheduledDate);
+  summary.appendChild(dateLine);
+
+  if (resolved) {
+    const periodLine = document.createElement('p');
+    periodLine.className = 'lesson-plan-builder__schedule-summary-period';
+    periodLine.textContent = formatResolvedPeriodLabel(classroom, resolved);
+    summary.appendChild(periodLine);
+  } else {
+    // Stale — the Timetable no longer has this exact (date, period)
+    // configured. The stored schedule itself is untouched; this is
+    // only ever a display-time warning.
+    const warning = document.createElement('p');
+    warning.className = 'lesson-plan-builder__schedule-summary-period lesson-plan-builder__schedule-summary-period--stale';
+    warning.textContent = 'This period is no longer configured in the timetable.';
+    summary.appendChild(warning);
+  }
+  section.appendChild(summary);
+
+  const actionsRow = document.createElement('div');
+  actionsRow.className = 'lesson-plan-builder__schedule-actions';
+
+  const changeButton = document.createElement('button');
+  changeButton.type = 'button';
+  changeButton.className = 'btn btn--text lesson-plan-builder__schedule-action';
+  changeButton.textContent = 'Change';
+  changeButton.disabled = !handlers.editable;
+  changeButton.addEventListener('click', handlers.onToggleSchedulePickerOpen);
+  actionsRow.appendChild(changeButton);
+
+  const clearButton = document.createElement('button');
+  clearButton.type = 'button';
+  clearButton.className = 'btn btn--text lesson-plan-builder__schedule-action';
+  clearButton.textContent = 'Clear';
+  clearButton.disabled = !handlers.editable;
+  clearButton.addEventListener('click', handlers.onClearSchedule);
+  actionsRow.appendChild(clearButton);
+
+  section.appendChild(actionsRow);
+
+  return section;
+}
+
+/**
+ * The inline Date -> Period picker — date first, always; the period
+ * choices below it are always derived from THAT date, never entered
+ * manually (see this file's own header comment: "do not make the
+ * teacher manually enter a period number"). `state.pendingScheduleDate`
+ * is the date currently chosen but not yet resolved to a period —
+ * only ever non-null while this picker is open (see
+ * onToggleSchedulePickerOpen/onScheduleDateChange). Period choices
+ * come straight from services/timetableService.js's
+ * getConcreteSlotsForDateRange() for this exact single date — the
+ * same function the Dashboard/Personal Hub Today strip already uses
+ * for "what's really scheduled on this date," not a second lookup.
+ */
+function renderSchedulePicker(plan, classroom, state, handlers) {
+  const picker = document.createElement('div');
+  picker.className = 'lesson-plan-builder__schedule-picker';
+
+  const dateLabel = document.createElement('label');
+  dateLabel.className = 'lesson-plan-builder__schedule-picker-label';
+  dateLabel.textContent = 'Date';
+  picker.appendChild(dateLabel);
+
+  const dateInput = document.createElement('input');
+  dateInput.type = 'date';
+  dateInput.className = 'lesson-plan-builder__schedule-date-input';
+  dateInput.value = state.pendingScheduleDate || '';
+  dateInput.addEventListener('change', () => handlers.onScheduleDateChange(dateInput.value));
+  picker.appendChild(dateInput);
+
+  if (state.pendingScheduleDate) {
+    const availableSlots = timetableService.getConcreteSlotsForDateRange(classroom, state.pendingScheduleDate, state.pendingScheduleDate);
+
+    if (availableSlots.length === 0) {
+      const noneMessage = document.createElement('p');
+      noneMessage.className = 'lesson-plan-builder__schedule-note';
+      noneMessage.textContent = 'No periods scheduled on this day.';
+      picker.appendChild(noneMessage);
+    } else {
+      // Reached only when re-opening the picker on a date whose own
+      // available-period count has since changed to more than one
+      // (onScheduleDateChange already auto-resolves the single-period
+      // case immediately, without ever showing this select) — real
+      // choice when there's more than one relevant period that day.
+      const periodLabel = document.createElement('label');
+      periodLabel.className = 'lesson-plan-builder__schedule-picker-label';
+      periodLabel.textContent = 'Period';
+      picker.appendChild(periodLabel);
+
+      const periodSelect = document.createElement('select');
+      periodSelect.className = 'lesson-plan-builder__schedule-period-select';
+      const placeholderOption = document.createElement('option');
+      placeholderOption.value = '';
+      placeholderOption.textContent = '— Choose a period —';
+      placeholderOption.disabled = true;
+      placeholderOption.selected = true;
+      periodSelect.appendChild(placeholderOption);
+
+      let hasCurrentSelection = false;
+      availableSlots.forEach((slot) => {
+        const resolved = timetableService.resolveScheduledSlot(classroom, state.pendingScheduleDate, slot.periodNumber);
+        const option = document.createElement('option');
+        option.value = String(slot.periodNumber);
+        option.textContent = resolved ? formatResolvedPeriodLabel(classroom, resolved) : `P${slot.periodNumber}`;
+        // Reopening "Change" on the date it's already scheduled for
+        // keeps the real current period selected, rather than
+        // silently resetting to the placeholder every time.
+        if (state.pendingScheduleDate === plan.scheduledDate && slot.periodNumber === plan.scheduledPeriodNumber) {
+          option.selected = true;
+          hasCurrentSelection = true;
+        }
+        periodSelect.appendChild(option);
+      });
+      if (hasCurrentSelection) placeholderOption.selected = false;
+
+      periodSelect.addEventListener('change', () => {
+        if (periodSelect.value) handlers.onSchedulePeriodChange(Number(periodSelect.value));
+      });
+      picker.appendChild(periodSelect);
+    }
+  }
+
+  const cancelButton = document.createElement('button');
+  cancelButton.type = 'button';
+  cancelButton.className = 'btn btn--text lesson-plan-builder__schedule-action';
+  cancelButton.textContent = 'Cancel';
+  cancelButton.addEventListener('click', handlers.onToggleSchedulePickerOpen);
+  picker.appendChild(cancelButton);
+
+  return picker;
 }
 
 /**

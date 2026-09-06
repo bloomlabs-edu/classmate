@@ -132,6 +132,36 @@ test('getConcreteSlotsForDateRange: the same (classroom, date, period) always de
   assert.equal(first[0].id, timetableService.buildTeachingSlotId('classroom-1', '2026-08-24', 2));
 });
 
+// ---------------------------------------------------------------------
+// resolveScheduledSlot — what models/LessonPlan.js's own
+// scheduledDate/scheduledPeriodNumber pair resolves to, live, against
+// the classroom's real Timetable. 2026-09-07 is a real Monday.
+// ---------------------------------------------------------------------
+
+test('resolveScheduledSlot: resolves a real, currently-configured (date, period) to its live subject and time', () => {
+  const classroom = classroomWithPattern();
+  const resolved = timetableService.resolveScheduledSlot(classroom, '2026-09-07', 2);
+  assert.deepEqual(resolved, { periodNumber: 2, startTime: '10:15', endTime: '10:55', subjectId: 'mathematics', teacherUid: null });
+});
+
+test('resolveScheduledSlot: reflects the Timetable\'s CURRENT subject for that weekday/period, not whatever it was when scheduled — resolved live, never a copy', () => {
+  const classroom = classroomWithPattern();
+  timetableService.upsertSlot(classroom, { weekday: 1, periodNumber: 2, subjectId: 'social_science' });
+  const resolved = timetableService.resolveScheduledSlot(classroom, '2026-09-07', 2);
+  assert.equal(resolved.subjectId, 'social_science');
+});
+
+test('resolveScheduledSlot: a period number that no longer exists in periods[] -> null, not a guess', () => {
+  const classroom = classroomWithPattern();
+  assert.equal(timetableService.resolveScheduledSlot(classroom, '2026-09-07', 99), null);
+});
+
+test('resolveScheduledSlot: a real period, but this weekday has no slot configured for it (e.g. the Timetable was reconfigured since scheduling) -> null, the "stale schedule" case', () => {
+  const classroom = classroomWithPattern();
+  // Saturday (weekday 6) has no slots configured at all in this pattern.
+  assert.equal(timetableService.resolveScheduledSlot(classroom, '2026-09-05', 2), null);
+});
+
 test('getNextFutureSlotForSubject: finds the next occurrence later the SAME day if a matching period exists after the given one', () => {
   const classroom = classroomWithPattern();
   timetableService.upsertSlot(classroom, { weekday: 2, periodNumber: 1, subjectId: 'science' }); // Tue Period 1 also Science

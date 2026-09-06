@@ -18,6 +18,63 @@ test('createLessonPlan: defaults every dynamic list to empty, status to draft, n
   assert.notEqual(plan.updatedAt, undefined);
   assert.deepEqual(plan.selfOthersIndia, { self: '', others: '', india: '' });
   assert.deepEqual(plan.spark, { title: '', teacherAction: '', studentAction: '' });
+  // Scheduling — a durable reference into the classroom's own real
+  // Timetable (see this model's own doc comment), never populated by
+  // default: `null` here means "not yet scheduled," a real, valid
+  // state, never `undefined` (Firestore setDoc() rejects that outright).
+  assert.equal(plan.scheduledDate, null);
+  assert.equal(plan.scheduledPeriodNumber, null);
+});
+
+// ---------------------------------------------------------------------
+// Scheduling — lessonPlanService.updateSchedule(). Both fields are set
+// or cleared together; a lone date or a lone period is never a state
+// this model represents.
+// ---------------------------------------------------------------------
+
+test('updateSchedule: sets both scheduledDate and scheduledPeriodNumber together, and bumps updatedAt (a real content edit)', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  // An old fixed baseline, not "whatever the clock said a moment ago"
+  // — two synchronous calls can land in the same millisecond, which
+  // would make a real-clock comparison here flaky rather than wrong
+  // (see updateActivity's own identical test above for the same fix).
+  plan.updatedAt = '2020-01-01T00:00:00.000Z';
+  lessonPlanService.updateSchedule(plan, { scheduledDate: '2026-09-07', scheduledPeriodNumber: 3 });
+  assert.equal(plan.scheduledDate, '2026-09-07');
+  assert.equal(plan.scheduledPeriodNumber, 3);
+  assert.notEqual(plan.updatedAt, '2020-01-01T00:00:00.000Z');
+});
+
+test('updateSchedule: clearing (both null) resets both fields together', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.updateSchedule(plan, { scheduledDate: '2026-09-07', scheduledPeriodNumber: 3 });
+  lessonPlanService.updateSchedule(plan, { scheduledDate: null, scheduledPeriodNumber: null });
+  assert.equal(plan.scheduledDate, null);
+  assert.equal(plan.scheduledPeriodNumber, null);
+});
+
+test('updateSchedule: a lone date with no period (or a lone period with no date) is rejected as a no-op — never leaves one field set while the other is null', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const before = plan.updatedAt;
+
+  lessonPlanService.updateSchedule(plan, { scheduledDate: '2026-09-07', scheduledPeriodNumber: null });
+  assert.equal(plan.scheduledDate, null);
+  assert.equal(plan.scheduledPeriodNumber, null);
+  assert.equal(plan.updatedAt, before);
+
+  lessonPlanService.updateSchedule(plan, { scheduledDate: null, scheduledPeriodNumber: 3 });
+  assert.equal(plan.scheduledDate, null);
+  assert.equal(plan.scheduledPeriodNumber, null);
+  assert.equal(plan.updatedAt, before);
+
+  // Same guard applies to an already-scheduled plan — a partial call
+  // must never silently overwrite half of a real, existing schedule.
+  lessonPlanService.updateSchedule(plan, { scheduledDate: '2026-09-07', scheduledPeriodNumber: 3 });
+  const afterRealSchedule = plan.updatedAt;
+  lessonPlanService.updateSchedule(plan, { scheduledDate: '2026-09-10', scheduledPeriodNumber: null });
+  assert.equal(plan.scheduledDate, '2026-09-07');
+  assert.equal(plan.scheduledPeriodNumber, 3);
+  assert.equal(plan.updatedAt, afterRealSchedule);
 });
 
 test('createLessonPlanActivity: differentiation defaults to null — progressive disclosure, never three permanently-empty inputs', () => {

@@ -58,6 +58,40 @@ export function getSlotsForWeekday(classroom, weekday) {
 }
 
 /**
+ * Resolves one specific calendar date + period number against the
+ * classroom's own LIVE recurring Timetable pattern — what
+ * models/LessonPlan.js's own `scheduledDate`/`scheduledPeriodNumber`
+ * pair actually means (see that model's own doc comment: a durable
+ * reference, resolved fresh every time, never a copy). Returns the
+ * real, currently-configured subject/time for that (date, period), or
+ * `null` if either the period itself no longer exists in
+ * `periods[]`, or that weekday's own recurring pattern has no slot
+ * for it right now — both cases mean the same thing to a caller: this
+ * schedule reference no longer resolves to anything real (the
+ * Timetable was reconfigured since it was set), which
+ * ui/views/LessonPlanBuilderView.js's own stale-schedule warning is
+ * for. Never invents a fallback value here — resolving "nothing" is
+ * the honest result; deciding what to show/do about it is the
+ * caller's job.
+ */
+export function resolveScheduledSlot(classroom, dateKey, periodNumber) {
+  const period = getPeriods(classroom).find((candidate) => candidate.periodNumber === periodNumber);
+  if (!period) return null;
+
+  const weekday = weekdayOfDateKey(dateKey);
+  const slot = getSlot(classroom, weekday, periodNumber);
+  if (!slot) return null;
+
+  return {
+    periodNumber,
+    startTime: period.startTime,
+    endTime: period.endTime,
+    subjectId: slot.subjectId,
+    teacherUid: slot.teacherUid,
+  };
+}
+
+/**
  * Sets (or replaces) the subject taught in one (weekday, periodNumber)
  * slot, and optionally which classroom member teaches it (`teacherUid`
  * — see models/Timetable.js's own doc comment on why this exists).
