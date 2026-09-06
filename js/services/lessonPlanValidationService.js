@@ -68,10 +68,16 @@ export function getLessonPlanReadiness(lessonPlan) {
   // completely unchanged — only this submission-readiness gate is
   // gone.
 
-  // 3. ASSESSMENT
-  if (!lessonPlan.assessments.some((item) => !isBlank(item.description))) {
-    missing.push({ sectionKey: LESSON_PLAN_SECTION_KEYS.ASSESSMENT, message: 'Add at least one assessment or evidence item.' });
-  }
+  // 3. ASSESSMENT — deliberately NOT required, per explicit product
+  // direction, same treatment as Self/Others/India above: "are
+  // students showcasing learning" is an optional planning section on
+  // the Detailed Lesson Plan, not a gate. Never pushes a missing-item
+  // here regardless of whether zero, one, or several assessment/
+  // evidence items exist — so getLessonPlanStageCompletion()'s own
+  // SHOWCASE stage is always complete, and the guided Builder never
+  // blocks progression on it. Adding/editing/removing items and "From
+  // Teaching Ideas" are all still exactly as they were — only this
+  // submission-readiness gate is gone.
 
   // 4. FUN, FAST, EFFECTIVE — Spark
   if (isBlank(lessonPlan.spark.title)) {

@@ -109,7 +109,7 @@ test('getLessonPlanReadiness: adding even one concept clears the missing-concept
 // own missing[] — never a second definition of "done."
 // ---------------------------------------------------------------------
 
-test('getLessonPlanStageCompletion: a brand-new, empty plan has every genuinely-required stage incomplete (Connection is optional, so it starts complete), in the real 5-Questions order', () => {
+test('getLessonPlanStageCompletion: a brand-new, empty plan has every genuinely-required stage incomplete (Connection and Showcase are optional, so they start complete), in the real 5-Questions order', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
   const stages = getLessonPlanStageCompletion(plan);
   assert.equal(stages.length, 6);
@@ -117,7 +117,7 @@ test('getLessonPlanStageCompletion: a brand-new, empty plan has every genuinely-
   assert.equal(byStage[LESSON_PLAN_STAGES.CONCEPT], false);
   assert.equal(byStage[LESSON_PLAN_STAGES.PURPOSE], false);
   assert.equal(byStage[LESSON_PLAN_STAGES.CONNECTION], true); // optional — never blocks, even brand new
-  assert.equal(byStage[LESSON_PLAN_STAGES.SHOWCASE], false);
+  assert.equal(byStage[LESSON_PLAN_STAGES.SHOWCASE], true); // optional — never blocks, even brand new
   assert.equal(byStage[LESSON_PLAN_STAGES.EXPERIENCE], false);
   assert.equal(byStage[LESSON_PLAN_STAGES.HELPING], false);
   assert.deepEqual(
@@ -163,7 +163,7 @@ test('getLessonPlanStageCompletion: Experience (Q4 — Spark + Activities) is co
   assert.equal(byStage[LESSON_PLAN_STAGES.HELPING], false);
 });
 
-test('getLessonPlanStageCompletion: Showcase (Q3 — Assessment) is its own stage, complete independently of Spark/Activities/Helping', () => {
+test('getLessonPlanStageCompletion: Showcase (Q3 — Assessment) is its own stage, and stays complete regardless of content, independently of Spark/Activities/Helping', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
   lessonPlanService.addAssessmentItem(plan, 'Exit ticket.');
   // Spark/Activities/Helping deliberately left blank.
@@ -172,6 +172,56 @@ test('getLessonPlanStageCompletion: Showcase (Q3 — Assessment) is its own stag
   const byStage = Object.fromEntries(stages.map((entry) => [entry.stage, entry.complete]));
   assert.equal(byStage[LESSON_PLAN_STAGES.SHOWCASE], true);
   assert.equal(byStage[LESSON_PLAN_STAGES.EXPERIENCE], false);
+});
+
+// ---------------------------------------------------------------------
+// Assessment / evidence items — optional planning section on the
+// Detailed Lesson Plan (explicit product direction, same treatment as
+// Self/Others/India above): leaving it with zero items, or filling in
+// one or several, must never block progression to the next guided
+// stage or the Submit gate.
+// ---------------------------------------------------------------------
+
+test('Assessment: zero items never blocks — no missing item, Showcase stage complete', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const readiness = getLessonPlanReadiness(plan);
+  assert.ok(!readiness.missing.some((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.ASSESSMENT));
+
+  const stages = getLessonPlanStageCompletion(plan);
+  assert.equal(stages.find((entry) => entry.stage === LESSON_PLAN_STAGES.SHOWCASE).complete, true);
+});
+
+test('Assessment: one item never blocks (still works exactly as before)', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.addAssessmentItem(plan, 'Exit ticket with 2 causes.');
+  const readiness = getLessonPlanReadiness(plan);
+  assert.ok(!readiness.missing.some((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.ASSESSMENT));
+  const stages = getLessonPlanStageCompletion(plan);
+  assert.equal(stages.find((entry) => entry.stage === LESSON_PLAN_STAGES.SHOWCASE).complete, true);
+});
+
+test('Assessment: multiple items never blocks either, and add/edit/remove still work exactly as before', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const first = lessonPlanService.addAssessmentItem(plan, 'Exit ticket.');
+  lessonPlanService.addAssessmentItem(plan, 'Peer check.');
+  lessonPlanService.updateAssessmentItem(plan, first.id, 'Exit ticket with 2 causes.');
+  assert.equal(plan.assessments.length, 2);
+  assert.equal(plan.assessments[0].description, 'Exit ticket with 2 causes.');
+
+  const readiness = getLessonPlanReadiness(plan);
+  assert.ok(!readiness.missing.some((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.ASSESSMENT));
+  const stages = getLessonPlanStageCompletion(plan);
+  assert.equal(stages.find((entry) => entry.stage === LESSON_PLAN_STAGES.SHOWCASE).complete, true);
+
+  lessonPlanService.removeAssessmentItem(plan, first.id);
+  assert.equal(plan.assessments.length, 1);
+});
+
+test('Assessment: an item that exists but is blank text is still tolerated (never required) — readiness never depends on assessment content anymore', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.addAssessmentItem(plan, '   ');
+  const readiness = getLessonPlanReadiness(plan);
+  assert.ok(!readiness.missing.some((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.ASSESSMENT));
 });
 
 test('getLessonPlanStageCompletion: Helping (Q5) stays incomplete unless Pair Explanation, Final Question, AND Teacher Look-Fors are all filled', () => {
