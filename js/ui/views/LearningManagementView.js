@@ -589,6 +589,21 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
       mode = 'concept';
       rerender();
     },
+    // Previous/Next Concept navigation (see
+    // ui/views/ConceptWorkspaceView.js's own renderConceptWorkspaceView)
+    // stays inside that workspace's own closure — it never calls this
+    // screen's rerender(), since re-invoking renderConceptWorkspaceView
+    // from scratch would reset its own local activeTab/etc. state back
+    // to Overview. This is a thin, non-rendering setter, only kept so
+    // conceptContext.conceptId doesn't go stale: a later, unrelated
+    // workspaceService.onSaveStateChange rerender() here (see below)
+    // still needs to re-resolve to whichever Concept the teacher
+    // actually has open, not the one this workspace originally opened
+    // for.
+    onConceptContextChange: (concept) => {
+      if (mode !== 'concept' || !conceptContext) return;
+      conceptContext = { ...conceptContext, conceptId: concept.id };
+    },
     onBackFromConceptWorkspace: () => {
       // Lands back on the same Unit's Concepts list the workspace was
       // opened from, not the Subject home screen — selectedUnitId was
@@ -734,6 +749,7 @@ function renderView(container, mode, state, handlers) {
       unit: resolved.unit,
       concept: resolved.concept,
       onBack: handlers.onBackFromConceptWorkspace,
+      onConceptContextChange: handlers.onConceptContextChange,
     });
     return;
   }

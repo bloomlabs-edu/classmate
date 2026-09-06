@@ -40,6 +40,7 @@ import * as resourceService from '../../services/resourceService.js';
 import * as resourceRepository from '../../services/resourceRepository.js';
 import * as learningIntegrationService from '../../services/learningIntegrationService.js';
 import * as learningActivityService from '../../services/learningActivityService.js';
+import * as conceptNavigationService from '../../services/conceptNavigationService.js';
 import { getActivityTypeLabel, getExternalProviderLabel } from '../../config/activityTypeConfig.js';
 import { fetchLearningHubCatalogue, groupExperiencesByType } from '../../services/learningHubCatalogueService.js';
 import { openLearningHubPanel } from '../components/LearningHubPanel.js';
@@ -69,7 +70,7 @@ const TABS = [
   { id: 'student-progress', label: 'Student Progress' },
 ];
 
-export function renderConceptWorkspaceView(container, { classroom, subject, unit, concept, onBack, initialResourceId = null }) {
+export function renderConceptWorkspaceView(container, { classroom, subject, unit, concept, onBack, initialResourceId = null, onConceptContextChange = () => {} }) {
   // Defaults to Overview/list, same as always — unless opened via the
   // Dashboard's "Continue Working" resource shortcut
   // (ui/views/DashboardView.js), in which case initialResourceId jumps
@@ -101,6 +102,92 @@ export function renderConceptWorkspaceView(container, { classroom, subject, unit
   // fire-and-forget workspaceService.save() convention.
   let editingDescription = false;
   let descriptionSaveState = null;
+
+  // Previous/Next Concept navigation — ordering is exactly
+  // `unit.concepts`, the same array ui/views/LearningManagementView.js's
+  // own Concepts list renders from (see that file's
+  // renderUnitsOrParts()), so there is no second/invented ordering.
+  // Deliberately scoped to THIS unit only: the list the teacher was
+  // actually looking at right before opening this Concept never spans
+  // multiple Units, so neither does this.
+  //
+  // `concept`/`unit`/`subject` above are ordinary reassignable function
+  // parameters (not const) — navigating just points them at the
+  // adjacent Concept and calls rerender(), the same "mutate local
+  // state, then rerender()" shape every other handler in this closure
+  // already uses (onSelectTab, onSelectResource, etc.), not a second
+  // navigation system. onConceptContextChange (a thin setter, not a
+  // rerender-triggering callback) keeps
+  // LearningManagementView.js's own conceptContext.conceptId in sync
+  // so a later, unrelated background resync there
+  // (workspaceService.onSaveStateChange) re-resolves to the Concept
+  // the teacher actually has open, not the one this workspace
+  // originally opened for; that same parent-level resolution (see
+  // renderView's own "mode === 'concept'" branch) is also what already
+  // handles a Concept getting deleted out from under this workspace —
+  // reused here, not duplicated.
+  let currentWrapperEl = null;
+  let isNavigatingConcept = false;
+
+  async function navigateToConcept(targetConcept) {
+    if (!targetConcept || isNavigatingConcept) return;
+    isNavigatingConcept = true;
+    // Immediate, synchronous feedback the instant a click/key/swipe is
+    // registered — rerender() below is async (it re-fetches this
+    // Concept's Resources/Activities), and the OLD Concept's DOM stays
+    // on screen untouched until that finishes, so without this the
+    // controls would look unresponsive for however long that fetch
+    // takes. Disabling both (not just the one pressed) also blocks a
+    // second navigation from firing mid-transition.
+    currentWrapperEl?.querySelectorAll('.concept-workspace__concept-nav-button').forEach((button) => {
+      button.disabled = true;
+    });
+    // Concept-specific transient UI state must never leak onto the
+    // next Concept — e.g. a selected Resource id from the old Concept
+    // would point at a Resource the new Concept doesn't have. activeTab
+    // itself is deliberately NOT reset here (see below): the same tab
+    // stays selected, matching "default to the same currently selected
+    // tab where sensible."
+    resourceMode = 'list';
+    pendingType = null;
+    selectedResourceId = null;
+    pendingLearningHubExperience = null;
+    editingDescription = false;
+    descriptionSaveState = null;
+    concept = targetConcept;
+    onConceptContextChange(concept);
+    try {
+      await rerender();
+    } finally {
+      isNavigatingConcept = false;
+    }
+  }
+
+  // Document-level, matching this app's existing convention for a
+  // global keyboard shortcut (see ui/components/OverflowMenu.js's own
+  // document keydown listener) — keydown reaches document regardless
+  // of what currently has focus, which a listener on this workspace's
+  // own (re-created-every-render) wrapper element could not guarantee.
+  // Self-cleaning rather than requiring an explicit unmount hook (none
+  // exists anywhere in this app): `container` is reused for every
+  // future screen too, so this checks the actual DOM connectedness of
+  // the wrapper THIS render produced, and removes itself the first
+  // time it fires after that wrapper is gone — at that point it can
+  // never fire a real navigation again regardless.
+  function handleKeyDown(event) {
+    if (!currentWrapperEl || !currentWrapperEl.isConnected) {
+      document.removeEventListener('keydown', handleKeyDown);
+      return;
+    }
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    if (conceptNavigationService.isInteractiveElement(document.activeElement)) return;
+    const targetConcept = event.key === 'ArrowLeft'
+      ? conceptNavigationService.getPreviousConcept(unit, concept.id)
+      : conceptNavigationService.getNextConcept(unit, concept.id);
+    if (!targetConcept) return;
+    navigateToConcept(targetConcept);
+  }
+  document.addEventListener('keydown', handleKeyDown);
 
   async function rerender() {
     // Learning Hub's own concern, not workspaceService's or
@@ -138,9 +225,11 @@ export function renderConceptWorkspaceView(container, { classroom, subject, unit
     const conceptActivities = await learningIntegrationService.getActivitiesForConcept(classroom.id, concept.id);
     const conceptAssignments = learningActivityService.listActivities(classroom).filter((assignment) => assignment.conceptId === concept.id);
 
-    renderWorkspace(container, classroom, subject, unit, concept, activeTab, resources, { resourceMode, pendingType, selectedResourceId, pendingLearningHubExperience, editingDescription, descriptionSaveState }, conceptActivities, conceptAssignments, {
+    currentWrapperEl = renderWorkspace(container, classroom, subject, unit, concept, activeTab, resources, { resourceMode, pendingType, selectedResourceId, pendingLearningHubExperience, editingDescription, descriptionSaveState }, conceptActivities, conceptAssignments, {
       onBack,
       rerender,
+      onNavigatePreviousConcept: () => navigateToConcept(conceptNavigationService.getPreviousConcept(unit, concept.id)),
+      onNavigateNextConcept: () => navigateToConcept(conceptNavigationService.getNextConcept(unit, concept.id)),
       onStartEditDescription: () => {
         editingDescription = true;
         descriptionSaveState = null;
@@ -285,6 +374,41 @@ function renderWorkspace(container, classroom, subject, unit, concept, activeTab
   title.textContent = concept.title;
   header.appendChild(title);
 
+  // Previous/Next Concept — ordering is `unit.concepts`, the exact
+  // array the Learning area's own Concepts list renders from (see
+  // ui/views/LearningManagementView.js's renderUnitsOrParts()), so
+  // this never invents a second ordering. Visually secondary to the
+  // title above it (same `btn btn--text` class the Back button uses),
+  // disabled rather than hidden at either boundary so the control
+  // never looks misleadingly active with nowhere to go.
+  const previousConcept = conceptNavigationService.getPreviousConcept(unit, concept.id);
+  const nextConcept = conceptNavigationService.getNextConcept(unit, concept.id);
+
+  const conceptNav = document.createElement('div');
+  conceptNav.className = 'concept-workspace__concept-nav';
+
+  const previousConceptButton = document.createElement('button');
+  previousConceptButton.type = 'button';
+  previousConceptButton.className = 'btn btn--text concept-workspace__concept-nav-button concept-workspace__concept-nav-button--previous';
+  previousConceptButton.disabled = !previousConcept;
+  previousConceptButton.setAttribute('aria-label', previousConcept ? `Previous Concept: ${previousConcept.title}` : 'No previous Concept');
+  previousConceptButton.appendChild(createIcon('arrow-left'));
+  previousConceptButton.append(' Previous');
+  previousConceptButton.addEventListener('click', handlers.onNavigatePreviousConcept);
+  conceptNav.appendChild(previousConceptButton);
+
+  const nextConceptButton = document.createElement('button');
+  nextConceptButton.type = 'button';
+  nextConceptButton.className = 'btn btn--text concept-workspace__concept-nav-button concept-workspace__concept-nav-button--next';
+  nextConceptButton.disabled = !nextConcept;
+  nextConceptButton.setAttribute('aria-label', nextConcept ? `Next Concept: ${nextConcept.title}` : 'No next Concept');
+  nextConceptButton.append('Next ');
+  nextConceptButton.appendChild(createIcon('arrow-right'));
+  nextConceptButton.addEventListener('click', handlers.onNavigateNextConcept);
+  conceptNav.appendChild(nextConceptButton);
+
+  header.appendChild(conceptNav);
+
   wrapper.appendChild(header);
 
   // A distinct, dormant Learning Hub trigger — see
@@ -395,6 +519,57 @@ function renderWorkspace(container, classroom, subject, unit, concept, activeTab
 
   wrapper.appendChild(content);
   container.appendChild(wrapper);
+
+  attachConceptSwipeNavigation(wrapper, handlers, { hasPrevious: Boolean(previousConcept), hasNext: Boolean(nextConcept) });
+
+  return wrapper;
+}
+
+// Element-scoped (never document- or full-screen-scoped) touch-swipe
+// Previous/Next — attached fresh to this render's own `wrapper` every
+// time, so it needs no manual teardown: once a later render replaces
+// `container`'s contents, this exact element (and these listeners
+// with it) is simply gone. Only ever a second, optional way to reach
+// the same navigateToConcept() the header buttons already call —
+// never navigation's only path (see the header buttons above, always
+// rendered regardless of touch support).
+function attachConceptSwipeNavigation(wrapper, handlers, { hasPrevious, hasNext }) {
+  const INTERACTIVE_SELECTOR = 'input, textarea, select, button, a, [role="button"], [contenteditable], [contenteditable="true"]';
+
+  let activePointerId = null;
+  let ignoreGesture = false;
+  let startX = 0;
+  let startY = 0;
+
+  wrapper.addEventListener('pointerdown', (event) => {
+    if (event.pointerType !== 'touch') return; // mouse/pen drags (e.g. text selection) are left alone entirely — this is specifically a touch-swipe gesture
+    if (activePointerId !== null) return; // one gesture tracked at a time
+    ignoreGesture = Boolean(event.target.closest(INTERACTIVE_SELECTOR));
+    if (ignoreGesture) return;
+    activePointerId = event.pointerId;
+    startX = event.clientX;
+    startY = event.clientY;
+    // Deliberately no preventDefault()/touch-action changes anywhere in
+    // this function — normal vertical scrolling must never be
+    // interrupted, so the final delta is only ever judged once the
+    // gesture is already over (pointerup), never mid-gesture.
+  });
+
+  function finishGesture(event) {
+    if (activePointerId !== event.pointerId) return;
+    activePointerId = null;
+    if (ignoreGesture) return;
+    const deltaX = event.clientX - startX;
+    const deltaY = event.clientY - startY;
+    const direction = conceptNavigationService.resolveSwipeDirection(deltaX, deltaY);
+    if (direction === 'next' && hasNext) handlers.onNavigateNextConcept();
+    else if (direction === 'previous' && hasPrevious) handlers.onNavigatePreviousConcept();
+  }
+
+  wrapper.addEventListener('pointerup', finishGesture);
+  wrapper.addEventListener('pointercancel', () => {
+    activePointerId = null;
+  });
 }
 
 // ---- Overview ---------------------------------------------------------

@@ -2182,6 +2182,22 @@ select:focus-visible,
   font-weight: var(--font-weight-black);
   margin: 0 0 1.25rem;
 }
+/* Previous/Next Concept — visually secondary to the title above (plain
+   `btn btn--text`, same as the Back button), part of this same header
+   block rather than a separate toolbar. space-between keeps Previous
+   pinned left / Next pinned right on wide screens; wrap lets narrow
+   screens reflow naturally instead of clipping/scrolling sideways. */
+.concept-workspace__concept-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  margin: 0 0 1.25rem;
+}
+.concept-workspace__concept-nav-button {
+  white-space: nowrap;
+}
 .concept-workspace__tab-bar {
   margin-bottom: 1.5rem;
 }
