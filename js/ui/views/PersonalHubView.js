@@ -290,8 +290,6 @@ export function renderPersonalHubView(
     const header = document.createElement('div');
     header.className = 'hub-section__header';
 
-    const title = document.createElement('h2');
-    title.className = 'hub-section__title';
     const todayKey = getTodayDateKey();
     // Resolves the exact 3-way behavior this strip needs (see
     // services/personalHubService.js's own header comment on
@@ -304,8 +302,26 @@ export function renderPersonalHubView(
     const result = personalHubService.resolveTodayStripSchedule(classrooms, uid, todayKey);
     const { dateKey, entries, isToday } = result;
     const dateLabel = new Date(`${dateKey}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
-    title.textContent = `${isToday ? 'Today' : 'Next'} · ${dateLabel}`;
-    header.appendChild(title);
+
+    // Two-level heading — a small "TODAY"/"NEXT" context label above
+    // the date, not one flat "Next · <date>" string, so the date (the
+    // actually useful piece of information) reads as the clearly
+    // dominant element rather than competing with its own context
+    // label for attention. Text content stays sentence case ("Today"/
+    // "Next") with the visual capitalization done in CSS
+    // (text-transform: uppercase) — screen readers announce it as the
+    // real word this way rather than risking a letter-by-letter
+    // reading of literal typed-in caps.
+    const heading = document.createElement('div');
+    heading.className = 'hub-today-heading';
+    const eyebrow = document.createElement('p');
+    eyebrow.className = 'hub-today-eyebrow';
+    eyebrow.textContent = isToday ? 'Today' : 'Next';
+    const title = document.createElement('h2');
+    title.className = 'hub-section__title';
+    title.textContent = dateLabel;
+    heading.append(eyebrow, title);
+    header.appendChild(heading);
 
     const viewFullButton = document.createElement('button');
     viewFullButton.type = 'button';

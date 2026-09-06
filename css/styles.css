@@ -860,6 +860,32 @@ select:focus-visible,
   font-size: 0.82rem;
   margin: 0;
 }
+/* The "TODAY"/"NEXT" context label sitting above the real date
+   heading (see PersonalHubView.js's own renderTodaySection()) — same
+   small/bold/letter-spaced/muted treatment
+   .carry-forward-overlay__eyebrow already established elsewhere in
+   this app for exactly this "small context label above the real
+   heading" role, just scoped to this component rather than shared
+   verbatim, since the two live in unrelated parts of the UI. Kept
+   deliberately tiny with a near-zero gap to .hub-section__title below
+   it — a clear two-level hierarchy without the section growing
+   noticeably taller than its previous single-line title.
+   text-transform does the visual capitalizing; the element's own text
+   stays sentence case (see the JS) so a screen reader announces the
+   real word, not a spelled-out acronym. */
+.hub-today-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.hub-today-eyebrow {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
 /* Shown only when the strip is displaying the next scheduled day
    instead of an empty Today (see PersonalHubView.js's own
    renderTodaySection()) — small and muted, same weight as
