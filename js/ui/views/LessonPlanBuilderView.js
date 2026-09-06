@@ -790,7 +790,6 @@ function renderBuilder(container, state, handlers) {
       sectionKey: LESSON_PLAN_SECTION_KEYS.SELF_OTHERS_INDIA,
       renderFull: () => renderSelfOthersIndiaSection(plan, handlers),
       getPreview: () => plan.selfOthersIndia.self || plan.selfOthersIndia.others || plan.selfOthersIndia.india || '',
-      isOptional: true,
       tileSize: 'half',
     },
     {
@@ -799,7 +798,6 @@ function renderBuilder(container, state, handlers) {
       sectionKey: LESSON_PLAN_SECTION_KEYS.ASSESSMENT,
       renderFull: () => renderAssessmentSection(plan, handlers),
       getPreview: () => plan.assessments.find((item) => item.description)?.description || '',
-      isOptional: true,
       tileSize: 'half',
     },
     {
@@ -1533,7 +1531,7 @@ function renderReadinessPanel(plan, handlers) {
  * .lesson-plan-builder__stage* rules) so the guided trail reads as one
  * consistent system regardless of which stage produced it.
  */
-function renderGuidedContentStage({ stage, title, sectionKey, plan, state, handlers, renderFull, getPreview, isOptional = false, tileSize = 'full', surface = false }) {
+function renderGuidedContentStage({ stage, title, sectionKey, plan, state, handlers, renderFull, getPreview, tileSize = 'full', surface = false }) {
   const isComplete = Boolean(state.stageCompletionByKey[stage]);
   const isFrontier = state.frontierStage === stage;
   const isReopened = state.reopenedStageKey === stage;
@@ -1578,12 +1576,6 @@ function renderGuidedContentStage({ stage, title, sectionKey, plan, state, handl
   heading.className = isFrontier ? 'lesson-plan-builder__stage-heading lesson-plan-builder__stage-heading--primary' : 'lesson-plan-builder__stage-heading';
   heading.textContent = title;
   titleGroup.appendChild(heading);
-  if (isOptional) {
-    const optionalTag = document.createElement('span');
-    optionalTag.className = 'lesson-plan-builder__optional-tag';
-    optionalTag.textContent = 'Optional';
-    titleGroup.appendChild(optionalTag);
-  }
   headingRow.appendChild(titleGroup);
   if (isReopened && !isFrontier) {
     const doneButton = document.createElement('button');
@@ -1829,17 +1821,10 @@ function renderSparkSection(plan, handlers) {
   const wrap = document.createElement('div');
   wrap.className = 'lesson-plan-builder__spark';
 
-  const headingRow = document.createElement('div');
-  headingRow.className = 'lesson-plan-builder__stage-title-group';
   const heading = document.createElement('h3');
   heading.className = 'lesson-plan-builder__subheading';
   heading.textContent = 'Spark';
-  headingRow.appendChild(heading);
-  const optionalTag = document.createElement('span');
-  optionalTag.className = 'lesson-plan-builder__optional-tag';
-  optionalTag.textContent = 'Optional';
-  headingRow.appendChild(optionalTag);
-  wrap.appendChild(headingRow);
+  wrap.appendChild(heading);
 
   if (handlers.editable) wrap.appendChild(createFromTeachingIdeasButton(handlers.onOpenSparkPicker));
 

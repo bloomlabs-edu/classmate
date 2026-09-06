@@ -128,6 +128,75 @@ test('getLessonPlanStageCompletion: Experience (Q4) stays incomplete with zero a
   assert.equal(stages.find((entry) => entry.stage === LESSON_PLAN_STAGES.EXPERIENCE).complete, false);
 });
 
+// ---------------------------------------------------------------------
+// Experience (Q4) progression matrix — the exact behavior the guided
+// Builder must produce: Spark never gates, Activities always do. The
+// distinction is entirely in THIS behavior, never in any visible
+// "Optional"/"Required" label — see
+// ui/views/LessonPlanBuilderView.js's own renderGuidedContentStage(),
+// which no longer renders any such tag at all.
+// ---------------------------------------------------------------------
+
+function isExperienceComplete(plan) {
+  return getLessonPlanStageCompletion(plan).find((entry) => entry.stage === LESSON_PLAN_STAGES.EXPERIENCE).complete;
+}
+
+test('Experience progression: empty Spark + zero Activities -> blocked', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  assert.equal(isExperienceComplete(plan), false);
+});
+
+test('Experience progression: populated Spark + zero Activities -> blocked', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.updateSpark(plan, { title: 'Mystery Object', teacherAction: 'Show it.', studentAction: 'Guess.' });
+  assert.equal(isExperienceComplete(plan), false);
+});
+
+test('Experience progression: empty Spark + one valid Activity -> can proceed', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const activity = lessonPlanService.addActivity(plan);
+  lessonPlanService.updateActivity(plan, activity.id, { title: 'Timeline', teacherAction: 'Circulate.', studentAction: 'Sequence.' });
+  // Spark deliberately left completely blank.
+  assert.equal(isExperienceComplete(plan), true);
+});
+
+test('Experience progression: populated Spark + one valid Activity -> can proceed', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.updateSpark(plan, { title: 'Mystery Object', teacherAction: 'Show it.', studentAction: 'Guess.' });
+  const activity = lessonPlanService.addActivity(plan);
+  lessonPlanService.updateActivity(plan, activity.id, { title: 'Timeline', teacherAction: 'Circulate.', studentAction: 'Sequence.' });
+  assert.equal(isExperienceComplete(plan), true);
+});
+
+test('Experience progression: populated Spark + multiple valid Activities -> can proceed', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.updateSpark(plan, { title: 'Mystery Object', teacherAction: 'Show it.', studentAction: 'Guess.' });
+  const first = lessonPlanService.addActivity(plan);
+  lessonPlanService.updateActivity(plan, first.id, { title: 'Timeline', teacherAction: 'Circulate.', studentAction: 'Sequence.' });
+  const second = lessonPlanService.addActivity(plan);
+  lessonPlanService.updateActivity(plan, second.id, { title: 'Debate', teacherAction: 'Facilitate.', studentAction: 'Argue positions.' });
+  assert.equal(isExperienceComplete(plan), true);
+});
+
+test('Experience progression: an invalid/empty Activity (added but never filled in) does NOT satisfy the Activity requirement — still blocked', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.addActivity(plan); // title/teacherAction/studentAction all left blank
+  assert.equal(isExperienceComplete(plan), false);
+
+  const readiness = getLessonPlanReadiness(plan);
+  assert.ok(readiness.missing.some((item) => /title/i.test(item.message)));
+  assert.ok(readiness.missing.some((item) => /teacher action/i.test(item.message)));
+  assert.ok(readiness.missing.some((item) => /student action/i.test(item.message)));
+});
+
+test('Experience progression: one valid Activity alongside a second, still-invalid Activity -> stays blocked (every activity must be valid, not just one)', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const valid = lessonPlanService.addActivity(plan);
+  lessonPlanService.updateActivity(plan, valid.id, { title: 'Timeline', teacherAction: 'Circulate.', studentAction: 'Sequence.' });
+  lessonPlanService.addActivity(plan); // second activity left blank
+  assert.equal(isExperienceComplete(plan), false);
+});
+
 test('getLessonPlanStageCompletion: a fully-completed plan (Activities + Helping only) has every stage complete, matching getLessonPlanReadiness().ready', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
   const activity = lessonPlanService.addActivity(plan);
