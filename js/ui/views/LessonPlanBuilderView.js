@@ -698,7 +698,11 @@ function renderBuilder(container, state, handlers) {
   const frontierStage = stageCompletion.find((entry) => !entry.complete)?.stage || null;
   const guidedState = { ...state, stageCompletionByKey, frontierStage };
 
-  wrapper.appendChild(renderTitleBar(plan, stageCompletion, state, handlers));
+  const grid = document.createElement('div');
+  grid.className = 'lesson-plan-builder__grid';
+  wrapper.appendChild(grid);
+
+  grid.appendChild(withTileSize(renderTitleBar(plan, stageCompletion, state, handlers), 'full'));
 
   if (!handlers.editable) {
     // Locked (SUBMITTED/APPROVED) — a completed artifact to review now,
@@ -708,51 +712,56 @@ function renderBuilder(container, state, handlers) {
     // stage renders in full, flat, exactly as a reviewer or the
     // teacher themselves needs to see the complete real content — never
     // a partial reveal gated on a "current stage" that no longer means
-    // anything once the plan is locked.
+    // anything once the plan is locked. Still composed onto the SAME
+    // Bento grid as the guided view below (Concepts+Schedule paired,
+    // Connection+Showcase paired) — one visual system, not two.
     // Order matches the real 5 Questions framework (Q1 Why -> Q2 Self/
     // Others/India -> Q3 Showcasing learning -> Q4 Fun/Fast/Effective ->
     // Q5 Helping each other learn), the same order the guided flow
     // below uses — never two different orderings for the same content.
-    wrapper.appendChild(renderContextRow(plan, classroom, guidedState, handlers));
-    wrapper.appendChild(renderConceptsTile(plan, classroom, guidedState, handlers));
-    wrapper.appendChild(renderWhySection(plan, handlers));
-    wrapper.appendChild(renderSelfOthersIndiaSection(plan, handlers));
-    wrapper.appendChild(renderAssessmentSection(plan, handlers));
-    wrapper.appendChild(renderSparkSection(plan, handlers));
-    wrapper.appendChild(renderActivitiesSection(plan, state.collapsedActivityIds, handlers));
-    wrapper.appendChild(renderPairExplanationField(plan, handlers));
-    wrapper.appendChild(renderFinalQuestionAndLookForsFields(plan, handlers));
+    grid.appendChild(withTileSize(renderSubjectStage(plan, classroom, guidedState, handlers), 'full'));
+    grid.appendChild(withTileSize(withSurfaceTile(renderConceptsField(plan, classroom, guidedState, handlers)), 'wide'));
+    grid.appendChild(withTileSize(renderScheduleSection(plan, classroom, guidedState, handlers), 'narrow'));
+    grid.appendChild(withTileSize(withSurfaceTile(renderWhySection(plan, handlers)), 'full'));
+    grid.appendChild(withTileSize(renderSelfOthersIndiaSection(plan, handlers), 'half'));
+    grid.appendChild(withTileSize(renderAssessmentSection(plan, handlers), 'half'));
+    const experience = document.createElement('div');
+    experience.className = 'lesson-plan-builder__experience';
+    experience.appendChild(renderSparkSection(plan, handlers));
+    experience.appendChild(renderActivitiesSection(plan, state.collapsedActivityIds, handlers));
+    grid.appendChild(withTileSize(withSurfaceTile(experience), 'full'));
+    const helping = document.createElement('div');
+    helping.appendChild(renderPairExplanationField(plan, handlers));
+    helping.appendChild(renderFinalQuestionAndLookForsFields(plan, handlers));
+    grid.appendChild(withTileSize(helping, 'full'));
     container.appendChild(wrapper);
     return;
   }
 
   // Guided building — Subject always first; nothing past it renders at
   // all until it's chosen (see this file's own header comment: "SUBJECT
-  // MUST COME BEFORE SCHEDULE"). Subject + Schedule are composed as a
-  // single two-up "context row" (see renderContextRow()'s own doc
-  // comment) — purely a wrapping/layout choice made here in the
-  // orchestrator; neither section's own render function changes.
-  const subjectTile = renderSubjectStage(plan, classroom, guidedState, handlers);
+  // MUST COME BEFORE SCHEDULE"). A full-width tile of its own — it's a
+  // one-tap, transient setup step, not core lesson content, and
+  // collapses to a one-line compact row the moment it's chosen.
+  grid.appendChild(withTileSize(renderSubjectStage(plan, classroom, guidedState, handlers), 'full'));
 
   if (!plan.subjectId) {
-    wrapper.appendChild(subjectTile);
     container.appendChild(wrapper);
     return;
   }
 
-  // Schedule — optional, never gates anything after it (see
-  // renderScheduleSection()'s own doc comment); always shown once
-  // Subject is known.
-  const scheduleTile = renderScheduleSection(plan, classroom, guidedState, handlers);
-  wrapper.appendChild(wrapInContextRow(subjectTile, scheduleTile));
-
-  // CONCEPT — its own bespoke stage (chips + Curriculum Explorer, not a
-  // plain textarea), always shown once Subject is known; still
-  // respects the same frontier-stops-the-reveal rule as the free-text
-  // stages below it. Given a stronger "tile" surface externally (see
-  // wrapInConceptsTile()) since Concepts anchors everything else on
-  // the page — its own render function is untouched.
-  wrapper.appendChild(wrapInConceptsTile(renderConceptsField(plan, classroom, guidedState, handlers)));
+  // CONCEPT + SCHEDULE — composed as one Bento row, Concepts as the
+  // larger "wide" (8/12) foundational tile with its own surface (see
+  // withSurfaceTile()) since every other stage builds on it, Schedule
+  // as the smaller "narrow" (4/12) supporting context tile with no
+  // surface of its own — purely a grid-placement + surface choice made
+  // here in the orchestrator; neither section's own render function
+  // changes. Either tile expands to the FULL row width on its own (see
+  // the CSS `--stage--primary`/`--stage--reopened` override) whenever a
+  // teacher is actively editing it, so an open picker never gets
+  // squeezed into a half column.
+  grid.appendChild(withTileSize(withSurfaceTile(renderConceptsField(plan, classroom, guidedState, handlers)), 'wide'));
+  grid.appendChild(withTileSize(renderScheduleSection(plan, classroom, guidedState, handlers), 'narrow'));
 
   if (frontierStage === LESSON_PLAN_STAGES.CONCEPT) {
     container.appendChild(wrapper);
@@ -772,6 +781,8 @@ function renderBuilder(container, state, handlers) {
       sectionKey: LESSON_PLAN_SECTION_KEYS.WHY,
       renderFull: () => renderWhySection(plan, handlers),
       getPreview: () => plan.objectives.find((objective) => objective.text)?.text || plan.bigQuestion || '',
+      tileSize: 'full',
+      surface: true,
     },
     {
       stage: LESSON_PLAN_STAGES.CONNECTION,
@@ -780,6 +791,7 @@ function renderBuilder(container, state, handlers) {
       renderFull: () => renderSelfOthersIndiaSection(plan, handlers),
       getPreview: () => plan.selfOthersIndia.self || plan.selfOthersIndia.others || plan.selfOthersIndia.india || '',
       isOptional: true,
+      tileSize: 'half',
     },
     {
       stage: LESSON_PLAN_STAGES.SHOWCASE,
@@ -788,6 +800,7 @@ function renderBuilder(container, state, handlers) {
       renderFull: () => renderAssessmentSection(plan, handlers),
       getPreview: () => plan.assessments.find((item) => item.description)?.description || '',
       isOptional: true,
+      tileSize: 'half',
     },
     {
       stage: LESSON_PLAN_STAGES.EXPERIENCE,
@@ -805,6 +818,8 @@ function renderBuilder(container, state, handlers) {
         return wrap;
       },
       getPreview: () => plan.spark.title || (plan.activities.length > 0 ? `${plan.activities.length} activit${plan.activities.length === 1 ? 'y' : 'ies'}` : ''),
+      tileSize: 'full',
+      surface: true,
     },
     {
       stage: LESSON_PLAN_STAGES.HELPING,
@@ -823,16 +838,17 @@ function renderBuilder(container, state, handlers) {
         return wrap;
       },
       getPreview: () => plan.pairExplanation || plan.finalQuestion || '',
+      tileSize: 'full',
     },
   ];
 
   for (const config of freeTextStages) {
-    wrapper.appendChild(renderGuidedContentStage({ ...config, plan, state: guidedState, handlers }));
+    grid.appendChild(renderGuidedContentStage({ ...config, plan, state: guidedState, handlers }));
     if (config.stage === frontierStage) break; // stop right after the current stage — nothing beyond it yet
   }
 
   if (!frontierStage) {
-    wrapper.appendChild(renderReadinessPanel(plan, handlers));
+    grid.appendChild(withTileSize(renderReadinessPanel(plan, handlers), 'full'));
   }
 
   container.appendChild(wrapper);
@@ -932,37 +948,38 @@ function renderProgressBar(stageCompletion) {
 }
 
 /**
- * Composition-only Bento helpers — purely wrap/tag DOM elements that
- * renderSubjectStage()/renderConceptsField() already return; neither
- * of those functions' own internals change. Subject + Schedule become
- * a single two-up "context row" tile pair (collapses to one column on
- * narrow screens, or whenever either child is actively being edited —
- * see the CSS `:has()` rule alongside `.lesson-plan-builder__context-row`)
- * and Concepts gets a stronger tile surface, since it's the one piece
- * of context every other stage depends on.
+ * Composition-only Bento helpers — purely tag DOM elements that
+ * renderSubjectStage()/renderScheduleSection()/renderConceptsField()/
+ * renderGuidedContentStage() already return; none of those functions'
+ * own internals change.
+ *
+ * `withTileSize()` places an element into `.lesson-plan-builder__grid`
+ * (a 12-column CSS Grid — see that class's own CSS comment): 'full'
+ * spans all 12 columns, 'wide' spans 8 (Concepts — the larger
+ * foundational tile), 'narrow' spans 4 (Schedule — its smaller
+ * supporting partner in the same row), 'half' spans 6 (Connection/
+ * Showcase, side by side as equal, visually secondary peers). Any tile
+ * still carries its own `--stage--primary`/`--stage--reopened`
+ * modifier when actively being edited (see each render function's own
+ * doc comment) — the CSS grid overrides THOSE combinations back to
+ * full width, so an open picker is never squeezed into a half column.
+ *
+ * `withSurfaceTile()` adds the lifted white "core content" surface —
+ * Concepts, Purpose/Objectives, and Experience (Spark+Activities) all
+ * get it, since per explicit product direction those are the core
+ * lesson-building content; Schedule, Connection, Showcase, and Helping
+ * deliberately do NOT, so they read as lighter/secondary by contrast
+ * (whitespace and typography carrying the hierarchy, not a border on
+ * every single tile).
  */
-function wrapInContextRow(subjectEl, scheduleEl) {
-  const row = document.createElement('div');
-  row.className = 'lesson-plan-builder__context-row';
-  row.appendChild(subjectEl);
-  row.appendChild(scheduleEl);
-  return row;
+function withTileSize(el, size) {
+  el.classList.add(`lesson-plan-builder__tile--${size}`);
+  return el;
 }
 
-function renderContextRow(plan, classroom, state, handlers) {
-  return wrapInContextRow(
-    renderSubjectStage(plan, classroom, state, handlers),
-    renderScheduleSection(plan, classroom, state, handlers)
-  );
-}
-
-function wrapInConceptsTile(conceptsEl) {
-  conceptsEl.classList.add('lesson-plan-builder__stage--concepts-tile');
-  return conceptsEl;
-}
-
-function renderConceptsTile(plan, classroom, state, handlers) {
-  return wrapInConceptsTile(renderConceptsField(plan, classroom, state, handlers));
+function withSurfaceTile(el) {
+  el.classList.add('lesson-plan-builder__stage--surface-tile');
+  return el;
 }
 
 /**
@@ -1516,13 +1533,14 @@ function renderReadinessPanel(plan, handlers) {
  * .lesson-plan-builder__stage* rules) so the guided trail reads as one
  * consistent system regardless of which stage produced it.
  */
-function renderGuidedContentStage({ stage, title, sectionKey, plan, state, handlers, renderFull, getPreview, isOptional = false }) {
+function renderGuidedContentStage({ stage, title, sectionKey, plan, state, handlers, renderFull, getPreview, isOptional = false, tileSize = 'full', surface = false }) {
   const isComplete = Boolean(state.stageCompletionByKey[stage]);
   const isFrontier = state.frontierStage === stage;
   const isReopened = state.reopenedStageKey === stage;
 
   const wrap = document.createElement('section');
-  wrap.className = 'lesson-plan-builder__stage';
+  wrap.className = `lesson-plan-builder__stage lesson-plan-builder__tile--${tileSize}`;
+  if (surface) wrap.classList.add('lesson-plan-builder__stage--surface-tile');
 
   if (isComplete && !isFrontier && !isReopened) {
     wrap.classList.add('lesson-plan-builder__stage--compact');

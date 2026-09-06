@@ -2859,7 +2859,7 @@ textarea.reading-editor__block-input {
 /* ---- Lesson Plan Builder ------------------------------------------ */
 
 .lesson-plan-builder {
-  max-width: 860px;
+  max-width: 1000px;
   margin: 0 auto;
   padding: 0 1.5rem 4rem;
 }
@@ -2875,7 +2875,6 @@ textarea.reading-editor__block-input {
    the page opens with a single confident anchor rather than a row of
    stacked form fields. */
 .lesson-plan-builder__title-bar {
-  margin-bottom: 1.5rem;
   padding: 1.5rem 1.75rem;
   background-color: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -2943,73 +2942,87 @@ textarea.reading-editor__block-input {
   padding: 0.3rem 0.7rem;
 }
 /*
- * Guided building (the redesigned Lesson Plan Builder) — a growing
- * TRAIL of stages, not a stack of boxed form sections. Deliberately no
- * card/border/shadow per stage (see the redesign's own "Bento as a
- * compositional system, not every field in a rounded rectangle"
- * direction): hierarchy comes from typography and whitespace, not
- * decoration. Every guided stage (Subject/Schedule/Concept/Purpose/
- * Connection/Experience/Evidence — see
- * ui/views/LessonPlanBuilderView.js's own renderSubjectStage()/
- * renderScheduleSection()/renderConceptsField()/
- * renderGuidedContentStage()) shares this exact same shell, so the
- * whole thing reads as one consistent system rather than five
- * different UI patterns bolted together.
+ * Guided building (the redesigned Lesson Plan Builder) — a BENTO GRID
+ * of tiles, not a stack of full-width form rows. `.lesson-plan-builder__grid`
+ * (below) is the actual composition: a 12-column CSS Grid whose
+ * children are the Hero, Subject, Concepts+Schedule, Purpose,
+ * Connection+Showcase, Experience, Helping and the readiness panel —
+ * each placed via one of the `.lesson-plan-builder__tile--*` span
+ * classes (see ui/views/LessonPlanBuilderView.js's own withTileSize()
+ * doc comment), so the page's own SILHOUETTE is asymmetric rather than
+ * a single repeating row shape. Grid `gap` (not a border-bottom) is
+ * what separates one tile from the next now — hierarchy comes from
+ * tile SIZE and SURFACE (see withSurfaceTile()), not a divider line
+ * under every section.
  */
-.lesson-plan-builder__stage {
-  padding: 1.5rem 0;
-  border-bottom: 1px solid var(--color-border);
+.lesson-plan-builder__grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 1.75rem;
+  align-items: start;
 }
-.lesson-plan-builder__stage:last-child {
-  border-bottom: none;
+/* A `1fr` track's default min size is its content's min-content width,
+   not 0 — so one grid item with unshrinkable intrinsic content (a wide
+   flex row, a long unbreakable label) can inflate the WHOLE column
+   past the grid's own container width. This is the standard fix:
+   let every tile shrink freely; wrapping/ellipsis inside a tile is
+   still each tile's own concern, never the grid's. */
+.lesson-plan-builder__grid > * {
+  min-width: 0;
+}
+.lesson-plan-builder__tile--full {
+  grid-column: 1 / -1;
+}
+.lesson-plan-builder__tile--wide {
+  grid-column: span 8;
+}
+.lesson-plan-builder__tile--narrow {
+  grid-column: span 4;
+}
+.lesson-plan-builder__tile--half {
+  grid-column: span 6;
+}
+/* Schedule's inline date/period picker is the one case that genuinely
+   needs the full row instead of its usual narrow (4/12) column — every
+   OTHER "actively being edited" state (Concepts' own --primary while
+   its 8/12 column is already spacious; Connection/Showcase's 6/12 half
+   column, plenty for a few short text fields) reads fine at its normal
+   width, so this is deliberately narrow-only, not a blanket
+   primary/reopened override. Schedule's OWN --primary ("not yet
+   scheduled — here's one button") is intentionally excluded too — that
+   prompt is simple, single-line content, not a wide picker. */
+.lesson-plan-builder__tile--narrow.lesson-plan-builder__stage--reopened {
+  grid-column: 1 / -1;
+}
+.lesson-plan-builder__stage {
+  padding: 0;
 }
 .lesson-plan-builder__stage--primary {
-  padding: 2rem 0 2.25rem;
+  padding: 0 0 0.5rem;
 }
 .lesson-plan-builder__stage--compact {
-  padding: 0.6rem 0;
+  padding: 0.4rem 0;
 }
 .lesson-plan-builder__stage--reopened {
   background-color: var(--color-bg);
   border-radius: 16px;
-  border-bottom: none;
   padding: 1.25rem 1.5rem;
-  margin: 0.5rem 0;
 }
-/* Subject + Schedule composed as a two-up context row (see
-   ui/views/LessonPlanBuilderView.js's own wrapInContextRow()) — each
-   child keeps its own .lesson-plan-builder__stage border/padding, this
-   just places them side by side. Collapses to one column under the
-   page's own narrow breakpoint, or whenever either child is actively
-   being edited/expanded (--primary or --reopened): a picker in an open
-   state needs its full-width layout, not a squeezed half-column. */
-.lesson-plan-builder__context-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  column-gap: 2rem;
-  align-items: start;
-}
-.lesson-plan-builder__context-row > .lesson-plan-builder__stage {
-  border-bottom: none;
-}
-.lesson-plan-builder__context-row:has(> .lesson-plan-builder__stage--primary),
-.lesson-plan-builder__context-row:has(> .lesson-plan-builder__stage--reopened) {
-  grid-template-columns: 1fr;
-}
-/* Concepts — a stronger, foundational tile (quiet wash + generous
-   padding, no shadow) since every other stage builds on it; the
-   section's own render function (renderConceptsField()) is untouched,
-   this is purely an externally-applied surface. Excluded when compact
-   (:not(...--compact)) so the collapsed "✓ Concepts" summary still
-   reads as the same quiet one-line row every other collapsed stage
-   uses, not a heavy tile shrunk around one line of text. */
-.lesson-plan-builder__stage--concepts-tile:not(.lesson-plan-builder__stage--compact) {
+/* The "core content" surface — a lifted white tile (border, no shadow)
+   for whichever stages carry real lesson-building weight (Concepts,
+   Purpose/Objectives, Experience — see withSurfaceTile()'s own doc
+   comment for exactly which and why). Excluded when compact
+   (:not(...--compact)) so a collapsed "✓ Concepts" one-liner stays as
+   quiet as every other collapsed stage, never a heavy card shrunk
+   around one line of text. The `:not()` clause also gives this rule
+   higher specificity than `--stage--reopened` above, so a reopened
+   surface tile keeps its own white-card look rather than picking up
+   the plain wash meant for non-surfaced reopened stages. */
+.lesson-plan-builder__stage--surface-tile:not(.lesson-plan-builder__stage--compact) {
   background-color: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 20px;
-  border-bottom: none;
   padding: 1.75rem;
-  margin: 0.5rem 0 1.5rem;
 }
 .lesson-plan-builder__stage-heading-row {
   display: flex;
@@ -3322,13 +3335,26 @@ textarea.reading-editor__block-input {
   overflow: hidden;
   box-sizing: border-box;
 }
-.lesson-plan-builder__experience,
 .lesson-plan-builder__helping {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
+/* Spark + Activities get their own meaningful visual relationship
+   inside the Experience tile — a narrower Spark column (the single
+   opening move) beside a wider Activities column (the several beats
+   that carry the lesson through), not one undifferentiated stack. */
+.lesson-plan-builder__experience {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+.lesson-plan-builder__experience > * {
+  min-width: 0;
+}
 .lesson-plan-builder__experience-intro {
+  grid-column: 1 / -1;
   margin: 0 0 0.25rem;
   color: var(--color-muted);
   font-size: 0.9rem;
@@ -3532,9 +3558,22 @@ textarea.reading-editor__block-input {
    desktop-only padding and column layout so nothing overflows and
    every control stays full-width and easy to tap; everything else on
    this page was already single-column. */
+/* Mobile — a single deliberate column, not shrunk desktop tiles. Every
+   grid tile (whatever its desktop span) becomes full width, in the
+   same document order the desktop grid already uses (Hero -> Subject
+   -> Concepts -> Schedule -> Purpose -> Connection -> Showcase ->
+   Experience -> Helping), so the reading order stays sensible without
+   any reordering logic of its own. */
 @media (max-width: 640px) {
-  .lesson-plan-builder__context-row {
+  .lesson-plan-builder__grid {
     grid-template-columns: 1fr;
+    gap: 1.1rem;
+  }
+  .lesson-plan-builder__tile--full,
+  .lesson-plan-builder__tile--wide,
+  .lesson-plan-builder__tile--narrow,
+  .lesson-plan-builder__tile--half {
+    grid-column: 1 / -1;
   }
   .lesson-plan-builder__title-bar {
     padding: 1.1rem 1.25rem;
@@ -3542,8 +3581,11 @@ textarea.reading-editor__block-input {
   .lesson-plan-builder__title-input {
     font-size: 1.4rem;
   }
-  .lesson-plan-builder__stage--concepts-tile:not(.lesson-plan-builder__stage--compact) {
+  .lesson-plan-builder__stage--surface-tile:not(.lesson-plan-builder__stage--compact) {
     padding: 1.1rem 1.25rem;
+  }
+  .lesson-plan-builder__experience {
+    grid-template-columns: 1fr;
   }
 }
 
