@@ -861,6 +861,42 @@ service cloud.firestore {
         request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
     }
 
+    // Learning Hub — Activity (see models/Activity.js,
+    // services/learningIntegrationService.js,
+    // repositories/activityRepository.js). Same exact gap this file's
+    // own Resource block comment above already describes having hit
+    // once before, repeating here: activityRepository.js was added
+    // with zero rule of its own, so every read/write to this
+    // collection fell through to deny-by-default — in production this
+    // broke ui/views/ConceptWorkspaceView.js's Activities tab
+    // outright, since its rerender() unconditionally awaits
+    // learningIntegrationService.getActivitiesForConcept() on every
+    // single load, not just when that tab is open (see that view's
+    // own rerender() for why: resources/activities/assignments are
+    // all fetched once up front so every sub-render stays
+    // synchronous) — so this one missing rule broke the ENTIRE
+    // Concept Workspace, not just its own tab.
+    //
+    // Same member-scoped shape as the Resource block immediately
+    // above, for the same reasons: an Activity's own id is never
+    // guessable/listable (no `allow list`, read only); create/update/
+    // delete all require the caller be a current classroom member —
+    // matches activityRepository.js's own create/delete surface
+    // exactly (there is no separate update path yet, but nothing
+    // about that absence needs a narrower rule than Resources has).
+    match /classrooms/{classroomId}/activities/{activityId} {
+      allow read: if request.auth != null;
+
+      allow create: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+
+      allow update: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+
+      allow delete: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+    }
+
     // Learning Record — StudentConceptRecord (see
     // models/StudentConceptRecord.js, services/learningRecordService.js,
     // repositories/firestoreStudentConceptRecordsRepository.js). Phase N
