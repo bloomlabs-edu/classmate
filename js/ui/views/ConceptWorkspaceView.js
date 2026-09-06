@@ -381,6 +381,16 @@ function renderWorkspace(container, classroom, subject, unit, concept, activeTab
   // title above it (same `btn btn--text` class the Back button uses),
   // disabled rather than hidden at either boundary so the control
   // never looks misleadingly active with nowhere to go.
+  //
+  // The "Previous"/"Next" text sits in its own
+  // .concept-workspace__concept-nav-button-label span (not a bare text
+  // node) purely so css/styles.css's mobile breakpoint can hide just
+  // that text and leave the icon — swipe is the primary way to move
+  // between Concepts on a phone, this becomes a compact icon-only
+  // fallback there. The button's own aria-label (below) already
+  // carries the full "Previous Concept: <title>" wording regardless of
+  // whether the visible text is showing, so the accessible name never
+  // depends on viewport width.
   const previousConcept = conceptNavigationService.getPreviousConcept(unit, concept.id);
   const nextConcept = conceptNavigationService.getNextConcept(unit, concept.id);
 
@@ -393,7 +403,10 @@ function renderWorkspace(container, classroom, subject, unit, concept, activeTab
   previousConceptButton.disabled = !previousConcept;
   previousConceptButton.setAttribute('aria-label', previousConcept ? `Previous Concept: ${previousConcept.title}` : 'No previous Concept');
   previousConceptButton.appendChild(createIcon('arrow-left'));
-  previousConceptButton.append(' Previous');
+  const previousConceptLabel = document.createElement('span');
+  previousConceptLabel.className = 'concept-workspace__concept-nav-button-label';
+  previousConceptLabel.textContent = ' Previous';
+  previousConceptButton.appendChild(previousConceptLabel);
   previousConceptButton.addEventListener('click', handlers.onNavigatePreviousConcept);
   conceptNav.appendChild(previousConceptButton);
 
@@ -402,7 +415,10 @@ function renderWorkspace(container, classroom, subject, unit, concept, activeTab
   nextConceptButton.className = 'btn btn--text concept-workspace__concept-nav-button concept-workspace__concept-nav-button--next';
   nextConceptButton.disabled = !nextConcept;
   nextConceptButton.setAttribute('aria-label', nextConcept ? `Next Concept: ${nextConcept.title}` : 'No next Concept');
-  nextConceptButton.append('Next ');
+  const nextConceptLabel = document.createElement('span');
+  nextConceptLabel.className = 'concept-workspace__concept-nav-button-label';
+  nextConceptLabel.textContent = 'Next ';
+  nextConceptButton.appendChild(nextConceptLabel);
   nextConceptButton.appendChild(createIcon('arrow-right'));
   nextConceptButton.addEventListener('click', handlers.onNavigateNextConcept);
   conceptNav.appendChild(nextConceptButton);

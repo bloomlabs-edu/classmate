@@ -2201,6 +2201,43 @@ select:focus-visible,
 .concept-workspace__tab-bar {
   margin-bottom: 1.5rem;
 }
+/* Mobile — swipe (see ui/views/ConceptWorkspaceView.js's own
+   attachConceptSwipeNavigation()) becomes the primary way to move
+   between Concepts on a phone; Previous/Next shrink to a compact,
+   icon-only fallback rather than the full text row above, and the
+   header cluster above the tabs tightens generally, so real Concept
+   content sits higher on screen. Desktop is completely untouched —
+   this only applies below the same 640px breakpoint already used
+   elsewhere in this file. Icons stay visible (never hidden) precisely
+   because this is a fallback, not a removal — see this app's own
+   "Do not make swipe the only means of navigation" requirement. */
+@media (max-width: 640px) {
+  .concept-workspace__header {
+    padding: 0.75rem 0 0.25rem;
+  }
+  .concept-workspace__breadcrumb {
+    margin: 0.5rem 0 0.1rem;
+  }
+  .concept-workspace__title {
+    margin: 0 0 0.5rem;
+  }
+  .concept-workspace__concept-nav {
+    gap: 0.25rem;
+    margin: 0 0 0.5rem;
+  }
+  .concept-workspace__concept-nav-button {
+    padding: 0.35rem 0.5rem;
+  }
+  .concept-workspace__concept-nav-button-label {
+    display: none;
+  }
+  .concept-workspace__learning-hub-trigger {
+    margin-top: -0.25rem;
+  }
+  .concept-workspace__tab-bar {
+    margin-bottom: 0.75rem;
+  }
+}
 .concept-workspace__section {
   display: flex;
   flex-direction: column;
