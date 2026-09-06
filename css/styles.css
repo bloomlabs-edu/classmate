@@ -8353,40 +8353,244 @@ button.wizard-checklist__row:hover {
   margin: 0 0 0.4rem;
 }
 
-/* Visitor's own read-only demo screen — see ui/views/VisitorAccessView.js */
+/*
+ * Classroom Tour (see ui/views/VisitorAccessView.js) — a curated
+ * walkthrough, not an admin page and not a conventional dark-overlay
+ * product tour. Quiet surface, restrained accents, generous
+ * whitespace, hierarchy from typography — same Bento language as
+ * .classroom-access-bento above.
+ */
 .visitor-access__loading {
-  padding: 2rem;
+  padding: 3rem 1.5rem;
   text-align: center;
   color: var(--color-muted);
 }
-.visitor-access__banner {
+
+/* Welcome screen — one calm, centered introduction, not a form. */
+.classroom-tour-welcome {
+  max-width: 480px;
+  margin: 3rem auto;
+  padding: 0 1.5rem;
+  text-align: center;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
-  background-color: #E1F5F1;
-  color: #0F9E8E;
-  font-size: 0.85rem;
-  font-weight: var(--font-weight-medium);
-  padding: 0.6rem 1rem;
-  border-radius: var(--radius-pill);
+  gap: 0.6rem;
+}
+.classroom-tour-welcome__eyebrow {
+  font-size: 0.9rem;
+  color: var(--color-muted);
+  margin: 0;
+}
+.classroom-tour-welcome__title {
+  font-size: 1.7rem;
+  font-weight: var(--font-weight-black);
+  margin: 0;
+}
+.classroom-tour-welcome__grade {
+  font-size: 0.95rem;
+  color: var(--color-muted);
+  margin: 0 0 0.5rem;
+}
+.classroom-tour-welcome__intro {
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--color-muted);
   margin: 0 0 1rem;
 }
-.visitor-access__subject {
-  margin-bottom: 1.25rem;
+
+/* The tour itself */
+.classroom-tour {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 1.5rem 1.5rem 3rem;
 }
-.visitor-access__unit {
-  margin: 0.3rem 0 0;
+.classroom-tour__nav {
+  margin-bottom: 2rem;
+}
+.classroom-tour__nav-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+.classroom-tour__nav-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: none;
   color: var(--color-muted);
-  font-size: 0.9rem;
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
 }
-.visitor-access__timetable-list {
+.classroom-tour__nav-label--active {
+  background-color: color-mix(in srgb, var(--color-primary-deep) 12%, var(--color-surface));
+  color: var(--color-primary-deep);
+  font-weight: var(--font-weight-bold);
+}
+.classroom-tour__nav-number {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+.classroom-tour__progress {
+  display: flex;
+  gap: 0.35rem;
+}
+.classroom-tour__progress-dot {
+  flex: 1;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background-color: var(--color-border);
+}
+.classroom-tour__progress-dot--filled {
+  background-color: var(--color-primary-deep);
+}
+.classroom-tour__stage {
+  min-height: 320px;
+}
+.classroom-tour__section--hero {
+  padding: 1.5rem 0;
+}
+.classroom-tour__eyebrow {
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary-deep);
+  margin: 0 0 0.5rem;
+}
+.classroom-tour__heading {
+  font-size: 1.6rem;
+  font-weight: var(--font-weight-black);
+  margin: 0 0 0.4rem;
+}
+.classroom-tour__meta {
+  font-size: 0.95rem;
+  color: var(--color-muted);
+  margin: 0 0 1rem;
+}
+.classroom-tour__explanation {
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--color-muted);
+  margin: 0 0 1.5rem;
+  max-width: 560px;
+}
+.classroom-tour__empty {
+  color: var(--color-muted);
+  font-size: 0.95rem;
+}
+.classroom-tour__accordion {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.classroom-tour__accordion-row {
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.5rem;
+}
+.classroom-tour__accordion-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: var(--font-weight-bold);
+}
+.classroom-tour__accordion-toggle svg {
+  flex-shrink: 0;
+  transition: transform var(--duration-fast, 0.15s) var(--ease-standard, ease);
+}
+.classroom-tour__accordion-toggle--expanded svg {
+  transform: rotate(90deg);
+}
+.classroom-tour__accordion-count {
+  margin-left: auto;
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-muted);
+}
+.classroom-tour__unit-list {
+  padding: 0.25rem 0 0.5rem 1.5rem;
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
 }
-.visitor-access__timetable-row {
+.classroom-tour__unit-row {
   margin: 0;
+  color: var(--color-muted);
   font-size: 0.9rem;
+}
+.classroom-tour__timetable {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.classroom-tour__timetable-day-label {
+  font-size: 0.95rem;
+  font-weight: var(--font-weight-black);
+  margin: 0 0 0.4rem;
+}
+.classroom-tour__timetable-row {
+  margin: 0 0 0.25rem;
+  font-size: 0.9rem;
+  color: var(--color-muted);
+}
+.classroom-tour__questions {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.classroom-tour__question-row {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-start;
+}
+.classroom-tour__question-number {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: color-mix(in srgb, var(--color-primary-deep) 14%, var(--color-surface));
+  color: var(--color-primary-deep);
+  font-weight: var(--font-weight-black);
+  font-size: 0.9rem;
+}
+.classroom-tour__question-text {
+  font-weight: var(--font-weight-bold);
+  margin: 0 0 0.2rem;
+}
+.classroom-tour__question-description {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  margin: 0;
+  line-height: 1.4;
+}
+.classroom-tour__footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--color-border);
+}
+@media (max-width: 640px) {
+  .classroom-tour {
+    padding: 1rem 1rem 2.5rem;
+  }
+  .classroom-tour__nav-label span:last-child {
+    display: none;
+  }
 }
 
 /* Curriculum Management v1 — see ui/views/CurriculumManagementView.js */

@@ -785,6 +785,12 @@ function renderRoute(route, reason = 'unspecified') {
     renderVisitorAccessView(appContainer, {
       code: route.code,
       onBack: () => router.navigate('/'),
+      // "Create your own classroom" (the tour's own closing CTA) — the
+      // safest existing route, not a new signup flow: '/teacher' falls
+      // through to the ordinary sign-in gate for a signed-out visitor
+      // (see this function's own `if (!currentUser)` branch below),
+      // exactly what a brand-new teacher already hits today.
+      onExploreClassMate: () => router.navigate('/teacher'),
     });
     return;
   }

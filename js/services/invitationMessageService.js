@@ -20,12 +20,14 @@ export function buildCoTeacherInvitationMessage({ classroomName, code }) {
 }
 
 /**
- * Read-only, no-sign-in invitation — the invitee never becomes a
- * classroom member (see services/visitorAccessService.js's own header
- * comment on why); redeeming `code` only ever opens a sanitized,
- * read-only demo of this classroom's structure, never real student
- * data.
+ * A warm, inviting message — never a list of what the invitee can't do
+ * (per explicit product direction: this should read as an invitation
+ * to a Classroom Tour, not a permissions notice). The actual behavior
+ * behind it is unchanged: no sign-in, and redeeming `code` only ever
+ * opens a sanitized tour of this classroom's structure (see
+ * services/visitorAccessService.js's own header comment) — this is a
+ * copy-only concern, not an authorization one.
  */
 export function buildVisitorInvitationMessage({ classroomName, code, link }) {
-  return `👀 You've been invited to see how "${classroomName}" works on ClassMate!\n\nYou're joining as a visitor — a read-only look at how the classroom is set up, not a real member. No sign-in needed, and you won't see actual student names, scores, or notebooks.\n\nTo take a look:\nOpen this link and enter the code below.\n\nVisitor Code:\n${code}\n\nVisitor Link:\n${link}`;
+  return `👀 Come take a look at "${classroomName}" on ClassMate!\n\nI've shared my classroom with you so you can explore how ClassMate works from a teacher's perspective.\n\nStart exploring:\n${link}\n\nVisitor code: ${code}`;
 }

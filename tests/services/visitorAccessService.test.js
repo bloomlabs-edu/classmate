@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createClassroom } from '../../js/models/Classroom.js';
 import * as learningRecordTeacherService from '../../js/services/learningRecordTeacherService.js';
 import * as timetableService from '../../js/services/timetableService.js';
-import { buildVisitorSnapshot } from '../../js/services/visitorAccessService.js';
+import { buildVisitorSnapshot, SAMPLE_LESSON_PLAN_QUESTIONS } from '../../js/services/visitorAccessService.js';
 
 function buildClassroomWithContent() {
   const classroom = createClassroom({ id: 'c1', schoolName: 'CHS Kannamapet', gradeSection: 'Grade 8A' });
@@ -60,4 +60,29 @@ test('buildVisitorSnapshot: an empty classroom (no subjects/timetable yet) produ
   assert.deepEqual(snapshot.subjects, []);
   assert.deepEqual(snapshot.timetable.periods, []);
   assert.deepEqual(snapshot.timetable.slots, []);
+});
+
+test('buildVisitorSnapshot: never includes real lesson plans or learning activities, even when the classroom has real ones — the Classroom Tour\'s own Lesson Planning section uses a fixed generic example instead, never derived from this data', () => {
+  const classroom = buildClassroomWithContent();
+  classroom.learningActivities = [{ id: 'la1', title: 'Real activity referencing a real student' }];
+  classroom.assessments = [{ id: 'a1', title: 'Real assessment' }];
+
+  const snapshot = buildVisitorSnapshot(classroom);
+  assert.equal(snapshot.learningActivities, undefined);
+  assert.equal(snapshot.assessments, undefined);
+  assert.equal(snapshot.lessonPlans, undefined);
+  assert.ok(!JSON.stringify(snapshot).includes('Real activity referencing a real student'));
+});
+
+test('SAMPLE_LESSON_PLAN_QUESTIONS: exactly the 5 Questions framework, generic and never containing anything that looks like a real student name', () => {
+  assert.equal(SAMPLE_LESSON_PLAN_QUESTIONS.length, 5);
+  assert.deepEqual(
+    SAMPLE_LESSON_PLAN_QUESTIONS.map((item) => item.number),
+    ['1', '2', '3', '4', '5']
+  );
+  SAMPLE_LESSON_PLAN_QUESTIONS.forEach((item) => {
+    assert.ok(item.question.length > 0);
+    assert.ok(item.description.length > 0);
+  });
+  assert.ok(/self, others & india/i.test(SAMPLE_LESSON_PLAN_QUESTIONS[1].question));
 });

@@ -326,10 +326,13 @@ function createInviteCoTeacherTile(classroom, currentUser, rerender) {
 }
 
 /**
- * Visitor Access — explore my class. Deliberately NOT a classroom
- * member and NOT interchangeable with the co-teacher code above (see
- * services/visitorAccessService.js's own header comment for the full
- * architecture reasoning: this reads a sanitized, structure-only
+ * Visitor Access — presented to both the teacher and the invitee as a
+ * "Classroom Tour" (see ui/views/VisitorAccessView.js's own header
+ * comment), never as a permissions feature — but underneath, exactly
+ * the same Visitor Access this project has always called it: NOT a
+ * classroom member, NOT interchangeable with the co-teacher code above
+ * (see services/visitorAccessService.js's own header comment for the
+ * full architecture reasoning — this reads a sanitized, structure-only
  * snapshot, never the real classroom document). Any current member
  * (not owner-only, unlike Co-Teacher above) may create or revoke it —
  * lower stakes than granting full teacher access, matching the same
@@ -353,14 +356,14 @@ function createVisitorAccessTile(classroom, currentUser, rerender) {
 
   const description = document.createElement('p');
   description.className = 'classroom-access-bento__description';
-  description.textContent = 'Explore my class — a read-only demo for another teacher. No sign-in, no access to real student data, never a classroom member.';
+  description.textContent = 'Explore my classroom — invite another teacher on a guided tour of how your classroom works.';
   card.appendChild(description);
 
   if (!classroom.visitorAccessCode) {
     const createButton = document.createElement('button');
     createButton.type = 'button';
     createButton.className = 'btn btn--primary';
-    createButton.textContent = 'Create Visitor Access';
+    createButton.textContent = 'Create Classroom Tour';
     createButton.addEventListener('click', () => {
       classroomService.ensureVisitorAccessCode(classroom);
       workspaceService.save(classroom);
@@ -381,14 +384,14 @@ function createVisitorAccessTile(classroom, currentUser, rerender) {
   card.appendChild(codeDisplay);
 
   const message = buildVisitorInvitationMessage({ classroomName: getDisplayName(classroom), code, link });
-  card.appendChild(createInvitationActions({ message, shareLabel: 'Share Visitor Invitation' }));
+  card.appendChild(createInvitationActions({ message, shareLabel: 'Share Classroom Tour' }));
 
   const revokeButton = document.createElement('button');
   revokeButton.type = 'button';
   revokeButton.className = 'btn btn--text btn--danger-text';
-  revokeButton.textContent = 'Revoke Access';
+  revokeButton.textContent = 'Stop sharing';
   revokeButton.addEventListener('click', async () => {
-    const confirmed = window.confirm('Revoke this visitor link? Anyone who still has it will no longer be able to open the demo.');
+    const confirmed = window.confirm('Stop sharing this classroom tour? Anyone who still has the link will no longer be able to open it.');
     if (!confirmed) return;
     try {
       await workspaceService.revokeVisitorAccess(code);

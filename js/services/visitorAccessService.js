@@ -1,7 +1,9 @@
 /**
  * services/visitorAccessService.js
  *
- * Builds the one thing a Visitor is ever allowed to read: a deliberately
+ * Presented to teachers and invitees alike as a "Classroom Tour" (see
+ * ui/views/VisitorAccessView.js) — never as a permissions/access
+ * feature. Builds the one thing a Visitor is ever allowed to read: a deliberately
  * SANITIZED, point-in-time snapshot of a classroom's own curriculum/
  * timetable STRUCTURE — never the classroom's real Firestore document.
  *
@@ -36,6 +38,53 @@
 
 import { getDisplayName } from './classroomService.js';
 import { resolveSubjectTitle } from './timetableDisplayService.js';
+
+/**
+ * A fixed, hand-written illustration of the real "5 Questions"
+ * lesson-planning framework (see models/LessonPlan.js's own header
+ * comment) — used ONLY by the Classroom Tour's own Lesson Planning
+ * section (ui/views/VisitorAccessView.js), NEVER derived from this
+ * classroom's actual lesson plans.
+ *
+ * Real lesson plans are full of teacher-authored free text (Spark,
+ * Activities, differentiation buckets, Teacher Look-Fors...) that
+ * could plausibly reference real students by name or circumstance —
+ * there is no existing per-field review step that could certify a
+ * given plan safe to show a stranger with no sign-in, and
+ * buildVisitorSnapshot() below deliberately never touches
+ * classroom.learningActivities/lessonPlans at all (see this file's own
+ * header comment on why the snapshot stays an explicit allow-list).
+ * Rather than weaken that model, this is a clearly-labeled, generic
+ * example — illustrating the real framework honestly, fabricating
+ * nothing that looks like a real student or a real lesson.
+ */
+export const SAMPLE_LESSON_PLAN_QUESTIONS = Object.freeze([
+  Object.freeze({
+    number: '1',
+    question: 'Why are students learning what they are learning today?',
+    description: 'Every lesson starts with a real objective and a Big Question — never just "cover the chapter."',
+  }),
+  Object.freeze({
+    number: '2',
+    question: 'Will it advance Self, Others & India?',
+    description: 'Teachers connect the lesson to who a student is becoming, not just what they can recall.',
+  }),
+  Object.freeze({
+    number: '3',
+    question: 'Are students showcasing learning and applying the content?',
+    description: 'Real evidence of understanding — an exit ticket, a demonstration — not just a worksheet.',
+  }),
+  Object.freeze({
+    number: '4',
+    question: 'Is it fun, fast, effective?',
+    description: 'A Spark to open the lesson, then hands-on activities that keep the whole class moving.',
+  }),
+  Object.freeze({
+    number: '5',
+    question: 'Are students helping me and others learn?',
+    description: 'Students explain their own thinking to a partner, so understanding multiplies around the room.',
+  }),
+]);
 
 /**
  * `{ classroomName, gradeSection, schoolName, subjects, timetable, generatedAt }`
