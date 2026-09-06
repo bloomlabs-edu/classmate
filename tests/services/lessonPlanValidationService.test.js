@@ -13,13 +13,20 @@ test('getLessonPlanReadiness: a brand-new, empty plan is not ready, and reports 
   assert.ok(readiness.missing.every((item) => !/error|field \d+/i.test(item.message)));
 });
 
-test('getLessonPlanReadiness: WHY section reports each of objective / big question / SWBAT independently', () => {
+test('getLessonPlanReadiness: WHY section reports each of objective / big question independently — SWBAT is no longer a separate requirement, its content lives inside Lesson Objective', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
   const readiness = getLessonPlanReadiness(plan);
   const whyMessages = readiness.missing.filter((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.WHY).map((item) => item.message);
   assert.ok(whyMessages.some((message) => /lesson objective/i.test(message)));
   assert.ok(whyMessages.some((message) => /big question/i.test(message)));
-  assert.ok(whyMessages.some((message) => /swbat/i.test(message)));
+  assert.ok(!whyMessages.some((message) => /swbat/i.test(message)));
+});
+
+test('getLessonPlanReadiness: a non-blank Lesson Objective and Big Question alone satisfy WHY, with no swbatObjectives at all', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.updateWhy(plan, { lessonObjective: 'Understand the causes.', bigQuestion: 'Why did it happen?' });
+  const readiness = getLessonPlanReadiness(plan);
+  assert.ok(!readiness.missing.some((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.WHY));
 });
 
 test('getLessonPlanReadiness: fully completing every section (Concept + Spark + one Activity + Helping Each Other Learn + Why + Self/Others/India + Assessment) makes the plan ready', () => {
@@ -27,7 +34,6 @@ test('getLessonPlanReadiness: fully completing every section (Concept + Spark + 
 
   lessonPlanService.updateContext(plan, { conceptIds: ['concept-1'] });
   lessonPlanService.updateWhy(plan, { lessonObjective: 'Understand the causes of the revolt.', bigQuestion: 'Why did Kattabomman resist British rule?' });
-  lessonPlanService.addSwbatObjective(plan, 'Identify at least two causes of the revolt.');
   lessonPlanService.updateSelfOthersIndia(plan, { self: 'Standing up for what is right.' });
   lessonPlanService.addAssessmentItem(plan, 'Exit ticket with 2 causes.');
   lessonPlanService.updateSpark(plan, { title: 'Mystery Object', teacherAction: 'Show the object.', studentAction: 'Guess its significance.' });

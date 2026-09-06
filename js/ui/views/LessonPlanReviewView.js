@@ -372,34 +372,40 @@ function renderCommentAffordance(sectionKey, plan, state, handlers) {
 
 // ---- 1. WHY ----------------------------------------------------------
 
+/**
+ * SWBAT outcomes now live inside Lesson Objective itself (see
+ * ui/views/LessonPlanBuilderView.js's own renderWhySection() doc
+ * comment — Lesson Objective and SWBAT were asking for the same
+ * thing). `swbatObjectives[]` is shown here ONLY when a plan already
+ * has real (non-blank) legacy content in it, so a plan built after
+ * that change never shows a redundant empty SWBAT block underneath an
+ * objective that already includes its own outcomes — and a plan built
+ * before it doesn't lose anything it already has saved.
+ */
 function renderWhySection(plan) {
   const wrap = document.createElement('div');
   wrap.appendChild(renderReadOnlyField('Lesson Objective', plan.lessonObjective));
   wrap.appendChild(renderReadOnlyField('Big Question', plan.bigQuestion));
 
-  const swbatField = document.createElement('div');
-  swbatField.className = 'lesson-plan-review__field';
-  const label = document.createElement('p');
-  label.className = 'lesson-plan-review__field-label';
-  label.textContent = 'Students Will Be Able To (SWBAT)';
-  swbatField.appendChild(label);
+  const nonBlankSwbat = plan.swbatObjectives.filter((objective) => objective && objective.trim());
+  if (nonBlankSwbat.length > 0) {
+    const swbatField = document.createElement('div');
+    swbatField.className = 'lesson-plan-review__field';
+    const label = document.createElement('p');
+    label.className = 'lesson-plan-review__field-label';
+    label.textContent = 'Students Will Be Able To (SWBAT)';
+    swbatField.appendChild(label);
 
-  if (plan.swbatObjectives.length === 0) {
-    const empty = document.createElement('p');
-    empty.className = 'lesson-plan-review__field-value lesson-plan-review__field-value--empty';
-    empty.textContent = '—';
-    swbatField.appendChild(empty);
-  } else {
     const list = document.createElement('ul');
     list.className = 'lesson-plan-review__swbat-list';
-    plan.swbatObjectives.forEach((objective) => {
+    nonBlankSwbat.forEach((objective) => {
       const item = document.createElement('li');
       item.textContent = objective;
       list.appendChild(item);
     });
     swbatField.appendChild(list);
+    wrap.appendChild(swbatField);
   }
-  wrap.appendChild(swbatField);
 
   return wrap;
 }

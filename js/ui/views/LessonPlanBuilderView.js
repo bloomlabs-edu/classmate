@@ -425,18 +425,6 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
           },
         });
       },
-      onAddSwbat: () => {
-        lessonPlanService.addSwbatObjective(plan, '');
-        persistAndRerender();
-      },
-      onSwbatChange: (index, value) => {
-        lessonPlanService.updateSwbatObjective(plan, index, value);
-        persistOnly();
-      },
-      onRemoveSwbat: (index) => {
-        lessonPlanService.removeSwbatObjective(plan, index);
-        persistAndRerender();
-      },
 
       // ---- 2. SELF / OTHERS / INDIA ----
       onSelfOthersIndiaChange: (field, value) => {
@@ -1539,6 +1527,25 @@ function createLabeledTextarea({ label, placeholder, value, onChange, disabled =
 
 // ---- 1. WHY --------------------------------------------------------
 
+/**
+ * Lesson Objective is the one place the teacher writes both the
+ * objective itself AND its SWBAT outcomes (per the real lesson-plan
+ * reference — "Lesson Objective" containing a "SWBAT" list, never a
+ * separate second question) — one auto-growing writing area, not two
+ * fields asking for the same thing. `swbatObjectives[]` (see
+ * models/LessonPlan.js) is NOT removed from the model: it's an
+ * established, independently-tested field
+ * (services/lessonPlanService.js's own addSwbatObjective() etc., still
+ * used by Teaching Ideas' whole-lesson snapshot) that a teacher simply
+ * no longer edits through a second builder section. Any plan that
+ * already has real (non-blank) swbatObjectives content from before
+ * this change keeps it exactly as saved and still shows it here — a
+ * plain, read-only recap, never a second editable list — so existing
+ * saved data is never hidden just because the input that created it is
+ * gone; a brand-new plan's empty array renders nothing extra. Same
+ * "only when non-empty" treatment as ui/views/LessonPlanReviewView.js's
+ * own renderWhySection().
+ */
 function renderWhySection(plan, handlers) {
   const wrap = document.createElement('div');
   wrap.className = 'lesson-plan-builder__why';
@@ -1546,7 +1553,7 @@ function renderWhySection(plan, handlers) {
   wrap.appendChild(
     createLabeledTextarea({
       label: 'Lesson Objective',
-      placeholder: 'What should students understand or be able to do by the end of this lesson?',
+      placeholder: 'What should students understand or be able to do by the end of this lesson? Include SWBAT outcomes, e.g. SWBAT: • trace the causes... • sequence the events... • identify the key figures...',
       value: plan.lessonObjective,
       onChange: handlers.onLessonObjectiveChange,
       disabled: !handlers.editable,
@@ -1563,27 +1570,24 @@ function renderWhySection(plan, handlers) {
   if (handlers.editable) bigQuestionField.appendChild(createFromTeachingIdeasButton(handlers.onOpenBigQuestionPicker));
   wrap.appendChild(bigQuestionField);
 
-  const swbatField = document.createElement('div');
-  swbatField.className = 'lesson-plan-builder__field';
-  const swbatLabel = document.createElement('label');
-  swbatLabel.className = 'lesson-plan-builder__field-label';
-  swbatLabel.textContent = 'Students Will Be Able To (SWBAT)';
-  swbatField.appendChild(swbatLabel);
-
-  plan.swbatObjectives.forEach((objective, index) => {
-    swbatField.appendChild(
-      createDynamicListRow({
-        value: objective,
-        placeholder: 'e.g. Identify at least two causes of the revolt',
-        onChange: (value) => handlers.onSwbatChange(index, value),
-        onRemove: () => handlers.onRemoveSwbat(index),
-        disabled: !handlers.editable,
-      })
-    );
-  });
-
-  if (handlers.editable) swbatField.appendChild(createAddRowButton('+ Add SWBAT objective', handlers.onAddSwbat));
-  wrap.appendChild(swbatField);
+  const legacySwbat = plan.swbatObjectives.filter((objective) => objective && objective.trim());
+  if (legacySwbat.length > 0) {
+    const swbatField = document.createElement('div');
+    swbatField.className = 'lesson-plan-builder__field';
+    const swbatLabel = document.createElement('label');
+    swbatLabel.className = 'lesson-plan-builder__field-label';
+    swbatLabel.textContent = 'Students Will Be Able To (SWBAT) — saved earlier';
+    swbatField.appendChild(swbatLabel);
+    const list = document.createElement('ul');
+    list.className = 'lesson-plan-builder__swbat-legacy-list';
+    legacySwbat.forEach((objective) => {
+      const item = document.createElement('li');
+      item.textContent = objective;
+      list.appendChild(item);
+    });
+    swbatField.appendChild(list);
+    wrap.appendChild(swbatField);
+  }
 
   return wrap;
 }

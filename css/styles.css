@@ -3229,6 +3229,15 @@ textarea.reading-editor__block-input {
   color: var(--color-muted);
   margin-bottom: 0.3rem;
 }
+/* Legacy-only read-only recap of swbatObjectives saved before Lesson
+   Objective absorbed SWBAT content — see renderWhySection()'s own doc
+   comment in ui/views/LessonPlanBuilderView.js. */
+.lesson-plan-builder__swbat-legacy-list {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--color-muted);
+  font-size: 0.95rem;
+}
 .lesson-plan-builder__textarea {
   width: 100%;
   /* Generous, composing-a-lesson writing space — not a cramped

@@ -46,15 +46,16 @@ export function getLessonPlanReadiness(lessonPlan) {
     missing.push({ sectionKey: LESSON_PLAN_SECTION_KEYS.CONTEXT, message: 'Add at least one Concept before submitting this lesson for review.' });
   }
 
-  // 1. WHY
+  // 1. WHY — Lesson Objective is where SWBAT outcomes live too (see
+  // ui/views/LessonPlanBuilderView.js's own renderWhySection() doc
+  // comment); `swbatObjectives[]` is no longer a separate submission
+  // requirement of its own — a genuinely non-blank Lesson Objective
+  // already covers "has real Q1 content."
   if (isBlank(lessonPlan.lessonObjective)) {
     missing.push({ sectionKey: LESSON_PLAN_SECTION_KEYS.WHY, message: 'Add a lesson objective.' });
   }
   if (isBlank(lessonPlan.bigQuestion)) {
     missing.push({ sectionKey: LESSON_PLAN_SECTION_KEYS.WHY, message: 'Add a Big Question.' });
-  }
-  if (!lessonPlan.swbatObjectives.some((objective) => !isBlank(objective))) {
-    missing.push({ sectionKey: LESSON_PLAN_SECTION_KEYS.WHY, message: 'Add at least one SWBAT objective.' });
   }
 
   // 2. SELF / OTHERS / INDIA
