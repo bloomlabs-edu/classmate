@@ -2057,7 +2057,19 @@ function renderActivityCard(plan, activity, index, total, isCollapsed, handlers)
     const wholeActivityComments = renderCommentsList(plan, lessonPlanReviewService.buildActivitySectionKey(activity.id));
     if (wholeActivityComments) body.appendChild(wholeActivityComments);
 
-    body.appendChild(
+    // Two-column planning grid: Teacher Action (left) spans the full
+    // height of whichever column ends up taller; Student Action (right)
+    // holds either one plain block or the differentiated buckets — never
+    // both at once, and Teacher Action is never repeated per bucket. See
+    // css/styles.css's own `.lesson-plan-builder__activity-grid` comment
+    // for why this reads correctly against AutoGrowTextarea's own
+    // per-textarea height management.
+    const grid = document.createElement('div');
+    grid.className = 'lesson-plan-builder__activity-grid';
+
+    const teacherColumn = document.createElement('div');
+    teacherColumn.className = 'lesson-plan-builder__activity-grid-teacher';
+    teacherColumn.appendChild(
       createLabeledTextarea({
         label: 'Teacher Action',
         placeholder: 'What does the teacher do?',
@@ -2068,28 +2080,37 @@ function renderActivityCard(plan, activity, index, total, isCollapsed, handlers)
         sectionKey: lessonPlanReviewService.buildActivitySectionKey(activity.id, 'teacherAction'),
       })
     );
-    body.appendChild(
-      createLabeledTextarea({
-        label: 'Student Action',
-        placeholder: 'What do students do?',
-        value: activity.studentAction,
-        onChange: (value) => handlers.onActivityChange(activity.id, 'studentAction', value),
-        disabled: !handlers.editable,
-        plan,
-        sectionKey: lessonPlanReviewService.buildActivitySectionKey(activity.id, 'studentAction'),
-      })
-    );
+    grid.appendChild(teacherColumn);
+
+    const studentColumn = document.createElement('div');
+    studentColumn.className = 'lesson-plan-builder__activity-grid-student';
 
     if (activity.differentiation) {
-      body.appendChild(renderDifferentiationFields(plan, activity, handlers));
-    } else if (handlers.editable) {
-      const addDiffButton = document.createElement('button');
-      addDiffButton.type = 'button';
-      addDiffButton.className = 'btn btn--ghost lesson-plan-builder__add-differentiation-button';
-      addDiffButton.textContent = '+ Add differentiation';
-      addDiffButton.addEventListener('click', () => handlers.onAddActivityDifferentiation(activity.id));
-      body.appendChild(addDiffButton);
+      studentColumn.appendChild(renderDifferentiationFields(plan, activity, handlers));
+    } else {
+      studentColumn.appendChild(
+        createLabeledTextarea({
+          label: 'Student Action',
+          placeholder: 'What do students do?',
+          value: activity.studentAction,
+          onChange: (value) => handlers.onActivityChange(activity.id, 'studentAction', value),
+          disabled: !handlers.editable,
+          plan,
+          sectionKey: lessonPlanReviewService.buildActivitySectionKey(activity.id, 'studentAction'),
+        })
+      );
+      if (handlers.editable) {
+        const addDiffButton = document.createElement('button');
+        addDiffButton.type = 'button';
+        addDiffButton.className = 'btn btn--ghost lesson-plan-builder__add-differentiation-button';
+        addDiffButton.textContent = '+ Add differentiation';
+        addDiffButton.addEventListener('click', () => handlers.onAddActivityDifferentiation(activity.id));
+        studentColumn.appendChild(addDiffButton);
+      }
     }
+
+    grid.appendChild(studentColumn);
+    body.appendChild(grid);
 
     card.appendChild(body);
   }
@@ -2118,11 +2139,19 @@ function renderDifferentiationFields(plan, activity, handlers) {
 
   wrap.appendChild(heading);
 
+  // Each bucket renders as a subdivision of the Student Action column
+  // (a colored accent + hairline divider), not as its own separate
+  // card — see css/styles.css's own `.lesson-plan-builder__differentiation-bucket`
+  // comment. Same Red Bucket / Green Bucket / Others fields, same
+  // order, same editing behavior as before this layout change.
   [
-    { field: 'redBucket', label: 'Red Bucket', placeholder: 'Extra support' },
-    { field: 'greenBucket', label: 'Green Bucket', placeholder: 'Extra stretch' },
-    { field: 'others', label: 'Others', placeholder: 'Any other differentiation' },
-  ].forEach(({ field, label, placeholder }) => {
+    { field: 'redBucket', label: 'Red Bucket', placeholder: 'Extra support', colorKey: 'red' },
+    { field: 'greenBucket', label: 'Green Bucket', placeholder: 'Extra stretch', colorKey: 'green' },
+    { field: 'others', label: 'Others', placeholder: 'Any other differentiation', colorKey: 'others' },
+  ].forEach(({ field, label, placeholder, colorKey }) => {
+    const bucketWrap = document.createElement('div');
+    bucketWrap.className = `lesson-plan-builder__differentiation-bucket lesson-plan-builder__differentiation-bucket--${colorKey}`;
+
     const bucketField = createLabeledTextarea({
       label,
       placeholder,
@@ -2135,7 +2164,8 @@ function renderDifferentiationFields(plan, activity, handlers) {
     if (handlers.editable) {
       bucketField.appendChild(createFromTeachingIdeasButton(() => handlers.onOpenDifferentiationPicker(activity.id, field)));
     }
-    wrap.appendChild(bucketField);
+    bucketWrap.appendChild(bucketField);
+    wrap.appendChild(bucketWrap);
   });
 
   return wrap;

@@ -3504,11 +3504,41 @@ textarea.reading-editor__block-input {
   padding-top: 0.75rem;
   border-top: 1px solid var(--color-border);
 }
+/* Teacher Action (left) / Student Action (right) planning grid. Grid
+   items stretch to the row's height by default, which is what makes
+   Teacher Action's column read as full-height next to a taller,
+   differentiated Student Action column — the Teacher Action textarea
+   itself still has its own AutoGrowTextarea-managed inline height
+   (see ui/components/AutoGrowTextarea.js), but `flex: 1` below lets it
+   grow further to fill any extra space that stretch creates, rather
+   than leaving a visually empty gap under a short textarea.
+   `minmax(0, 1fr)` (not a bare `1fr`) on both columns, plus
+   `min-width: 0` below, is what stops a long unbroken word/URL in
+   either column from forcing horizontal page overflow. */
+.lesson-plan-builder__activity-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.9rem;
+}
+.lesson-plan-builder__activity-grid-teacher,
+.lesson-plan-builder__activity-grid-student {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.lesson-plan-builder__activity-grid-teacher > .lesson-plan-builder__field {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  margin-bottom: 0;
+}
+.lesson-plan-builder__activity-grid-teacher > .lesson-plan-builder__field > .lesson-plan-builder__textarea {
+  flex: 1;
+}
 .lesson-plan-builder__differentiation {
-  background-color: #FDEEE0;
-  border-radius: 12px;
-  padding: 0.75rem 0.9rem;
-  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 .lesson-plan-builder__differentiation-heading {
   display: flex;
@@ -3516,7 +3546,32 @@ textarea.reading-editor__block-input {
   justify-content: space-between;
   font-size: 0.8rem;
   font-weight: var(--font-weight-bold);
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+/* Each bucket reads as a subdivision of the Student Action column — a
+   thin color accent + hairline top divider between buckets — not a
+   separate nested card underneath Teacher Action. */
+.lesson-plan-builder__differentiation-bucket {
+  border-top: 1px solid var(--color-border);
+  padding: 0.5rem 0 0 0.6rem;
+  margin-top: 0.5rem;
+}
+.lesson-plan-builder__differentiation-bucket:first-of-type {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+.lesson-plan-builder__differentiation-bucket--red {
+  border-left: 3px solid var(--color-danger);
+}
+.lesson-plan-builder__differentiation-bucket--green {
+  border-left: 3px solid var(--color-success);
+}
+.lesson-plan-builder__differentiation-bucket--others {
+  border-left: 3px solid var(--color-border);
+}
+.lesson-plan-builder__differentiation-bucket .lesson-plan-builder__field {
+  margin-bottom: 0;
 }
 
 /* ---- Phase 3: status message + reviewer comments (Builder side) --- */
@@ -3583,6 +3638,19 @@ textarea.reading-editor__block-input {
   }
   .lesson-plan-builder__stage--surface-tile:not(.lesson-plan-builder__stage--compact) {
     padding: 1.1rem 1.25rem;
+  }
+  /* Activity planning grid reflows to one column — Teacher Action
+     stacks above Student Action in document order, and the height-
+     stretch rules above become no-ops (each column is alone in its
+     own auto-sized row, so there's nothing taller to stretch to). */
+  .lesson-plan-builder__activity-grid {
+    grid-template-columns: 1fr;
+  }
+  .lesson-plan-builder__activity-grid-teacher > .lesson-plan-builder__field {
+    flex: initial;
+  }
+  .lesson-plan-builder__activity-grid-teacher > .lesson-plan-builder__field > .lesson-plan-builder__textarea {
+    flex: initial;
   }
 }
 
