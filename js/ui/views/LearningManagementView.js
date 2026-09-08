@@ -82,13 +82,14 @@
  */
 
 import { createBackButton } from '../components/BackButton.js';
+import { createIcon } from '../components/Icon.js';
 import { openAddSubjectModal } from '../components/AddSubjectModal.js';
 import { openAssignCurriculumModal } from '../components/AssignCurriculumModal.js';
 import { renderExistingSubjectsList } from '../components/ExistingSubjectsList.js';
 import { createNavigationRow } from '../components/NavigationRow.js';
 import { renderCurriculumMetadataLine } from '../components/CurriculumMetadataLine.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
-import { getDisplayName } from '../../services/classroomService.js';
+import { getDisplayName, getGradeLabelForClassroom } from '../../services/classroomService.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
 import * as learningRecordTeacherService from '../../services/learningRecordTeacherService.js';
 import * as workspaceService from '../../services/workspaceService.js';
@@ -105,7 +106,7 @@ import { logPersistenceEvent, logViewMounted } from '../../services/persistenceL
 import * as workspaceCoordinator from '../../services/workspaceCoordinator.js';
 import { renderConceptWorkspaceView } from './ConceptWorkspaceView.js';
 
-export function renderLearningManagementView(container, { classrooms, onBack, onOpenCurriculumManagement }) {
+export function renderLearningManagementView(container, { classrooms, onBack, onOpenCurriculumManagement, initialSubjectId = null }) {
   logViewMounted('LearningManagementView');
 
   // One-time backfill for Subjects predating subjectId, and one-time
@@ -330,7 +331,11 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
      * completely unchanged.
      */
     onManageCurriculum: () => {
-      onOpenCurriculumManagement({ onBack: () => rerender() });
+      onOpenCurriculumManagement({
+        onBack: () => rerender(),
+        subjectTitle: selectedSubject.title,
+        gradeLabel: getGradeLabelForClassroom(selectedClassroom),
+      });
     },
     onChooseClass: (classroom) => {
       if (selectedClassroom) workspaceCoordinator.unregisterActiveWorkspace(selectedClassroom.id);
@@ -383,8 +388,17 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
         // handlers.onManageCurriculum above uses — this modal's own
         // "zero matches" fallback leads to the exact same Curriculum
         // Hub takeover of the container, so it needs the same return
-        // target for the same reason.
-        onOpenCurriculumManagement: () => onOpenCurriculumManagement({ onBack: () => rerender() }),
+        // target for the same reason. Also carries the same subject/
+        // grade context so a teacher who falls into this fallback
+        // still sees *why* they're there (see CurriculumManagementView.js's
+        // own optional contextLabel) instead of landing on a bare,
+        // unrelated-looking "Curriculum" screen.
+        onOpenCurriculumManagement: () =>
+          onOpenCurriculumManagement({
+            onBack: () => rerender(),
+            subjectTitle: selectedSubject.title,
+            gradeLabel: getGradeLabelForClassroom(selectedClassroom),
+          }),
       });
     },
     onChoosePart: (partName) => {
@@ -658,6 +672,23 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
     if (selectedClassroom && classroomId === selectedClassroom.id) rerender();
   });
 
+  // Timetable's own "Go to {subject} in Learning Management" gateway
+  // (see ui/views/TimetableView.js's renderAttachLessonForm()) — lands
+  // directly on that Subject's existing page via the exact same
+  // handlers.onChooseSubject() every other entry point already uses,
+  // never a new subject-selection workflow. Silently falls through to
+  // the normal home-screen render below if selectedClassroom isn't
+  // resolved yet (multi-classroom mode) or no LearningSubject matches
+  // this canonical id — never an error.
+  if (initialSubjectId && selectedClassroom) {
+    const matchingSubject = learningRecordService
+      .getSubjects(selectedClassroom)
+      .find((subject) => subject.subjectId === initialSubjectId);
+    if (matchingSubject) {
+      handlers.onChooseSubject(matchingSubject);
+    }
+  }
+
   rerender();
 }
 
@@ -801,6 +832,7 @@ function renderView(container, mode, state, handlers) {
     wrapper.appendChild(
       renderSubjectStep(
         state.selectedSubject,
+        state.selectedClassroom,
         state.selectedSubjectCurriculumState,
         state.selectedPartName,
         state.selectedUnitId,
@@ -965,7 +997,7 @@ function renderDeveloperUtilities(handlers) {
  * everything else here, not hidden behind "⋮". No floating menu
  * anywhere on this screen.
  */
-function renderSubjectStep(subject, curriculumState, selectedPartName, selectedUnitId, addingUnit, addingConcept, unitCreateState, conceptCreateState, pendingLearningHubExperience, handlers) {
+function renderSubjectStep(subject, classroom, curriculumState, selectedPartName, selectedUnitId, addingUnit, addingConcept, unitCreateState, conceptCreateState, pendingLearningHubExperience, handlers) {
   const section = document.createElement('div');
   section.className = 'learning-management__section';
 
@@ -974,7 +1006,42 @@ function renderSubjectStep(subject, curriculumState, selectedPartName, selectedU
   heading.textContent = subject.title;
   section.appendChild(heading);
 
+  // Gateway context — a teacher landing here from Timetable's "Go to
+  // {subject} in Learning Management" CTA (see TimetableView.js) should
+  // immediately see which classroom/grade this Subject belongs to, not
+  // just its bare name. Reuses the exact grade label already shown
+  // elsewhere (services/classroomService.js's getGradeLabelForClassroom,
+  // e.g. TimetableView.js) — no new context/label logic invented here.
+  const gradeLabel = classroom ? getGradeLabelForClassroom(classroom) : '';
+  if (gradeLabel) {
+    const subheading = document.createElement('p');
+    subheading.className = 'learning-management__subject-context';
+    subheading.textContent = gradeLabel;
+    section.appendChild(subheading);
+  }
+
   const hasUnits = subject.units.length > 0;
+
+  // Bento-style Curriculum -> Units (-> Concepts) management area —
+  // two tiles in that same hierarchy order, so a teacher who landed
+  // here from Timetable immediately sees "assign a curriculum, then
+  // build Units" as one connected structure instead of a flat,
+  // divider-separated stack of unrelated-looking controls. No new
+  // business logic anywhere below: every condition is byte-identical
+  // to what this function already computed before this redesign —
+  // only *where* each existing piece is appended has changed.
+  const bento = document.createElement('div');
+  bento.className = 'learning-management__bento';
+  section.appendChild(bento);
+
+  // ---- Curriculum tile ----
+  const curriculumTile = document.createElement('div');
+  curriculumTile.className = 'learning-management__bento-tile learning-management__bento-tile--curriculum';
+
+  const curriculumTileLabel = document.createElement('p');
+  curriculumTileLabel.className = 'learning-management__bento-tile-label';
+  curriculumTileLabel.textContent = 'Curriculum';
+  curriculumTile.appendChild(curriculumTileLabel);
 
   // Curriculum metadata ("Curriculum: Samacheer Kalvi..." or
   // "Curriculum: Not assigned") is always visible, regardless of
@@ -983,7 +1050,7 @@ function renderSubjectStep(subject, curriculumState, selectedPartName, selectedU
   // worth showing once Units happen to exist.
   const metadataSlot = document.createElement('div');
   renderCurriculumMetadataLine(metadataSlot, { curriculumState });
-  section.appendChild(metadataSlot);
+  curriculumTile.appendChild(metadataSlot);
 
   const curriculumActionButton = document.createElement('button');
   curriculumActionButton.type = 'button';
@@ -999,34 +1066,45 @@ function renderSubjectStep(subject, curriculumState, selectedPartName, selectedU
     curriculumActionButton.textContent = 'Assign curriculum →';
     curriculumActionButton.addEventListener('click', handlers.onGoToAssignCurriculum);
   }
+  // "Import from Curriculum" is deliberately NOT offered here once
+  // real Units already exist without one — curriculumLinkingService.js's
+  // own assignment fully replaces subject.units (never merges),
+  // confirmed directly; offering this action here would risk
+  // silently destroying a teacher's own manually-created Units.
+  // "Change Curriculum" remains available for a Subject that already
+  // has a real curriculum link — that path is safe, since a teacher
+  // explicitly chose it once already. Same exact two conditions this
+  // screen always used, just both now live in the Curriculum tile
+  // itself instead of trailing after the Units list.
+  if ((hasUnits && curriculumState.status === 'ready') || (!hasUnits && curriculumState.status === 'none')) {
+    curriculumTile.appendChild(curriculumActionButton);
+  }
 
-  const divider = document.createElement('hr');
-  divider.className = 'learning-management__subject-divider';
-  section.appendChild(divider);
+  bento.appendChild(curriculumTile);
+
+  // ---- Units (-> Concepts) tile ----
+  const unitsTile = document.createElement('div');
+  unitsTile.className = 'learning-management__bento-tile learning-management__bento-tile--units';
 
   if (hasUnits) {
     // Units are shown whenever they genuinely exist — regardless of
     // Curriculum status — matching how Assessments already read this
-    // exact same tree with no curriculum gating at all.
-    section.appendChild(renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUnit, addingConcept, unitCreateState, conceptCreateState, pendingLearningHubExperience, handlers));
-    // "Import from Curriculum" is deliberately NOT offered here once
-    // real Units already exist without one — curriculumLinkingService.js's
-    // own assignment fully replaces subject.units (never merges),
-    // confirmed directly; offering this action here would risk
-    // silently destroying a teacher's own manually-created Units.
-    // "Change Curriculum" remains available for a Subject that
-    // already has a real curriculum link — that path is safe, since
-    // a teacher explicitly chose it once already.
-    if (curriculumState.status === 'ready') {
-      section.appendChild(curriculumActionButton);
-    }
+    // exact same tree with no curriculum gating at all. This same
+    // function also renders a selected Unit's own Concepts in place
+    // of the Units list (see its own header comment) — that drill-in
+    // is exactly the "-> Concepts" half of this tile, reusing the
+    // existing Concept workflow verbatim, never a new one.
+    unitsTile.appendChild(renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUnit, addingConcept, unitCreateState, conceptCreateState, pendingLearningHubExperience, handlers));
   } else {
-    section.appendChild(createEmptyStateElement({ message: 'No Units yet.' }));
-    section.appendChild(renderAddUnitControl(addingUnit, unitCreateState, handlers));
-    if (curriculumState.status === 'none') {
-      section.appendChild(curriculumActionButton);
-    }
+    const unitsTileLabel = document.createElement('p');
+    unitsTileLabel.className = 'learning-management__bento-tile-label';
+    unitsTileLabel.textContent = 'Units';
+    unitsTile.appendChild(unitsTileLabel);
+    unitsTile.appendChild(createEmptyStateElement({ message: 'No units yet.' }));
+    unitsTile.appendChild(renderAddUnitControl(addingUnit, unitCreateState, handlers));
   }
+
+  bento.appendChild(unitsTile);
 
   section.appendChild(renderDangerZone(subject, handlers));
 
@@ -1034,20 +1112,24 @@ function renderSubjectStep(subject, curriculumState, selectedPartName, selectedU
 }
 
 /**
- * A visually distinct section at the bottom of the page for
- * destructive, rare actions — set apart from the rest of the screen
- * by styling alone, never hidden behind a menu. Only "Remove Subject"
- * lives here today; a future "Remove Curriculum" (mentioned as a
- * later requirement, not built yet) would belong here too.
+ * A quiet, clearly-set-apart region at the bottom of the page for
+ * destructive, rare actions — never hidden behind a menu, but never
+ * the visual focus of the page either. A subtle left-border accent
+ * and a small warning icon signal "this is destructive" (see
+ * docs/classmate_ui_consistency_guidelines.md Section 23); the
+ * button's own plain-worded label ("Remove Subject") already says
+ * what it does, so no separate shouted heading is needed above it.
+ * Only "Remove Subject" lives here today; a future "Remove Curriculum"
+ * (mentioned as a later requirement, not built yet) would belong here
+ * too.
  */
 function renderDangerZone(subject, handlers) {
   const zone = document.createElement('div');
-  zone.className = 'learning-management__danger-zone';
+  zone.className = 'subject-danger-zone';
 
-  const zoneHeading = document.createElement('p');
-  zoneHeading.className = 'learning-management__danger-zone-heading';
-  zoneHeading.textContent = 'Danger Zone';
-  zone.appendChild(zoneHeading);
+  const icon = createIcon('alert-triangle', { size: 16 });
+  icon.classList.add('subject-danger-zone-icon');
+  zone.appendChild(icon);
 
   const removeButton = document.createElement('button');
   removeButton.type = 'button';

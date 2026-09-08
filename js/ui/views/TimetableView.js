@@ -97,7 +97,7 @@ function isNarrowViewport() {
  */
 let preservedState = null; // { classroomId, state } | null
 
-export async function renderTimetableView(container, { classroom, currentUser, preserveState = false, onOpenLessonPlan = () => {} }) {
+export async function renderTimetableView(container, { classroom, currentUser, preserveState = false, onOpenLessonPlan = () => {}, onOpenLearningManagement = () => {} }) {
   const state =
     preserveState && preservedState && preservedState.classroomId === classroom.id
       ? preservedState.state
@@ -1463,6 +1463,19 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       const empty = document.createElement('p');
       empty.textContent = 'No units set up yet for this subject in Learning Management.';
       wrapper.appendChild(empty);
+
+      const guidance = document.createElement('p');
+      guidance.textContent = 'Set up the curriculum and units for this subject before attaching a lesson.';
+      wrapper.appendChild(guidance);
+
+      const subjectTitle = timetableDisplayService.resolveSubjectTitle(classroom, slot.subjectId);
+      const gatewayButton = document.createElement('button');
+      gatewayButton.type = 'button';
+      gatewayButton.className = 'btn btn--primary';
+      gatewayButton.textContent = `Go to ${subjectTitle} in Learning Management →`;
+      gatewayButton.addEventListener('click', () => onOpenLearningManagement(slot.subjectId));
+      wrapper.appendChild(gatewayButton);
+
       return wrapper;
     }
 

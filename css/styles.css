@@ -8824,10 +8824,26 @@ button.wizard-checklist__row:hover {
   font-weight: var(--font-weight-black);
   margin: 0.75rem 0 1.25rem;
 }
+.curriculum-management__context-label {
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+  margin: -0.75rem 0 1.25rem;
+}
 .curriculum-management__section {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+/* This section's own flex column defaults every direct child to
+   `align-items: stretch` (full width) — fine for card/list containers,
+   but a bare <button> (Save Curriculum Index, Edit Curriculum, Assign
+   Curriculum, Continue to Manual Entry) needs its own natural,
+   content-based width instead. Same fix already established for
+   .existing-subjects__add-subject-button, generalized here so any
+   future direct-child button in this section is correct by default. */
+.curriculum-management__section > button {
+  align-self: flex-start;
 }
 .curriculum-management__intro {
   color: var(--color-muted);
@@ -8956,6 +8972,44 @@ button.wizard-checklist__row:hover {
   font-size: 1.1rem;
   font-weight: var(--font-weight-black);
   margin: 0.25rem 0 0.5rem;
+}
+.learning-management__subject-context {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  margin: -0.35rem 0 0.5rem;
+}
+/*
+ * Subject page Bento — Curriculum -> Units (-> Concepts), same quiet-
+ * surface Bento language as .classroom-access-bento above (rounded
+ * surface tiles, hierarchy from order/typography, no shadows or
+ * decoration). A single column, not a side-by-side grid, since the
+ * relationship here is sequential (assign a Curriculum, then build
+ * Units) rather than parallel choices.
+ */
+.learning-management__bento {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  margin: 1rem 0 1.5rem;
+}
+.learning-management__bento-tile {
+  padding: 1.25rem;
+  border-radius: 20px;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  min-width: 0;
+}
+.learning-management__bento-tile--curriculum {
+  background-color: color-mix(in srgb, var(--color-primary-deep) 6%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-primary-deep) 20%, transparent);
+}
+.learning-management__bento-tile-label {
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin: 0 0 0.6rem;
 }
 .learning-management__part-heading {
   font-size: 0.95rem;
@@ -10215,6 +10269,10 @@ button.wizard-checklist__row:hover {
   margin: 0 0 1.25rem;
 }
 
+/* Danger Zone — also reused as-is by ui/views/AssessmentManagementView.js's
+   own renderAssessmentDangerZone(); left untouched here on purpose so
+   that page's presentation doesn't shift as a side effect of this
+   Learning Management / Curriculum Management pass. */
 .learning-management__danger-zone {
   margin-top: 2rem;
   padding: 1.1rem 1.2rem;
@@ -10229,6 +10287,32 @@ button.wizard-checklist__row:hover {
   color: var(--color-danger);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+/* Destructive-action treatment for a classroom Subject / a Curriculum
+   Index (ui/views/LearningManagementView.js's renderDangerZone(),
+   ui/views/CurriculumManagementView.js's own Curriculum Details step)
+   — same quiet idiom as ui/views/SettingsView.js's own
+   .settings-section--danger: a subtle left-border accent and a small
+   icon signal "this is destructive," not a full tinted box with a
+   shouted "DANGER ZONE" heading. Deliberately understated relative to
+   the rest of the page — see docs/classmate_ui_consistency_guidelines.md
+   Section 23. A dedicated class, not a reskin of
+   .learning-management__danger-zone above, so it can't shift that
+   other, out-of-scope page's presentation. */
+.subject-danger-zone {
+  margin-top: 2rem;
+  padding: 0.85rem 1rem;
+  border-left: 3px solid var(--color-danger);
+  border-radius: var(--radius-control);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.subject-danger-zone-icon {
+  color: var(--color-danger);
+  flex-shrink: 0;
 }
 
 /* SearchableSelect — reusable autocomplete dropdown. See
@@ -13821,6 +13905,28 @@ button.wizard-checklist__row:hover {
   border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 0.5rem 0.7rem;
+}
+
+/* "+ Add Part" (ui/views/CurriculumManagementView.js's createAddForm())
+   — same intentional-sizing/containment treatment as the Add Unit/Add
+   Concept controls above (flex row, real gap, breathing room from
+   whatever comes before it), reused rather than left unstyled. */
+.curriculum-management__add-form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+.curriculum-management__add-form input[type="text"] {
+  flex: 1 1 180px;
+  font: inherit;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+}
+.curriculum-management__add-form button {
+  align-self: center;
 }
 
 /* Learning Hub search plugin result cards — see ui/views/LearningManagementView.js's renderLearningHubSearchPlugin(). Reuses the same border/radius tokens as .concept-workspace__learning-hub-experience-row for visual consistency, structured as a flex row (text left, action right) to fit a title + type + button per result. */

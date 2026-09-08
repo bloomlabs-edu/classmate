@@ -928,6 +928,8 @@ function renderRoute(route, reason = 'unspecified') {
         currentUser,
         preserveState: reason === 'workspace-init-onchange',
         onOpenLessonPlan: (lessonPlanId) => router.navigate(`/classroom/${classroom.id}/lesson-plans/${lessonPlanId}`),
+        onOpenLearningManagement: (subjectId) =>
+          router.navigate(`/classroom/${classroom.id}/learning?subjectId=${encodeURIComponent(subjectId)}`),
       });
     } else if (route.name === 'assessments') {
       renderAssessmentManagementView(appContainer, {
@@ -955,16 +957,27 @@ function renderRoute(route, reason = 'unspecified') {
       renderLearningManagementView(appContainer, {
         classrooms: [classroom],
         onBack: () => router.navigate(`/classroom/${classroom.id}`),
+        // Timetable's own "Go to {subject} in Learning Management" gateway
+        // (see ui/views/TimetableView.js) lands here with ?subjectId= set —
+        // route.query is already generic (see ui/router.js), so this
+        // just reads it straight through.
+        initialSubjectId: route.query.subjectId || null,
         // Preserves the exact existing "return to the same subject"
         // behavior (see LearningManagementView.js's own call sites,
         // which pass { onBack: () => rerender() }) — only the
         // *initial* entry into Learning Management is now routed;
         // the Curriculum Hub itself is completely untouched, per
         // explicit scope.
-        onOpenCurriculumManagement: ({ onBack: returnToLearningManagement }) => {
+        onOpenCurriculumManagement: ({ onBack: returnToLearningManagement, subjectTitle, gradeLabel }) => {
           renderCurriculumManagementView(appContainer, {
             onBack: returnToLearningManagement,
             onOpenLearningManagement: () => router.navigate(`/classroom/${classroom.id}/learning`),
+            // Keeps "why am I here" visible even inside the generic
+            // Curriculum Library fallback (see LearningManagementView.js's
+            // onManageCurriculum/onGoToAssignCurriculum) — optional, so
+            // the top-level '/curriculum-management' admin entry above
+            // (no subject context) is completely unaffected.
+            contextLabel: subjectTitle && gradeLabel ? `${subjectTitle} · ${gradeLabel}` : null,
           });
         },
       });

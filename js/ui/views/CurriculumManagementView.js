@@ -72,6 +72,7 @@ import * as unitPageRangeService from '../../services/unitPageRangeService.js';
 import * as workspaceService from '../../services/workspaceService.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { createBackButton } from '../components/BackButton.js';
+import { createIcon } from '../components/Icon.js';
 import { getCanonicalSubjects, getCanonicalSubjectById, generateCustomSubjectId } from '../../services/subjectIdentityService.js';
 import { createCurriculumExplorerPanel } from '../components/CurriculumExplorerPanel.js';
 import { createSearchableSelect } from '../components/SearchableSelect.js';
@@ -79,7 +80,7 @@ import { openAssignCurriculumToClassroomModal } from '../components/AssignCurric
 import { GRADE_OPTIONS } from '../../config/gradeOptionsConfig.js';
 import { showToast } from '../components/Toast.js';
 
-export function renderCurriculumManagementView(container, { onBack, onOpenLearningManagement }) {
+export function renderCurriculumManagementView(container, { onBack, onOpenLearningManagement, contextLabel = null }) {
   // See this file's header comment for the three top-level flows.
   let mode = 'hub';
 
@@ -131,6 +132,7 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
         isResumingIndex,
         canonicalImportErrors,
         selectedUnitConceptsId,
+        contextLabel,
       },
       {
         onBack,
@@ -436,6 +438,20 @@ function renderView(container, mode, state, handlers) {
   title.className = 'curriculum-management__title';
   title.textContent = 'Curriculum';
   header.appendChild(title);
+
+  // Set only when reached from a specific classroom Subject (see
+  // LearningManagementView.js's onManageCurriculum/onGoToAssignCurriculum,
+  // threaded through main.js) — keeps that teaching context visible
+  // even inside this otherwise subject-agnostic admin screen, so
+  // falling into the "no matching curriculum" fallback here never
+  // feels like landing in an unrelated part of the app. Absent
+  // entirely for the generic top-level '/curriculum-management' entry.
+  if (state.contextLabel) {
+    const context = document.createElement('p');
+    context.className = 'curriculum-management__context-label';
+    context.textContent = `For: ${state.contextLabel}`;
+    header.appendChild(context);
+  }
 
   wrapper.appendChild(header);
 
@@ -1317,12 +1333,17 @@ function renderIndexReviewUnitsStep(index, canonicalImportErrors, handlers) {
   assignButton.addEventListener('click', handlers.onOpenAssignCurriculum);
   section.appendChild(assignButton);
 
+  // Quiet, clearly-set-apart destructive treatment — same idiom as
+  // ui/views/LearningManagementView.js's own renderDangerZone() and
+  // ui/views/SettingsView.js's .settings-section--danger: a subtle
+  // left-border accent and a small warning icon, not a shouted
+  // "DANGER ZONE" heading (see
+  // docs/classmate_ui_consistency_guidelines.md Section 23).
   const zone = document.createElement('div');
-  zone.className = 'learning-management__danger-zone';
-  const zoneHeading = document.createElement('p');
-  zoneHeading.className = 'learning-management__danger-zone-heading';
-  zoneHeading.textContent = 'Danger Zone';
-  zone.appendChild(zoneHeading);
+  zone.className = 'subject-danger-zone';
+  const zoneIcon = createIcon('alert-triangle', { size: 16 });
+  zoneIcon.classList.add('subject-danger-zone-icon');
+  zone.appendChild(zoneIcon);
   const deleteButton = document.createElement('button');
   deleteButton.type = 'button';
   deleteButton.className = 'btn btn--danger';

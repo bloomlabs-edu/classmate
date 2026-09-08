@@ -1,8 +1,8 @@
 # ClassMate — UI Consistency Guidelines
 
-**Version:** 0.1  
+**Version:** 0.2  
 **Status:** Working / Evolving  
-**Last updated:** 30 August 2026
+**Last updated:** 8 September 2026
 
 ---
 
@@ -126,6 +126,18 @@ Muted purple, green, pink, peach/yellow and other existing supporting colours ma
 > **Colour creates expression; it does not create complexity.**
 
 Colour should not be the only way meaning is communicated.
+
+## Contrast
+
+Every text/background pairing must be legible at a glance, not just on close inspection.
+
+- Muted/secondary text (timestamps, metadata, helper copy) must remain clearly readable against its surface — if a colour looks "washed out" when squinting, it fails.
+- Do not pair a warm accent colour (yellow/orange) as *text* against a pale tint of that *same* family (e.g. orange text on a pale peach background). Use the accent as a background tint with dark ink text, or as an icon/border accent, instead.
+- When in doubt, use `--color-ink` or `--color-muted` for body/metadata text and reserve saturated colour for icons, borders, badges and short labels, not paragraphs.
+
+### Rule
+
+> **An accent colour used as a tint needs dark ink text on top of it, not more of itself.**
 
 ---
 
@@ -284,6 +296,22 @@ Prioritize:
 
 Cards may vary in size when their content demands it, but the underlying visual treatment should remain recognizable.
 
+## Containment
+
+A card is a container, not just a border drawn around content.
+
+Avoid:
+
+- content or controls touching a card's own edge
+- two cards' borders sitting flush against each other with no visible gap
+- text that reads as cramped against its own control's edge (inputs, buttons, badges)
+
+Use generous internal padding (a full spacing step, not a sliver) and a real gap between sibling cards — grouping should be obvious without the borders having to touch to prove it.
+
+### Rule
+
+> **A container should show its own edges, and never anyone else's.**
+
 ---
 
 # 9. Buttons & Actions
@@ -319,6 +347,35 @@ Use a compact button unless the action genuinely benefits from a full-width CTA.
 ### Rule
 
 > **Action prominence should reflect action importance.**
+
+## Intentional sizing
+
+A button's width should come from its own label and padding, never from stretching to fill whatever container it happens to sit in.
+
+Good:
+
+```text
+[ + Add Unit ]
+```
+
+Bad:
+
+```text
+[                         + Add Unit                         ]
+```
+
+A full-width control is appropriate only when there is a deliberate reason for it in that specific context (e.g. a single primary action at the bottom of a narrow modal, or a mobile-only stacked layout) — never as an accidental default.
+
+In practice this most often happens when a button is a direct child of a flex column with the browser's default `align-items: stretch` — every such container should either set `align-items: flex-start` (or an equivalent) for its controls, or give the control its own natural-width rule. Check for this specifically whenever a button looks unexpectedly wide.
+
+Buttons should have:
+
+- a natural, content-based width
+- consistent horizontal padding for their size class
+- a consistent height within the same context
+- a clear visual distinction between primary, secondary, text/ghost and destructive treatments
+
+Do not flatten this hierarchy by making every button the same weight — a screen with one primary, some secondary and one destructive action should make all three legible at a glance.
 
 ---
 
@@ -380,6 +437,12 @@ When a screen feels crowded, first examine:
 
 before adding more visual elements.
 
+## Breathing room
+
+Every screen needs deliberate space between sections, cards, controls, labels/inputs, and between content and the container's own edge. Nothing should read as accidentally touching an edge — if it does, that's a missing spacing step, not a stylistic choice.
+
+Use the existing spacing scale (`--space-1` through `--space-7`) rather than inventing one-off pixel/rem values. If none of the existing steps feels right in a specific spot, that is a signal to reconsider the layout, not a reason to hand-write a new margin.
+
 ---
 
 # 13. Data-Heavy Interfaces
@@ -426,6 +489,9 @@ Semantic colours should be:
 - consistent
 - distinguishable
 - supported by text/icons where appropriate
+- legible: a semantic colour used as text must still meet the contrast rule in Section 3 — a status colour that's hard to read has failed at its one job
+
+Use them sparingly and where they carry real meaning (a state, a result, a warning) — not as general decoration.
 
 Never rely solely on colour to communicate an important state.
 
@@ -521,6 +587,22 @@ For Student:
 
 If the answer is no, identify the specific visual rule that is being violated rather than redesigning the entire screen.
 
+### Baseline defect check
+
+Before calling any screen finished, check it for these — their absence is the baseline, not bonus polish:
+
+- misalignment
+- inconsistent or missing spacing
+- unintentional sizing (stretched buttons, oversized controls)
+- unclear hierarchy
+- poor contrast
+- broken responsive behaviour at common widths
+- missing or unclear interaction affordances (does it look clickable?)
+- accidental overlaps or edge collisions
+- excessive whitespace in one area next to cramped whitespace in another
+
+A screen with none of these defects is the starting point for "done," not an optional final pass.
+
 ---
 
 # 19. Golden References
@@ -596,6 +678,68 @@ The highest-impact consistency improvements identified so far are:
 6. Preserve data-heavy layouts where they are genuinely useful.
 7. Use Bento selectively rather than universally.
 8. Preserve the distinction between Teacher clarity and Student joy.
+
+---
+
+# 22. Visual Hierarchy
+
+Hierarchy is communicated primarily through:
+
+- size
+- weight
+- spacing
+- placement
+- colour
+- grouping
+- progressive disclosure (show the next step only once it's relevant)
+
+Do not solve a hierarchy problem by adding another label, heading or paragraph of explanation. If a relationship between two pieces of content isn't obvious from layout alone, fix the layout — don't caption it.
+
+### Rule
+
+> **Show the relationship. Don't narrate it.**
+
+A screen that needs a sentence to explain what's important on it has a hierarchy problem, not a copy problem.
+
+---
+
+# 23. Destructive Actions
+
+Destructive actions (delete, remove, reset) are real functionality and must stay discoverable — but they are not the primary workflow, and their visual treatment should say so.
+
+### Avoid
+
+- a large "DANGER ZONE" heading as the main way a destructive area is communicated
+- placing a destructive action with the same visual weight as the page's primary/secondary actions
+- dramatic language ("DANGER," "WARNING," all-caps) standing in for actual visual design
+
+### Prefer
+
+- an existing Settings/secondary area, if the page has one — destructive actions belong there by default
+- where no such area exists yet, the smallest coherent secondary treatment: a quiet, clearly-set-apart region (e.g. a subtle coloured left border, not a full tinted box) at the bottom of the page, never a prominent mid-page section
+- red used semantically — as a border accent, icon colour or button treatment — not as a loud background fill
+- a small warning/alert icon paired with a plainly-worded action label (e.g. "Remove Subject") instead of a shouted section heading; the action's own label should say what it does, so a separate "Danger Zone" caption above it adds no information
+- a confirmation step (native confirm or a modal) before the action executes, so the visual treatment doesn't have to do all the safety work by itself
+
+### Rule
+
+> **"This is destructive" should come through placement and colour, not through the word DANGER.**
+
+---
+
+# 24. Responsive Design
+
+Layouts must stay intentional at desktop, tablet (~768px) and mobile (~390px) widths — not just "not broken."
+
+Avoid solving small widths by allowing:
+
+- horizontal overflow / a page-level scrollbar
+- overlapping controls
+- columns so narrow their content wraps unreadably
+- controls touching the viewport edge with no margin
+- text that becomes illegible at the smaller size
+
+Prefer reflowing multi-column layouts (including Bento grids) to a single column at narrow widths, using the same components rather than a separate mobile-only design. Test at approximately 390px as the baseline mobile check before considering a layout responsive.
 
 ---
 
