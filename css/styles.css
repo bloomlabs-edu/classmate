@@ -6017,6 +6017,9 @@ button.wizard-checklist__row:hover {
   .dashboard-widget__resolved-item {
     transition: none;
   }
+  .recognition-bento__weekly-reports {
+    transition: none;
+  }
 }
 
 @media (max-width: 480px) {
@@ -6856,29 +6859,301 @@ button.wizard-checklist__row:hover {
   font-size: 0.92rem;
 }
 
-/* Recognition Screen */
-
-.recognition-screen__period-tabs {
-  display: flex;
-  gap: 0.5rem;
-  padding: 0 1.5rem 1rem;
+/*
+ * Recognition Screen — Bento redesign. Scoped to Plus Jakarta Sans,
+ * the same targeted-migration technique already established by
+ * .notebook-tracker-view (see that rule's own comment) rather than an
+ * app-wide font change. Structurally mirrors that same screen's own
+ * already-approved Bento language: a light page header
+ * (.recognition-page__header, matching
+ * .notebook-tracker__page-header's "light background, dark title, ←
+ * Back" pattern) and a bento grid of quiet, neutral surface tiles
+ * (.recognition-bento__group/__weekly-reports, matching
+ * .notebook-tracker__bento-card) — the one deliberate exception being
+ * the hero tile, which is the single full-bleed colour moment on the
+ * page ("colour used deliberately for recognition").
+ */
+.recognition-page {
+  font-family: 'Plus Jakarta Sans', var(--font-body);
 }
 
-.recognition-screen__category-chip--active {
-  /* Consumes the Celebrate palette's own accent (--color-accent) rather
-     than generic --color-primary — this screen is Recognition's home,
-     so its active state should carry Recognition's own identity, at
-     higher intensity than the Dashboard widget's lighter touch. */
-  border-color: var(--color-accent);
-  background-color: var(--color-accent);
-  color: var(--color-on-brand);
-}
-
-.recognition-screen__detail {
-  margin-top: 1.5rem;
+.recognition-page__header {
   display: flex;
   flex-direction: column;
+  gap: 0.85rem;
+  padding: 0 0 0.25rem;
+}
+.recognition-page__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.recognition-page__title {
+  margin: 0;
+  font-size: var(--text-2xl);
+  font-weight: var(--font-weight-black);
+  color: var(--color-ink);
+}
+/* Compact by design — a period switcher, not the visual focus of the
+   page. Reuses .toggle-group__button entirely unstyled here. */
+.recognition-page__period-control {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.recognition-bento {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  margin: 1rem 0 1.75rem;
+}
+
+/* The hero — obvious dominance from a full-bleed tint of the selected
+   category's own group colour, generous but deliberately not tall
+   padding, and typography doing the hierarchy work (eyebrow -> winner
+   name -> stat) rather than any added decoration. Entry animation
+   reuses the exact existing recognition-card-in keyframe (see its own
+   rule further down), applied ONLY under an explicit
+   prefers-reduced-motion: no-preference query (opt-in) rather than
+   unconditionally-with-a-separate-cancel-rule (opt-out): two rules of
+   equal specificity targeting the same selector/property resolve by
+   source order regardless of which is inside a media query, so an
+   unconditional animation declared later in this file than its own
+   "disable" rule would always win the cascade and silently defeat
+   prefers-reduced-motion — confirmed directly while building this. */
+.recognition-bento__hero {
+  border-radius: 24px;
+  padding: 1.6rem 1.85rem;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .recognition-bento__hero {
+    animation: recognition-card-in var(--duration-celebratory) var(--ease-standard);
+  }
+}
+.recognition-bento__hero-top {
+  display: flex;
+  align-items: flex-start;
   gap: 1rem;
+}
+.recognition-bento__emoji-badge {
+  line-height: 1;
+}
+.recognition-bento__hero-label-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1;
+  min-width: 0;
+}
+.recognition-bento__hero-eyebrow {
+  font-size: 0.95rem;
+  font-weight: var(--font-weight-black);
+  color: var(--color-ink);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.recognition-bento__hero-reason {
+  font-size: 0.85rem;
+  color: color-mix(in srgb, var(--color-ink) 65%, transparent);
+}
+.recognition-bento__hero-period {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, var(--color-ink) 60%, transparent);
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-pill);
+  background-color: rgba(255, 255, 255, 0.55);
+}
+.recognition-bento__hero-winners {
+  margin-top: 1rem;
+}
+.recognition-bento__hero-winner-name {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-weight-black);
+  color: var(--color-ink);
+  line-height: 1.15;
+}
+button.recognition-bento__hero-winner-name {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+.recognition-bento__hero-stat {
+  margin: 0.3rem 0 0;
+  font-size: 1.05rem;
+  font-weight: var(--font-weight-bold);
+  color: color-mix(in srgb, var(--color-ink) 75%, transparent);
+}
+.recognition-bento__hero-empty {
+  margin: 1rem 0 0;
+  font-size: 0.95rem;
+  color: color-mix(in srgb, var(--color-ink) 65%, transparent);
+}
+
+/* Supporting tiles — quiet, neutral surfaces (never a bright per-tile
+   fill); a 3px top border in the group's own colour is the only
+   accent, the same restrained-identity technique
+   .primary-module-card's own tiers already established. Auto-fit
+   wrapping (never a fixed desktop track count) so 3 groups + Weekly
+   Reports rearrange naturally at any width. */
+.recognition-bento__groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+}
+.recognition-bento__group,
+.recognition-bento__weekly-reports {
+  background-color: var(--color-surface);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 18px;
+  padding: 1.1rem 1.25rem;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+.recognition-bento__group {
+  border-top: 3px solid var(--color-border);
+}
+.recognition-bento__group-heading {
+  margin: 0 0 0.5rem;
+  font-size: 0.92rem;
+  font-weight: var(--font-weight-black);
+  color: var(--color-ink);
+}
+.recognition-bento__group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.recognition-bento__row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  padding: 0.45rem 0.5rem;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+.recognition-bento__row:hover:not(:disabled) {
+  background-color: rgba(0, 0, 0, 0.035);
+}
+.recognition-bento__row--active {
+  font-weight: var(--font-weight-bold);
+}
+.recognition-bento__row--disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+.recognition-bento__row-icon {
+  flex-shrink: 0;
+  font-size: 1.05rem;
+  width: 1.4rem;
+  text-align: center;
+}
+.recognition-bento__row-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.recognition-bento__row-label {
+  font-size: 0.88rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+}
+.recognition-bento__row-preview {
+  font-size: 0.76rem;
+  color: var(--color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recognition-bento__weekly-reports {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: transform var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard);
+}
+.recognition-bento__weekly-reports:hover,
+.recognition-bento__weekly-reports:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+}
+.recognition-bento__weekly-reports-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background-color: var(--color-bg);
+  color: var(--color-muted);
+}
+.recognition-bento__weekly-reports-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1;
+  min-width: 0;
+}
+.recognition-bento__weekly-reports-title {
+  font-size: 0.92rem;
+  font-weight: var(--font-weight-black);
+  color: var(--color-ink);
+}
+.recognition-bento__weekly-reports-subtitle {
+  font-size: 0.76rem;
+  color: var(--color-muted);
+}
+
+/* Special Recognition — deliberately a single quiet caption line, not
+   tiles/pills at the same visual weight as active recognitions (the
+   old faded-chip-row treatment this replaces). Still discoverable,
+   never competing with anything above it. */
+.recognition-bento__special {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: var(--color-muted);
+}
+.recognition-bento__special strong {
+  color: var(--color-ink);
+}
+
+.recognition-page__leaderboard {
+  margin-top: 0.5rem;
+}
+.recognition-page__leaderboard-heading {
+  margin: 0 0 0.75rem;
+  font-size: 1.02rem;
+  font-weight: var(--font-weight-black);
+  color: var(--color-ink);
+}
+
+@media (max-width: 640px) {
+  .recognition-bento__hero {
+    padding: 1.35rem 1.4rem;
+  }
+  .recognition-bento__groups {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Leaderboard List */
