@@ -14,6 +14,23 @@
  * brand-new Subject with nothing linked yet should say so, not go
  * silent.
  *
+ * `hasUnits` (status 'none' only) distinguishes a genuinely empty
+ * Subject from one that already has real Units with no Curriculum
+ * Index linked — investigated directly against
+ * services/curriculumLinkingService.js: assignCurriculumToSubject()/
+ * createSubjectWithCurriculum() always set linkedCurriculumIndexId and
+ * every Unit's own linkedCurriculumUnitId together, atomically, and no
+ * code path anywhere clears the Subject-level link while leaving
+ * curriculum-derived Units in place — so this case can only mean
+ * Units were added directly (manually typed, or via an older,
+ * currently-unreachable materialize-while-browsing path; the data
+ * model cannot and does not claim to tell those two apart). Plain
+ * "Curriculum: Not assigned" is technically accurate here but reads as
+ * "nothing real exists yet," which is false — see the distinct wording
+ * below for exactly this case. Never inferred from Unit titles, never
+ * a guess at provenance — purely "does linkedCurriculumIndexId exist"
+ * vs. "do Units exist," both already-known facts.
+ *
  * Pure display only — no buttons live here anymore. Simplified per
  * explicit product decision: the overflow-menu pattern this used to
  * pair with was causing recurring positioning bugs, and this
@@ -36,7 +53,7 @@
  * changed.
  */
 
-export function renderCurriculumMetadataLine(container, { curriculumState }) {
+export function renderCurriculumMetadataLine(container, { curriculumState, hasUnits = false }) {
   container.innerHTML = '';
 
   const line = document.createElement('div');
@@ -51,7 +68,10 @@ export function renderCurriculumMetadataLine(container, { curriculumState }) {
 
     const text = document.createElement('span');
     text.className = 'curriculum-metadata-line__text curriculum-metadata-line__text--unassigned';
-    text.textContent = 'Curriculum: Not assigned';
+    // See this file's own header comment: a Subject with real Units
+    // but no linked Curriculum Index gets a distinct line — "Not
+    // assigned" alone would misread as "nothing exists here yet."
+    text.textContent = hasUnits ? 'Custom units — no Curriculum Index linked' : 'Curriculum: Not assigned';
     line.appendChild(text);
     return;
   }

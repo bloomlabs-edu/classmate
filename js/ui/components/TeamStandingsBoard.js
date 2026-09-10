@@ -61,6 +61,7 @@ import { createTeamCardElement } from './TeamCard.js';
 import { createEmptyStateElement } from './EmptyState.js';
 import { getLiveTeamStandingsWithMovement, getClassLeaderboardWithMovement, getCurrentMonthPeriod } from '../../services/teamStatisticsService.js';
 import { getNetPointsInCurrentPeriod } from '../../services/timelineService.js';
+import { getNameHighlightState } from '../../services/performanceStateService.js';
 
 export function createTeamStandingsBoardElement({ classroom, onTap, onSwipeLeft, onLongPress, onTapTeam, highlight = {} }) {
   const grid = document.createElement('section');
@@ -92,6 +93,20 @@ export function createTeamStandingsBoardElement({ classroom, onTap, onSwipeLeft,
     studentMovements[entry.studentId] = { movement: entry.movement, movementAmount: entry.movementAmount };
   });
 
+  // The name-highlight pill (see services/performanceStateService.js):
+  // 'climbing' reuses this exact studentMovements['up'] value rather than
+  // a second definition; redemption is independently derived from each
+  // student's own history. Computed once here, for every student in the
+  // classroom, exactly like studentMovements above — TeamCard.js and
+  // ClassModeStudentRow.js only ever render whichever state they're handed.
+  const nameHighlights = {};
+  classroom.teams.forEach((team) => {
+    team.students.forEach((student) => {
+      const isClimber = studentMovements[student.id]?.movement === 'up';
+      nameHighlights[student.id] = getNameHighlightState(student, { isClimber });
+    });
+  });
+
   teamsWithStudents.forEach((team) => {
     const standing = standingsWithMovement.find((entry) => entry.teamId === team.id);
     const sortedStudents = [...team.students].sort((a, b) => getNetPointsInCurrentPeriod(classroom, b) - getNetPointsInCurrentPeriod(classroom, a));
@@ -109,6 +124,7 @@ export function createTeamStandingsBoardElement({ classroom, onTap, onSwipeLeft,
         onTapTeam: onTapTeam ? () => onTapTeam(team.id) : undefined,
         movement: standing ? { movement: standing.movement, movementAmount: standing.movementAmount } : undefined,
         studentMovements,
+        nameHighlights,
         sortedStudents,
         displayScoreByStudentId,
       })

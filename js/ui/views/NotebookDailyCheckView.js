@@ -31,12 +31,13 @@ import { createBackButton } from '../components/BackButton.js';
 import { createIcon } from '../components/Icon.js';
 import { getTodayDateKey, shiftDateKey, formatDateKey } from '../../utils/dateHelpers.js';
 
-export function renderNotebookDailyCheckView(container, { classroom, subjectId, notebookTypeId, onBack }) {
+export function renderNotebookDailyCheckView(container, { classroom, subjectId, notebookTypeId, onBack, onGoToClassMode }) {
   let viewDate = getTodayDateKey();
 
   function rerender() {
     render(container, classroom, subjectId, notebookTypeId, viewDate, {
       onBack,
+      onGoToClassMode,
       onNavigateDate: (deltaDays) => {
         viewDate = shiftDateKey(viewDate, deltaDays);
         rerender();
@@ -89,6 +90,21 @@ function render(container, classroom, subjectId, notebookTypeId, viewDate, handl
   title.className = 'notebook-tracker__page-header-title';
   title.textContent = `${subject?.name || '(Subject removed)'} · ${notebookType?.name || '(Type removed)'}`;
   header.append(backButton, title);
+  // Class Mode <-> Notebook Mode quick-jump — see
+  // NotebookTrackerView.js's own header comment for the full reasoning.
+  if (handlers.onGoToClassMode) {
+    const actions = document.createElement('div');
+    actions.className = 'notebook-tracker__page-header-actions';
+    const classModeButton = document.createElement('button');
+    classModeButton.type = 'button';
+    classModeButton.className = 'btn btn--ghost btn--icon-only';
+    classModeButton.appendChild(createIcon('users'));
+    classModeButton.setAttribute('aria-label', 'Class Mode');
+    classModeButton.title = 'Class Mode';
+    classModeButton.addEventListener('click', handlers.onGoToClassMode);
+    actions.appendChild(classModeButton);
+    header.appendChild(actions);
+  }
   wrapper.appendChild(header);
 
   const content = document.createElement('div');

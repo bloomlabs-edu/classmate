@@ -22,6 +22,7 @@ export function openQuickActionsSheet({
   onChangeBucket,
   onChangeGroup,
   onOpenProfile,
+  onCheckNotebook,
 }) {
   const overlay = document.createElement('div');
   overlay.className = 'sheet-overlay';
@@ -68,6 +69,22 @@ export function openQuickActionsSheet({
     );
     actionsList.appendChild(createSheetAction(createIcon('folder', { size: 18 }), 'Change Bucket', renderBucketOptions));
     actionsList.appendChild(createSheetAction(createIcon('users', { size: 18 }), 'Change Group', renderGroupOptions));
+    // Class Mode <-> Notebook Mode workflow: a teacher checking this
+    // student's notebook mid-class, then coming straight back here to
+    // award the star, per that workflow's own explicit design (see
+    // ui/views/TrackerView.js's own header comment and
+    // main.js's `tracker`/`notebookTracker` route wiring for the
+    // `returnTo`/`highlightStudentId` mechanics this button feeds).
+    // Only rendered when the caller actually supplies a handler — this
+    // sheet has no Notebook-specific knowledge of its own.
+    if (onCheckNotebook) {
+      actionsList.appendChild(
+        createSheetAction(createIcon('notebook-text', { size: 18 }), 'Check Notebook', () => {
+          close();
+          onCheckNotebook();
+        })
+      );
+    }
     actionsList.appendChild(
       createSheetAction(createIcon('user', { size: 18 }), 'Open Full Profile', () => {
         close();

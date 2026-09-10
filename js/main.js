@@ -133,10 +133,30 @@ let notificationsClassroomId = null;
 let feedPostSubscriptionUnsubscribe = null;
 let feedPostSubscriptionClassroomId = null;
 
-function handleSelectAccentColor(colorId) {
-  currentAccentColorId = colorId;
-  accentColorService.applyAccentColor(colorId); // optimistic — applies immediately, doesn't wait on the save below
-  accentColorPreferenceService.setPreference(currentUser?.uid, colorId);
+/**
+ * The single place renderUserBar() is ever called from — replaces what
+ * used to be 6 separate, independently-maintained copies of the same
+ * prop object (accent-color change, enable/disable notifications, the
+ * live notifications-snapshot callback, sign-in's own accent-color
+ * resolution, and route dispatch itself). Those 6 had already drifted
+ * from each other (three were missing onPreviewCustomAccentColor) —
+ * confirmed as the actual, root cause of the Quick Classroom Switcher
+ * disappearing moments after it appeared: the notifications-snapshot
+ * listener re-renders UserBar on every update, and its own copy of the
+ * prop object never included the switcher's props at all, so it wiped
+ * the switcher out on the very next snapshot. Reads every value fresh
+ * from this file's own module-level state plus router.getCurrentRoute()
+ * (not a passed-in route — this is called from contexts, like a
+ * Firestore snapshot callback, that never had a route object of their
+ * own to begin with) — there is now exactly one place a future new
+ * UserBar prop can be forgotten, not six.
+ */
+function refreshUserBar() {
+  if (!currentUser) {
+    userBarContainer.innerHTML = '';
+    return;
+  }
+  const route = router.getCurrentRoute();
   renderUserBar(userBarContainer, {
     user: currentUser,
     onSignOut: handleSignOut,
@@ -144,6 +164,7 @@ function handleSelectAccentColor(colorId) {
     currentAccentColorId,
     onSelectAccentColor: handleSelectAccentColor,
     onSelectCustomAccentColor: handleSelectCustomAccentColor,
+    onPreviewCustomAccentColor: handlePreviewCustomAccentColor,
     notificationPermissionState,
     onEnableNotifications: handleEnableNotifications,
     onDisableNotifications: handleDisableNotifications,
@@ -152,7 +173,24 @@ function handleSelectAccentColor(colorId) {
     hasClassroomContext: !!notificationsClassroomId,
     onOpenNotification: handleOpenNotification,
     onNotificationsViewed: handleNotificationsViewed,
+    // Quick Classroom Switcher — route.classroomId is undefined for
+    // every non-classroom route (landing, Home, Student Portal,
+    // Curriculum Management), so this correctly resolves to null there
+    // and UserBar simply omits the control, same gating shape as
+    // hasClassroomContext above. Always lands on the new classroom's
+    // own Dashboard — see UserBar.js's own comment for why that's the
+    // deliberate choice, not a rewritten sub-path.
+    currentClassroom: route.classroomId ? workspaceService.getClassroomById(route.classroomId) : null,
+    classroomList: workspaceService.getState().classrooms,
+    onSwitchClassroom: (classroomId) => router.navigate(`/classroom/${classroomId}`),
   });
+}
+
+function handleSelectAccentColor(colorId) {
+  currentAccentColorId = colorId;
+  accentColorService.applyAccentColor(colorId); // optimistic — applies immediately, doesn't wait on the save below
+  accentColorPreferenceService.setPreference(currentUser?.uid, colorId);
+  refreshUserBar();
 }
 
 /**
@@ -174,22 +212,7 @@ async function handleEnableNotifications() {
   } else {
     showToast('Something went wrong enabling notifications.');
   }
-  renderUserBar(userBarContainer, {
-    user: currentUser,
-    onSignOut: handleSignOut,
-    onGoToOverview: () => router.navigate('/teacher'),
-    currentAccentColorId,
-    onSelectAccentColor: handleSelectAccentColor,
-    onSelectCustomAccentColor: handleSelectCustomAccentColor,
-    notificationPermissionState,
-    onEnableNotifications: handleEnableNotifications,
-    onDisableNotifications: handleDisableNotifications,
-    notificationUnreadCount,
-    notifications,
-    hasClassroomContext: !!notificationsClassroomId,
-    onOpenNotification: handleOpenNotification,
-    onNotificationsViewed: handleNotificationsViewed,
-  });
+  refreshUserBar();
 }
 
 /** Reverses handleEnableNotifications() above for this browser -- removes this device's own token from FCM and from users/{uid}.fcmTokens. */
@@ -197,22 +220,7 @@ async function handleDisableNotifications() {
   const result = await pushNotificationService.disableForCurrentUser(currentUser?.uid);
   notificationPermissionState = pushNotificationService.getPermissionState();
   showToast(result.success ? 'Notifications turned off' : 'Something went wrong turning off notifications.');
-  renderUserBar(userBarContainer, {
-    user: currentUser,
-    onSignOut: handleSignOut,
-    onGoToOverview: () => router.navigate('/teacher'),
-    currentAccentColorId,
-    onSelectAccentColor: handleSelectAccentColor,
-    onSelectCustomAccentColor: handleSelectCustomAccentColor,
-    notificationPermissionState,
-    onEnableNotifications: handleEnableNotifications,
-    onDisableNotifications: handleDisableNotifications,
-    notificationUnreadCount,
-    notifications,
-    hasClassroomContext: !!notificationsClassroomId,
-    onOpenNotification: handleOpenNotification,
-    onNotificationsViewed: handleNotificationsViewed,
-  });
+  refreshUserBar();
 }
 
 /**
@@ -244,23 +252,7 @@ function manageNotificationSubscription(classroomId) {
     (updated) => {
       notifications = updated;
       notificationUnreadCount = notificationService.countUnread(updated, currentUser?.uid);
-      renderUserBar(userBarContainer, {
-        user: currentUser,
-        onSignOut: handleSignOut,
-        onGoToOverview: () => router.navigate('/teacher'),
-        currentAccentColorId,
-        onSelectAccentColor: handleSelectAccentColor,
-        onSelectCustomAccentColor: handleSelectCustomAccentColor,
-        onPreviewCustomAccentColor: handlePreviewCustomAccentColor,
-        notificationPermissionState,
-        onEnableNotifications: handleEnableNotifications,
-        onDisableNotifications: handleDisableNotifications,
-        notificationUnreadCount,
-        notifications,
-        hasClassroomContext: !!notificationsClassroomId,
-        onOpenNotification: handleOpenNotification,
-        onNotificationsViewed: handleNotificationsViewed,
-      });
+      refreshUserBar();
     },
     (error) => console.error('[main] Notifications subscription failed:', error)
   );
@@ -801,23 +793,7 @@ function renderRoute(route, reason = 'unspecified') {
     return;
   }
 
-  renderUserBar(userBarContainer, {
-    user: currentUser,
-    onSignOut: handleSignOut,
-    onGoToOverview: () => router.navigate('/teacher'),
-    currentAccentColorId,
-    onSelectAccentColor: handleSelectAccentColor,
-    onSelectCustomAccentColor: handleSelectCustomAccentColor,
-    onPreviewCustomAccentColor: handlePreviewCustomAccentColor,
-    notificationPermissionState,
-    onEnableNotifications: handleEnableNotifications,
-    onDisableNotifications: handleDisableNotifications,
-    notificationUnreadCount,
-    notifications,
-    hasClassroomContext: !!notificationsClassroomId,
-    onOpenNotification: handleOpenNotification,
-    onNotificationsViewed: handleNotificationsViewed,
-  });
+  refreshUserBar();
 
   if (workspaceLoading) {
     renderLoadingScreen(appContainer);
@@ -1104,12 +1080,30 @@ function renderRoute(route, reason = 'unspecified') {
         onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
       });
     } else if (route.name === 'tracker') {
+      // Class Mode <-> Notebook Mode — the same `?returnTo=` convention
+      // already established for Student Profile above, just crossing a
+      // different pair of screens. `onNotebooks` (the existing header
+      // button) now carries a way back to Class Mode specifically,
+      // rather than main.js:1193's `notebookTracker` onBack falling
+      // through to its own old default (the Dashboard) once the
+      // teacher is done. `onCheckNotebook` is the new per-student Quick
+      // Actions entry (see QuickActionsSheet.js/TrackerView.js) — it
+      // also carries `highlightStudentId` through the same query
+      // string so a future notebook-side pass can highlight that exact
+      // row on arrival; this pass wires the id through but does not yet
+      // render that highlight on the Notebook Tracker/Checkpoints side.
       renderTrackerView(appContainer, {
         classroom,
         onBack: () => router.navigate(`/classroom/${classroom.id}`),
-        onNotebooks: () => router.navigate(`/classroom/${classroom.id}/notebooks`),
+        onNotebooks: () =>
+          router.navigate(`/classroom/${classroom.id}/notebooks?returnTo=${encodeURIComponent(`/classroom/${classroom.id}/class-mode`)}`),
+        onCheckNotebook: (studentId) =>
+          router.navigate(
+            `/classroom/${classroom.id}/notebooks?returnTo=${encodeURIComponent(`/classroom/${classroom.id}/class-mode`)}&highlightStudentId=${studentId}`
+          ),
         onOpenScoreboardArchive: () => router.navigate(`/classroom/${classroom.id}/scoreboard-archive`),
         onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
+        initialHighlightStudentId: route.query?.highlightStudentId || null,
       });
     } else if (route.name === 'settings') {
       renderSettingsView(appContainer, {
@@ -1191,11 +1185,21 @@ function renderRoute(route, reason = 'unspecified') {
         onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
       });
     } else if (route.name === 'notebookTracker') {
+      // `returnTo` (see the `tracker` route's own comment above) is
+      // forwarded two ways here: this screen's own onBack respects it
+      // directly, and it's re-appended onto whichever specific
+      // Checkpoints/Daily card the teacher picks next (see
+      // ui/views/NotebookTrackerView.js's own createNotebookTypeCard())
+      // so the chain survives that second hop instead of dead-ending
+      // on this list screen.
       renderNotebookTrackerView(appContainer, {
         classroom,
-        onBack: () => router.navigate(`/classroom/${classroom.id}`),
+        onBack: () => router.navigate(route.query?.returnTo || `/classroom/${classroom.id}`),
         onNavigate: (path) => router.navigate(path),
         onOpenNotebookConfiguration: () => router.navigate(`/classroom/${classroom.id}/settings/learning`),
+        returnTo: route.query?.returnTo || null,
+        highlightStudentId: route.query?.highlightStudentId || null,
+        onGoToClassMode: () => router.navigate(`/classroom/${classroom.id}/class-mode`),
       });
     } else if (route.name === 'workRequestCreate') {
       renderWorkRequestCreateView(appContainer, {
@@ -1211,7 +1215,12 @@ function renderRoute(route, reason = 'unspecified') {
         currentUser,
         subjectId: route.subjectId,
         notebookTypeId: route.notebookTypeId,
-        onBack: () => router.navigate(`/classroom/${classroom.id}/notebooks`),
+        // Class Mode <-> Notebook Mode — respects the `returnTo` this
+        // exact screen was reached with (from the Notebook Tracker list
+        // above, itself possibly forwarding one from Class Mode), same
+        // pattern as every other `returnTo` consumer in this file;
+        // falls through to the existing plain-list behavior when absent.
+        onBack: () => router.navigate(route.query?.returnTo || `/classroom/${classroom.id}/notebooks`),
         // BUG FIX — carries this exact Notebook Checkpoints route back
         // through the student profile's own `returnTo` query param
         // (see the studentProfile route's own comment above) so its
@@ -1220,13 +1229,15 @@ function renderRoute(route, reason = 'unspecified') {
           const returnTo = `/classroom/${classroom.id}/notebooks/${route.subjectId}/${route.notebookTypeId}/checkpoints`;
           router.navigate(`/classroom/${classroom.id}/student/${studentId}?returnTo=${encodeURIComponent(returnTo)}`);
         },
+        onGoToClassMode: () => router.navigate(`/classroom/${classroom.id}/class-mode`),
       });
     } else if (route.name === 'notebookDailyCheck') {
       renderNotebookDailyCheckView(appContainer, {
         classroom,
         subjectId: route.subjectId,
         notebookTypeId: route.notebookTypeId,
-        onBack: () => router.navigate(`/classroom/${classroom.id}/notebooks`),
+        onBack: () => router.navigate(route.query?.returnTo || `/classroom/${classroom.id}/notebooks`),
+        onGoToClassMode: () => router.navigate(`/classroom/${classroom.id}/class-mode`),
       });
     }
     return;
@@ -1372,23 +1383,7 @@ function init() {
           } else {
             accentColorService.applyAccentColor(storedValue);
           }
-          renderUserBar(userBarContainer, {
-            user: currentUser,
-            onSignOut: handleSignOut,
-            onGoToOverview: () => router.navigate('/teacher'),
-            currentAccentColorId,
-            onSelectAccentColor: handleSelectAccentColor,
-            onSelectCustomAccentColor: handleSelectCustomAccentColor,
-            onPreviewCustomAccentColor: handlePreviewCustomAccentColor,
-            notificationPermissionState,
-            onEnableNotifications: handleEnableNotifications,
-            onDisableNotifications: handleDisableNotifications,
-            notificationUnreadCount,
-            notifications,
-            hasClassroomContext: !!notificationsClassroomId,
-            onOpenNotification: handleOpenNotification,
-            onNotificationsViewed: handleNotificationsViewed,
-          });
+          refreshUserBar();
         });
 
         workspaceLoading = true;

@@ -13,9 +13,26 @@ export function renderLoginView(container, { onSignIn }) {
   const wrapper = document.createElement('div');
   wrapper.className = 'login-view';
 
+  // Two-tone wordmark, not the CM monogram (assets/icons/classmate-icon.svg
+  // is the app ICON, documented as such — favicon/PWA use only; the
+  // branding foundation doc itself lists "Final ClassMate logo"/"Logo
+  // colour treatment" as still-open decisions, so there is no separate
+  // wordmark asset to pull in here). Reuses the exact same fixed hex
+  // pair the monogram's own "C"/"M" letters already use
+  // (classmate-icon.svg: #1565C0 / #ff9b65) — not this app's
+  // customizable per-teacher accent color (--color-primary-deep), since
+  // a brandmark should read the same regardless of a signed-in
+  // teacher's own theme choice, and this screen renders before any
+  // teacher/accent color is even known.
   const title = document.createElement('h1');
   title.className = 'login-view__title';
-  title.textContent = 'ClassMate';
+  const classPart = document.createElement('span');
+  classPart.className = 'login-view__title-class';
+  classPart.textContent = 'Class';
+  const matePart = document.createElement('span');
+  matePart.className = 'login-view__title-mate';
+  matePart.textContent = 'Mate';
+  title.append(classPart, matePart);
 
   const subtitle = document.createElement('p');
   subtitle.className = 'login-view__subtitle';

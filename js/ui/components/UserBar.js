@@ -45,8 +45,9 @@
 import { ACCENT_COLOR_OPTIONS } from '../../config/accentColorConfig.js';
 import { createSpectrumColorPicker } from './SpectrumColorPicker.js';
 import { createIcon } from './Icon.js';
+import { getDisplayName } from '../../services/classroomService.js';
 
-export function renderUserBar(container, { user, onSignOut, currentAccentColorId, onSelectAccentColor, onSelectCustomAccentColor, onPreviewCustomAccentColor, onGoToOverview, notificationPermissionState, onEnableNotifications, onDisableNotifications, notificationUnreadCount, notifications, hasClassroomContext, onOpenNotification, onNotificationsViewed }) {
+export function renderUserBar(container, { user, onSignOut, currentAccentColorId, onSelectAccentColor, onSelectCustomAccentColor, onPreviewCustomAccentColor, onGoToOverview, notificationPermissionState, onEnableNotifications, onDisableNotifications, notificationUnreadCount, notifications, hasClassroomContext, onOpenNotification, onNotificationsViewed, currentClassroom, classroomList, onSwitchClassroom }) {
   container.innerHTML = '';
   if (!user) return;
 
@@ -87,6 +88,33 @@ export function renderUserBar(container, { user, onSignOut, currentAccentColorId
   name.className = 'user-bar__name';
   name.textContent = user.displayName;
   identity.appendChild(name);
+
+  // Quick Classroom Switcher — only present once a classroom is
+  // actually open (currentClassroom set) and there's somewhere else to
+  // switch to (classroomList has more than this one). Appended inside
+  // `identity`, not as a third top-level bar child, for two reasons:
+  // it keeps `.user-bar`'s existing two-group `space-between` layout
+  // exactly as it was, and — more importantly — `identity` is the one
+  // part of this bar that stays visible at every width (unlike
+  // `rightGroup`'s own `secondaryMenu`, which collapses behind the
+  // mobile hamburger — see the @media rule below), which is what "the
+  // current classroom clearly indicated" and "responsive" actually
+  // require here. UserBar is the one element already rendered
+  // identically, with an established popover+outside-click-close
+  // pattern (mirrored below, same shape as the accent-color editor/
+  // notification bell), on every screen at every width — reusing it
+  // here means a teacher never has to leave whatever classroom screen
+  // they're on and go back to My Classrooms
+  // (ui/views/PersonalHubView.js) just to open a different classroom.
+  // Deliberately always lands on the new classroom's own Dashboard
+  // (never tries to re-target the current sub-screen) — the same,
+  // already-proven destination a Personal Hub classroom card itself
+  // navigates to, rather than inventing path-rewriting that could land
+  // on a route the new classroom can't actually resolve (e.g. a
+  // studentId that doesn't exist there).
+  if (currentClassroom && onSwitchClassroom) {
+    identity.appendChild(createClassroomSwitcherControl({ currentClassroom, classroomList: classroomList || [], onSwitchClassroom }));
+  }
 
   bar.appendChild(identity);
 
@@ -248,6 +276,108 @@ export function renderUserBar(container, { user, onSignOut, currentAccentColorId
 
   bar.appendChild(rightGroup);
   container.appendChild(bar);
+}
+
+/**
+ * Compact "current classroom, tap to switch" control — same button/
+ * popover/outside-click-to-close shape as the accent-color editor and
+ * notification bell above, not a new interaction pattern. Shows the
+ * current classroom's own display name (never truncated silently —
+ * CSS handles overflow) so "which classroom am I in" never requires
+ * opening the popover just to check. Lists every OTHER classroom the
+ * teacher has (the current one is deliberately not repeated as its own
+ * option — tapping the button again just closes the popover, same as
+ * every other popover in this file).
+ */
+function createClassroomSwitcherControl({ currentClassroom, classroomList, onSwitchClassroom }) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'user-bar__classroom-switcher';
+
+  const toggleButton = document.createElement('button');
+  toggleButton.type = 'button';
+  toggleButton.className = 'user-bar__classroom-switcher-button';
+  toggleButton.setAttribute('aria-haspopup', 'true');
+  toggleButton.setAttribute('aria-expanded', 'false');
+  toggleButton.title = 'Switch classroom';
+
+  const label = document.createElement('span');
+  label.className = 'user-bar__classroom-switcher-label';
+  label.textContent = getDisplayName(currentClassroom);
+  toggleButton.appendChild(label);
+
+  const otherClassrooms = classroomList.filter((classroom) => classroom.id !== currentClassroom.id);
+
+  // Nothing else to switch to — show the current classroom plainly
+  // (context still visible, per the design requirement), just without
+  // a dropdown affordance that would open onto an empty list.
+  if (otherClassrooms.length === 0) {
+    wrapper.appendChild(toggleButton);
+    toggleButton.disabled = true;
+    toggleButton.removeAttribute('aria-haspopup');
+    toggleButton.removeAttribute('aria-expanded');
+    toggleButton.title = '';
+    return wrapper;
+  }
+
+  const chevron = document.createElement('span');
+  chevron.setAttribute('aria-hidden', 'true');
+  chevron.className = 'user-bar__classroom-switcher-chevron';
+  chevron.textContent = '▾';
+  toggleButton.appendChild(chevron);
+
+  const popover = document.createElement('div');
+  popover.className = 'user-bar__classroom-switcher-popover';
+  popover.setAttribute('role', 'menu');
+  popover.setAttribute('aria-label', 'Switch classroom');
+
+  otherClassrooms.forEach((classroom) => {
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.className = 'user-bar__classroom-switcher-option';
+    option.setAttribute('role', 'menuitem');
+    option.textContent = getDisplayName(classroom);
+    option.addEventListener('click', () => {
+      closePopover();
+      onSwitchClassroom(classroom.id);
+    });
+    popover.appendChild(option);
+  });
+
+  function closePopover() {
+    popover.classList.remove('user-bar__classroom-switcher-popover--open');
+    toggleButton.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', handleOutsideClick);
+    document.removeEventListener('keydown', handleKeydown);
+  }
+
+  function handleOutsideClick(event) {
+    if (!wrapper.contains(event.target)) closePopover();
+  }
+
+  // Same Escape-to-close courtesy as every native <select>/menu — this
+  // popover is otherwise mouse/tap-only like its sibling popovers, so
+  // this is the one keyboard affordance worth adding deliberately.
+  function handleKeydown(event) {
+    if (event.key === 'Escape') closePopover();
+  }
+
+  toggleButton.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const isOpen = popover.classList.toggle('user-bar__classroom-switcher-popover--open');
+    toggleButton.setAttribute('aria-expanded', String(isOpen));
+    if (isOpen) {
+      setTimeout(() => {
+        document.addEventListener('click', handleOutsideClick);
+        document.addEventListener('keydown', handleKeydown);
+      }, 0);
+    } else {
+      document.removeEventListener('click', handleOutsideClick);
+      document.removeEventListener('keydown', handleKeydown);
+    }
+  });
+
+  wrapper.append(toggleButton, popover);
+  return wrapper;
 }
 
 /**

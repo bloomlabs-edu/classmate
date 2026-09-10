@@ -33,10 +33,14 @@
  * ICON_CATEGORIES) — subjects are peers, not tiered by importance, so
  * no per-subject colour is invented; colour stays restrained per the
  * ClassMate style guide rather than becoming a second way to
- * differentiate cards that are otherwise equal.
+ * differentiate cards that are otherwise equal. The glyph itself DOES
+ * vary per subject now (config/subjectIconConfig.js) — a teacher
+ * scanning several Subject cards can tell them apart by shape, not
+ * just by re-reading each label.
  */
 
 import { createIcon, createIconBadge } from './Icon.js';
+import { getSubjectIconName } from '../../config/subjectIconConfig.js';
 
 export function renderExistingSubjectsList(subjects, onChooseSubject) {
   const grid = document.createElement('div');
@@ -58,7 +62,7 @@ function createSubjectCard(subject, onClick) {
 
   const top = document.createElement('div');
   top.className = 'existing-subjects__card-top';
-  top.appendChild(createIconBadge('book-open', 'teacher', { size: 44 }));
+  top.appendChild(createIconBadge(getSubjectIconName(subject.title), 'teacher', { size: 44 }));
 
   const arrow = document.createElement('span');
   arrow.className = 'existing-subjects__card-arrow';

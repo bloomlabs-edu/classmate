@@ -51,8 +51,17 @@ import * as scoreboardArchiveService from '../../services/scoreboardArchiveServi
 import { getDisplayName, getDisplaySubtitle } from '../../services/classroomService.js';
 
 export function renderTrackerView(container, props) {
-  const { classroom, onBack, onNotebooks, onOpenScoreboardArchive, onSelectStudent } = props;
-  const highlight = props._highlight || {};
+  const { classroom, onBack, onNotebooks, onOpenScoreboardArchive, onSelectStudent, onCheckNotebook, initialHighlightStudentId } = props;
+  // Seeds the pulse highlight on first mount from the route's own
+  // `?highlightStudentId=` (see main.js's `tracker` route dispatch) —
+  // this is what makes returning from a Notebook-mode jump (Quick
+  // Actions' "Check Notebook", below) land back on the same student's
+  // row already highlighted, the same visual cue a plain tap/swipe
+  // already produces via `_highlight`, reused rather than duplicated.
+  // Only applies once: any subsequent internal rerender() already
+  // carries its own `_highlight` (or explicitly clears it), so this
+  // never re-highlights on an unrelated later rerender.
+  const highlight = props._highlight || (initialHighlightStudentId ? { studentId: initialHighlightStudentId } : {});
 
   // [RESET-VERIFY] C: THE EXACT STATE renderTrackerView() itself
   // received, and where it came from — this fires on every single
@@ -264,7 +273,7 @@ export function renderTrackerView(container, props) {
     highlight: { teamId: highlight.teamId },
     onTap: (student) => handleTap(classroom, findTeamContaining(classroom, student.id), student, rerender),
     onSwipeLeft: (student) => handleSwipeLeft(classroom, findTeamContaining(classroom, student.id), student, rerender),
-    onLongPress: (student) => handleLongPress(classroom, findTeamContaining(classroom, student.id), student, { onSelectStudent, rerender }),
+    onLongPress: (student) => handleLongPress(classroom, findTeamContaining(classroom, student.id), student, { onSelectStudent, onCheckNotebook, rerender }),
   });
 
   wrapper.append(header, grid);
@@ -308,7 +317,7 @@ function handleSwipeLeft(classroom, team, student, rerender) {
   rerender({ studentId: student.id, teamId: team.id });
 }
 
-function handleLongPress(classroom, team, student, { onSelectStudent, rerender }) {
+function handleLongPress(classroom, team, student, { onSelectStudent, onCheckNotebook, rerender }) {
   openQuickActionsSheet({
     student,
     bucketOptions: classModeService.getBucketOptions(),
@@ -361,5 +370,6 @@ function handleLongPress(classroom, team, student, { onSelectStudent, rerender }
       }
     },
     onOpenProfile: () => onSelectStudent(student.id),
+    onCheckNotebook: onCheckNotebook ? () => onCheckNotebook(student.id) : null,
   });
 }

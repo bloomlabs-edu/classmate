@@ -23,6 +23,16 @@
  * never recalculates it — the same pure-presentation split the
  * team-level movement badge already established.
  *
+ * `nameHighlight` — the optional 'climbing' | 'redemption' | null state
+ * from services/performanceStateService.js's own getNameHighlightState(),
+ * computed once per student by ui/components/TeamStandingsBoard.js exactly
+ * like `movement` above. Painted as a compact rounded pill behind the name
+ * text only (see .student-row__name--climbing/--redemption in styles.css)
+ * — deliberately never touching the bucket background, the score, the
+ * stars, or the movement badge, so bucket (group), name pill (performance/
+ * behaviour), and score+movement (underlying data) stay three clearly
+ * separate layers rather than merging into one.
+ *
  * `onSwipeLeft`/`onLongPress` are both genuinely optional — see
  * ui/components/TeamStandingsBoard.js's own header comment for why:
  * the Student Portal renders this exact same row with only `onTap`
@@ -41,7 +51,7 @@ const LONG_PRESS_MS = 500;
 const MOVE_CANCEL_THRESHOLD_PX = 10;
 const SWIPE_THRESHOLD_PX = 60;
 
-export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongPress, tapActionLabel = 'award a star', movement, displayScore }) {
+export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongPress, tapActionLabel = 'award a star', movement, displayScore, nameHighlight }) {
   const style = getBucketRowStyle(student.bucket);
 
   const item = document.createElement('li');
@@ -58,6 +68,7 @@ export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongP
 
   const name = document.createElement('span');
   name.className = 'student-row__name';
+  if (nameHighlight) name.classList.add(`student-row__name--${nameHighlight}`);
   name.textContent = student.name;
 
   const score = document.createElement('span');

@@ -788,7 +788,12 @@ function renderView(container, mode, state, handlers) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
-  wrapper.className = 'learning-management';
+  // 'learning-management' alone is a shared page-chrome class also
+  // reused (unmodified) by AssessmentManagementView/GoalDashboardView/
+  // GoalManagementView — the page-container sizing below is scoped to
+  // this second, dedicated class so it affects only this screen, not
+  // those other three.
+  wrapper.className = 'learning-management learning-management-view';
 
   const header = document.createElement('header');
   header.className = 'learning-management__header';
@@ -1049,7 +1054,7 @@ function renderSubjectStep(subject, classroom, curriculumState, selectedPartName
   // real, always-inspectable state, not something that only becomes
   // worth showing once Units happen to exist.
   const metadataSlot = document.createElement('div');
-  renderCurriculumMetadataLine(metadataSlot, { curriculumState });
+  renderCurriculumMetadataLine(metadataSlot, { curriculumState, hasUnits });
   curriculumTile.appendChild(metadataSlot);
 
   const curriculumActionButton = document.createElement('button');
@@ -1100,7 +1105,7 @@ function renderSubjectStep(subject, classroom, curriculumState, selectedPartName
     unitsTileLabel.className = 'learning-management__bento-tile-label';
     unitsTileLabel.textContent = 'Units';
     unitsTile.appendChild(unitsTileLabel);
-    unitsTile.appendChild(createEmptyStateElement({ message: 'No units yet.' }));
+    unitsTile.appendChild(createEmptyStateElement({ message: 'No units yet.', compact: true }));
     unitsTile.appendChild(renderAddUnitControl(addingUnit, unitCreateState, handlers));
   }
 
@@ -1377,7 +1382,7 @@ function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUni
     wrapper.appendChild(conceptsHeading);
 
     if (selectedUnit.concepts.length === 0) {
-      wrapper.appendChild(createEmptyStateElement({ message: "What do you want your students to understand in this unit?" }));
+      wrapper.appendChild(createEmptyStateElement({ message: "What do you want your students to understand in this unit?", compact: true }));
       wrapper.appendChild(renderAddConceptControl(selectedUnit.id, addingConcept, conceptCreateState, handlers));
     } else {
       const conceptList = document.createElement('div');

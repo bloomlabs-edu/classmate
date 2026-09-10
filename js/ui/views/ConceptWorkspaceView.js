@@ -43,6 +43,7 @@ import * as learningActivityService from '../../services/learningActivityService
 import * as conceptNavigationService from '../../services/conceptNavigationService.js';
 import { getActivityTypeLabel, getExternalProviderLabel } from '../../config/activityTypeConfig.js';
 import { fetchLearningHubCatalogue, groupExperiencesByType } from '../../services/learningHubCatalogueService.js';
+import { resolveLearningHubConceptBucketUrl } from '../../services/learningHubLaunchUrlService.js';
 import { openLearningHubPanel } from '../components/LearningHubPanel.js';
 import { getUnderstandingLabel, getNotebookStatusLabel } from '../../config/learningRecordConfig.js';
 import {
@@ -442,6 +443,21 @@ function renderWorkspace(container, classroom, subject, unit, concept, activeTab
   triggerLabel.textContent = 'Learning Hub';
   learningHubTrigger.append(triggerIcon, ' ', triggerLabel);
   learningHubTrigger.addEventListener('click', () => {
+    // ClassMate -> Learning Hub Concept identity bridge (see
+    // resolveLearningHubConceptBucketUrl()'s own doc comment, below in
+    // this file). When this exact Concept has a real, valid Learning
+    // Hub mapping, the button's whole job changes from "help me find a
+    // resource" to "take me to this Concept's own canonical Concept
+    // Bucket" — a direct navigation, never the resource-discovery
+    // panel. An unmapped Concept (the null case here) falls straight
+    // through to the existing, completely unchanged panel-opening
+    // behavior below — nothing about that path is touched by this.
+    const conceptBucketUrl = resolveLearningHubConceptBucketUrl(concept);
+    if (conceptBucketUrl) {
+      window.open(conceptBucketUrl, '_blank');
+      return;
+    }
+
     // Local to this one header-click's resulting panel instance — this
     // function (renderWorkspace) is rebuilt fresh on every rerender(),
     // so a variable declared in the outer workspace closure wouldn't be
@@ -1207,13 +1223,6 @@ function renderLearningHubNameNewView(experience, handlers) {
  * is what "make resources feel complete as objects" means concretely:
  * a resource has a real home, not just a row in a list.
  */
-// PLACEHOLDER — Learning Hub is not deployed anywhere yet (today it
-// is a file://-only ZIP with no hosting at all). This host is not a
-// real, working deployment target; it exists so the launch mechanism
-// itself can be built and tested end-to-end now, ready to point at a
-// real host the moment one exists, without any other code changing.
-const LEARNING_HUB_HOST_PLACEHOLDER = 'https://learning-hub-b2586.web.app';
-
 /**
  * Maps a Learning Hub experience's own `type` (from the catalogue —
  * see services/learningHubCatalogueService.js) to the closest
@@ -1237,33 +1246,19 @@ export const LEARNING_HUB_EXPERIENCE_TYPE_TO_RESOURCE_TYPE = {
 };
 
 /**
- * Builds a Learning Hub launch URL from an experience type + id — the
- * ONLY thing ClassMate knows about Learning Hub's own launch
- * mechanism: an entry TYPE and an id, never anything about Learning
- * Hub's internal Mission/Card/Journey structure. Mirrors the real,
- * now-multiple entry types Learning Hub's own app.js genuinely
- * supports (lesson, element-journey, root-journey, sound-journey,
- * listen-read) — this function doesn't hardcode "mission" as the
- * only shape any more.
- *
- * Backward-compatible: calling this with a single string argument
- * (the old missionId-only call) still builds the exact, unchanged
- * `mission:<id>` URL — nothing already relying on the original,
- * accepted single-argument call breaks.
- *
- * Exported so ui/student-portal/views/StudentLearningView.js can
- * reuse this exact function rather than duplicating it — the same
- * "reuse, never build a second implementation" precedent
- * StudentNotebooksView.js already established by importing
- * getCellMeta() directly from NotebookCheckpointsView.js.
+ * buildLearningHubLaunchUrl()/resolveLearningHubConceptBucketUrl() now
+ * live in services/learningHubLaunchUrlService.js — moved out
+ * unchanged (see that file's own header comment for why: this view's
+ * module graph pulls in Firebase's real, remote-URL ESM imports via
+ * services/resourceRepository.js, which only resolve in a browser, so
+ * keeping this pure, zero-dependency logic in its own file is what
+ * makes it independently unit-testable). Re-exported here so every
+ * existing `import { buildLearningHubLaunchUrl } from
+ * '.../ConceptWorkspaceView.js'` call site (ui/components/
+ * LearningHubPanel.js, ui/student-portal/views/StudentLearningView.js,
+ * ui/views/TimetableView.js) keeps working completely unchanged.
  */
-export function buildLearningHubLaunchUrl(experienceTypeOrMissionId, experienceId) {
-  // Old, single-argument call: build the exact, unchanged mission: URL.
-  if (experienceId === undefined) {
-    return `${LEARNING_HUB_HOST_PLACEHOLDER}/?entry=${encodeURIComponent(`mission:${experienceTypeOrMissionId}`)}`;
-  }
-  return `${LEARNING_HUB_HOST_PLACEHOLDER}/?entry=${encodeURIComponent(`${experienceTypeOrMissionId}:${experienceId}`)}`;
-}
+export { buildLearningHubLaunchUrl } from '../../services/learningHubLaunchUrlService.js';
 
 function renderResourceDetailsView(container, classroom, concept, resource, handlers) {
   const section = document.createElement('div');

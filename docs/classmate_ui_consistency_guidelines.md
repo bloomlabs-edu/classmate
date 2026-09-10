@@ -1,6 +1,6 @@
 # ClassMate — UI Consistency Guidelines
 
-**Version:** 0.2  
+**Version:** 0.3  
 **Status:** Working / Evolving  
 **Last updated:** 8 September 2026
 
@@ -415,6 +415,10 @@ Icons should improve recognition.
 
 They should not be added merely to make a screen look more decorated.
 
+## Peer items still need to be tellable apart
+
+A set of peer cards/items (Subjects, categories, types) should not all default to the same one icon just because they're structurally equal — that gives a teacher nothing to scan by except re-reading every label. Vary the glyph per item using a small, explicit keyword-to-icon mapping with a sensible fallback, while keeping colour/tint identical across the set (see Section 3 — colour stays restrained; the icon shape carries the variety, not a new colour per item).
+
 ---
 
 # 12. Spacing
@@ -513,6 +517,16 @@ They should tell the user:
 3. what they can do next, when applicable
 
 Avoid oversized illustrations or excessive decoration unless the context benefits from it.
+
+## Compact empty states
+
+The default empty-state treatment (centered, capped width, generous top/bottom padding) is sized for a state that IS the page's entire content. Reusing it unchanged inside an already-bounded container — a Bento tile, a card, a small panel — turns one short sentence into a large void, working against Section 12's own breathing-room rule rather than serving it.
+
+Inside a tile or card, use a compact treatment instead: left-aligned, no forced max-width, modest padding that reads as "one quiet line," not "a whole empty page."
+
+### Rule
+
+> **An empty state's size should match its container, not always the same fixed treatment.**
 
 ---
 
@@ -740,6 +754,25 @@ Avoid solving small widths by allowing:
 - text that becomes illegible at the smaller size
 
 Prefer reflowing multi-column layouts (including Bento grids) to a single column at narrow widths, using the same components rather than a separate mobile-only design. Test at approximately 390px as the baseline mobile check before considering a layout responsive.
+
+---
+
+# 25. Page Containment
+
+Every top-level screen must define its own content width — a `max-width`, centered with `margin: 0 auto`, plus real horizontal padding. The app shell itself imposes none of this (`#app` is a bare flex child), so a screen that skips it runs edge-to-edge at whatever width the surrounding window happens to be, with content touching the viewport edge and any single-column layout (a Bento column included) stretching far past what its own content needs — reading as "oversized" and "empty" even though every individual rule inside it is correct.
+
+Match the width to the screen's shape, not one fixed number everywhere:
+
+- A linear, single-task flow (a builder, a workspace, a form) reads best narrow — roughly 680-780px.
+- A browsing hub (a subject/collection grid, a Bento composition) can reasonably run wider — 1000-1200px — since it has real parallel content to use that width for.
+
+### Rule
+
+> **No screen inherits its width by accident. Every screen states it on purpose.**
+
+## Grids: auto-fill, not auto-fit
+
+For a card grid using `repeat(auto-fit, minmax(...))`, a small number of items stretches to fill the whole row — one or two cards can end up rendering far larger than their own content, another oversized-box failure mode with the identical visual symptom as a missing page container. `auto-fill` keeps the unused tracks in place instead of collapsing them, so a card's width is always driven by its own `minmax()`, never by how many peers happen to exist right now. Default to `auto-fill` for this reason; only reach for `auto-fit` with a specific, deliberate reason for wanting existing items to grow into leftover space.
 
 ---
 

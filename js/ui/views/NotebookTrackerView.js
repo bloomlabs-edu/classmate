@@ -52,7 +52,7 @@ import { createEmptyStateElement } from '../components/EmptyState.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createIcon, createIconBadge } from '../components/Icon.js';
 
-export function renderNotebookTrackerView(container, { classroom, onBack, onNavigate, onOpenNotebookConfiguration }) {
+export function renderNotebookTrackerView(container, { classroom, onBack, onNavigate, onOpenNotebookConfiguration, returnTo, highlightStudentId, onGoToClassMode }) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
@@ -75,7 +75,33 @@ export function renderNotebookTrackerView(container, { classroom, onBack, onNavi
   title.className = 'notebook-tracker__page-header-title';
   title.textContent = 'Notebook Tracker';
   header.append(backButton, title);
+  // Class Mode <-> Notebook Mode — a persistent, one-tap way back,
+  // not gated on `returnTo` being present: a teacher already deep in
+  // Notebook Tracker for an unrelated reason still benefits from a
+  // direct jump into Class Mode, not just a teacher who arrived via
+  // Class Mode's own "Notebook Tracker" button.
+  if (onGoToClassMode) {
+    const actions = document.createElement('div');
+    actions.className = 'notebook-tracker__page-header-actions';
+    const classModeButton = document.createElement('button');
+    classModeButton.type = 'button';
+    classModeButton.className = 'btn btn--ghost btn--icon-only';
+    classModeButton.appendChild(createIcon('users'));
+    classModeButton.setAttribute('aria-label', 'Class Mode');
+    classModeButton.title = 'Class Mode';
+    classModeButton.addEventListener('click', onGoToClassMode);
+    actions.appendChild(classModeButton);
+    header.appendChild(actions);
+  }
   wrapper.appendChild(header);
+
+  // Forwarded onto whichever specific Notebook Type card the teacher
+  // picks next (see createNotebookTypeCard() below), so a `returnTo`
+  // this list itself was reached with (e.g. from Class Mode) survives
+  // one hop further into Checkpoints/Daily rather than dead-ending here.
+  const forwardQuery = returnTo
+    ? `?returnTo=${encodeURIComponent(returnTo)}${highlightStudentId ? `&highlightStudentId=${highlightStudentId}` : ''}`
+    : '';
 
   const content = document.createElement('div');
   content.className = 'wizard-step-content notebook-tracker__content';
@@ -94,7 +120,7 @@ export function renderNotebookTrackerView(container, { classroom, onBack, onNavi
     const grid = document.createElement('div');
     grid.className = 'notebook-tracker__bento-grid';
     configuredNotebooks.forEach(({ subject, notebookType }) => {
-      grid.appendChild(createNotebookTypeCard(subject, notebookType, classroom, onNavigate));
+      grid.appendChild(createNotebookTypeCard(subject, notebookType, classroom, onNavigate, forwardQuery));
     });
     content.appendChild(grid);
   }
@@ -179,7 +205,7 @@ function listConfiguredNotebooks(classroom) {
  * existing -- inventing a status label with nothing real behind it
  * would misrepresent this as tracked data it isn't.
  */
-function createNotebookTypeCard(subject, notebookType, classroom, onNavigate) {
+function createNotebookTypeCard(subject, notebookType, classroom, onNavigate, forwardQuery = '') {
   const card = document.createElement('button');
   card.type = 'button';
   card.className = 'notebook-tracker__bento-card';
@@ -187,7 +213,7 @@ function createNotebookTypeCard(subject, notebookType, classroom, onNavigate) {
     // Reusable across any notebook type — never a Handwriting-specific
     // branch. See models/NotebookType.js/services/dailyCheckService.js.
     const destination = notebookConfigService.getTrackingMode(notebookType) === 'daily' ? 'daily' : 'checkpoints';
-    onNavigate(`/classroom/${classroom.id}/notebooks/${subject.id}/${notebookType.id}/${destination}`);
+    onNavigate(`/classroom/${classroom.id}/notebooks/${subject.id}/${notebookType.id}/${destination}${forwardQuery}`);
   });
 
   const top = document.createElement('div');

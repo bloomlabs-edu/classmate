@@ -1839,6 +1839,29 @@ select:focus-visible,
   font-weight: var(--font-weight-medium);
 }
 
+/* Performance/behaviour name pill — a compact rounded highlight strip
+   directly behind the name text only (services/performanceStateService.js
+   supplies which state, if any). Deliberately a separate visual layer from
+   the row's own bucket background/border, which is unchanged: bucket =
+   group/level, this pill = performance/behaviour, score+stars+movement =
+   underlying data. Solid, bright fills (reusing the same green/red already
+   used for small solid accents elsewhere, see config/bucketConfig.js's own
+   BUCKET_DISPLAY_COLORS) rather than the movement badge's soft tint, since
+   this needs to read clearly at a glance across a whole roster. */
+.student-row__name--climbing,
+.student-row__name--redemption {
+  display: inline-block;
+  padding: 0.1rem 0.55rem;
+  border-radius: var(--radius-pill);
+  color: #fff;
+}
+.student-row__name--climbing {
+  background-color: #2e7d32;
+}
+.student-row__name--redemption {
+  background-color: #c62828;
+}
+
 .student-row__points {
   font-weight: var(--font-weight-black);
   color: var(--color-primary-strong);
@@ -1903,6 +1926,18 @@ select:focus-visible,
   font-size: 1rem;
   line-height: 1.5;
   color: var(--color-muted);
+}
+
+/* Compact modifier — see ui/components/EmptyState.js's own `compact`
+   option. Drops the centered/480px/3rem-padding treatment meant for a
+   whole empty page down to a plain, left-aligned line that fits
+   inside a Bento tile or card without leaving a huge void around one
+   sentence of text. */
+.empty-state--compact {
+  max-width: none;
+  margin: 0;
+  padding: 0.25rem 0 0.75rem;
+  text-align: left;
 }
 
 /* Settings view */
@@ -5151,9 +5186,20 @@ button.wizard-checklist__row:hover {
 }
 
 .login-view__title {
-  font-size: 1.6rem;
+  font-size: 2rem;
   font-weight: var(--font-weight-black);
   margin: 0;
+}
+/* Fixed brand hex pair, matching assets/icons/classmate-icon.svg's own
+   "C"/"M" letters exactly — see LoginView.js's own comment for why this
+   is deliberately NOT var(--color-primary-deep) (that token is each
+   teacher's own customizable accent color, not a fixed brand constant,
+   and this screen renders before any teacher/accent color is known). */
+.login-view__title-class {
+  color: #1565c0;
+}
+.login-view__title-mate {
+  color: #ff9b65;
 }
 
 .login-view__subtitle {
@@ -5231,6 +5277,91 @@ button.wizard-checklist__row:hover {
 }
 .user-bar .btn--text:hover {
   color: var(--color-primary);
+}
+
+/* Quick Classroom Switcher — see ui/components/UserBar.js's own
+   createClassroomSwitcherControl(). Same button/popover/outside-click
+   shape as the accent-color editor and notification bell (this file's
+   own .user-bar__color-popover/.user-bar__notification-popover), just
+   anchored inside .user-bar__identity instead of .user-bar__right-group
+   so it stays visible at every width (see that function's own comment
+   for why). A quiet pill, not a colored action button — this is
+   navigation/context, not an action. */
+.user-bar__classroom-switcher {
+  position: relative;
+  min-width: 0;
+}
+.user-bar__classroom-switcher-button {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 160px;
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: var(--radius-pill);
+  padding: 0.25rem 0.6rem;
+  color: var(--color-chrome-text);
+  cursor: pointer;
+}
+.user-bar__classroom-switcher-button:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.6);
+}
+.user-bar__classroom-switcher-button:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+.user-bar__classroom-switcher-label {
+  font-size: 0.78rem;
+  font-weight: var(--font-weight-bold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.user-bar__classroom-switcher-chevron {
+  font-size: 0.7rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.user-bar__classroom-switcher-popover {
+  display: none;
+  flex-direction: column;
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  min-width: 200px;
+  max-width: 280px;
+  max-height: 60vh;
+  overflow-y: auto;
+  background-color: var(--color-surface);
+  border-radius: var(--radius-card);
+  box-shadow: var(--elevation-dialog);
+  padding: 0.4rem;
+  gap: 0.15rem;
+  z-index: 20;
+}
+.user-bar__classroom-switcher-popover--open {
+  display: flex;
+}
+.user-bar__classroom-switcher-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  padding: 0.55rem 0.7rem;
+  font-size: 0.9rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-ink);
+  cursor: pointer;
+}
+.user-bar__classroom-switcher-option:hover {
+  background-color: var(--color-bg);
+}
+@media (max-width: 960px) {
+  .user-bar__classroom-switcher-button {
+    max-width: 110px;
+  }
 }
 
 /* Phase P — mobile top bar simplification. Hidden entirely at desktop
@@ -8933,6 +9064,31 @@ button.wizard-checklist__row:hover {
   margin: 0 auto;
   padding: 0 1.5rem 3rem;
 }
+/*
+ * The page-level container this screen was missing entirely — every
+ * sibling view (.curriculum-view, .concept-workspace,
+ * .learning-record-view, .personal-hub, ...) already defines its own
+ * max-width + centered margin + horizontal padding; this one never
+ * did, so its content ran edge-to-edge at the outer app shell's own
+ * width (#app itself sets none) with zero side padding, and the
+ * single-column Bento tiles below stretched to whatever that width
+ * happened to be — the root cause behind this screen reading as
+ * oversized/empty rather than a deliberate composition. 1100px, not
+ * one of the narrower ~700-780px single-task widths, since this
+ * screen is a browsing hub (Subject grid + Bento), closer in kind to
+ * .personal-hub (1200px) than to a linear form.
+ *
+ * Scoped to .learning-management-view specifically, NOT the bare
+ * .learning-management class alone — that base class is shared,
+ * unmodified page chrome also used as-is by
+ * AssessmentManagementView.js/GoalDashboardView.js/
+ * GoalManagementView.js, none of which are part of this pass.
+ */
+.learning-management-view {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 1.5rem 3rem;
+}
 .learning-management__header {
   padding: 1.25rem 0 0.5rem;
 }
@@ -8982,15 +9138,28 @@ button.wizard-checklist__row:hover {
  * Subject page Bento — Curriculum -> Units (-> Concepts), same quiet-
  * surface Bento language as .classroom-access-bento above (rounded
  * surface tiles, hierarchy from order/typography, no shadows or
- * decoration). A single column, not a side-by-side grid, since the
- * relationship here is sequential (assign a Curriculum, then build
- * Units) rather than parallel choices.
+ * decoration). Stacked on narrow/mobile widths, where the sequential
+ * "assign a Curriculum, then build Units" reading order matches the
+ * visual order anyway. From 860px up, Curriculum becomes a compact,
+ * fixed-width context rail beside the Units/Concepts tile (the actual
+ * primary content, often much taller) — still Curriculum-first in DOM
+ * order, so the sequence still reads correctly on mobile; on desktop
+ * this uses the extra width intentionally instead of stretching a
+ * single tile edge to edge. `align-items: start` keeps the shorter
+ * Curriculum tile at its own natural height rather than grid's default
+ * stretch matching the taller Units tile beside it.
  */
 .learning-management__bento {
   display: grid;
   grid-template-columns: 1fr;
+  align-items: start;
   gap: 1rem;
   margin: 1rem 0 1.5rem;
+}
+@media (min-width: 860px) {
+  .learning-management__bento {
+    grid-template-columns: minmax(240px, 320px) 1fr;
+  }
 }
 .learning-management__bento-tile {
   padding: 1.25rem;
@@ -13694,7 +13863,12 @@ button.wizard-checklist__row:hover {
  */
 .existing-subjects__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  /* auto-fill, not auto-fit: auto-fit collapses unused tracks and lets
+     existing cards stretch to fill them, so a classroom with only 1-2
+     Subjects would render huge, oversized cards. auto-fill keeps those
+     tracks (empty, but present), so a card's width is always driven by
+     minmax(240px, 1fr), never by "how few Subjects happen to exist." */
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 1rem;
   margin-bottom: 1.25rem;
 }
@@ -14098,6 +14272,17 @@ button.wizard-checklist__row:hover {
   gap: 1rem;
   padding: 1.25rem 1.5rem;
   background: transparent;
+}
+/* Class Mode <-> Notebook Mode quick-jump — pushed to the header's own
+   right edge via margin-left: auto rather than relying on the title's
+   own width, since the title has no flex-grow rule of its own to push
+   against. See ui/views/NotebookTrackerView.js/NotebookCheckpointsView.js/
+   NotebookDailyCheckView.js. */
+.notebook-tracker__page-header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 .notebook-tracker__page-header-title {
   margin: 0;

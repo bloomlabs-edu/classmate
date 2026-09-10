@@ -114,7 +114,7 @@ export function getCellMeta(checkpoint, record) {
     : { label: 'Not Reviewed', chipClass: 'purple', icon: 'circle-dot' };
 }
 
-export function renderNotebookCheckpointsView(container, { classroom, currentUser, subjectId, notebookTypeId, onBack, onSelectStudent }) {
+export function renderNotebookCheckpointsView(container, { classroom, currentUser, subjectId, notebookTypeId, onBack, onSelectStudent, onGoToClassMode }) {
   // Replaced wholesale by resyncFromServer() below whenever
   // workspaceCoordinator delivers a fresh, server-confirmed classroom
   // — every handler below reads THIS variable at call time (never a
@@ -140,6 +140,23 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
   const titleEl = document.createElement('h1');
   titleEl.className = 'tracker-header__title';
   header.appendChild(titleEl);
+  // Class Mode <-> Notebook Mode quick-jump — same persistent,
+  // always-available button as NotebookTrackerView.js/
+  // NotebookDailyCheckView.js's own header (see those files' own
+  // comments); not gated on how this screen was reached.
+  if (onGoToClassMode) {
+    const actions = document.createElement('div');
+    actions.className = 'notebook-tracker__page-header-actions';
+    const classModeButton = document.createElement('button');
+    classModeButton.type = 'button';
+    classModeButton.className = 'btn btn--ghost btn--icon-only';
+    classModeButton.appendChild(createIcon('users'));
+    classModeButton.setAttribute('aria-label', 'Class Mode');
+    classModeButton.title = 'Class Mode';
+    classModeButton.addEventListener('click', onGoToClassMode);
+    actions.appendChild(classModeButton);
+    header.appendChild(actions);
+  }
   wrapper.appendChild(header);
 
   function refreshTitle() {
