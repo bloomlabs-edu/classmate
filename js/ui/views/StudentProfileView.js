@@ -36,7 +36,7 @@ import * as notebookConfigService from '../../services/notebookConfigService.js'
 import { getStatusMeta } from './WorkRequestRosterView.js';
 import * as studentEventService from '../../services/studentEventService.js';
 import { STUDENT_EVENT_CATEGORIES } from '../../config/studentEventCategories.js';
-import { formatDateKey } from '../../utils/dateHelpers.js';
+import { formatDateKey, getMondayStartOfWeek, getTodayDateKey, shiftDateKey, getWeekLabel } from '../../utils/dateHelpers.js';
 import { BUCKET_KEYS, BUCKET_LABELS, getBucketLabel, getBucketRowStyle } from '../../config/bucketConfig.js';
 import { createAvatarElement } from '../components/AvatarDisplay.js';
 import { getGroupColorHex } from '../../config/groupColorConfig.js';
@@ -58,7 +58,7 @@ const TAB_LABELS = {
   notes: 'Notes',
 };
 
-export function renderStudentProfileView(container, { classroom, studentId, tab, onBack, onNavigateTab, onOpenStudentAccess }) {
+export function renderStudentProfileView(container, { classroom, studentId, tab, onBack, onNavigateTab, onOpenStudentAccess, weekAnchorDateKey }) {
   container.innerHTML = '';
 
   const found = studentService.findStudentInClassroom(classroom, studentId);
@@ -69,7 +69,25 @@ export function renderStudentProfileView(container, { classroom, studentId, tab,
 
   const { student, team } = found;
   const activeTab = TABS.includes(tab) ? tab : 'overview';
-  const rerender = () => renderStudentProfileView(container, { classroom, studentId, tab: activeTab, onBack, onNavigateTab, onOpenStudentAccess });
+  // `weekAnchorDateKey` is ephemeral view state for the Overview tab's
+  // weekly chart (which week is currently being browsed) — not part of
+  // the route, not persisted, exactly like ui/views/TrackerView.js's
+  // own `_highlight`/`_showSessionReview` props. `rerender` defaults to
+  // preserving whatever week was already selected (every OTHER action
+  // in this file — rename, bucket change, award badge, etc. — calls
+  // rerender() with no argument and must not silently reset the
+  // teacher's place in the chart's history); passing a new date key
+  // explicitly is how the chart's own Prev/Next/swipe move a week.
+  const rerender = (nextWeekAnchorDateKey) =>
+    renderStudentProfileView(container, {
+      classroom,
+      studentId,
+      tab: activeTab,
+      onBack,
+      onNavigateTab,
+      onOpenStudentAccess,
+      weekAnchorDateKey: nextWeekAnchorDateKey !== undefined ? nextWeekAnchorDateKey : weekAnchorDateKey,
+    });
 
   const wrapper = document.createElement('div');
   wrapper.className = 'profile-view';
@@ -89,7 +107,7 @@ export function renderStudentProfileView(container, { classroom, studentId, tab,
     access: renderAccessTab,
     notes: renderNotesTab,
   };
-  tabRenderers[activeTab](content, classroom, student, team, rerender, onOpenStudentAccess);
+  tabRenderers[activeTab](content, classroom, student, team, rerender, onOpenStudentAccess, weekAnchorDateKey);
 
   wrapper.appendChild(content);
   container.appendChild(wrapper);
@@ -273,7 +291,7 @@ function renderTabNav(activeTab, onNavigateTab) {
 // Overview
 // ---------------------------------------------------------------------
 
-function renderOverviewTab(content, classroom, student, team, rerender) {
+function renderOverviewTab(content, classroom, student, team, rerender, _onOpenStudentAccess, weekAnchorDateKey) {
   const bucketSection = document.createElement('div');
   bucketSection.className = 'profile-section';
   const bucketHeading = document.createElement('h2');
@@ -322,7 +340,28 @@ function renderOverviewTab(content, classroom, student, team, rerender) {
   statsSection.appendChild(statsGrid);
   content.appendChild(statsSection);
 
-  content.appendChild(createWeeklyNetPointsSection(studentProgressService.getWeeklyNetPoints(classroom, student.id), 'Points movement this week'));
+  // Week-by-week history navigation — "a week is just a date-range
+  // filter over data that never resets" (see
+  // services/studentProgressService.js's own header comment): the
+  // currently-selected week is just which Monday we ask
+  // getWeeklyNetPoints() for, never a stored snapshot. `earliestWeekStart`
+  // bounds how far back Previous can go (no earlier history exists);
+  // `currentWeekStart` bounds Next so a future week can never be
+  // reached. Both reuse the exact same Monday-start week convention as
+  // every other weekly calculation in this app.
+  const currentWeekStart = getMondayStartOfWeek(getTodayDateKey());
+  const selectedWeekStart = weekAnchorDateKey ? getMondayStartOfWeek(weekAnchorDateKey) : currentWeekStart;
+  const earliestWeekStart = studentProgressService.getEarliestActivityWeekStart(classroom, student.id);
+
+  content.appendChild(
+    createWeeklyNetPointsSection(studentProgressService.getWeeklyNetPoints(classroom, student.id, selectedWeekStart), 'Points movement this week', {
+      weekLabel: getWeekLabel(selectedWeekStart),
+      canGoPrevious: earliestWeekStart !== null && selectedWeekStart > earliestWeekStart,
+      canGoNext: selectedWeekStart < currentWeekStart,
+      onPrevious: () => rerender(shiftDateKey(selectedWeekStart, -7)),
+      onNext: () => rerender(shiftDateKey(selectedWeekStart, 7)),
+    })
+  );
 
   const groupSection = document.createElement('div');
   groupSection.className = 'profile-section';

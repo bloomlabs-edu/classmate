@@ -291,9 +291,19 @@ export function getStarsInRange(classroom, studentId, { start, end }) {
  * getWeekRange() itself is built on) rather than getWeekRange()
  * directly, since that returns a 7-day Monday–Sunday range and this
  * needs exactly the 5 school-week days.
+ *
+ * `weekAnchorDateKey` (defaults to today) picks WHICH week — any date
+ * within the desired week works, since it's immediately normalized to
+ * that week's own Monday. Added for
+ * ui/components/WeeklyNetPointsGraph.js's own week-navigation (Class
+ * Mode's Student Profile): every existing caller keeps calling this
+ * with no second argument and gets the exact current-week behavior
+ * this function has always had — this is the one shared calculation,
+ * never a second, competing one, for both "this week" and "browse an
+ * older week."
  */
-export function getWeeklyNetPoints(classroom, studentId) {
-  const monday = getMondayStartOfWeek(getTodayDateKey());
+export function getWeeklyNetPoints(classroom, studentId, weekAnchorDateKey = getTodayDateKey()) {
+  const monday = getMondayStartOfWeek(weekAnchorDateKey);
   const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 
   return dayLabels.map((dayLabel, index) => {
@@ -301,6 +311,31 @@ export function getWeeklyNetPoints(classroom, studentId) {
     const value = getStarsInRange(classroom, studentId, { start: dayKey, end: dayKey });
     return { dayLabel, value };
   });
+}
+
+/**
+ * The Monday-start key of the earliest calendar week in which
+ * `studentId` has any 'points' history at all — the lower bound for
+ * how far back ui/components/WeeklyNetPointsGraph.js's own
+ * week-navigation can go. `null` if the student has no points history
+ * yet (nothing earlier to navigate to, matching this function's own
+ * "history is the only source of truth" convention — see this file's
+ * header comment). Cheap, one linear scan of a single student's own
+ * history, not the whole classroom.
+ */
+export function getEarliestActivityWeekStart(classroom, studentId) {
+  const found = studentService.findStudentInClassroom(classroom, studentId);
+  if (!found) return null;
+
+  const pointEntries = (found.student.history || []).filter((entry) => entry.kind === 'points');
+  if (pointEntries.length === 0) return null;
+
+  const earliestDayKey = pointEntries.reduce((earliest, entry) => {
+    const day = entry.recordedAt.slice(0, 10);
+    return day < earliest ? day : earliest;
+  }, pointEntries[0].recordedAt.slice(0, 10));
+
+  return getMondayStartOfWeek(earliestDayKey);
 }
 
 /** Every student's star total within {start, end}, ranked (ties share a rank). The full list — see getRecognitionWinners() for "who actually won." */

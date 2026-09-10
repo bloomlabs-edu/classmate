@@ -5994,8 +5994,12 @@ button.wizard-checklist__row:hover {
     transform: none;
   }
   .student-row__points--pulse,
-  .team-card__total--pulse {
+  .team-card__total--pulse,
+  .weekly-net-graph--nav-enter {
     animation: none;
+  }
+  .weekly-net-graph__nav-button {
+    transition: none;
   }
   .toast,
   .bottom-sheet,
@@ -12271,6 +12275,65 @@ button.wizard-checklist__row:hover {
   font-size: 9px;
   font-weight: bold;
   fill: var(--color-ink);
+}
+
+/* Week-by-week navigation header (Class Mode's Student Profile only —
+   see ui/components/WeeklyNetPointsGraph.js's own `nav` param). Reuses
+   .student-journey__section-title's own typography untouched on the
+   heading itself; only this small flex row and the two buttons are
+   new. */
+.weekly-net-graph__nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin: 0 0 0.15rem;
+}
+.weekly-net-graph__nav-title {
+  margin: 0;
+  min-width: 8rem;
+  text-align: center;
+}
+.weekly-net-graph__nav-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  background-color: #ffffff;
+  color: var(--color-ink);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+.weekly-net-graph__nav-button:hover:not(:disabled) {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+.weekly-net-graph__nav-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* Subtle entry transition when the selected week changes — the whole
+   chart is freshly recreated each time (see
+   ui/views/StudentProfileView.js's existing full-rerender pattern), so
+   this just plays on mount, no separate "old chart out, new chart in"
+   choreography needed. Disabled under prefers-reduced-motion below. */
+@keyframes weekly-net-graph-nav-enter {
+  from {
+    opacity: 0;
+    transform: translateX(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.weekly-net-graph--nav-enter {
+  animation: weekly-net-graph-nav-enter var(--duration-fast) var(--ease-standard);
 }
 
 /* Assessment Gradebook — see ui/views/AssessmentManagementView.js's renderGradebookStep() */

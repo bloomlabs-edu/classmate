@@ -192,3 +192,36 @@ export function getMonthRange(dateKey = getTodayDateKey()) {
 export function isDateKeyInRange(dateKey, { start, end }) {
   return dateKey >= start && dateKey <= end;
 }
+
+/**
+ * A human label for the school week (Monday–Friday, matching
+ * services/studentProgressService.js's own getWeeklyNetPoints() 5-day
+ * span) whose Monday is `weekStartDateKey` — built for
+ * ui/components/WeeklyNetPointsGraph.js's own week-navigation header.
+ * "This Week" / "Last Week" for the two most recent weeks; otherwise a
+ * date range like "Aug 24–28" (or "Jul 29 – Aug 2" if the 5-day span
+ * happens to cross a calendar month). Reuses this file's own
+ * getMondayStartOfWeek()/shiftDateKey() rather than introducing a
+ * second definition of "a week" — `weekStartDateKey` is expected to
+ * already be a Monday (i.e. the output of getMondayStartOfWeek()).
+ */
+export function getWeekLabel(weekStartDateKey, todayDateKey = getTodayDateKey()) {
+  const currentWeekStart = getMondayStartOfWeek(todayDateKey);
+  if (weekStartDateKey === currentWeekStart) return 'This Week';
+  if (weekStartDateKey === shiftDateKey(currentWeekStart, -7)) return 'Last Week';
+
+  const endDateKey = shiftDateKey(weekStartDateKey, 4); // Friday of the same school week
+  const startMonthLabel = formatShortMonth(weekStartDateKey);
+  const endMonthLabel = formatShortMonth(endDateKey);
+  const startDay = Number(weekStartDateKey.split('-')[2]);
+  const endDay = Number(endDateKey.split('-')[2]);
+
+  return startMonthLabel === endMonthLabel
+    ? `${startMonthLabel} ${startDay}–${endDay}`
+    : `${startMonthLabel} ${startDay} – ${endMonthLabel} ${endDay}`;
+}
+
+function formatShortMonth(dateKey) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', { month: 'short' });
+}
