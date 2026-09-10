@@ -209,7 +209,22 @@ export function getWeekLabel(weekStartDateKey, todayDateKey = getTodayDateKey())
   const currentWeekStart = getMondayStartOfWeek(todayDateKey);
   if (weekStartDateKey === currentWeekStart) return 'This Week';
   if (weekStartDateKey === shiftDateKey(currentWeekStart, -7)) return 'Last Week';
+  return formatWeekDateRange(weekStartDateKey);
+}
 
+/**
+ * The raw "Aug 24–28" (or "Jul 29 – Aug 2" if the 5-day span crosses a
+ * calendar month) date-range string for the school week whose Monday
+ * is `weekStartDateKey` — unconditionally, even for the current or
+ * immediately-previous week. Extracted from getWeekLabel() above so
+ * ui/views/WeeklyReportsListView.js can show the relative label
+ * ("This Week"/"Last Week") AND this date range together for the two
+ * most recent weeks (per the product brief's own example), while
+ * getWeekLabel() itself keeps returning just the relative label for
+ * those two, exactly as ui/components/WeeklyNetPointsGraph.js's own
+ * week-navigation header already relies on.
+ */
+export function formatWeekDateRange(weekStartDateKey) {
   const endDateKey = shiftDateKey(weekStartDateKey, 4); // Friday of the same school week
   const startMonthLabel = formatShortMonth(weekStartDateKey);
   const endMonthLabel = formatShortMonth(endDateKey);

@@ -30,7 +30,7 @@ import { loadCurrentStudentAndClassroom } from '../../../services/studentPortalD
 import { renderRecognitionScreenView } from '../../views/RecognitionScreenView.js';
 import { createEmptyStateElement } from '../../components/EmptyState.js';
 
-export async function renderStudentRecognitionView(container, { onNavigateToStudentProfile } = {}) {
+export async function renderStudentRecognitionView(container, { onNavigateToStudentProfile, onOpenWeeklyReports } = {}) {
   container.innerHTML = '';
 
   const found = await loadCurrentStudentAndClassroom();
@@ -64,6 +64,7 @@ export async function renderStudentRecognitionView(container, { onNavigateToStud
         rerender();
       },
       onSelectStudent: (studentId) => onNavigateToStudentProfile?.(studentId),
+      onOpenWeeklyReports,
     });
   }
 

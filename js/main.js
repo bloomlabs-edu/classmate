@@ -48,6 +48,7 @@ import { renderStudentLearningCircleView } from './ui/student-portal/views/Stude
 import * as studentAuthService from './services/studentAuthService.js';
 import { renderStudentTeamView } from './ui/student-portal/views/StudentTeamView.js';
 import { renderStudentRecognitionView } from './ui/student-portal/views/StudentRecognitionView.js';
+import { renderStudentWeeklyReportsView } from './ui/student-portal/views/StudentWeeklyReportsView.js';
 import { renderStudentTeamDetailView } from './ui/student-portal/views/StudentTeamDetailView.js';
 import { renderStudentPublicProfileView } from './ui/student-portal/views/StudentPublicProfileView.js';
 import { renderStudentAvatarBuilderView } from './ui/student-portal/views/StudentAvatarBuilderView.js';
@@ -89,6 +90,8 @@ import { renderProgrammeAttendanceView } from './ui/views/ProgrammeAttendanceVie
 import { renderProgrammeGoalsReviewView } from './ui/views/ProgrammeGoalsReviewView.js';
 import { renderProgrammeObservationsView } from './ui/views/ProgrammeObservationsView.js';
 import { renderRecognitionScreenView } from './ui/views/RecognitionScreenView.js';
+import { renderWeeklyReportsListView } from './ui/views/WeeklyReportsListView.js';
+import { renderWeeklyReportDetailView } from './ui/views/WeeklyReportDetailView.js';
 import { renderLoginView } from './ui/views/LoginView.js';
 import { renderUserBar } from './ui/components/UserBar.js';
 import { openNewClassroomModal } from './ui/components/NewClassroomModal.js';
@@ -498,6 +501,7 @@ const CLASSROOM_ROUTE_NAMES = [
   'dashboard',
   'tracker',
   'recognition',
+  'weeklyReports',
   'settings',
   'setup',
   'studentProfile',
@@ -613,6 +617,15 @@ async function renderStudentPortalMain(route) {
         });
       } else if (route.section === 'recognition') {
         renderStudentRecognitionView(content, {
+          onNavigateToStudentProfile: (studentId) => router.navigate(`/student/student-profile/${studentId}`),
+          onOpenWeeklyReports: () => router.navigate('/student/weekly-reports'),
+        });
+      } else if (route.section === 'weekly-reports') {
+        renderStudentWeeklyReportsView(content, {
+          weekStart: route.param,
+          onBack: () => router.navigate(route.param ? '/student/weekly-reports' : '/student/recognition'),
+          onSelectWeek: (weekStart) => router.navigate(`/student/weekly-reports/${weekStart}`),
+          onNavigateWeek: (weekStart) => router.navigate(`/student/weekly-reports/${weekStart}`),
           onNavigateToStudentProfile: (studentId) => router.navigate(`/student/student-profile/${studentId}`),
         });
       } else if (route.section === 'student-profile') {
@@ -1078,7 +1091,24 @@ function renderRoute(route, reason = 'unspecified') {
         onNavigateCategory: (period, categoryId) =>
           router.navigate(`/classroom/${classroom.id}/recognition/${period}/${categoryId}`),
         onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
+        onOpenWeeklyReports: () => router.navigate(`/classroom/${classroom.id}/weekly-reports`),
       });
+    } else if (route.name === 'weeklyReports') {
+      if (route.week) {
+        renderWeeklyReportDetailView(appContainer, {
+          classroom,
+          weekAnchorDateKey: route.week,
+          onBack: () => router.navigate(`/classroom/${classroom.id}/weekly-reports`),
+          onNavigateWeek: (weekStart) => router.navigate(`/classroom/${classroom.id}/weekly-reports/${weekStart}`),
+          onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
+        });
+      } else {
+        renderWeeklyReportsListView(appContainer, {
+          classroom,
+          onBack: () => router.navigate(`/classroom/${classroom.id}/recognition`),
+          onSelectWeek: (weekStart) => router.navigate(`/classroom/${classroom.id}/weekly-reports/${weekStart}`),
+        });
+      }
     } else if (route.name === 'tracker') {
       // Class Mode <-> Notebook Mode — the same `?returnTo=` convention
       // already established for Student Profile above, just crossing a

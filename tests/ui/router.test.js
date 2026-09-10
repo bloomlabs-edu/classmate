@@ -176,3 +176,19 @@ test('visitor access route: a code in the path resolves to visitorAccess with th
 test('visitor access route: no code falls back to null, not a thrown error — the view itself prompts for one', () => {
   assert.deepEqual(resolvePathParts(parts('visitor')), { name: 'visitorAccess', code: null });
 });
+
+test('weekly reports list route: no week segment resolves to the week picker', () => {
+  assert.deepEqual(resolvePathParts(parts('classroom/classroom-1/weekly-reports')), {
+    name: 'weeklyReports',
+    classroomId: 'classroom-1',
+    week: null,
+  });
+});
+
+test('weekly reports detail route: a Monday date key opens that week specifically', () => {
+  assert.deepEqual(resolvePathParts(parts('classroom/classroom-1/weekly-reports/2026-08-24')), {
+    name: 'weeklyReports',
+    classroomId: 'classroom-1',
+    week: '2026-08-24',
+  });
+});

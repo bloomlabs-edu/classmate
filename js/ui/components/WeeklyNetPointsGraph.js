@@ -49,13 +49,28 @@
  * "next," or how far back history goes (see
  * services/studentProgressService.js's own getEarliestActivityWeekStart()
  * and utils/dateHelpers.js's own getWeekLabel(), the caller's job).
+ *
+ * The nav header and swipe handling themselves are shared, extracted
+ * modules (ui/components/WeekNavHeader.js, utils/swipeNavigation.js) —
+ * see those files' own header comments for why (the same Weekly
+ * Report feature that introduced them reuses both verbatim).
  */
+import { createWeekNavHeaderElement } from './WeekNavHeader.js';
+import { attachSwipeNavigation } from '../../utils/swipeNavigation.js';
+
 export function createWeeklyNetPointsSection(weeklyNetPoints, subtitle = 'How your points moved this week', nav = null) {
   const section = document.createElement('div');
   section.className = 'student-journey__section';
 
   if (nav) {
-    section.appendChild(createWeekNavHeader(nav));
+    section.appendChild(
+      createWeekNavHeaderElement({
+        ...nav,
+        rowClassName: 'weekly-net-graph__nav',
+        buttonClassName: 'weekly-net-graph__nav-button',
+        titleClassName: 'student-journey__section-title weekly-net-graph__nav-title',
+      })
+    );
   } else {
     const title = document.createElement('h2');
     title.className = 'student-journey__section-title';
@@ -86,107 +101,6 @@ export function createWeeklyNetPointsSection(weeklyNetPoints, subtitle = 'How yo
   section.appendChild(graph);
 
   return section;
-}
-
-const SWIPE_THRESHOLD_PX = 60;
-const MOVE_CANCEL_THRESHOLD_PX = 10;
-
-/**
- * Prev [week label] Next — a lightweight header row replacing the
- * plain "This Week" heading when navigation is active. `weekLabel`
- * keeps the exact same heading class/typography ('This Week' /
- * 'Last Week' / a date range), so this reads as the same heading with
- * two small buttons added, not a redesign. The heading itself is
- * `aria-live="polite"` so assistive tech announces the new week label
- * whenever Prev/Next/swipe changes it — the whole section is
- * recreated on every change (see createWeeklyNetPointsSection() above),
- * so there is no separate "update text" step to wire up.
- */
-function createWeekNavHeader(nav) {
-  const row = document.createElement('div');
-  row.className = 'weekly-net-graph__nav';
-
-  const prevButton = document.createElement('button');
-  prevButton.type = 'button';
-  prevButton.className = 'weekly-net-graph__nav-button';
-  prevButton.setAttribute('aria-label', 'Previous week');
-  prevButton.textContent = '‹';
-  prevButton.disabled = !nav.canGoPrevious;
-  prevButton.addEventListener('click', () => nav.onPrevious());
-
-  const title = document.createElement('h2');
-  title.className = 'student-journey__section-title weekly-net-graph__nav-title';
-  title.textContent = nav.weekLabel;
-  title.setAttribute('aria-live', 'polite');
-
-  const nextButton = document.createElement('button');
-  nextButton.type = 'button';
-  nextButton.className = 'weekly-net-graph__nav-button';
-  nextButton.setAttribute('aria-label', 'Next week');
-  nextButton.textContent = '›';
-  nextButton.disabled = !nav.canGoNext;
-  nextButton.addEventListener('click', () => nav.onNext());
-
-  row.append(prevButton, title, nextButton);
-  return row;
-}
-
-/**
- * Swipe left/right on the chart itself to move week-to-week — the same
- * Pointer Events technique ui/components/ClassModeStudentRow.js's own
- * swipe-to-deduct gesture already uses (same threshold, same
- * predominantly-vertical-movement-abandons-the-gesture rule so this
- * never fights the page's own scroll), reused rather than reinvented.
- * Buttons remain the required non-swipe alternative — see this file's
- * own Prev/Next above — this is purely an enhancement layered on top,
- * and respects the exact same canGoPrevious/canGoNext facts the
- * buttons' own disabled state already reflects.
- */
-function attachSwipeNavigation(graphEl, { onPrevious, onNext, canGoPrevious, canGoNext }) {
-  let startX = 0;
-  let startY = 0;
-  let trackingPointerId = null;
-
-  graphEl.addEventListener('pointerdown', (event) => {
-    if (typeof event.button === 'number' && event.button !== 0) return;
-    trackingPointerId = event.pointerId;
-    startX = event.clientX;
-    startY = event.clientY;
-    try {
-      // Without this, dragging past this compact chart's own narrow
-      // edges (very easy at swipe-threshold distances) delivers
-      // pointerup to whatever element the pointer ends up over
-      // instead of graphEl, so this listener would never see it. Same
-      // fix ui/components/ClassModeStudentRow.js's own swipe already
-      // applies for the identical reason.
-      graphEl.setPointerCapture(event.pointerId);
-    } catch {
-      // Pointer capture isn't available in every environment; harmless to skip.
-    }
-  });
-
-  graphEl.addEventListener('pointermove', (event) => {
-    if (event.pointerId !== trackingPointerId) return;
-    const deltaX = event.clientX - startX;
-    const deltaY = event.clientY - startY;
-    if (Math.abs(deltaY) > MOVE_CANCEL_THRESHOLD_PX && Math.abs(deltaY) > Math.abs(deltaX)) {
-      // Predominantly vertical movement -> the page is being scrolled,
-      // not the chart swiped. Abandon the gesture entirely.
-      trackingPointerId = null;
-    }
-  });
-
-  graphEl.addEventListener('pointerup', (event) => {
-    if (event.pointerId !== trackingPointerId) return;
-    trackingPointerId = null;
-    const deltaX = event.clientX - startX;
-    if (deltaX <= -SWIPE_THRESHOLD_PX && canGoNext) onNext();
-    else if (deltaX >= SWIPE_THRESHOLD_PX && canGoPrevious) onPrevious();
-  });
-
-  graphEl.addEventListener('pointercancel', () => {
-    trackingPointerId = null;
-  });
 }
 
 function createWeeklyNetGraphSvg(weeklyNetPoints, weekLabel) {

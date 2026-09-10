@@ -39,6 +39,7 @@
  *   #/classroom/{id}/notebooks/{subjectId}/{typeId}/checkpoints       -> the Checkpoint grid for this exact Notebook (Subject x Notebook Type) — 'checkpoint' trackingMode only
  *   #/classroom/{id}/notebooks/{subjectId}/{typeId}/daily             -> the Daily Check tracking screen for this exact Notebook — 'daily' trackingMode only (see services/dailyCheckService.js)
  *   #/classroom/{id}/recognition/{period?}/{categoryId?}     -> recognition screen (defaults resolved by the view itself)
+ *   #/classroom/{id}/weekly-reports/{weekStart?}              -> Weekly Reports — no weekStart = the week picker list; a Monday date key opens that week's own report (see ui/views/WeeklyReportsListView.js/WeeklyReportDetailView.js)
  *   #/classroom/{id}/diagnostics               -> TEMPORARY Teacher Diagnostics screen (see
  *                                                 ui/views/TeacherDiagnosticsView.js's own header comment)
  *   #/curriculum-management                   -> Curriculum Management (admin tool — create/review/save Curriculum
@@ -89,6 +90,9 @@ export function resolvePathParts(parts) {
     }
     if (parts[2] === 'recognition') {
       return { name: 'recognition', classroomId: parts[1], period: parts[3] || null, categoryId: parts[4] || null };
+    }
+    if (parts[2] === 'weekly-reports') {
+      return { name: 'weeklyReports', classroomId: parts[1], week: parts[3] || null };
     }
     if (parts[2] === 'settings') {
       return { name: 'settings', classroomId: parts[1], section: parts[3] || 'general' };

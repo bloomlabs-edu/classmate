@@ -5998,7 +5998,8 @@ button.wizard-checklist__row:hover {
   .weekly-net-graph--nav-enter {
     animation: none;
   }
-  .weekly-net-graph__nav-button {
+  .weekly-net-graph__nav-button,
+  .weekly-report__nav-button {
     transition: none;
   }
   .toast,
@@ -6773,6 +6774,88 @@ button.wizard-checklist__row:hover {
   color: var(--color-muted);
 }
 
+/* Weekly Reports — ui/views/WeeklyReportsListView.js (the week picker)
+   and ui/views/WeeklyReportDetailView.js (one week's own celebratory
+   record). The week-nav header itself reuses .weekly-net-graph__nav*'s
+   own rules (see that selector, further down this file, now extended
+   with .weekly-report__nav* alongside it) rather than a second copy —
+   ui/components/WeekNavHeader.js is the one component both this
+   feature and the weekly points chart render through. */
+.weekly-reports-list__intro {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  margin: 0.25rem 0 1.25rem;
+}
+.weekly-reports-list__cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.weekly-reports-list__card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  text-align: left;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 0.85rem 1.1rem;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+.weekly-reports-list__card:hover {
+  border-color: var(--color-primary, #2e7d9e);
+}
+.weekly-reports-list__card--current {
+  border-color: var(--color-accent);
+  border-width: 1.5px;
+}
+.weekly-reports-list__card-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.weekly-reports-list__card-label {
+  font-weight: var(--font-weight-bold);
+  font-size: 1.05rem;
+}
+.weekly-reports-list__card-sub {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+.weekly-reports-list__card-badge {
+  background-color: var(--color-accent);
+  color: #1a1a1a;
+  font-size: 0.72rem;
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-pill);
+}
+
+.weekly-report__recognitions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 1rem 0 1.5rem;
+}
+.weekly-report__your-week {
+  background-color: var(--color-bg);
+  border-radius: var(--radius-card);
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 1.25rem;
+}
+.weekly-report__your-week-heading {
+  font-size: 1rem;
+  font-weight: var(--font-weight-bold);
+  margin: 0 0 0.4rem;
+}
+.weekly-report__your-week-line {
+  margin: 0.15rem 0;
+  font-size: 0.92rem;
+}
+
 /* Recognition Screen */
 
 .recognition-screen__period-tabs {
@@ -6834,6 +6917,93 @@ button.wizard-checklist__row:hover {
 
 .leaderboard-list__toggle {
   margin-top: 0.5rem;
+}
+
+/* Standings Board — ui/components/ClassroomStandingsBoard.js (teams)
+   and ui/components/StudentStandingsBoard.js (students), both used by
+   ui/views/WeeklyReportDetailView.js's historical standings sections.
+   Same row shape/spacing as .leaderboard-list__row above, since both
+   answer the same basic question ("rank, name, value") — the
+   movement badge reuses .student-row__movement's own up/down/same
+   colors, so a Weekly Report's standings read consistently with every
+   other movement indicator already in this app. */
+.standings-board {
+  margin-bottom: 1.25rem;
+}
+.standings-board__heading {
+  font-size: 1.05rem;
+  font-weight: var(--font-weight-bold);
+  margin: 0 0 0.6rem;
+}
+.standings-board__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.standings-board__row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 0.75rem;
+  background-color: var(--color-bg);
+  border-radius: var(--radius-control);
+  border: none;
+  width: 100%;
+  font-family: inherit;
+  font-size: 0.95rem;
+  color: var(--color-ink);
+  text-align: left;
+}
+.standings-board__row--clickable {
+  cursor: pointer;
+}
+.standings-board__row--clickable:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+.standings-board__row--self {
+  border: 1.5px solid var(--color-primary-strong);
+}
+.standings-board__rank {
+  font-weight: var(--font-weight-bold);
+  width: 2.25rem;
+  flex-shrink: 0;
+}
+.standings-board__team-name {
+  flex: 1;
+  font-weight: var(--font-weight-medium);
+}
+.standings-board__score {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary-strong);
+  flex-shrink: 0;
+}
+.standings-board__movement {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.9rem;
+  height: 1.4rem;
+  padding: 0 0.4rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.72rem;
+  font-weight: var(--font-weight-bold);
+  border: 1px solid;
+  flex-shrink: 0;
+}
+.standings-board__movement--up {
+  background-color: rgba(46, 158, 91, 0.08);
+  border-color: rgba(46, 158, 91, 0.25);
+  color: #227a46;
+}
+.standings-board__movement--down {
+  background-color: rgba(229, 57, 53, 0.08);
+  border-color: rgba(229, 57, 53, 0.25);
+  color: #c62828;
+}
+.standings-board__movement--same {
+  background-color: rgba(0, 0, 0, 0.02);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: var(--color-muted);
 }
 
 /* Dashboard widget header row (heading + an optional action, e.g. "View All") */
@@ -12277,24 +12447,31 @@ button.wizard-checklist__row:hover {
   fill: var(--color-ink);
 }
 
-/* Week-by-week navigation header (Class Mode's Student Profile only —
-   see ui/components/WeeklyNetPointsGraph.js's own `nav` param). Reuses
+/* Week-by-week navigation header — shared by Class Mode's Student
+   Profile weekly chart (ui/components/WeeklyNetPointsGraph.js's own
+   `nav` param) and Weekly Reports
+   (ui/views/WeeklyReportDetailView.js), both built through the one
+   shared ui/components/WeekNavHeader.js component rather than each
+   having their own copy of this header. Reuses
    .student-journey__section-title's own typography untouched on the
    heading itself; only this small flex row and the two buttons are
    new. */
-.weekly-net-graph__nav {
+.weekly-net-graph__nav,
+.weekly-report__nav {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
   margin: 0 0 0.15rem;
 }
-.weekly-net-graph__nav-title {
+.weekly-net-graph__nav-title,
+.weekly-report__nav-title {
   margin: 0;
   min-width: 8rem;
   text-align: center;
 }
-.weekly-net-graph__nav-button {
+.weekly-net-graph__nav-button,
+.weekly-report__nav-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -12309,10 +12486,12 @@ button.wizard-checklist__row:hover {
   cursor: pointer;
   transition: background-color var(--duration-fast) var(--ease-standard);
 }
-.weekly-net-graph__nav-button:hover:not(:disabled) {
+.weekly-net-graph__nav-button:hover:not(:disabled),
+.weekly-report__nav-button:hover:not(:disabled) {
   background-color: rgba(0, 0, 0, 0.04);
 }
-.weekly-net-graph__nav-button:disabled {
+.weekly-net-graph__nav-button:disabled,
+.weekly-report__nav-button:disabled {
   opacity: 0.35;
   cursor: default;
 }

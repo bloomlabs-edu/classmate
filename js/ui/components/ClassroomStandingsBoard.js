@@ -1,13 +1,20 @@
 /**
  * ui/components/ClassroomStandingsBoard.js
  *
- * The one shared standings board — "shared standings board between
- * teacher and student portal," per explicit product decision. This is
- * the only implementation; the teacher Dashboard and the Student
- * Portal's Team tab both call createClassroomStandingsBoardElement()
- * directly, rather than each having their own version of the same
- * board. If the board's own look or behavior ever needs to change,
- * there is exactly one place to change it.
+ * A shared, read-only team standings board — originally built for a
+ * "shared standings board between teacher and student portal" per an
+ * earlier product decision, though neither the Dashboard nor the
+ * Student Portal's Team tab currently calls it (both now use
+ * ui/components/TeamStandingsBoard.js, the LIVE tap-to-award board —
+ * confirmed by direct inspection while building Weekly Reports, which
+ * is this component's first actual caller:
+ * ui/views/WeeklyReportDetailView.js). Deliberately NOT the same
+ * component as TeamStandingsBoard.js for that use — a historical
+ * week's standings must never look tappable/editable, the same reason
+ * ui/views/ScoreboardArchiveView.js's own detail view already avoids
+ * reusing it. If a live Dashboard/Team-tab standings board is ever
+ * built again, reusing this plain, read-only-by-default one (rather
+ * than a third implementation) is the right move.
  *
  * Entirely a pure function of `classroom` — every number comes from
  * services/teamStatisticsService.js's getTeamStandingsWithMovement(),
@@ -35,6 +42,21 @@
  * Bucket color never appears here at all — "Support Level ≠
  * Contribution," per explicit product decision; this board only ever
  * reflects net score.
+ *
+ * `period` and `heading` (both optional) were added for
+ * ui/views/WeeklyReportDetailView.js's own historical Weekly Reports —
+ * passing a past week's own {start, end} range reuses this exact same
+ * board, unchanged, to show that week's own team standings (movement
+ * "since period start" then correctly means "since that week's own
+ * Monday," not "since this month began" — see
+ * services/teamStatisticsService.js's own MOVEMENT_BASELINES comment
+ * for why the baseline is always the given period's own first day).
+ * Both default to the original, still-current behavior (this month,
+ * "Classroom Standings"), so the teacher Dashboard and the Student
+ * Portal's Team tab — neither of which passes either — are completely
+ * unaffected. `periodLabel` (also optional, defaults to "this month")
+ * feeds the movement row's own aria-label, so a Weekly Report's screen
+ * reader announcement correctly says "since this week began" instead.
  */
 
 import * as teamStatisticsService from '../../services/teamStatisticsService.js';
@@ -42,17 +64,23 @@ import { createEmptyStateElement } from './EmptyState.js';
 
 const MOVEMENT_ARROWS = { up: '\u2191', down: '\u2193', same: '\u2192' };
 
-export function createClassroomStandingsBoardElement({ classroom, onSelectTeam }) {
+export function createClassroomStandingsBoardElement({
+  classroom,
+  onSelectTeam,
+  period,
+  heading: headingText = '\ud83c\udfc6 Classroom Standings',
+  periodLabel = 'this month',
+}) {
   const wrapper = document.createElement('div');
   wrapper.className = 'standings-board';
 
   const heading = document.createElement('h2');
   heading.className = 'standings-board__heading';
-  heading.textContent = '\ud83c\udfc6 Classroom Standings';
+  heading.textContent = headingText;
   wrapper.appendChild(heading);
 
-  const period = teamStatisticsService.getCurrentMonthPeriod();
-  const standings = teamStatisticsService.getTeamStandingsWithMovement(classroom, period);
+  const resolvedPeriod = period || teamStatisticsService.getCurrentMonthPeriod();
+  const standings = teamStatisticsService.getTeamStandingsWithMovement(classroom, resolvedPeriod);
 
   if (standings.length === 0) {
     wrapper.appendChild(createEmptyStateElement({ message: 'No teams yet \u2014 once students are grouped, standings will appear here.' }));
@@ -93,8 +121,8 @@ export function createClassroomStandingsBoardElement({ classroom, onSelectTeam }
     movementEl.setAttribute(
       'aria-label',
       entry.movement === 'same'
-        ? 'No change since this month began'
-        : `${entry.movement === 'up' ? 'Climbed' : 'Dropped'} ${entry.movementAmount} position${entry.movementAmount === 1 ? '' : 's'} since this month began`
+        ? `No change since ${periodLabel} began`
+        : `${entry.movement === 'up' ? 'Climbed' : 'Dropped'} ${entry.movementAmount} position${entry.movementAmount === 1 ? '' : 's'} since ${periodLabel} began`
     );
     row.appendChild(movementEl);
 

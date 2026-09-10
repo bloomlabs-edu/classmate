@@ -338,6 +338,25 @@ export function getEarliestActivityWeekStart(classroom, studentId) {
   return getMondayStartOfWeek(earliestDayKey);
 }
 
+/**
+ * The classroom-wide equivalent of getEarliestActivityWeekStart() above
+ * — the earliest calendar week in which ANY student in this classroom
+ * has any points history at all. This is the lower bound for
+ * services/weeklyReportService.js's own week-by-week navigation (a
+ * classroom-wide Weekly Report, unlike the single-student weekly
+ * chart), reusing the exact same per-student calculation rather than
+ * a second copy of it. `null` only for a classroom with zero points
+ * history anywhere yet.
+ */
+export function getEarliestClassroomActivityWeekStart(classroom) {
+  const weekStarts = getAllStudentsWithTeams(classroom)
+    .map(({ student }) => getEarliestActivityWeekStart(classroom, student.id))
+    .filter((weekStart) => weekStart !== null);
+
+  if (weekStarts.length === 0) return null;
+  return weekStarts.reduce((earliest, weekStart) => (weekStart < earliest ? weekStart : earliest));
+}
+
 /** Every student's star total within {start, end}, ranked (ties share a rank). The full list — see getRecognitionWinners() for "who actually won." */
 export function getRankInRange(classroom, { start, end }) {
   const withStars = getAllStudentsWithTeams(classroom).map(({ student, team }) => ({
@@ -459,19 +478,17 @@ export function getBiggestClimber(classroom, { currentRange, previousRange }) {
 // calling the metric-specific functions above directly.
 // ---------------------------------------------------------------------
 
-function resolveRangeForPeriod(period) {
-  const today = getTodayDateKey();
-  if (period === 'week') return getWeekRange(today);
-  if (period === 'month') return getMonthRange(today);
+function resolveRangeForPeriod(period, anchorDateKey = getTodayDateKey()) {
+  if (period === 'week') return getWeekRange(anchorDateKey);
+  if (period === 'month') return getMonthRange(anchorDateKey);
   return ALL_TIME_RANGE;
 }
 
-function resolvePreviousRangeForPeriod(period) {
-  const today = getTodayDateKey();
-  if (period === 'week') return getPreviousWeekRange(today);
+function resolvePreviousRangeForPeriod(period, anchorDateKey = getTodayDateKey()) {
+  if (period === 'week') return getPreviousWeekRange(anchorDateKey);
   if (period === 'month') {
-    const [year, month] = today.split('-').map(Number);
-    const previousMonthDate = new Date(year, month - 2, 1); // one calendar month before the current one
+    const [year, month] = anchorDateKey.split('-').map(Number);
+    const previousMonthDate = new Date(year, month - 2, 1); // one calendar month before the anchor's own month
     const previousMonthKey = `${previousMonthDate.getFullYear()}-${String(previousMonthDate.getMonth() + 1).padStart(2, '0')}-01`;
     return getMonthRange(previousMonthKey);
   }
@@ -485,12 +502,26 @@ const VALUE_KEY_BY_RESOLVER = Object.freeze({
   team_stars: 'stars',
 });
 
-/** The full ranked list for one recognition category/period — always includes zero-value entries, for teachers browsing "who needs encouragement." */
-export function getLeaderboard(classroom, categoryId, period) {
+/**
+ * The full ranked list for one recognition category/period — always
+ * includes zero-value entries, for teachers browsing "who needs
+ * encouragement."
+ *
+ * `anchorDateKey` (defaults to today) picks WHICH week/month "period"
+ * actually means — any date within the desired period works, since
+ * it's immediately normalized by getWeekRange()/getMonthRange(). Added
+ * for services/weeklyReportService.js's own historical Weekly Reports
+ * (browsing an older week's recognitions): every existing caller
+ * (Recognition Wall, Recognition Screen) keeps calling this with no
+ * fourth argument and gets the exact current-period behavior this
+ * function has always had — this is the one shared dispatch, never a
+ * second, competing one, for both "this week" and "an older week."
+ */
+export function getLeaderboard(classroom, categoryId, period, anchorDateKey = getTodayDateKey()) {
   const category = getRecognitionCategoryById(categoryId);
   if (!category || !category.periods.includes(period)) return [];
 
-  const range = resolveRangeForPeriod(period);
+  const range = resolveRangeForPeriod(period, anchorDateKey);
 
   switch (category.resolverId) {
     case 'stars':
@@ -502,7 +533,7 @@ export function getLeaderboard(classroom, categoryId, period) {
     case 'team_stars':
       return getTeamRankInRange(classroom, range);
     case 'biggest_climber': {
-      const previousRange = resolvePreviousRangeForPeriod(period);
+      const previousRange = resolvePreviousRangeForPeriod(period, anchorDateKey);
       return previousRange ? getBiggestClimber(classroom, { currentRange: range, previousRange }) : [];
     }
     default:
@@ -516,16 +547,19 @@ export function getLeaderboard(classroom, categoryId, period) {
  * winning value is zero (an empty/brand-new classroom shouldn't crown a
  * "Star Performer" who earned nothing). Biggest Climber's leaderboard is
  * already just the winners (see getBiggestClimber), so it's returned as-is.
+ *
+ * `anchorDateKey` — see getLeaderboard()'s own comment above; passed
+ * straight through, same backward-compatible default.
  */
-export function getRecognitionWinners(classroom, categoryId, period) {
+export function getRecognitionWinners(classroom, categoryId, period, anchorDateKey = getTodayDateKey()) {
   const category = getRecognitionCategoryById(categoryId);
   if (!category) return [];
 
   if (category.resolverId === 'biggest_climber') {
-    return getLeaderboard(classroom, categoryId, period);
+    return getLeaderboard(classroom, categoryId, period, anchorDateKey);
   }
 
-  const leaderboard = getLeaderboard(classroom, categoryId, period);
+  const leaderboard = getLeaderboard(classroom, categoryId, period, anchorDateKey);
   const valueKey = VALUE_KEY_BY_RESOLVER[category.resolverId];
 
   return leaderboard.filter((entry) => entry.rank === 1 && (!valueKey || entry[valueKey] > 0));

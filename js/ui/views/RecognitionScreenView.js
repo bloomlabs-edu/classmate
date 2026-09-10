@@ -37,6 +37,7 @@ import { createRecognitionCardElement } from '../components/RecognitionCard.js';
 import { createLeaderboardListElement } from '../components/LeaderboardList.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { createBackButton } from '../components/BackButton.js';
+import { createIcon } from '../components/Icon.js';
 
 const PERIOD_TABS = [
   { id: 'week', label: 'This Week' },
@@ -63,7 +64,7 @@ function formatLeaderboardValue(category) {
 }
 
 export function renderRecognitionScreenView(container, props) {
-  const { classroom, onBack, onNavigatePeriod, onNavigateCategory, onSelectStudent, hideBackButton = false } = props;
+  const { classroom, onBack, onNavigatePeriod, onNavigateCategory, onSelectStudent, hideBackButton = false, onOpenWeeklyReports } = props;
   const period = PERIOD_TABS.some((tab) => tab.id === props.period) ? props.period : 'week';
 
   const availableForPeriod = listRecognitionCategoriesForPeriod(period);
@@ -112,6 +113,26 @@ export function renderRecognitionScreenView(container, props) {
     periodTabs.appendChild(tabButton);
   });
   wrapper.appendChild(periodTabs);
+
+  // Weekly Reports — a permanent, week-by-week record of the same
+  // recognitions this screen already shows for "This Week"/"This
+  // Month"/"All Time". Deliberately a single link out to its own
+  // screen (ui/views/WeeklyReportsListView.js) rather than folding
+  // week-by-week browsing into these period tabs: the tabs pick a
+  // CATEGORY's own current-period view, while Weekly Reports picks a
+  // specific WEEK first — two different navigation shapes that don't
+  // collapse into one control cleanly. `onOpenWeeklyReports` is
+  // optional so any existing caller of this view that doesn't pass it
+  // renders exactly as before.
+  if (onOpenWeeklyReports) {
+    const weeklyReportsLink = document.createElement('button');
+    weeklyReportsLink.type = 'button';
+    weeklyReportsLink.className = 'btn btn--text recognition-screen__weekly-reports-link';
+    weeklyReportsLink.append('📅 View Weekly Reports ');
+    weeklyReportsLink.appendChild(createIcon('arrow-right', { size: 16 }));
+    weeklyReportsLink.addEventListener('click', onOpenWeeklyReports);
+    wrapper.appendChild(weeklyReportsLink);
+  }
 
   const content = document.createElement('div');
   content.className = 'wizard-step-content';
