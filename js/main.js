@@ -73,6 +73,7 @@ import { renderSettingsView } from './ui/views/SettingsView.js';
 import { renderSetupWizardView } from './ui/views/SetupWizardView.js';
 import { renderStudentProfileView } from './ui/views/StudentProfileView.js';
 import { renderTeamProfileView } from './ui/views/TeamProfileView.js';
+import { CLASSROOM_ROUTE_NAMES } from './config/classroomRouteNames.js';
 import { renderStudentAccessView } from './ui/views/StudentAccessView.js';
 import { renderVisitorAccessView } from './ui/views/VisitorAccessView.js';
 import { renderActivitiesListView, renderActivityRosterView } from './ui/views/ActivitiesView.js';
@@ -498,41 +499,10 @@ function handleDeleteClassroomFromHome(classroomId) {
   renderRoute(router.getCurrentRoute(), 'classroom-deleted');
 }
 
-const CLASSROOM_ROUTE_NAMES = [
-  'dashboard',
-  'tracker',
-  'recognition',
-  'weeklyReports',
-  'settings',
-  'setup',
-  'studentProfile',
-  'teamProfile',
-  'studentAccess',
-  'activitiesList',
-  'activityRoster',
-  'workRequestRoster',
-  'notebookTracker',
-  'workRequestCreate',
-  'notebookCheckpoints',
-  'notebookDailyCheck',
-  'assessments',
-  'goalManagement',
-  'learningManagement',
-  'lessonPlansList',
-  'lessonPlanBuilder',
-  'lessonPlanReviewQueue',
-  'lessonPlanReview',
-  'feed',
-  'timetable',
-  'learningProgrammesList',
-  'learningProgrammeOverview',
-  'learningProgrammeSettings',
-  'programmeSession',
-  'programmeSessionAttendance',
-  'programmeSessionGoals',
-  'programmeSessionObservations',
-  'diagnostics', // TEMPORARY — see ui/views/TeacherDiagnosticsView.js's own header comment
-];
+// Moved to config/classroomRouteNames.js so it's importable from a
+// test without also importing this whole file (see that module's own
+// header comment) — this is still the one, single definition; nothing
+// about how it's used below changes.
 
 function renderLoadingScreen(container) {
   container.innerHTML = '';
