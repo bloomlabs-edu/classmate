@@ -106,6 +106,9 @@ export function resolvePathParts(parts) {
     if (parts[2] === 'student' && parts[3]) {
       return { name: 'studentProfile', classroomId: parts[1], studentId: parts[3], tab: parts[4] || null };
     }
+    if (parts[2] === 'team' && parts[3]) {
+      return { name: 'teamProfile', classroomId: parts[1], teamId: parts[3] };
+    }
     if (parts[2] === 'activities') {
       if (parts[3]) {
         return { name: 'activityRoster', classroomId: parts[1], activityId: parts[3] };

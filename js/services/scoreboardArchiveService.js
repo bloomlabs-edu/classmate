@@ -36,6 +36,7 @@
 
 import { firestoreClassroomRepository as repository } from '../repositories/firestoreClassroomRepository.js';
 import * as workspaceService from './workspaceService.js';
+import * as achievementService from './achievementService.js';
 import { generateId } from '../utils/idGenerator.js';
 import { getCurrentIsoDate } from '../utils/dateHelpers.js';
 
@@ -67,6 +68,14 @@ function buildSnapshot(classroom) {
       id: team.id,
       name: team.name,
       color: team.color,
+      // Badge & Achievement Engine — services/achievementService.js's
+      // toStandingCycle() needs this to exclude the Ungrouped
+      // pseudo-team from Winning Team Member consideration, the same
+      // exclusion every other team-level ranking in this app already
+      // applies (services/teamStatisticsService.js's own
+      // getRealTeams()). Archives written before this field existed
+      // fall back to a name check — see that adapter's own comment.
+      isUngrouped: team.isUngrouped === true,
       total,
       students,
     };
@@ -149,6 +158,21 @@ export async function archiveAndReset(classroom) {
     } catch (error) {
       workspaceService.setSaveState(classroom.id, 'failed', error);
       throw error;
+    }
+
+    // Badge & Achievement Engine — the moment a Standing Cycle closes
+    // is exactly this archive write succeeding, so this is the one
+    // live hook point (services/achievementService.js's own
+    // awardForCycle() is the SAME function services/badgeBackfillService.js
+    // calls for historical cycles — one award evaluation path, not two).
+    // Deliberately its own try/catch, separate from the archive write
+    // above: the reset itself already succeeded and must never be rolled
+    // back or blocked by a badge-awarding failure — awarding is additive,
+    // not part of the reset's own atomicity guarantee.
+    try {
+      await achievementService.awardForCycle(classroom.id, archive, { source: 'live' });
+    } catch (error) {
+      console.error('[RESET] badge awarding failed (scoreboard reset itself already succeeded):', error);
     }
 
     // [RESET-VERIFY] B: A DIRECT, FRESH READ FROM FIRESTORE,

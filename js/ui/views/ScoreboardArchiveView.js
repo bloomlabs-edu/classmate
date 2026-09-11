@@ -30,6 +30,7 @@ import { createIcon } from '../components/Icon.js';
 import { openResetScoreboardModal } from '../components/ResetScoreboardModal.js';
 import { showToast } from '../components/Toast.js';
 import * as scoreboardArchiveService from '../../services/scoreboardArchiveService.js';
+import * as badgeBackfillService from '../../services/badgeBackfillService.js';
 import { getGroupColorHex } from '../../config/groupColorConfig.js';
 
 function formatDisplayDate(isoString) {
@@ -94,6 +95,40 @@ async function renderList(wrapper, header, classroom, onOpenArchive) {
   wrapper.appendChild(listSection);
 
   const archives = await scoreboardArchiveService.listArchives(classroom.id);
+
+  // Badge & Achievement Engine — one-time historical backfill. Every
+  // NEW archive from now on already awards Winning Team Member
+  // automatically (see services/scoreboardArchiveService.js's own
+  // archiveAndReset()); this button exists only to populate Achievement
+  // Events for archives that already existed before this feature
+  // shipped. Safe to click more than once — services/badgeBackfillService.js's
+  // own idempotent design (deterministic Achievement Event ids) means
+  // re-running it recomputes and overwrites the exact same events
+  // rather than duplicating them, so there is no "did I already run
+  // this" state to track here.
+  if (archives.length > 0) {
+    const backfillButton = document.createElement('button');
+    backfillButton.type = 'button';
+    backfillButton.className = 'btn btn--text scoreboard-archive__backfill-button';
+    backfillButton.textContent = 'Backfill Achievement Badges from Past Cycles';
+    backfillButton.addEventListener('click', async () => {
+      backfillButton.disabled = true;
+      backfillButton.textContent = 'Backfilling…';
+      try {
+        const summary = await badgeBackfillService.backfillClassroom(classroom.id);
+        showToast(
+          `Processed ${summary.cyclesProcessed} cycle${summary.cyclesProcessed === 1 ? '' : 's'} — ${summary.newEvents} new award${summary.newEvents === 1 ? '' : 's'} for ${summary.studentsAwarded} student${summary.studentsAwarded === 1 ? '' : 's'}`
+        );
+      } catch (error) {
+        console.error('[ScoreboardArchiveView] Backfill failed:', error);
+        showToast("Backfill couldn't complete. Check your connection and try again.");
+      } finally {
+        backfillButton.disabled = false;
+        backfillButton.textContent = 'Backfill Achievement Badges from Past Cycles';
+      }
+    });
+    resetSection.appendChild(backfillButton);
+  }
 
   if (archives.length === 0) {
     const empty = document.createElement('p');

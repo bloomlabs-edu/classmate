@@ -107,6 +107,7 @@ export function renderDashboardView(container, props) {
     onOpenActivities,
     onSelectPendingTask,
     onSelectStudent,
+    onSelectTeam,
     onNavigateOpenWork,
   } = props;
 
@@ -157,6 +158,7 @@ export function renderDashboardView(container, props) {
       classroom,
       onBack: () => renderDashboardView(container, props),
       onSelectStudent,
+      onSelectTeam,
     });
   }
 

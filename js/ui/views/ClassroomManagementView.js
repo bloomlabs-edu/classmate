@@ -67,9 +67,9 @@ import * as workspaceCoordinator from '../../services/workspaceCoordinator.js';
 // open/closed state would.
 const collapsedGroupIds = new Set();
 
-export function renderClassroomManagementView(container, { classroom, onBack, onSelectStudent }) {
+export function renderClassroomManagementView(container, { classroom, onBack, onSelectStudent, onSelectTeam }) {
   container.innerHTML = '';
-  const rerender = () => renderClassroomManagementView(container, { classroom, onBack, onSelectStudent });
+  const rerender = () => renderClassroomManagementView(container, { classroom, onBack, onSelectStudent, onSelectTeam });
 
   // Mirrors ui/views/SeatingView.js's own header comment on this same
   // mechanism exactly — without this, a background Firestore snapshot
@@ -96,7 +96,7 @@ export function renderClassroomManagementView(container, { classroom, onBack, on
   wrapper.appendChild(renderClassroomToolsSection(() => {
     renderSeatingView(container, { classroom, onBack: rerender });
   }));
-  wrapper.appendChild(renderStudentsAndGroupsSection(classroom, rerender, onSelectStudent));
+  wrapper.appendChild(renderStudentsAndGroupsSection(classroom, rerender, onSelectStudent, onSelectTeam));
 
   container.appendChild(wrapper);
 }
@@ -109,7 +109,7 @@ export function renderClassroomManagementView(container, { classroom, onBack, on
  * listed first, in creation order; Ungrouped is always last, visually
  * distinct as the catch-all it is rather than "just another group."
  */
-function renderStudentsAndGroupsSection(classroom, rerender, onSelectStudent) {
+function renderStudentsAndGroupsSection(classroom, rerender, onSelectStudent, onSelectTeam) {
   const section = document.createElement('div');
   section.className = 'learning-management__section';
 
@@ -222,13 +222,13 @@ function renderStudentsAndGroupsSection(classroom, rerender, onSelectStudent) {
   const ungrouped = getOrCreateUngroupedTeam(classroom);
 
   [...realGroups, ungrouped].forEach((team) => {
-    section.appendChild(renderGroupCard(classroom, team, rerender, onSelectStudent));
+    section.appendChild(renderGroupCard(classroom, team, rerender, onSelectStudent, onSelectTeam));
   });
 
   return section;
 }
 
-function renderGroupCard(classroom, team, rerender, onSelectStudent) {
+function renderGroupCard(classroom, team, rerender, onSelectStudent, onSelectTeam) {
   const card = document.createElement('div');
   card.className = 'classroom-management__group-card';
 
@@ -253,6 +253,19 @@ function renderGroupCard(classroom, team, rerender, onSelectStudent) {
   nameLabel.textContent = `${team.name} (${team.students.length})`;
 
   headerRow.append(collapseToggle, nameLabel);
+
+  // Team Profile \u2014 the Badge & Achievement Engine's own "what have we
+  // achieved together" screen (see ui/views/TeamProfileView.js). The
+  // Ungrouped pseudo-team has no profile of its own, matching every
+  // other Ungrouped exclusion in this file already.
+  if (!team.isUngrouped && onSelectTeam) {
+    const profileLink = document.createElement('button');
+    profileLink.type = 'button';
+    profileLink.className = 'btn btn--text classroom-management__group-profile-link';
+    profileLink.textContent = 'View Profile';
+    profileLink.addEventListener('click', () => onSelectTeam(team.id));
+    headerRow.appendChild(profileLink);
+  }
 
   // Ungrouped is the automatic catch-all, not a group a teacher
   // created — renaming, moving its students out from under it, or

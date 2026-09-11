@@ -24,6 +24,8 @@ import { createOverflowMenu } from '../components/OverflowMenu.js';
 import { openChooseGroupModal, openNameEntryModal } from './ClassroomManagementView.js';
 import * as bucketService from '../../services/bucketService.js';
 import * as badgeService from '../../services/badgeService.js';
+import * as achievementService from '../../services/achievementService.js';
+import { createBadge } from '../components/Badge.js';
 import * as noteService from '../../services/noteService.js';
 import * as timelineService from '../../services/timelineService.js';
 import * as studentProgressService from '../../services/studentProgressService.js';
@@ -463,7 +465,89 @@ function createStatCard(label, value) {
 // Achievements
 // ---------------------------------------------------------------------
 
-function renderAchievementsTab(content, classroom, student, team, rerender) {
+/**
+ * The Badge & Achievement Engine's own section — deliberately separate
+ * from "Behaviour Badges" below (services/badgeService.js's own,
+ * older, teacher-typed-name feature): different data model, different
+ * award mechanism (automatic vs. manually clicked), different
+ * lifecycle (permanent Achievement Events vs. a revokable flat list).
+ * Real, persisted badges (services/achievementService.js), not the
+ * live/ephemeral Recognition Wall categories — see
+ * services/achievementEngine.js's own header comment for why those
+ * two systems intentionally coexist rather than merge.
+ */
+async function renderStudentBadgesSection(classroom, student) {
+  const section = document.createElement('div');
+  section.className = 'profile-section';
+
+  const heading = document.createElement('h2');
+  heading.className = 'profile-section__heading';
+  heading.textContent = 'Achievements';
+  section.appendChild(heading);
+
+  let events = [];
+  try {
+    events = await achievementService.listEventsForStudent(classroom.id, student.id);
+  } catch (error) {
+    console.error('[StudentProfileView] Failed to load achievement events:', error);
+    const errorText = document.createElement('p');
+    errorText.className = 'profile-section__meta';
+    errorText.textContent = "Couldn't load achievements. Check your connection and try again.";
+    section.appendChild(errorText);
+    return section;
+  }
+
+  const summaries = achievementService.summarizeStudentBadges(events);
+
+  if (summaries.length === 0) {
+    section.appendChild(
+      createEmptyStateElement({
+        message: 'No achievements yet — these are earned automatically (e.g. being on the winning team when a Standing Cycle closes).',
+      })
+    );
+    return section;
+  }
+
+  const grid = document.createElement('div');
+  grid.className = 'student-badge-grid';
+  summaries.forEach((summary) => {
+    grid.appendChild(createStudentBadgeCard(summary));
+  });
+  section.appendChild(grid);
+
+  return section;
+}
+
+/** One earned badge's own card — badge artwork (ui/components/Badge.js) plus the surrounding detail the style guide requires the artwork itself NOT carry (Section 20): name, level, times earned, next milestone. */
+function createStudentBadgeCard(summary) {
+  const card = document.createElement('div');
+  card.className = 'student-badge-card';
+
+  card.appendChild(createBadge({ family: summary.definition.family, recognitionType: summary.definition.recognitionType, level: summary.level, size: 80 }));
+
+  const title = document.createElement('p');
+  title.className = 'student-badge-card__title';
+  title.textContent = summary.definition.title;
+  card.appendChild(title);
+
+  const earnedCount = document.createElement('p');
+  earnedCount.className = 'student-badge-card__meta';
+  earnedCount.textContent = `Earned ${summary.level} time${summary.level === 1 ? '' : 's'}`;
+  card.appendChild(earnedCount);
+
+  if (summary.nextMilestone) {
+    const milestone = document.createElement('p');
+    milestone.className = 'student-badge-card__meta';
+    milestone.textContent = `Next milestone: LV ${summary.nextMilestone}`;
+    card.appendChild(milestone);
+  }
+
+  return card;
+}
+
+async function renderAchievementsTab(content, classroom, student, team, rerender) {
+  content.appendChild(await renderStudentBadgesSection(classroom, student));
+
   const section = document.createElement('div');
   section.className = 'profile-section';
 

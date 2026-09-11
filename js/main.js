@@ -72,6 +72,7 @@ import { renderTeacherDiagnosticsView } from './ui/views/TeacherDiagnosticsView.
 import { renderSettingsView } from './ui/views/SettingsView.js';
 import { renderSetupWizardView } from './ui/views/SetupWizardView.js';
 import { renderStudentProfileView } from './ui/views/StudentProfileView.js';
+import { renderTeamProfileView } from './ui/views/TeamProfileView.js';
 import { renderStudentAccessView } from './ui/views/StudentAccessView.js';
 import { renderVisitorAccessView } from './ui/views/VisitorAccessView.js';
 import { renderActivitiesListView, renderActivityRosterView } from './ui/views/ActivitiesView.js';
@@ -505,6 +506,7 @@ const CLASSROOM_ROUTE_NAMES = [
   'settings',
   'setup',
   'studentProfile',
+  'teamProfile',
   'studentAccess',
   'activitiesList',
   'activityRoster',
@@ -901,6 +903,7 @@ function renderRoute(route, reason = 'unspecified') {
           }
         },
         onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
+        onSelectTeam: (teamId) => router.navigate(`/classroom/${classroom.id}/team/${teamId}`),
         onNavigateOpenWork: (path) => router.navigate(path),
       });
     } else if (route.name === 'timetable') {
@@ -1185,6 +1188,13 @@ function renderRoute(route, reason = 'unspecified') {
         onBack: () => router.navigate(route.query?.returnTo || `/classroom/${classroom.id}`),
         onNavigateTab: (tab) => router.navigate(`/classroom/${classroom.id}/student/${route.studentId}/${tab}${returnToQuery}`),
         onOpenStudentAccess: () => router.navigate(`/classroom/${classroom.id}/student-access`),
+      });
+    } else if (route.name === 'teamProfile') {
+      renderTeamProfileView(appContainer, {
+        classroom,
+        teamId: route.teamId,
+        onBack: () => router.navigate(`/classroom/${classroom.id}`),
+        onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
       });
     } else if (route.name === 'studentAccess') {
       renderStudentAccessView(appContainer, {

@@ -393,6 +393,39 @@ class FirestoreClassroomRepository extends ClassroomRepository {
     return docSnapshot.exists() ? docSnapshot.data() : null;
   }
 
+  _achievementEventsCollection(classroomId) {
+    return collection(this._getDb(), 'classrooms', classroomId, 'achievementEvents');
+  }
+
+  _achievementEventDoc(classroomId, eventId) {
+    return doc(this._getDb(), 'classrooms', classroomId, 'achievementEvents', eventId);
+  }
+
+  /**
+   * Upserts one Achievement Event by its own deterministic id (see
+   * models/AchievementEvent.js's buildAchievementEventId()) — `setDoc`
+   * to a fixed path IS the idempotency mechanism: re-awarding the same
+   * student/badge/cycle overwrites the same document with the same
+   * data rather than creating a duplicate. Never `addDoc` (which
+   * always generates a new, random id).
+   */
+  async saveAchievementEvent(classroomId, event) {
+    await setDoc(this._achievementEventDoc(classroomId, event.id), event);
+  }
+
+  /**
+   * Every Achievement Event for this classroom — fetched in full and
+   * filtered/grouped client-side by callers (services/achievementService.js),
+   * matching listScoreboardArchives()'s own established convention
+   * rather than introducing `where()` queries this repository has
+   * never needed before. Reasonable for the data volume involved (one
+   * event per eligible student per closed cycle, not per day).
+   */
+  async listAchievementEvents(classroomId) {
+    const snapshot = await getDocs(this._achievementEventsCollection(classroomId));
+    return snapshot.docs.map((docSnapshot) => docSnapshot.data());
+  }
+
   async claimMigration(uid) {
     const db = this._getDb();
     const userDocRef = this._userDoc(uid);
