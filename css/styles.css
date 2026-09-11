@@ -1473,10 +1473,27 @@ select:focus-visible,
 .scoreboard-archive__reset-section {
   margin-bottom: 1.5rem;
 }
-.scoreboard-archive__list {
+/* Browser-feedback pass (2026-09-11, visual refinement round) — the
+   archive landing page redesigned as a Bento index rather than a
+   plain vertical list of identical cards: the most recent cycle is a
+   real hero card, every earlier cycle is a smaller historical card in
+   its own grid, matching the same asymmetric-grid language
+   ui/views/ReportsView.js's own .reports-bento already established
+   (a prominent tile + secondary tiles, not a uniform repeated list). */
+.scoreboard-archive__bento {
   display: flex;
   flex-direction: column;
+  gap: 1.25rem;
+}
+.scoreboard-archive__historical-grid {
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 0.85rem;
+}
+@media (min-width: 640px) {
+  .scoreboard-archive__historical-grid {
+    grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  }
 }
 .scoreboard-archive__empty {
   color: var(--color-muted);
@@ -1492,24 +1509,42 @@ select:focus-visible,
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
-  max-width: 32rem;
 }
 .scoreboard-archive__card:hover {
   border-color: var(--color-primary, #2e7d9e);
+}
+.scoreboard-archive__card--hero {
+  padding: 1.75rem;
+  border-radius: 20px;
+  background-color: color-mix(in srgb, var(--color-gold) 6%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-gold) 25%, transparent);
+}
+.scoreboard-archive__card--hero .scoreboard-archive__card-date {
+  font-size: 1.3rem;
 }
 .scoreboard-archive__card-date {
   margin: 0;
   font-weight: var(--font-weight-bold);
   font-size: 1.05rem;
 }
-.scoreboard-archive__card-meta {
-  margin: 0;
-  color: var(--color-muted);
-  font-size: 0.85rem;
-}
 .scoreboard-archive__card-totals {
   margin: 0.2rem 0 0;
   font-size: 0.9rem;
+  color: var(--color-muted);
+}
+.scoreboard-archive__card-winner {
+  margin: 0.15rem 0 0;
+  font-size: 0.9rem;
+  font-weight: var(--font-weight-bold);
+}
+.scoreboard-archive__card-recognition {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-muted);
 }
 .scoreboard-archive__card-link {
   margin-top: 0.4rem;
@@ -4670,26 +4705,48 @@ button.wizard-checklist__row:hover {
    own comment). A student with no badges gets an empty <div> here,
    contributing zero height — no border/background is ever applied to
    .profile-header__recognition itself, only to the individual chips
-   inside it, so "no badges yet" never renders as a visible empty box. */
+   inside it, so "no badges yet" never renders as a visible empty box.
+   Browser-feedback correction (2026-09-11, visual refinement round):
+   "the badge is a recognition object, not merely an icon" — the chip
+   grew from a small inline pill (a 28px badge shrunk to icon size)
+   into a real compact card, built around config/badgeDefinitions.js's
+   own "compact" (48-64px) size tier, per that file's own comment.
+   Compact ≠ tiny: still small enough for several to sit in a row, but
+   large enough that the badge's own shield/star artwork actually
+   reads as a badge rather than a glyph. */
 .profile-header__recognition {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
-  margin: 0.5rem 0 0;
+  gap: 0.6rem;
+  margin: 0.6rem 0 0;
 }
 
 .profile-header__recognition-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.25rem 0.6rem 0.25rem 0.25rem;
-  border-radius: var(--radius-pill);
-  font-size: 0.8rem;
+  gap: 0.6rem;
+  padding: 0.5rem 0.9rem 0.5rem 0.5rem;
+  border-radius: 16px;
   font-weight: var(--font-weight-medium);
 }
 
-.profile-header__recognition-chip-text strong {
+.profile-header__recognition-chip-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  text-align: left;
+}
+
+.profile-header__recognition-chip-title {
+  font-size: 0.85rem;
   font-weight: var(--font-weight-black);
+  line-height: 1.15;
+}
+
+.profile-header__recognition-chip-level {
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  opacity: 0.85;
 }
 
 .profile-header__stats {
@@ -6883,14 +6940,43 @@ button.wizard-checklist__row:hover {
   font-size: 0.9rem;
   margin: 0.25rem 0 1.25rem;
 }
-.weekly-reports-list__cards {
+/* Browser-feedback pass (2026-09-11, visual refinement round) — Bento
+   composition: hero (current week) -> secondary row (next few weeks)
+   -> compact historical grid, the same hierarchy language
+   ui/views/ScoreboardArchiveView.js's own landing page and
+   ui/views/ReportsView.js already use. */
+.weekly-reports-list__bento {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+.weekly-reports-list__secondary-row {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
 }
+@media (min-width: 640px) {
+  .weekly-reports-list__secondary-row {
+    flex-direction: row;
+  }
+  .weekly-reports-list__secondary-row .weekly-reports-list__card {
+    flex: 1;
+  }
+}
+.weekly-reports-list__historical-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+}
+@media (min-width: 640px) {
+  .weekly-reports-list__historical-grid {
+    grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  }
+}
 .weekly-reports-list__card {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.75rem;
   text-align: left;
   background: var(--color-surface, #fff);
@@ -6906,6 +6992,30 @@ button.wizard-checklist__row:hover {
 .weekly-reports-list__card--current {
   border-color: var(--color-accent);
   border-width: 1.5px;
+}
+.weekly-reports-list__card--hero {
+  padding: 1.5rem 1.75rem;
+  border-radius: 20px;
+  background-color: color-mix(in srgb, var(--color-gold) 6%, var(--color-surface));
+}
+.weekly-reports-list__card--hero .weekly-reports-list__card-label {
+  font-size: 1.3rem;
+}
+/* Narrow viewports — the hero row (text + recognition preview + arrow,
+   all inline at desktop width) gets genuinely cramped rather than
+   just wrapping cleanly; stacking it top-to-bottom keeps the "compact
+   ≠ tiny" badge legible instead of squeezing it into a corner. */
+@media (max-width: 480px) {
+  .weekly-reports-list__card--hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+.weekly-reports-list__card--compact {
+  padding: 0.65rem 0.85rem;
+}
+.weekly-reports-list__card--compact .weekly-reports-list__card-label {
+  font-size: 0.9rem;
 }
 .weekly-reports-list__card-text {
   flex: 1;
@@ -6929,6 +7039,14 @@ button.wizard-checklist__row:hover {
   letter-spacing: 0.03em;
   padding: 0.2rem 0.5rem;
   border-radius: var(--radius-pill);
+}
+.weekly-reports-list__card-recognition {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-muted);
 }
 
 .weekly-report__recognitions {
@@ -18768,17 +18886,34 @@ button.recognition-bento__hero-winner-name {
   margin-bottom: 0;
 }
 
+/* Browser-feedback correction (2026-09-11, visual refinement round) —
+   "the badge should look like a badge": a real hero card (standard,
+   72-96px, tier — config/badgeDefinitions.js's own BADGE_SIZES) around
+   the artwork, not a small icon inline beside a text label. Tinted
+   with the badge's own recognition colour (theme.light), the one
+   place on this page a background colour is tied to badge type. */
 .recognition-wall__group-heading {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 0.9rem;
+  text-align: center;
+  gap: 0.5rem;
+  padding: 1.5rem 1rem;
+  border-radius: 20px;
+  margin-bottom: 1.25rem;
 }
 
 .recognition-wall__group-title {
-  font-size: 1.05rem;
+  font-size: 1.2rem;
   font-weight: var(--font-weight-black);
   color: var(--color-ink);
+  margin: 0.25rem 0 0;
+}
+
+.recognition-wall__group-subtitle {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  margin: 0;
 }
 
 .recognition-wall__recipient-area {

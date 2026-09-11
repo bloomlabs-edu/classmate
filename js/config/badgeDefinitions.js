@@ -33,6 +33,28 @@ export const BADGE_FAMILIES = Object.freeze({
 });
 
 /**
+ * Intentional badge display sizes (px) — browser-feedback pass
+ * (2026-09-11, visual refinement round): "the badge is a recognition
+ * object, not merely an icon." Every screen that shows badge artwork
+ * should pick one of these named tiers rather than an arbitrary
+ * one-off number, so the style guide's own visual-stage detail (extra
+ * borders, accents, flourishes — see ui/components/Badge.js's own
+ * buildShield()) stays legible everywhere it appears instead of being
+ * shrunk into an indistinguishable icon:
+ *   small    24-32px — a tiny supporting indicator only (not the
+ *            primary way a badge is ever presented).
+ *   compact  48-64px — Student Profile's own recognition row.
+ *   standard 72-96px — recognition cards / the Recognition Wall.
+ *   large    128-160px+ — a future badge detail/celebration view.
+ */
+export const BADGE_SIZES = Object.freeze({
+  small: 28,
+  compact: 56,
+  standard: 84,
+  large: 144,
+});
+
+/**
  * Recognition colour = WHAT KIND of recognition, never level (see
  * style guide Section 5/30). Each theme is a small palette, not a
  * single hex, so a future badge surface (a filled card, a subtle

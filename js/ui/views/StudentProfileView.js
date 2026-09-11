@@ -26,7 +26,7 @@ import * as bucketService from '../../services/bucketService.js';
 import * as badgeService from '../../services/badgeService.js';
 import * as achievementService from '../../services/achievementService.js';
 import { createBadge } from '../components/Badge.js';
-import { BADGE_THEMES } from '../../config/badgeDefinitions.js';
+import { BADGE_THEMES, BADGE_SIZES } from '../../config/badgeDefinitions.js';
 import * as noteService from '../../services/noteService.js';
 import * as timelineService from '../../services/timelineService.js';
 import * as studentProgressService from '../../services/studentProgressService.js';
@@ -296,22 +296,30 @@ async function populateRecognitionRow(container, classroom, student) {
 
   summaries.forEach((summary) => {
     const theme = BADGE_THEMES[summary.definition.theme];
-    const chip = document.createElement('div');
-    chip.className = 'profile-header__recognition-chip';
-    chip.style.backgroundColor = theme.light;
-    chip.style.color = theme.dark;
+    const card = document.createElement('div');
+    card.className = 'profile-header__recognition-chip';
+    card.style.backgroundColor = theme.light;
+    card.style.color = theme.dark;
 
-    chip.appendChild(createBadge({ family: summary.definition.family, recognitionType: summary.definition.recognitionType, level: summary.level, size: 28, showLevel: false }));
+    // "Compact" tier (config/badgeDefinitions.js's own BADGE_SIZES) —
+    // browser-feedback correction: 28px (this tier's "small," meant
+    // only for a tiny supporting indicator) read as a generic icon
+    // rather than an achievement badge. This is the profile identity's
+    // own recognition object, not a decoration next to some text.
+    card.appendChild(createBadge({ family: summary.definition.family, recognitionType: summary.definition.recognitionType, level: summary.level, size: BADGE_SIZES.compact, showLevel: false }));
 
-    const text = document.createElement('span');
+    const text = document.createElement('div');
     text.className = 'profile-header__recognition-chip-text';
-    text.textContent = summary.definition.title;
-    const level = document.createElement('strong');
-    level.textContent = ` · LV ${summary.level}`;
-    text.appendChild(level);
-    chip.appendChild(text);
+    const title = document.createElement('span');
+    title.className = 'profile-header__recognition-chip-title';
+    title.textContent = summary.definition.title;
+    const level = document.createElement('span');
+    level.className = 'profile-header__recognition-chip-level';
+    level.textContent = `LV ${summary.level}`;
+    text.append(title, level);
+    card.appendChild(text);
 
-    container.appendChild(chip);
+    container.appendChild(card);
   });
 }
 

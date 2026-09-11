@@ -26,6 +26,7 @@
 
 import { createBadge } from './Badge.js';
 import { createEmptyStateElement } from './EmptyState.js';
+import { BADGE_THEMES, BADGE_SIZES } from '../../config/badgeDefinitions.js';
 
 function createRecipientCard(recipient, resolveStudentName) {
   const card = document.createElement('div');
@@ -48,13 +49,26 @@ function createBadgeGroupSection(group, resolveStudentName) {
   const section = document.createElement('div');
   section.className = 'recognition-wall__group';
 
+  // Browser-feedback correction (2026-09-11, visual refinement round):
+  // "the badge should look like a badge" — a hero card built around
+  // config/badgeDefinitions.js's own "standard" (72-96px) recognition-card
+  // size tier, not a small icon beside a text label. This card
+  // identifies the badge TYPE being celebrated this cycle, so its
+  // artwork is deliberately not tied to any one recipient's own
+  // cumulative level (which recipient's level would it even show?) —
+  // `showLevel: false` keeps it purely the recognition object itself.
   const heading = document.createElement('div');
   heading.className = 'recognition-wall__group-heading';
-  heading.appendChild(createBadge({ family: group.definition.family, recognitionType: group.definition.recognitionType, level: 1, size: 56, showLevel: false }));
-  const title = document.createElement('span');
+  heading.style.backgroundColor = BADGE_THEMES[group.definition.theme].light;
+  heading.appendChild(createBadge({ family: group.definition.family, recognitionType: group.definition.recognitionType, level: 1, size: BADGE_SIZES.standard, showLevel: false }));
+  const title = document.createElement('p');
   title.className = 'recognition-wall__group-title';
   title.textContent = group.definition.title;
   heading.appendChild(title);
+  const subtitle = document.createElement('p');
+  subtitle.className = 'recognition-wall__group-subtitle';
+  subtitle.textContent = 'Earned this cycle';
+  heading.appendChild(subtitle);
   section.appendChild(heading);
 
   const recipientArea = document.createElement('div');

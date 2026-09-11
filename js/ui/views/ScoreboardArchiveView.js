@@ -33,6 +33,8 @@ import * as scoreboardArchiveService from '../../services/scoreboardArchiveServi
 import * as badgeBackfillService from '../../services/badgeBackfillService.js';
 import * as achievementService from '../../services/achievementService.js';
 import { createRecognitionWall } from '../components/RecognitionWall.js';
+import { createBadge } from '../components/Badge.js';
+import { BADGE_SIZES } from '../../config/badgeDefinitions.js';
 import { getGroupColorHex } from '../../config/groupColorConfig.js';
 
 function formatDisplayDate(isoString) {
@@ -140,35 +142,97 @@ async function renderList(wrapper, header, classroom, onOpenArchive) {
     return;
   }
 
-  archives.forEach((archive) => {
-    const card = document.createElement('button');
-    card.type = 'button';
-    card.className = 'scoreboard-archive__card';
-    card.addEventListener('click', () => onOpenArchive(archive.id));
+  // Recognition previews on this landing page \u2014 real Achievement
+  // Events, fetched once for every archive rather than per-card, then
+  // filtered by each archive's own cycleId. Fails quietly (empty
+  // previews, never a broken page) if this read is denied \u2014 this
+  // exact list is also rendered for a lower-trust context nowhere
+  // today, but the same defensive pattern used throughout this feature
+  // costs nothing here either.
+  let allEvents = [];
+  try {
+    allEvents = await achievementService.listAllEvents(classroom.id);
+  } catch (error) {
+    console.error('[ScoreboardArchiveView] Failed to load recognition previews:', error);
+  }
 
-    const dateEl = document.createElement('p');
-    dateEl.className = 'scoreboard-archive__card-date';
-    dateEl.textContent = formatDisplayDate(archive.createdAt);
-    card.appendChild(dateEl);
+  listSection.className = 'scoreboard-archive__bento';
+  const [mostRecent, ...rest] = archives;
+  listSection.appendChild(createArchiveCard(mostRecent, allEvents, onOpenArchive, { variant: 'hero' }));
 
-    const studentCount = archive.teams.reduce((sum, team) => sum + team.students.length, 0);
-    const meta = document.createElement('p');
-    meta.className = 'scoreboard-archive__card-meta';
-    meta.textContent = `${archive.teams.length} group${archive.teams.length === 1 ? '' : 's'} \u00b7 ${studentCount} student${studentCount === 1 ? '' : 's'}`;
-    card.appendChild(meta);
+  if (rest.length > 0) {
+    const historicalGrid = document.createElement('div');
+    historicalGrid.className = 'scoreboard-archive__historical-grid';
+    rest.forEach((archive) => historicalGrid.appendChild(createArchiveCard(archive, allEvents, onOpenArchive, { variant: 'compact' })));
+    listSection.appendChild(historicalGrid);
+  }
+}
 
-    const totalsLine = document.createElement('p');
-    totalsLine.className = 'scoreboard-archive__card-totals';
-    totalsLine.textContent = archive.teams.map((team) => `${team.name} ${team.total}`).join(' \u00b7 ');
-    card.appendChild(totalsLine);
+/** This archive's own recognition summary \u2014 winner(s) by total (a plain factual read of already-stored scores, not a re-derivation of award eligibility) plus every badge type actually recognised this cycle, from real Achievement Events filtered to this archive's own cycleId. */
+function summarizeArchiveRecognition(archive, allEvents) {
+  const highestTotal = Math.max(...archive.teams.map((team) => team.total));
+  const winners = archive.teams.filter((team) => team.total === highestTotal);
 
-    const viewLink = document.createElement('span');
-    viewLink.className = 'scoreboard-archive__card-link';
-    viewLink.append('View scoreboard ', createIcon('arrow-right', { size: 16 }));
-    card.appendChild(viewLink);
+  const cycleEvents = allEvents.filter((event) => event.cycleId === archive.id);
+  const groups = achievementService.groupEventsForRecognitionWall(cycleEvents);
+  const recognizedCount = groups.reduce((sum, group) => sum + group.recipients.length, 0);
 
-    listSection.appendChild(card);
-  });
+  return { winners, groups, recognizedCount };
+}
+
+/**
+ * One archive's own card \u2014 `variant: 'hero'` (the most recent cycle)
+ * gets the full Bento treatment (larger badge previews, every team's
+ * own total); `variant: 'compact'` (every earlier cycle) stays a
+ * smaller historical card, still real information, never identical
+ * filler. Never assumes Winning Team Member is the only badge that
+ * can appear here \u2014 `groups` (from groupEventsForRecognitionWall())
+ * drives however many distinct badge types this cycle actually
+ * produced.
+ */
+function createArchiveCard(archive, allEvents, onOpenArchive, { variant }) {
+  const { winners, groups, recognizedCount } = summarizeArchiveRecognition(archive, allEvents);
+
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = `scoreboard-archive__card scoreboard-archive__card--${variant}`;
+  card.addEventListener('click', () => onOpenArchive(archive.id));
+
+  const dateEl = document.createElement('p');
+  dateEl.className = 'scoreboard-archive__card-date';
+  dateEl.textContent = formatDisplayDate(archive.createdAt);
+  card.appendChild(dateEl);
+
+  const standingsLine = document.createElement('p');
+  standingsLine.className = 'scoreboard-archive__card-totals';
+  standingsLine.textContent = archive.teams.map((team) => `${team.name} ${team.total >= 0 ? '+' : ''}${team.total}`).join(' \u00b7 ');
+  card.appendChild(standingsLine);
+
+  const winnerLine = document.createElement('p');
+  winnerLine.className = 'scoreboard-archive__card-winner';
+  winnerLine.textContent = `\ud83c\udfc6 ${winners.map((team) => team.name).join(' & ')}`;
+  card.appendChild(winnerLine);
+
+  if (groups.length > 0) {
+    const recognitionPreview = document.createElement('div');
+    recognitionPreview.className = 'scoreboard-archive__card-recognition';
+    groups.forEach((group) => {
+      recognitionPreview.appendChild(
+        createBadge({ family: group.definition.family, recognitionType: group.definition.recognitionType, level: 1, size: variant === 'hero' ? BADGE_SIZES.compact : BADGE_SIZES.small, showLevel: false })
+      );
+    });
+    const recognitionText = document.createElement('span');
+    recognitionText.textContent = `${recognizedCount} recognised`;
+    recognitionPreview.appendChild(recognitionText);
+    card.appendChild(recognitionPreview);
+  }
+
+  const viewLink = document.createElement('span');
+  viewLink.className = 'scoreboard-archive__card-link';
+  viewLink.append('View scoreboard ', createIcon('arrow-right', { size: 16 }));
+  card.appendChild(viewLink);
+
+  return card;
 }
 
 async function renderDetail(wrapper, header, classroom, archiveId) {
