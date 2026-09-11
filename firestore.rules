@@ -495,6 +495,26 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Badge & Achievement Engine — see models/AchievementEvent.js and
+    // services/achievementService.js. Each event's own id is
+    // deterministic (student + badge + Standing Cycle), and every
+    // write is a setDoc to that id — that's the idempotency mechanism
+    // services/badgeBackfillService.js relies on to be safely re-runnable.
+    // Deliberately NOT modeled on scoreboardArchives' own
+    // "allow update: false" above: re-awarding an already-awarded
+    // cycle is an UPDATE in Firestore's own terms (the document already
+    // exists), not a create, so blocking update here would break the
+    // very idempotency this collection depends on. Only delete is
+    // blocked — an Achievement Event is a permanent historical record,
+    // never removable, even though its content can be (identically)
+    // rewritten.
+    match /classrooms/{classroomId}/achievementEvents/{eventId} {
+      allow read, create, update: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+
+      allow delete: if false;
+    }
+
     // In-app teacher notifications (see models/Notification.js,
     // services/notificationService.js) — the teacher-facing
     // counterpart to studentEvents above, but its own dedicated
