@@ -59,7 +59,7 @@
 
 import { createTeamCardElement } from './TeamCard.js';
 import { createEmptyStateElement } from './EmptyState.js';
-import { getLiveTeamStandingsWithMovement, getClassLeaderboardWithMovement, getCurrentMonthPeriod } from '../../services/teamStatisticsService.js';
+import { getLiveTeamStandingsWithMovement, getClassLeaderboardWithMovement, getCurrentMonthPeriod, canOpenTeamProfile } from '../../services/teamStatisticsService.js';
 import { getNetPointsInCurrentPeriod } from '../../services/timelineService.js';
 import { getNameHighlightState } from '../../services/performanceStateService.js';
 
@@ -121,7 +121,14 @@ export function createTeamStandingsBoardElement({ classroom, onTap, onSwipeLeft,
         onTap,
         onSwipeLeft,
         onLongPress,
-        onTapTeam: onTapTeam ? () => onTapTeam(team.id) : undefined,
+        // canOpenTeamProfile() excludes Ungrouped — a real team record
+        // structurally (see classroomService.js's
+        // getOrCreateUngroupedTeam()) but not a real team in the product
+        // model, matching every other place Ungrouped is already
+        // excluded from "this is a real team" treatment (GroupsWidget.js,
+        // Settings' Groups tab). Its header stays a plain,
+        // non-interactive heading, exactly as before this feature existed.
+        onTapTeam: onTapTeam && canOpenTeamProfile(team) ? () => onTapTeam(team.id) : undefined,
         movement: standing ? { movement: standing.movement, movementAmount: standing.movementAmount } : undefined,
         studentMovements,
         nameHighlights,

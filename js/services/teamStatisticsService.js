@@ -56,6 +56,18 @@ function getRealTeams(classroom) {
   return classroom.teams.filter((team) => !team.isUngrouped);
 }
 
+/**
+ * Whether `team` is a real, addressable Team Profile destination — the
+ * same "Ungrouped isn't a real team" boundary this file's own header
+ * comment already establishes, made reusable for UI that decides
+ * whether a team name/card should be clickable at all (Team Profile
+ * discoverability — ui/components/TeamStandingsBoard.js's own team-card
+ * header, ui/views/StudentProfileView.js's own team-name reverse link).
+ */
+export function canOpenTeamProfile(team) {
+  return Boolean(team) && !team.isUngrouped;
+}
+
 /** Net point total for one student within a period — both positive and negative entries count, unlike studentProgressService.js's own "stars" (positive-only) convention. */
 /**
  * A student's own net score within `period` — delegates directly to

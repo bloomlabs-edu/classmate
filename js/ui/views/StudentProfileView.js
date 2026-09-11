@@ -49,6 +49,7 @@ import { openAwardBadgeModal } from '../components/AwardBadgeModal.js';
 import { openAddNoteModal } from '../components/AddNoteModal.js';
 import { openLogParticipationModal } from '../components/LogParticipationModal.js';
 import { createBackButton } from '../components/BackButton.js';
+import { canOpenTeamProfile } from '../../services/teamStatisticsService.js';
 
 const TABS = ['overview', 'achievements', 'learning', 'notebooks', 'activity', 'access', 'notes'];
 const TAB_LABELS = {
@@ -203,9 +204,10 @@ function renderProfileHeader(classroom, student, team, rerender, onBack, onSelec
   // this is the reverse link, "Student Profile -> Team Profile," per
   // explicit direction. Ungrouped has no profile of its own, matching
   // every other Ungrouped exclusion in this app.
-  const groupLine = document.createElement(team && onSelectTeam ? 'button' : 'p');
+  const isTeamProfileLink = canOpenTeamProfile(team) && onSelectTeam;
+  const groupLine = document.createElement(isTeamProfileLink ? 'button' : 'p');
   groupLine.className = 'profile-header__group';
-  if (team && onSelectTeam) {
+  if (isTeamProfileLink) {
     groupLine.type = 'button';
     groupLine.classList.add('profile-header__group--clickable');
     groupLine.addEventListener('click', () => onSelectTeam(team.id));
