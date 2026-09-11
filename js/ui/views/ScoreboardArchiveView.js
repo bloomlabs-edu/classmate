@@ -31,6 +31,8 @@ import { openResetScoreboardModal } from '../components/ResetScoreboardModal.js'
 import { showToast } from '../components/Toast.js';
 import * as scoreboardArchiveService from '../../services/scoreboardArchiveService.js';
 import * as badgeBackfillService from '../../services/badgeBackfillService.js';
+import * as achievementService from '../../services/achievementService.js';
+import { createRecognitionWall } from '../components/RecognitionWall.js';
 import { getGroupColorHex } from '../../config/groupColorConfig.js';
 
 function formatDisplayDate(isoString) {
@@ -233,4 +235,29 @@ async function renderDetail(wrapper, header, classroom, archiveId) {
   });
 
   wrapper.appendChild(detailGrid);
+
+  // Recognition Wall — "who was recognised, for what" for THIS exact
+  // cycle. Names resolve from the archive's own frozen roster (built
+  // right above, not the classroom's current student list) — this is
+  // what keeps a recognition correctly attributed even for a student
+  // who has since changed teams or left the classroom entirely. Never
+  // recomputes eligibility here — every recipient shown is exactly and
+  // only who services/achievementService.js's awardForCycle() actually
+  // created an Achievement Event for, at the time this cycle closed.
+  const studentNameById = new Map();
+  archive.teams.forEach((team) => team.students.forEach((student) => studentNameById.set(student.id, student.name)));
+
+  try {
+    const allEvents = await achievementService.listAllEvents(classroom.id);
+    const cycleEvents = allEvents.filter((event) => event.cycleId === archiveId);
+    const groups = achievementService.groupEventsForRecognitionWall(cycleEvents);
+    wrapper.appendChild(
+      createRecognitionWall({
+        groups,
+        resolveStudentName: (studentId) => studentNameById.get(studentId) || 'Unknown student',
+      })
+    );
+  } catch (error) {
+    console.error('[ScoreboardArchiveView] Failed to load Recognition Wall:', error);
+  }
 }

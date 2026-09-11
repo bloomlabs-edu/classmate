@@ -26,6 +26,7 @@ import * as bucketService from '../../services/bucketService.js';
 import * as badgeService from '../../services/badgeService.js';
 import * as achievementService from '../../services/achievementService.js';
 import { createBadge } from '../components/Badge.js';
+import { BADGE_THEMES } from '../../config/badgeDefinitions.js';
 import * as noteService from '../../services/noteService.js';
 import * as timelineService from '../../services/timelineService.js';
 import * as studentProgressService from '../../services/studentProgressService.js';
@@ -201,6 +202,21 @@ function renderProfileHeader(classroom, student, team, rerender, onBack) {
   groupLine.textContent = team ? team.name : 'Ungrouped';
   header.appendChild(groupLine);
 
+  // Badge & Achievement Engine — a compact recognition summary,
+  // directly beneath the name, so a badge is visible immediately
+  // rather than only discoverable by opening the Achievements tab.
+  // Populated asynchronously into this placeholder (renderProfileHeader
+  // itself stays synchronous, matching every other header field here,
+  // which all read already-in-memory classroom/student data) — the
+  // Achievement Event fetch is the one genuinely async thing on this
+  // whole header. Left completely empty (no container, no "no badges
+  // yet" placeholder) for a student with none — see
+  // populateRecognitionRow()'s own comment.
+  const recognitionRow = document.createElement('div');
+  recognitionRow.className = 'profile-header__recognition';
+  header.appendChild(recognitionRow);
+  populateRecognitionRow(recognitionRow, classroom, student);
+
   const hasLearningActivities = (classroom.learningActivities || []).length > 0;
   const summary = learningActivityService.getSubmissionSummary(classroom, student);
   const submissionText = `${summary.Submitted} Submitted \u00b7 ${summary['Submitted Late']} Late \u00b7 ${summary.Missing} Missing`;
@@ -250,6 +266,55 @@ function renderProfileHeader(classroom, student, team, rerender, onBack) {
  * invites exactly the kind of comparison against an unrelated
  * domain's own chip that a teacher correctly flagged as confusing.
  */
+/**
+ * Fills in the profile header's compact recognition row — every badge
+ * this student has ever earned at least once (services/achievementService.js's
+ * own summarizeStudentBadges(), the exact same derivation the
+ * Achievements tab's full badge grid uses — level is never
+ * recalculated here, only read). Left completely empty for a student
+ * with none: no container border, no "no badges yet" text — an empty
+ * `<div>` with nothing inside contributes no visible height, keeping
+ * the header exactly as clean as it was before this feature existed
+ * for a student who hasn't earned anything yet.
+ *
+ * One row entry per badge TYPE the student has ever earned (not one
+ * entry per historical event) — "Winning Team Member · LV 3" is a
+ * single chip whose level already reflects all three cycles, matching
+ * the Achievements tab's own one-card-per-badge-type convention.
+ */
+async function populateRecognitionRow(container, classroom, student) {
+  let events = [];
+  try {
+    events = await achievementService.listEventsForStudent(classroom.id, student.id);
+  } catch (error) {
+    console.error('[StudentProfileView] Failed to load recognition summary:', error);
+    return; // fails quietly — this is a summary row, not the Achievements tab's own error state
+  }
+
+  const summaries = achievementService.summarizeStudentBadges(events);
+  if (summaries.length === 0) return;
+
+  summaries.forEach((summary) => {
+    const theme = BADGE_THEMES[summary.definition.theme];
+    const chip = document.createElement('div');
+    chip.className = 'profile-header__recognition-chip';
+    chip.style.backgroundColor = theme.light;
+    chip.style.color = theme.dark;
+
+    chip.appendChild(createBadge({ family: summary.definition.family, recognitionType: summary.definition.recognitionType, level: summary.level, size: 28, showLevel: false }));
+
+    const text = document.createElement('span');
+    text.className = 'profile-header__recognition-chip-text';
+    text.textContent = summary.definition.title;
+    const level = document.createElement('strong');
+    level.textContent = ` · LV ${summary.level}`;
+    text.appendChild(level);
+    chip.appendChild(text);
+
+    container.appendChild(chip);
+  });
+}
+
 function createHeaderChip(label, value, variant, bucketKey) {
   const chip = document.createElement('div');
   chip.className = 'profile-header__chip';

@@ -88,6 +88,9 @@ export function resolvePathParts(parts) {
     if (parts[2] === 'class-mode') {
       return { name: 'tracker', classroomId: parts[1] };
     }
+    if (parts[2] === 'reports') {
+      return { name: 'reports', classroomId: parts[1] };
+    }
     if (parts[2] === 'recognition') {
       return { name: 'recognition', classroomId: parts[1], period: parts[3] || null, categoryId: parts[4] || null };
     }

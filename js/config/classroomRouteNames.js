@@ -26,6 +26,7 @@
 export const CLASSROOM_ROUTE_NAMES = [
   'dashboard',
   'tracker',
+  'reports',
   'recognition',
   'weeklyReports',
   'settings',

@@ -199,3 +199,60 @@ export function getTeamAchievementHistory(archives, teamId) {
     cycles: cycleResults,
   };
 }
+
+/**
+ * Groups a set of Achievement Events (already filtered to ONE cycle —
+ * see ui/views/ScoreboardArchiveView.js's own Recognition Wall) into
+ * one entry per badge TYPE, with recipients further grouped by team
+ * whenever team context actually exists on the events themselves.
+ *
+ * Deliberately generic — this never checks `recognitionType ===
+ * 'winning-team-member'` to decide whether to show team grouping; it
+ * looks at whether `event.teamId` is actually present on the events in
+ * that badge's own group. Winning Team Member events always carry a
+ * team (see models/AchievementEvent.js); a hypothetical future badge
+ * with no team concept (e.g. Helper) would simply produce
+ * `teamGroups: null` and render as a flat recipient list — no code
+ * change needed here when that badge's own events start existing.
+ *
+ * Returns `[]` for no events at all (a cycle with no recognitions —
+ * e.g. every team scored negative) — callers render their own empty
+ * state rather than this function inventing one.
+ *
+ * Recipients carry `studentId` only, never a name — this file has no
+ * way to resolve a display name (and shouldn't guess one from
+ * anything other than the archive's own frozen roster, which only the
+ * caller has). Name resolution is deliberately the view's job.
+ */
+export function groupEventsForRecognitionWall(events) {
+  const byBadge = new Map();
+  events.forEach((event) => {
+    const key = `${event.badgeFamily}__${event.recognitionType}`;
+    if (!byBadge.has(key)) byBadge.set(key, []);
+    byBadge.get(key).push(event);
+  });
+
+  const groups = [];
+  for (const badgeEvents of byBadge.values()) {
+    const definition = getBadgeDefinition(badgeEvents[0].badgeFamily, badgeEvents[0].recognitionType);
+    if (!definition) continue; // a badge type no longer in the catalog — skip rather than render unknown data
+
+    const recipients = badgeEvents.map((event) => ({ studentId: event.studentId, teamId: event.teamId, teamName: event.teamName, standing: event.standing }));
+
+    const hasTeamContext = recipients.some((recipient) => recipient.teamId);
+    let teamGroups = null;
+    if (hasTeamContext) {
+      const byTeam = new Map();
+      recipients.forEach((recipient) => {
+        const teamKey = recipient.teamId || 'none';
+        if (!byTeam.has(teamKey)) byTeam.set(teamKey, { teamId: recipient.teamId, teamName: recipient.teamName, recipients: [] });
+        byTeam.get(teamKey).recipients.push(recipient);
+      });
+      teamGroups = [...byTeam.values()];
+    }
+
+    groups.push({ definition, recipients, teamGroups });
+  }
+
+  return groups;
+}

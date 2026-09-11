@@ -26,10 +26,12 @@
  *     differently-labeled doors to the same room. `id: 'students'` is
  *     kept internally unchanged (see ROUTE_NAME_TO_NAV_ID below) —
  *     only the label/icon a teacher actually sees changed.
- *   - "Reports" -> the existing Scoreboard Archive route
- *     (#/classroom/{id}/scoreboard-archive) — the closest existing
- *     historical-reporting surface; there is no dedicated "Reports"
- *     screen elsewhere in the app.
+ *   - "Reports" -> ui/views/ReportsView.js (#/classroom/{id}/reports),
+ *     a real Bento-style landing page added specifically as the shared
+ *     entry point into Recognition, Weekly Reports, and Scoreboard
+ *     Archive — those three routes (plus this one) all highlight this
+ *     same 'reports' nav item, since a teacher reaches all three
+ *     through here now.
  *   - "Learning Circle" -> the existing Teaching Programmes list route
  *     (#/classroom/{id}/learning-programmes) — Learning Circle is a
  *     student-facing view of a Learning Programme
@@ -58,10 +60,10 @@ const NAV_ITEMS = [
   { id: 'teachingProgrammes', label: 'Teaching Programmes', icon: 'graduation-cap', path: (classroomId) => `/classroom/${classroomId}/learning-programmes` },
   { id: 'classFeed', label: 'Class Feed', icon: 'message-circle', path: (classroomId) => `/classroom/${classroomId}/feed` },
   { id: 'learningCircle', label: 'Learning Circle', icon: 'users', path: (classroomId) => `/classroom/${classroomId}/learning-programmes` },
-  { id: 'reports', label: 'Reports', icon: 'bar-chart-3', path: (classroomId) => `/classroom/${classroomId}/scoreboard-archive` },
+  { id: 'reports', label: 'Reports', icon: 'bar-chart-3', path: (classroomId) => `/classroom/${classroomId}/reports` },
 ];
 
-/** Every existing router route name that should highlight one of the nav items above as active. Routes with no entry here (settings, setup, studentProfile, recognition, diagnostics, activitiesList, activityRoster, workRequestRoster, learningManagement, curriculumManagement) simply show the sidebar with nothing highlighted — none of them has a clean 1:1 nav item, and inventing one would misrepresent where they actually sit in this navigation. */
+/** Every existing router route name that should highlight one of the nav items above as active. Routes with no entry here (settings, setup, studentProfile, diagnostics, activitiesList, activityRoster, workRequestRoster, learningManagement, curriculumManagement) simply show the sidebar with nothing highlighted — none of them has a clean 1:1 nav item, and inventing one would misrepresent where they actually sit in this navigation. */
 const ROUTE_NAME_TO_NAV_ID = {
   dashboard: 'home',
   timetable: 'timetable',
@@ -83,6 +85,9 @@ const ROUTE_NAME_TO_NAV_ID = {
   programmeSessionGoals: 'teachingProgrammes',
   programmeSessionObservations: 'teachingProgrammes',
   feed: 'classFeed',
+  reports: 'reports',
+  recognition: 'reports',
+  weeklyReports: 'reports',
   scoreboardArchive: 'reports',
   scoreboardArchiveDetail: 'reports',
 };

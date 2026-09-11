@@ -32,6 +32,7 @@ const CLASSROOM_ID = 'c1';
 // `/classroom/{id}/...` handling, in the same order as that function.
 const CLASSROOM_SCOPED_PATHS = [
   `classroom/${CLASSROOM_ID}/class-mode`,
+  `classroom/${CLASSROOM_ID}/reports`,
   `classroom/${CLASSROOM_ID}/recognition`,
   `classroom/${CLASSROOM_ID}/weekly-reports`,
   `classroom/${CLASSROOM_ID}/settings`,

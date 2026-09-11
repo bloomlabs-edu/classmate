@@ -92,6 +92,7 @@ import { renderProgrammeAttendanceView } from './ui/views/ProgrammeAttendanceVie
 import { renderProgrammeGoalsReviewView } from './ui/views/ProgrammeGoalsReviewView.js';
 import { renderProgrammeObservationsView } from './ui/views/ProgrammeObservationsView.js';
 import { renderRecognitionScreenView } from './ui/views/RecognitionScreenView.js';
+import { renderReportsView } from './ui/views/ReportsView.js';
 import { renderWeeklyReportsListView } from './ui/views/WeeklyReportsListView.js';
 import { renderWeeklyReportDetailView } from './ui/views/WeeklyReportDetailView.js';
 import { renderLoginView } from './ui/views/LoginView.js';
@@ -1043,7 +1044,7 @@ function renderRoute(route, reason = 'unspecified') {
           if (route.name === 'scoreboardArchiveDetail') {
             router.navigate(`/classroom/${classroom.id}/scoreboard-archive`);
           } else {
-            router.navigate(`/classroom/${classroom.id}/class-mode`);
+            router.navigate(`/classroom/${classroom.id}/reports`);
           }
         },
         onOpenArchive: (archiveId) => {
@@ -1054,12 +1055,20 @@ function renderRoute(route, reason = 'unspecified') {
           }
         },
       });
+    } else if (route.name === 'reports') {
+      renderReportsView(appContainer, {
+        classroom,
+        onBack: () => router.navigate(`/classroom/${classroom.id}`),
+        onOpenRecognition: () => router.navigate(`/classroom/${classroom.id}/recognition`),
+        onOpenWeeklyReports: () => router.navigate(`/classroom/${classroom.id}/weekly-reports`),
+        onOpenScoreboardArchive: () => router.navigate(`/classroom/${classroom.id}/scoreboard-archive`),
+      });
     } else if (route.name === 'recognition') {
       renderRecognitionScreenView(appContainer, {
         classroom,
         period: route.period,
         categoryId: route.categoryId,
-        onBack: () => router.navigate(`/classroom/${classroom.id}`),
+        onBack: () => router.navigate(`/classroom/${classroom.id}/reports`),
         onNavigatePeriod: (period) => router.navigate(`/classroom/${classroom.id}/recognition/${period}`),
         onNavigateCategory: (period, categoryId) =>
           router.navigate(`/classroom/${classroom.id}/recognition/${period}/${categoryId}`),
@@ -1078,7 +1087,7 @@ function renderRoute(route, reason = 'unspecified') {
       } else {
         renderWeeklyReportsListView(appContainer, {
           classroom,
-          onBack: () => router.navigate(`/classroom/${classroom.id}/recognition`),
+          onBack: () => router.navigate(`/classroom/${classroom.id}/reports`),
           onSelectWeek: (weekStart) => router.navigate(`/classroom/${classroom.id}/weekly-reports/${weekStart}`),
         });
       }
