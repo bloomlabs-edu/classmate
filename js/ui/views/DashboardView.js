@@ -205,6 +205,25 @@ export function renderDashboardView(container, props) {
   const wrapper = document.createElement('div');
   wrapper.className = 'dashboard-view';
 
+  // THE ACTUAL FIX (page-containment audit) — every section below
+  // (header, Open Work, Today's Schedule, the primary-module grid, the
+  // Teaching Assistant, and the existing celebrateRow/widget rows
+  // further down) now appends into this ONE `content` container
+  // instead of directly into `wrapper`. Before this, each of those
+  // pieces sat directly on `.dashboard-view` (which has no padding or
+  // max-width of its own — see css/styles.css) and separately
+  // hand-tuned its own horizontal inset (the header via
+  // .tracker-header's padding, Today's Schedule via none at all, the
+  // primary-module grid via a redundant copy of .dashboard-widget's own
+  // card padding) — three different, independently-guessed edges on
+  // the same page. `content` (.dashboard-view__content) already
+  // existed and already correctly contained the lower widget rows;
+  // moving `content`'s own creation to the top and appending
+  // everything into it, rather than adding yet another one-off margin,
+  // is what makes every section finally share one real page container.
+  const content = document.createElement('div');
+  content.className = 'dashboard-view__content';
+
   // Phase 3 — the classroom identity block is deliberately quiet and
   // functional now, matching the Personal Hub's own visual language
   // (white surface, subtle border, rounded card, restrained shadow —
@@ -254,7 +273,7 @@ export function renderDashboardView(container, props) {
     classroomContext.appendChild(motto);
   }
 
-  wrapper.appendChild(createClassroomHeaderElement({ classroomContext }));
+  content.appendChild(createClassroomHeaderElement({ classroomContext }));
 
   // Open Work — the first, minimal instance of the agreed
   // "Open Work / Start New / Configuration" direction (see
@@ -268,7 +287,7 @@ export function renderDashboardView(container, props) {
     onNavigate: onNavigateOpenWork,
   });
   if (openWorkWidget) {
-    wrapper.appendChild(openWorkWidget);
+    content.appendChild(openWorkWidget);
   }
 
   // Today's Schedule — a compact summary only (see
@@ -279,7 +298,7 @@ export function renderDashboardView(container, props) {
   // still-synchronous renderDashboardView() doesn't need to become
   // async just to host it.
   const todaysScheduleContainer = document.createElement('div');
-  wrapper.appendChild(todaysScheduleContainer);
+  content.appendChild(todaysScheduleContainer);
   renderTodaysScheduleWidget(todaysScheduleContainer, {
     classroom,
     onViewFullTimetable: () => router.navigate(`/classroom/${classroom.id}/timetable`),
@@ -330,7 +349,7 @@ export function renderDashboardView(container, props) {
     attentionById.feed = `${unreadFeedCount} new message${unreadFeedCount === 1 ? '' : 's'}`;
   }
 
-  wrapper.appendChild(
+  content.appendChild(
     renderPrimaryModulesSection({
       onOpenClassroomLanding: openClassroomLanding,
       onOpenLearningManagement: openLearningManagement,
@@ -349,7 +368,7 @@ export function renderDashboardView(container, props) {
   // built content below. Removing this call entirely would leave the
   // rest of the dashboard completely unaffected.
   const assistantSlot = document.createElement('div');
-  wrapper.appendChild(assistantSlot);
+  content.appendChild(assistantSlot);
   renderTeachingAssistant(assistantSlot, {
     classroom,
     onOpenSettingsStudents: openClassroomManagement,
@@ -358,9 +377,6 @@ export function renderDashboardView(container, props) {
     onOpenSettingsNotebooks,
     onDismiss: () => renderDashboardView(container, props),
   });
-
-  const content = document.createElement('div');
-  content.className = 'dashboard-view__content';
 
   // Every widget below is gated on whether it actually has something
   // meaningful to show — not rendered unconditionally with an

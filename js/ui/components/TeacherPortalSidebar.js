@@ -13,10 +13,19 @@
  * that concept. Two items have no existing 1:1 destination and reuse
  * the closest existing screen instead, documented here rather than
  * silently guessed:
- *   - "Students" -> the existing Class Mode / Tracker route
- *     (#/classroom/{id}/class-mode) — this is where the real student
- *     roster already lives today; there is no separate "Students
- *     list" screen elsewhere in the app.
+ *   - "Class Mode" -> the existing Class Mode / Tracker route
+ *     (#/classroom/{id}/class-mode) — the persistent, global
+ *     quick-reach entry point into live teaching from anywhere in the
+ *     classroom workspace (Learning Management, Timetable, Notebooks,
+ *     Lesson Plans, Assessments, Goals, Teaching Programmes, Class
+ *     Feed, ...), never routing through Home/Overview first. Labeled
+ *     "Class Mode" (not "Students") and given the same `play` icon
+ *     ui/views/ClassroomLandingView.js's own "Run Today's Class"
+ *     button already uses for this identical destination — one
+ *     consistent identity for "enter live teaching," not two
+ *     differently-labeled doors to the same room. `id: 'students'` is
+ *     kept internally unchanged (see ROUTE_NAME_TO_NAV_ID below) —
+ *     only the label/icon a teacher actually sees changed.
  *   - "Reports" -> the existing Scoreboard Archive route
  *     (#/classroom/{id}/scoreboard-archive) — the closest existing
  *     historical-reporting surface; there is no dedicated "Reports"
@@ -41,7 +50,7 @@ import * as router from '../router.js';
 const NAV_ITEMS = [
   { id: 'home', label: 'Home', icon: 'home', path: (classroomId) => `/classroom/${classroomId}` },
   { id: 'timetable', label: 'Timetable', icon: 'calendar', path: (classroomId) => `/classroom/${classroomId}/timetable` },
-  { id: 'students', label: 'Students', icon: 'users', path: (classroomId) => `/classroom/${classroomId}/class-mode` },
+  { id: 'students', label: 'Class Mode', icon: 'play', path: (classroomId) => `/classroom/${classroomId}/class-mode` },
   { id: 'goals', label: 'Goals & Progress', icon: 'award', path: (classroomId) => `/classroom/${classroomId}/goals` },
   { id: 'notebooks', label: 'Notebooks', icon: 'book-open', path: (classroomId) => `/classroom/${classroomId}/notebooks` },
   { id: 'assessments', label: 'Assessments', icon: 'clipboard-list', path: (classroomId) => `/classroom/${classroomId}/assessments` },

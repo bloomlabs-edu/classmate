@@ -24,6 +24,7 @@
  */
 
 import { createBackButton } from '../components/BackButton.js';
+import { createIcon } from '../components/Icon.js';
 import { ASSESSMENT_TYPES } from '../../config/assessmentTypesConfig.js';
 import { openCreateAssessmentModal } from '../components/CreateAssessmentModal.js';
 import { openAddSubjectToAssessmentModal } from '../components/AddSubjectToAssessmentModal.js';
@@ -474,7 +475,14 @@ function renderView(container, mode, state, handlers) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
-  wrapper.className = 'learning-management'; // reuses the same page chrome styling as other modules
+  // Page-containment audit — this bare '.learning-management' class had
+  // no width/padding of its own (that only lives on the modifier class
+  // below), so this whole screen ran edge-to-edge despite the comment's
+  // original claim of "reusing shared page chrome." Adding
+  // 'learning-management-view' gives it the exact same real container
+  // (max-width/margin/padding) Learning Management itself already uses
+  // — see that class's own rule in css/styles.css.
+  wrapper.className = 'learning-management learning-management-view';
 
   const header = document.createElement('header');
   header.className = 'learning-management__header';
@@ -782,14 +790,20 @@ function renderImportReviewStep(assessment, importReview, importError, handlers)
   return section;
 }
 
+/**
+ * Quiet, clearly-set-apart destructive action — same idiom as
+ * ui/views/LearningManagementView.js's own renderDangerZone()
+ * (.subject-danger-zone): a small warning icon + a plainly-worded
+ * button, never a shouted "DANGER ZONE" heading over a tinted box.
+ * See docs/classmate_ui_consistency_guidelines.md Section 23.
+ */
 function renderAssessmentDangerZone(assessment, handlers) {
   const zone = document.createElement('div');
-  zone.className = 'learning-management__danger-zone';
+  zone.className = 'subject-danger-zone';
 
-  const zoneHeading = document.createElement('p');
-  zoneHeading.className = 'learning-management__danger-zone-heading';
-  zoneHeading.textContent = 'Danger Zone';
-  zone.appendChild(zoneHeading);
+  const icon = createIcon('alert-triangle', { size: 16 });
+  icon.classList.add('subject-danger-zone-icon');
+  zone.appendChild(icon);
 
   const deleteButton = document.createElement('button');
   deleteButton.type = 'button';
@@ -1608,12 +1622,13 @@ function renderSubjectStep(classroom, assessment, assessmentSubject, sortBy, isE
   }
   section.appendChild(footer);
 
+  // Quiet, clearly-set-apart destructive action — see
+  // renderAssessmentDangerZone()'s own comment above.
   const zone = document.createElement('div');
-  zone.className = 'learning-management__danger-zone';
-  const zoneHeading = document.createElement('p');
-  zoneHeading.className = 'learning-management__danger-zone-heading';
-  zoneHeading.textContent = 'Danger Zone';
-  zone.appendChild(zoneHeading);
+  zone.className = 'subject-danger-zone';
+  const zoneIcon = createIcon('alert-triangle', { size: 16 });
+  zoneIcon.classList.add('subject-danger-zone-icon');
+  zone.appendChild(zoneIcon);
   const removeButton = document.createElement('button');
   removeButton.type = 'button';
   removeButton.className = 'btn btn--danger';

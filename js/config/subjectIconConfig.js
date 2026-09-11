@@ -19,16 +19,19 @@
  * and peer-equal while still being tellable apart at a glance.
  *
  * Order matters: checked top to bottom, first match wins. "Computer"
- * is checked before the plainer "science" match so Computer Science
- * doesn't fall into the flask-conical branch meant for the physical
- * sciences.
+ * and "Social" are both checked before the plainer "science" match,
+ * since "Computer Science" and "Social Science" both contain the
+ * substring "science" and would otherwise fall into the
+ * flask-conical branch meant for the physical sciences — caught via
+ * screenshot during the UI audit (Social Science rendered the same
+ * flask icon as Science, defeating the point of per-subject icons).
  */
 
 const SUBJECT_ICON_RULES = [
   { keywords: ['computer', 'coding', 'ict'], icon: 'monitor' },
   { keywords: ['math'], icon: 'calculator' },
-  { keywords: ['science'], icon: 'flask-conical' },
   { keywords: ['social', 'history', 'geography', 'civics'], icon: 'globe' },
+  { keywords: ['science'], icon: 'flask-conical' },
   { keywords: ['environmental', 'evs'], icon: 'leaf' },
   { keywords: ['art', 'craft', 'drawing'], icon: 'palette' },
   { keywords: ['hindi', 'tamil', 'telugu', 'kannada', 'marathi', 'sanskrit', 'language'], icon: 'languages' },

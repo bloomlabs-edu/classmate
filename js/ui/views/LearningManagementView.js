@@ -252,7 +252,23 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
     if (selectedSubject) {
       const freshSubject = learningRecordService.getSubjects(freshClassroom).find((subject) => subject.id === selectedSubject.id);
       if (freshSubject) {
+        // Page-containment/curriculum-state audit: a background sync
+        // used to swap in `freshSubject` without ever re-checking
+        // whether its OWN linkedCurriculumIndexId changed (e.g. a
+        // co-teacher assigned/changed the curriculum on another
+        // device/tab) — selectedSubjectCurriculumState was only ever
+        // (re)loaded from onChooseSubject, so it could silently go
+        // stale relative to the just-swapped-in subject. Re-derive it
+        // whenever the link itself actually differs; a resync that
+        // doesn't touch this Subject's curriculum link (the common
+        // case — most syncs are score/history changes elsewhere)
+        // still costs nothing extra.
+        const curriculumLinkChanged = freshSubject.linkedCurriculumIndexId !== selectedSubject.linkedCurriculumIndexId;
         selectedSubject = freshSubject;
+        if (curriculumLinkChanged) {
+          loadCurriculumStateFor(freshSubject); // also calls rerender()
+          return;
+        }
       } else {
         selectedSubject = null;
         selectedPartName = null;

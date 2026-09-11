@@ -2,11 +2,18 @@
  * ui/components/TeacherMobileNav.js
  *
  * The mobile bottom tab bar for the Teacher Classroom workspace, per
- * the approved reference: Home / Timetable / Students / More — shown
+ * the approved reference: Home / Timetable / Class Mode / More — shown
  * only below the desktop sidebar's own breakpoint (see
  * ui/components/TeacherPortalSidebar.js's own CSS, which hides itself
  * at the same width this shows itself at), so exactly one of the two
  * navigation surfaces is ever visible at once, never both.
+ *
+ * "Class Mode" (not "Students") — the persistent, global quick-reach
+ * into live teaching, reachable from every classroom-scoped screen on
+ * mobile exactly as on desktop (see TeacherPortalSidebar.js's own
+ * header comment for the full reasoning); same route, same `play`
+ * icon as that sidebar item and ClassroomLandingView.js's own "Run
+ * Today's Class" button.
  *
  * "More" deliberately does not enumerate the sidebar's remaining 6
  * items in a menu here — that's real, disclosed remaining scope, not
@@ -21,7 +28,7 @@ import * as router from '../router.js';
 const TABS = [
   { id: 'home', label: 'Home', icon: 'home', path: (classroomId) => `/classroom/${classroomId}` },
   { id: 'timetable', label: 'Timetable', icon: 'calendar', path: (classroomId) => `/classroom/${classroomId}/timetable` },
-  { id: 'students', label: 'Students', icon: 'users', path: (classroomId) => `/classroom/${classroomId}/class-mode` },
+  { id: 'students', label: 'Class Mode', icon: 'play', path: (classroomId) => `/classroom/${classroomId}/class-mode` },
   { id: 'more', label: 'More', icon: 'settings', path: (classroomId) => `/classroom/${classroomId}` },
 ];
 

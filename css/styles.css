@@ -1615,6 +1615,14 @@ select:focus-visible,
      same way the Personal Hub's own section cards do. */
   background: transparent;
   border-bottom: none;
+  /* Removes .tracker-header's own 1.25rem/1.5rem padding, which used
+     to be this header's ONLY horizontal inset (this whole page had no
+     shared container at all). Now that .dashboard-view__content is a
+     real page container, that padding would double up with it —
+     .classroom-shell-header's own card padding is what should provide
+     spacing around the header's content, exactly like every other
+     card on this page provides its own. */
+  padding: 0;
 }
 
 .tracker-header__title-block {
@@ -5173,7 +5181,7 @@ button.wizard-checklist__row:hover {
 /* Login (Google Sign-In) */
 
 .login-view {
-  max-width: 400px;
+  max-width: 560px;
   margin: 0 auto;
   min-height: 100vh;
   display: flex;
@@ -5182,12 +5190,22 @@ button.wizard-checklist__row:hover {
   justify-content: center;
   text-align: center;
   padding: 2rem 1.5rem;
-  gap: 0.75rem;
+  gap: 1.25rem;
 }
 
+/* Browser-feedback pass (2026-09-11) — the wordmark was a small
+   heading sitting above a form; the brief asks for it to be one of
+   the dominant elements of the screen, on par with a real product
+   landing page. clamp() keeps it genuinely large on desktop (up to
+   5rem) while still fitting a 390px phone at its 3rem floor, rather
+   than a fixed size that's either too small on desktop or clipped on
+   mobile. Letter-spacing tightens slightly at this size, matching how
+   large wordmark type is usually set. */
 .login-view__title {
-  font-size: 2rem;
+  font-size: clamp(3rem, 9vw, 5rem);
   font-weight: var(--font-weight-black);
+  letter-spacing: -0.02em;
+  line-height: 1.05;
   margin: 0;
 }
 /* Fixed brand hex pair, matching assets/icons/classmate-icon.svg's own
@@ -5204,13 +5222,18 @@ button.wizard-checklist__row:hover {
 
 .login-view__subtitle {
   color: var(--color-muted);
-  margin: 0 0 1rem;
+  font-size: var(--text-lg, 1.1rem);
+  /* Spacing to the title/button now comes from .login-view's own gap,
+     not a one-off margin, so the rhythm stays consistent if either
+     neighbor's size changes again. */
+  margin: 0;
 }
 
 .login-view__google-button {
   display: inline-flex;
   align-items: center;
   gap: 0.65rem;
+  margin-top: 0.5rem;
 }
 
 .login-view__google-icon {
@@ -5296,18 +5319,32 @@ button.wizard-checklist__row:hover {
   align-items: center;
   gap: 0.3rem;
   max-width: 160px;
-  background: none;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  /* Browser-feedback pass (2026-09-11) — a translucent white wash over
+     the dark chrome strip still read as too low-contrast to register
+     as a control ("blends into the dark top navigation bar"). A solid,
+     slightly-lighter slate surface (not a colour, not a badge fill)
+     reads as its own distinct navigation surface at a glance, the way
+     a real product nav's classroom/workspace switcher would. */
+  background-color: #3a3f47;
+  border: 1px solid #5b6472;
   border-radius: var(--radius-pill);
-  padding: 0.25rem 0.6rem;
+  padding: 0.3rem 0.7rem;
   color: var(--color-chrome-text);
   cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard);
 }
 .user-bar__classroom-switcher-button:hover:not(:disabled) {
-  border-color: rgba(255, 255, 255, 0.6);
+  background-color: #454b55;
+  border-color: #6b7684;
+}
+.user-bar__classroom-switcher-button:focus-visible {
+  outline: 2px solid var(--color-yellow);
+  outline-offset: 2px;
 }
 .user-bar__classroom-switcher-button:disabled {
   cursor: default;
+  background-color: #2e333a;
+  border-color: #454b54;
   opacity: 0.85;
 }
 .user-bar__classroom-switcher-label {
@@ -6060,6 +6097,20 @@ button.wizard-checklist__row:hover {
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
+  /* THE page container for the whole Classroom Home screen — matching
+     docs/classmate_ui_consistency_guidelines.md Section 25 (every
+     top-level screen states its own width on purpose). 1100px matches
+     .learning-management-view's own "browsing hub" width, the closest
+     equivalent shape (a grid of parallel entry points, not a linear
+     flow). Every Dashboard section (header, Open Work, Today's
+     Schedule, the primary-module grid, the Teaching Assistant, and
+     every .dashboard-widget-based row below) is now a child of this
+     ONE container, so they all share the same left/right edge instead
+     of each independently guessing its own inset — the specific,
+     reported bug this fixes (see ui/views/DashboardView.js's own
+     header comment for the DOM restructuring this required). */
+  max-width: 1100px;
+  margin: 0 auto;
   padding: 1.5rem;
 }
 
@@ -6600,6 +6651,22 @@ button.wizard-checklist__row:hover {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+/* Button hierarchy/sizing audit — a plain flex column defaults to
+   align-items: stretch, so any bare button/chip dropped directly into
+   a .dashboard-section__group (ui/views/DashboardView.js's "Classroom
+   Access"/"Settings" .btn--ghost buttons; ui/components/TeachingSection.js's
+   "Activities" .dashboard-widget__chip) stretched to the full page
+   width, exactly the failure mode
+   docs/classmate_ui_consistency_guidelines.md Section 9 already
+   documents. Scoped to these two control classes specifically — the
+   Groups/Subjects widget cards that also live in these same groups
+   legitimately ARE meant to be full width, like every other
+   .dashboard-widget card, so align-items: stretch stays the group's
+   own default rather than changing it wholesale. */
+.dashboard-section__group > .btn,
+.dashboard-section__group > .dashboard-widget__chip {
+  align-self: flex-start;
 }
 
 .recognition-card-row {
@@ -7333,12 +7400,16 @@ button.recognition-bento__hero-winner-name {
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 1rem;
   margin: 1.5rem 0;
-  /* Matches .dashboard-widget's own 1rem horizontal padding (see its
-     own rule below) — every .dashboard-widget-based section on this
-     same Dashboard page (Recognition Wall, Open Work) is inset by
-     1rem on each side; without this, this grid's own cards visibly
-     extend past those edges, a real, reported misalignment. */
-  padding: 0 1rem;
+  /* No horizontal padding of its own — this grid now lives inside
+     .dashboard-view__content alongside every other Dashboard section
+     (header, Today's Schedule, .dashboard-widget cards), which is the
+     ONE shared page container providing horizontal inset (see that
+     rule's own comment). This used to duplicate .dashboard-widget's
+     own 1rem card padding here just to fake-align with it, back when
+     nothing on this page shared a real container — that page-level
+     containment gap (not this grid) was the actual bug; giving this
+     grid its own extra inset on top of a real container would now
+     overshoot every sibling section by that same 1rem. */
 }
 /* Tablet range — six fixed tracks would squeeze each card narrower
    than is comfortable once the sidebar's own fixed width starts
@@ -9529,9 +9600,13 @@ button.recognition-bento__hero-winner-name {
  *
  * Scoped to .learning-management-view specifically, NOT the bare
  * .learning-management class alone — that base class is shared,
- * unmodified page chrome also used as-is by
- * AssessmentManagementView.js/GoalDashboardView.js/
- * GoalManagementView.js, none of which are part of this pass.
+ * unmodified page chrome also used as-is by GoalDashboardView.js/
+ * GoalManagementView.js, neither of which is part of this pass.
+ * AssessmentManagementView.js used to be excluded here too (see this
+ * project's own history) but was brought into the same real container
+ * during the later page-containment audit — it now also renders with
+ * class="learning-management learning-management-view", the identical
+ * modifier, not a separate rule.
  */
 .learning-management-view {
   max-width: 1100px;
@@ -10887,37 +10962,20 @@ button.recognition-bento__hero-winner-name {
   margin: 0 0 1.25rem;
 }
 
-/* Danger Zone — also reused as-is by ui/views/AssessmentManagementView.js's
-   own renderAssessmentDangerZone(); left untouched here on purpose so
-   that page's presentation doesn't shift as a side effect of this
-   Learning Management / Curriculum Management pass. */
-.learning-management__danger-zone {
-  margin-top: 2rem;
-  padding: 1.1rem 1.2rem;
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-card);
-  background-color: rgba(225, 83, 68, 0.04);
-}
-.learning-management__danger-zone-heading {
-  margin: 0 0 0.75rem;
-  font-weight: var(--font-weight-black);
-  font-size: 0.9rem;
-  color: var(--color-danger);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-/* Destructive-action treatment for a classroom Subject / a Curriculum
-   Index (ui/views/LearningManagementView.js's renderDangerZone(),
-   ui/views/CurriculumManagementView.js's own Curriculum Details step)
-   — same quiet idiom as ui/views/SettingsView.js's own
+/* Destructive-action treatment for a classroom Subject, a Curriculum
+   Index, or an Assessment (ui/views/LearningManagementView.js's
+   renderDangerZone(), ui/views/CurriculumManagementView.js's own
+   Curriculum Details step, ui/views/AssessmentManagementView.js's
+   renderAssessmentDangerZone() and its own "Remove from Assessment"
+   zone) — same quiet idiom as ui/views/SettingsView.js's own
    .settings-section--danger: a subtle left-border accent and a small
    icon signal "this is destructive," not a full tinted box with a
    shouted "DANGER ZONE" heading. Deliberately understated relative to
    the rest of the page — see docs/classmate_ui_consistency_guidelines.md
-   Section 23. A dedicated class, not a reskin of
-   .learning-management__danger-zone above, so it can't shift that
-   other, out-of-scope page's presentation. */
+   Section 23. The older, louder '.learning-management__danger-zone'
+   (full tinted box, uppercase heading) this replaces had exactly one
+   remaining consumer (AssessmentManagementView.js) and has been
+   removed rather than left as dead CSS. */
 .subject-danger-zone {
   margin-top: 2rem;
   padding: 0.85rem 1rem;
@@ -13423,6 +13481,19 @@ button.recognition-bento__hero-winner-name {
 }
 
 /* Notebook Checkpoints — the grid itself (see ui/views/NotebookCheckpointsView.js) */
+/* Page-containment audit — this view (a genuine data-heavy checkpoint
+   matrix, docs/classmate_ui_consistency_guidelines.md Section 13) had
+   no max-width/margin anywhere in its own DOM chain at all, running
+   fully edge-to-edge. 1100px matches the same "browsing hub"/dense-
+   content width already used by .learning-management-view and (once
+   fixed alongside this) Assessments — the table's own
+   .assessment-gradebook__scroll wrapper still handles horizontal
+   overflow within that width, so density isn't lost. */
+.notebook-checkpoints {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
 .notebook-checkpoints__content {
   display: flex;
   flex-direction: column;
@@ -14139,6 +14210,15 @@ button.recognition-bento__hero-winner-name {
 }
 
 /* Classroom landing — the merged Class Mode + Classroom destination (see ui/views/ClassroomLandingView.js) */
+/* Page-containment audit — this screen had no max-width/margin of its
+   own at all. 720px matches .curriculum-management's own width, the
+   right precedent for a linear single-task chooser (Run Today's Class
+   / Students / Teams & Groups / Seating), not a wide browsing hub. */
+.classroom-landing {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 1.5rem 3rem;
+}
 .classroom-landing__run-button {
   display: inline-flex;
   align-items: center;
@@ -16384,6 +16464,15 @@ button.recognition-bento__hero-winner-name {
    --------------------------------------------------------------------- */
 
 .timetable-view {
+  /* Page-containment audit — this view had padding but no max-width/
+     margin at all, so its calendar grid ran genuinely edge-to-edge at
+     any viewport width (docs/classmate_ui_consistency_guidelines.md
+     Section 25). 1200px matches .tracker-view's own existing width —
+     the closest precedent for a screen that, like a weekly calendar
+     grid, genuinely needs real horizontal room rather than a narrow
+     single-task flow's width. */
+  max-width: 1200px;
+  margin: 0 auto;
   padding: var(--space-5);
 }
 

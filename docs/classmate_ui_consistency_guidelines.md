@@ -396,6 +396,28 @@ Teacher Mode should emphasize orientation and efficiency.
 
 Student Mode can be slightly more expressive, but navigation must remain familiar.
 
+**Global mode-switch affordances.** Some screens aren't just destinations —
+they're a whole different *mode* of using the classroom (Class Mode is the
+canonical example: a teacher can be running it while looking at almost any
+other classroom screen conceptually, so jumping into it shouldn't require
+detouring back through Home/Overview first). Any such mode must be reachable
+from the *same* persistent nav surface (sidebar on desktop, bottom nav on
+mobile) that's already mounted on every classroom-scoped screen — not a new,
+second navigation system, and not "just another large button" bolted onto
+one page. It needs its own distinct label and icon so it reads as a mode
+switch rather than a peer of Overview/Home (e.g. a "play" glyph, not a
+generic "people" icon shared with a roster screen).
+
+**The classroom selector is wayfinding, not a chrome action.** It lives
+inside the dark top bar alongside app-level controls (notifications, sign
+out), but it answers a different question — "which classroom am I even
+in, and can I switch?" — so it needs its own visually distinct surface
+(a tinted/outlined pill, not flat text on the bar's background) with
+sufficient contrast in its default/hover/focus states, rather than blending
+into the rest of the chrome or clashing with it via an unrelated bright
+colour. On narrow viewports it should truncate to a short label with a
+chevron rather than disappearing or wrapping the bar.
+
 ---
 
 # 11. Iconography
