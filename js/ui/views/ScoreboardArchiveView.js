@@ -42,7 +42,7 @@ function formatDisplayDate(isoString) {
   return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-export async function renderScoreboardArchiveView(container, { classroom, archiveId, onBack, onOpenArchive }) {
+export async function renderScoreboardArchiveView(container, { classroom, archiveId, onBack, onOpenArchive, onSelectTeam }) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
@@ -53,7 +53,7 @@ export async function renderScoreboardArchiveView(container, { classroom, archiv
   header.appendChild(createBackButton(onBack));
 
   if (archiveId) {
-    await renderDetail(wrapper, header, classroom, archiveId);
+    await renderDetail(wrapper, header, classroom, archiveId, onSelectTeam);
   } else {
     await renderList(wrapper, header, classroom, onOpenArchive);
   }
@@ -235,7 +235,7 @@ function createArchiveCard(archive, allEvents, onOpenArchive, { variant }) {
   return card;
 }
 
-async function renderDetail(wrapper, header, classroom, archiveId) {
+async function renderDetail(wrapper, header, classroom, archiveId, onSelectTeam) {
   const archive = await scoreboardArchiveService.getArchive(classroom.id, archiveId);
 
   const titleBlock = document.createElement('div');
@@ -271,8 +271,23 @@ async function renderDetail(wrapper, header, classroom, archiveId) {
 
     const groupHeader = document.createElement('div');
     groupHeader.className = 'scoreboard-archive__group-header';
-    const groupName = document.createElement('span');
+    // Team Profile discoverability — this archive card's own team.id is
+    // stable/permanent (see models/Team.js), so it still resolves to
+    // that team's CURRENT profile even from historical context, per
+    // the explicit "Team Profile is primarily a current identity"
+    // product decision — a renamed or reorganized team still opens to
+    // whatever it is today. The Ungrouped pseudo-team has no profile
+    // of its own, matching every other Ungrouped exclusion in this app.
+    const groupName = document.createElement(!team.isUngrouped && onSelectTeam ? 'button' : 'span');
     groupName.className = 'scoreboard-archive__group-name';
+    if (!team.isUngrouped && onSelectTeam) {
+      groupName.type = 'button';
+      groupName.classList.add('scoreboard-archive__group-name--clickable');
+      groupName.addEventListener('click', (event) => {
+        event.stopPropagation();
+        onSelectTeam(team.id);
+      });
+    }
     groupName.textContent = team.name;
     const groupTotal = document.createElement('span');
     groupTotal.className = 'scoreboard-archive__group-total';

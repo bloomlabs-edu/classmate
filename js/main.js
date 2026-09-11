@@ -1054,6 +1054,7 @@ function renderRoute(route, reason = 'unspecified') {
             router.navigate(`/classroom/${classroom.id}/scoreboard-archive`);
           }
         },
+        onSelectTeam: (teamId) => router.navigate(`/classroom/${classroom.id}/team/${teamId}`),
       });
     } else if (route.name === 'reports') {
       renderReportsView(appContainer, {
@@ -1115,6 +1116,7 @@ function renderRoute(route, reason = 'unspecified') {
           ),
         onOpenScoreboardArchive: () => router.navigate(`/classroom/${classroom.id}/scoreboard-archive`),
         onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
+        onSelectTeam: (teamId) => router.navigate(`/classroom/${classroom.id}/team/${teamId}`),
         initialHighlightStudentId: route.query?.highlightStudentId || null,
       });
     } else if (route.name === 'settings') {
@@ -1167,6 +1169,7 @@ function renderRoute(route, reason = 'unspecified') {
         onBack: () => router.navigate(route.query?.returnTo || `/classroom/${classroom.id}`),
         onNavigateTab: (tab) => router.navigate(`/classroom/${classroom.id}/student/${route.studentId}/${tab}${returnToQuery}`),
         onOpenStudentAccess: () => router.navigate(`/classroom/${classroom.id}/student-access`),
+        onSelectTeam: (teamId) => router.navigate(`/classroom/${classroom.id}/team/${teamId}`),
       });
     } else if (route.name === 'teamProfile') {
       renderTeamProfileView(appContainer, {

@@ -1593,6 +1593,16 @@ select:focus-visible,
   font-weight: var(--font-weight-black);
   font-size: 1.05rem;
 }
+.scoreboard-archive__group-name--clickable {
+  background: none;
+  border: none;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+  color: var(--color-primary-deep);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 .scoreboard-archive__group-total {
   font-weight: var(--font-weight-black);
   font-size: 1.15rem;
@@ -4698,6 +4708,15 @@ button.wizard-checklist__row:hover {
      0.88 opacity of dark ink against any of these four light pastel
      backgrounds stays comfortably legible. */
   opacity: 0.88;
+}
+.profile-header__group--clickable {
+  background: none;
+  border: none;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 /* Badge & Achievement Engine — the compact recognition summary
@@ -12151,6 +12170,16 @@ button.recognition-bento__hero-winner-name {
   font: inherit;
   text-align: left;
   cursor: pointer;
+  transition: filter var(--duration-fast) var(--ease-standard);
+}
+/* Team Profile discoverability (2026-09-11) — the Teacher Portal's own
+   Class Mode team cards now use this same onTapTeam affordance the
+   Student Portal already had; a subtle hover darkening is the one bit
+   of feedback that was missing to make "this name is clickable"
+   reasonably discoverable without adding a label or icon that would
+   clutter the live scoreboard. */
+.team-card__header--clickable:hover {
+  filter: brightness(0.97);
 }
 
 /* Deliberately minimal placeholder — see
@@ -18662,66 +18691,75 @@ button.recognition-bento__hero-winner-name {
 /* ---------------------------------------------------------------------
    Team Profile — ui/views/TeamProfileView.js. "What have we achieved
    together" — collective identity/standing/history, never a second
-   leaderboard (that already exists in Class Mode/Tracker).
+   leaderboard (that already exists in Class Mode/Tracker). Bento
+   composition (2026-09-11): hero (identity + standing) -> secondary
+   row (Members | Achievements) -> full-width history, the same
+   hierarchy language ui/views/ReportsView.js/ScoreboardArchiveView.js
+   already established.
    --------------------------------------------------------------------- */
 
 .team-profile {
-  max-width: 720px;
+  max-width: 900px;
   margin: 0 auto;
   padding: 0 var(--space-4) var(--space-6);
 }
 
-.team-profile__identity {
+.team-profile__bento {
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-4);
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.team-profile__hero {
+  padding: 1.75rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-left-width: 4px;
-  border-radius: var(--radius-card);
-  margin-bottom: var(--space-4);
+  border-radius: 20px;
 }
 
 .team-profile__swatch {
+  display: inline-block;
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  flex-shrink: 0;
+  margin-bottom: 0.6rem;
 }
 
 .team-profile__name {
-  font-size: 1.5rem;
+  font-size: 1.6rem;
   font-weight: var(--font-weight-black);
   margin: 0;
 }
 
-.team-profile__stats-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  margin-bottom: var(--space-4);
+.team-profile__hero-standing {
+  margin: 0.3rem 0 0;
+  color: var(--color-muted);
+  font-weight: var(--font-weight-medium);
 }
 
-.team-profile__stat {
-  flex: 1 1 140px;
-  padding: var(--space-3);
+.team-profile__secondary-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+@media (min-width: 720px) {
+  .team-profile__secondary-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.team-profile__tile {
+  padding: 1.25rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
-  text-align: center;
 }
 
-.team-profile__stat-value {
-  font-size: 1.3rem;
+.team-profile__tile-heading {
+  font-size: 1rem;
   font-weight: var(--font-weight-black);
-  margin: 0;
-}
-
-.team-profile__stat-label {
-  font-size: 0.75rem;
-  color: var(--color-muted);
-  margin: 0.2rem 0 0;
+  margin: 0 0 0.85rem;
 }
 
 .team-profile__member-list {
@@ -18735,7 +18773,7 @@ button.recognition-bento__hero-winner-name {
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
-  background: var(--color-surface);
+  background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   cursor: pointer;
@@ -18754,7 +18792,7 @@ button.recognition-bento__hero-winner-name {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: var(--color-bg);
+  background: var(--color-surface);
   font-weight: var(--font-weight-bold);
   flex-shrink: 0;
 }
@@ -18762,6 +18800,69 @@ button.recognition-bento__hero-winner-name {
 .team-profile__member-name {
   flex: 1;
   font-weight: var(--font-weight-medium);
+}
+
+/* Achievements tile — standard-scale (72-96px) badge artwork, per the
+   established size tiers; "a significant team achievement," not a
+   utility icon (config/badgeDefinitions.js's own BADGE_SIZES). */
+.team-profile__achievement-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.team-profile__achievement-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.team-profile__achievement-title {
+  font-weight: var(--font-weight-black);
+  margin: 0;
+}
+
+.team-profile__achievement-count {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  margin: 0.1rem 0 0;
+}
+
+.team-profile__tile--history {
+  padding: 1.25rem 1.5rem;
+}
+
+.team-profile__history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.team-profile__history-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.team-profile__history-row:last-child {
+  border-bottom: none;
+}
+
+.team-profile__history-date {
+  font-weight: var(--font-weight-bold);
+  min-width: 6rem;
+}
+
+.team-profile__history-score {
+  color: var(--color-muted);
+}
+
+.team-profile__history-recognition {
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-gold);
 }
 
 .scoreboard-archive__backfill-button {

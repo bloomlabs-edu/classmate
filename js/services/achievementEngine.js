@@ -201,6 +201,59 @@ export function getTeamAchievementHistory(archives, teamId) {
 }
 
 /**
+ * A team's own achievement summary, across every badge TYPE it has
+ * ever been associated with — the generic, events-driven counterpart
+ * to getTeamAchievementHistory() above (that function is deliberately
+ * Winning-Team-Member-specific — see its own header comment — and
+ * stays exactly as it is; this one exists so ui/views/TeamProfileView.js's
+ * own Achievements section never hard-codes "Winning Team Member" as
+ * the only possible team achievement).
+ *
+ * Groups this team's own Achievement Events (`event.teamId === teamId`,
+ * regardless of badgeFamily/recognitionType) by badge type, and counts
+ * DISTINCT cycles per type — not raw event count, since a single
+ * cycle can produce several events for the same team (one per eligible
+ * student) that all represent the same one recognition, not several.
+ * `recentCycles` is that same distinct-cycle list, most recent first,
+ * each carrying its own real cycleId/cycleLabel — never fabricated.
+ *
+ * A future badge type (Climber, Team Topper, Helper, or something not
+ * yet imagined) appears here automatically the moment real Achievement
+ * Events naming this team exist for it — no code change in this
+ * function, and none in the view that renders its output.
+ */
+export function summarizeTeamAchievements(events, teamId) {
+  const teamEvents = events.filter((event) => event.teamId === teamId);
+
+  const byBadge = new Map();
+  teamEvents.forEach((event) => {
+    const key = `${event.badgeFamily}__${event.recognitionType}`;
+    if (!byBadge.has(key)) byBadge.set(key, []);
+    byBadge.get(key).push(event);
+  });
+
+  const summaries = [];
+  for (const badgeEvents of byBadge.values()) {
+    const definition = getBadgeDefinition(badgeEvents[0].badgeFamily, badgeEvents[0].recognitionType);
+    if (!definition) continue; // a badge type no longer in the catalog — skip rather than render unknown data
+
+    const cyclesById = new Map();
+    badgeEvents.forEach((event) => {
+      if (!cyclesById.has(event.cycleId)) cyclesById.set(event.cycleId, { cycleId: event.cycleId, cycleLabel: event.cycleLabel });
+    });
+    // Newest first — cycleId itself (a random archive id) is NOT
+    // chronological; cycleLabel is always derived from the archive's
+    // own ISO createdAt/createdAtDateLabel (see achievementService.js's
+    // toStandingCycle()), which sorts correctly as a plain string.
+    const cycles = [...cyclesById.values()].sort((a, b) => (a.cycleLabel < b.cycleLabel ? 1 : -1));
+
+    summaries.push({ definition, cycleCount: cycles.length, recentCycles: cycles.slice(0, 5) });
+  }
+
+  return summaries;
+}
+
+/**
  * Groups a set of Achievement Events (already filtered to ONE cycle —
  * see ui/views/ScoreboardArchiveView.js's own Recognition Wall) into
  * one entry per badge TYPE, with recipients further grouped by team

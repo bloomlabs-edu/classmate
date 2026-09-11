@@ -61,7 +61,7 @@ const TAB_LABELS = {
   notes: 'Notes',
 };
 
-export function renderStudentProfileView(container, { classroom, studentId, tab, onBack, onNavigateTab, onOpenStudentAccess, weekAnchorDateKey }) {
+export function renderStudentProfileView(container, { classroom, studentId, tab, onBack, onNavigateTab, onOpenStudentAccess, onSelectTeam, weekAnchorDateKey }) {
   container.innerHTML = '';
 
   const found = studentService.findStudentInClassroom(classroom, studentId);
@@ -89,13 +89,14 @@ export function renderStudentProfileView(container, { classroom, studentId, tab,
       onBack,
       onNavigateTab,
       onOpenStudentAccess,
+      onSelectTeam,
       weekAnchorDateKey: nextWeekAnchorDateKey !== undefined ? nextWeekAnchorDateKey : weekAnchorDateKey,
     });
 
   const wrapper = document.createElement('div');
   wrapper.className = 'profile-view';
 
-  wrapper.appendChild(renderProfileHeader(classroom, student, team, rerender, onBack));
+  wrapper.appendChild(renderProfileHeader(classroom, student, team, rerender, onBack, onSelectTeam));
   wrapper.appendChild(renderTabNav(activeTab, onNavigateTab));
 
   const content = document.createElement('div');
@@ -116,7 +117,7 @@ export function renderStudentProfileView(container, { classroom, studentId, tab,
   container.appendChild(wrapper);
 }
 
-function renderProfileHeader(classroom, student, team, rerender, onBack) {
+function renderProfileHeader(classroom, student, team, rerender, onBack, onSelectTeam) {
   const header = document.createElement('header');
   header.className = 'profile-header';
   const style = getBucketRowStyle(student.bucket);
@@ -197,8 +198,18 @@ function renderProfileHeader(classroom, student, team, rerender, onBack) {
   name.textContent = student.name;
   header.appendChild(name);
 
-  const groupLine = document.createElement('p');
+  // Team Profile discoverability — "Team Profile -> Student Profile"
+  // already existed (the Members list there opens onSelectStudent);
+  // this is the reverse link, "Student Profile -> Team Profile," per
+  // explicit direction. Ungrouped has no profile of its own, matching
+  // every other Ungrouped exclusion in this app.
+  const groupLine = document.createElement(team && onSelectTeam ? 'button' : 'p');
   groupLine.className = 'profile-header__group';
+  if (team && onSelectTeam) {
+    groupLine.type = 'button';
+    groupLine.classList.add('profile-header__group--clickable');
+    groupLine.addEventListener('click', () => onSelectTeam(team.id));
+  }
   groupLine.textContent = team ? team.name : 'Ungrouped';
   header.appendChild(groupLine);
 

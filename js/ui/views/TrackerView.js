@@ -51,7 +51,7 @@ import * as scoreboardArchiveService from '../../services/scoreboardArchiveServi
 import { getDisplayName, getDisplaySubtitle } from '../../services/classroomService.js';
 
 export function renderTrackerView(container, props) {
-  const { classroom, onBack, onNotebooks, onOpenScoreboardArchive, onSelectStudent, onCheckNotebook, initialHighlightStudentId } = props;
+  const { classroom, onBack, onNotebooks, onOpenScoreboardArchive, onSelectStudent, onSelectTeam, onCheckNotebook, initialHighlightStudentId } = props;
   // Seeds the pulse highlight on first mount from the route's own
   // `?highlightStudentId=` (see main.js's `tracker` route dispatch) —
   // this is what makes returning from a Notebook-mode jump (Quick
@@ -274,6 +274,14 @@ export function renderTrackerView(container, props) {
     onTap: (student) => handleTap(classroom, findTeamContaining(classroom, student.id), student, rerender),
     onSwipeLeft: (student) => handleSwipeLeft(classroom, findTeamContaining(classroom, student.id), student, rerender),
     onLongPress: (student) => handleLongPress(classroom, findTeamContaining(classroom, student.id), student, { onSelectStudent, onCheckNotebook, rerender }),
+    // Team Profile discoverability — ui/components/TeamCard.js already
+    // supported onTapTeam (the Student Portal's own team-card tap
+    // already used it); the Teacher Portal's own live team standings,
+    // arguably the single place a teacher looks at a team most often,
+    // simply never passed it. Optional at every layer, so a caller
+    // with no onSelectTeam keeps every team header exactly as
+    // non-interactive as before.
+    onTapTeam: onSelectTeam,
   });
 
   wrapper.append(header, grid);

@@ -2,9 +2,19 @@
  * ui/components/GroupsWidget.js
  *
  * Classroom Dashboard widget: a compact list of Groups (Teams) and
- * their student counts. Reuses the existing Settings > Groups tab for
- * actual management — this widget is read-only navigation, not a
- * second place to add/rename/remove groups.
+ * their student counts. Read-only navigation, not a place to add/
+ * rename/remove groups — that stays exactly where it already lives
+ * (ui/views/ClassroomManagementView.js, reached from the Dashboard's
+ * own "Classroom" primary-module card).
+ *
+ * Team Profile discoverability (2026-09-11) — each row now opens that
+ * team's own Team Profile (a real product destination: "what have we
+ * achieved together," not a settings screen) rather than the generic
+ * group-management screen it used to. This is exactly "a Teams list
+ * — make each team open its Team Profile," per explicit direction;
+ * the previous "reuse Settings for management" role of this widget
+ * moves to ClassroomManagementView.js's own per-team "View Profile"
+ * link instead (unchanged).
  *
  * Phase 7B: each team renders as an overlapping avatar cluster (a
  * "huddle") rather than a plain text chip — Collaboration-intent's
@@ -25,7 +35,7 @@ function getInitials(name) {
   return parts[0][0].toUpperCase();
 }
 
-export function createGroupsWidgetElement({ classroom, onOpenGroups }) {
+export function createGroupsWidgetElement({ classroom, onSelectTeam }) {
   const widget = document.createElement('div');
   widget.className = 'dashboard-widget dashboard-widget--community';
 
@@ -55,7 +65,7 @@ export function createGroupsWidgetElement({ classroom, onOpenGroups }) {
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'huddle-list__row';
-    row.addEventListener('click', onOpenGroups);
+    row.addEventListener('click', () => onSelectTeam(team.id));
 
     const cluster = document.createElement('div');
     cluster.className = 'huddle-list__cluster';

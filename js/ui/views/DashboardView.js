@@ -448,7 +448,7 @@ export function renderDashboardView(container, props) {
   // since an empty "no groups yet" card is exactly the placeholder
   // pattern being removed.
   const classroomSectionChildren = [];
-  if (hasRealGroups) classroomSectionChildren.push(createGroupsWidgetElement({ classroom, onOpenGroups: openClassroomManagement }));
+  if (hasRealGroups) classroomSectionChildren.push(createGroupsWidgetElement({ classroom, onSelectTeam }));
   classroomSectionChildren.push(createStudentAccessButton(onOpenStudentAccess), createSettingsButton(onOpenSettings));
   content.appendChild(createClassroomSectionElement({ children: classroomSectionChildren }));
 

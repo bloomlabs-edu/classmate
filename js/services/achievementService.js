@@ -19,7 +19,7 @@
 import { firestoreClassroomRepository as repository } from '../repositories/firestoreClassroomRepository.js';
 import { buildEventsForCycle } from './achievementEngine.js';
 
-export { toStandingCycle, summarizeStudentBadges, getTeamAchievementHistory, groupEventsForRecognitionWall, buildEventsForCycle } from './achievementEngine.js';
+export { toStandingCycle, summarizeStudentBadges, getTeamAchievementHistory, summarizeTeamAchievements, groupEventsForRecognitionWall, buildEventsForCycle } from './achievementEngine.js';
 
 /**
  * Awards every eligible student for one closed Standing Cycle (today,
