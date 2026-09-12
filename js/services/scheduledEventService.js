@@ -67,4 +67,38 @@ export function getEventTypeLabel(eventType) {
     .join(' ');
 }
 
+/**
+ * The exact field set a "Duplicate" action (ui/views/TimetableView.js's
+ * own Exams & Events list) copies from a source event into a brand-new
+ * one — deliberately everything EXCEPT `id`/`classroomId`/
+ * `createdAt`/`updatedAt`/`eventType`, so the caller can hand this
+ * straight to models/ScheduledEvent.js's own createScheduledEvent()
+ * (which generates a fresh id and timestamps) to get a genuinely
+ * independent record, never a reference back to `sourceEvent`. There is
+ * deliberately no `batchId`/`duplicatedFrom`/similar field anywhere in
+ * this return value or in models/ScheduledEvent.js itself — per this
+ * feature's own explicit "no hidden linkage between exams" requirement,
+ * editing or deleting either the source or the duplicate must never
+ * affect the other one.
+ *
+ * Extracted as its own pure, DOM-free function (rather than inlined at
+ * the "Duplicate" button's click handler) specifically so this exact
+ * copy behavior — which fields travel, which don't — stays unit-
+ * testable without a DOM, the same reasoning this file's own header
+ * comment already gives for keeping this module Firestore-free.
+ */
+export function buildDuplicateExamFields(sourceEvent) {
+  return {
+    date: sourceEvent.date,
+    startTime: sourceEvent.startTime,
+    endTime: sourceEvent.endTime,
+    title: sourceEvent.title,
+    subjectId: sourceEvent.subjectId,
+    customSubjectName: sourceEvent.customSubjectName,
+    gradeLabel: sourceEvent.gradeLabel,
+    room: sourceEvent.room,
+    invigilatorUid: sourceEvent.invigilatorUid,
+  };
+}
+
 export { createScheduledEvent, SCHEDULED_EVENT_TYPES };

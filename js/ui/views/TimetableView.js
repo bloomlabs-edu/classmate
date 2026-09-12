@@ -76,7 +76,9 @@ import {
 import { createIcon } from '../components/Icon.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { renderSubjectBadge, renderLessonTopicLabel } from '../components/ScheduleItemLabels.js';
+import { createTimePicker } from '../components/TimePicker.js';
 import { getResourceTypeIcon } from '../../config/resourceTypeConfig.js';
+import { EXAM_NAMES, EXAM_NAME_CUSTOM_VALUE } from '../../config/examNameConfig.js';
 import * as learningIntegrationService from '../../services/learningIntegrationService.js';
 import * as learningActivityService from '../../services/learningActivityService.js';
 import { fetchLearningHubCatalogue, groupExperiencesByType } from '../../services/learningHubCatalogueService.js';
@@ -3571,30 +3573,30 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       const wrap = document.createElement('div');
       wrap.className = 'manage-timetable__time-inputs';
 
-      const startInput = document.createElement('input');
-      startInput.type = 'time';
-      startInput.value = period.startTime;
-      startInput.setAttribute('aria-label', `Period ${period.periodNumber} start time`);
-      startInput.addEventListener('change', () => {
-        period.startTime = startInput.value;
-        revalidate();
-        renderBox();
+      const startPicker = createTimePicker({
+        value: period.startTime,
+        ariaLabel: `Period ${period.periodNumber} start time`,
+        onChange: (newValue) => {
+          period.startTime = newValue;
+          revalidate();
+          renderBox();
+        },
       });
 
       const dash = document.createElement('span');
       dash.textContent = '–';
 
-      const endInput = document.createElement('input');
-      endInput.type = 'time';
-      endInput.value = period.endTime;
-      endInput.setAttribute('aria-label', `Period ${period.periodNumber} end time`);
-      endInput.addEventListener('change', () => {
-        period.endTime = endInput.value;
-        revalidate();
-        renderBox();
+      const endPicker = createTimePicker({
+        value: period.endTime,
+        ariaLabel: `Period ${period.periodNumber} end time`,
+        onChange: (newValue) => {
+          period.endTime = newValue;
+          revalidate();
+          renderBox();
+        },
       });
 
-      wrap.append(startInput, dash, endInput);
+      wrap.append(startPicker.wrapper, dash, endPicker.wrapper);
       return wrap;
     }
 
@@ -3856,435 +3858,33 @@ export async function renderTimetableView(container, { classroom, currentUser, p
    * architectural principle.
    */
   /**
-   * Bulk exam creation — one COMMON EXAM DETAILS section (title, date,
-   * default start/end time, grade/class, room, default invigilator)
-   * entered once, then a SUBJECTS section (canonical subjects as
-   * checkboxes, plus free-typed custom subjects — same "Other" idea as
-   * openExamFormOverlay()'s own single-exam picker), then one "Create
-   * N Exams" action. Each selected subject becomes its OWN independent
-   * models/ScheduledEvent.js record (one `saveScheduledEvent()` call
-   * per subject) — deliberately no batchId/grouping field anywhere:
-   * once created, editing one via the ordinary openExamFormOverlay()
-   * edit flow affects only that one record, exactly like any other
-   * exam. A subject's own row can be individually overridden (start/
-   * end time, room, invigilator) before creation — clearly marked
-   * "Default" vs "Custom" so it's obvious which rows inherit the
-   * common details and which don't; overriding one row never touches
-   * any other row or the common details themselves.
+   * `prefill` is Duplicate's own entry point (see the Exams & Events
+   * list's own "Duplicate" button below) — a plain field bag from
+   * services/scheduledEventService.js's own buildDuplicateExamFields(),
+   * NEVER an `existingEvent`: passing it through createScheduledEvent()
+   * here generates a brand-new id/createdAt/updatedAt, so the resulting
+   * draft has no `id` and no reference back to whatever it was copied
+   * from. Saving it is exactly the ordinary "create" path below —
+   * there is deliberately no third "duplicating" mode, since once the
+   * draft exists it is genuinely indistinguishable from any other new
+   * exam.
    */
-  function openBulkExamFormOverlay({ onChanged = null } = {}) {
-    const common = {
-      title: '',
-      date: getTodayDateKey(),
-      startTime: '09:00',
-      endTime: '10:00',
-      gradeLabel: '',
-      room: '',
-      invigilatorUid: null,
-    };
-    // One entry per subject the teacher has added to this batch —
-    // `override` is null until the teacher explicitly opens that row's
-    // own override editor; while null, every field is inherited live
-    // from `common` (editing common details after adding a subject
-    // still updates that subject's own effective values, exactly per
-    // "editing common/default info only affects pending, not-yet-
-    // created entries").
-    let selectedSubjects = []; // { key, kind: 'canonical'|'custom', subjectId, customSubjectName, title, override: null | {startTime?, endTime?, room?, invigilatorUid?} }
-    let customSubjectDraftText = '';
-    let validationError = '';
-
-    const assignableMembers = memberService
-      .listMembers(classroom)
-      .filter((member) => member.role === MEMBER_ROLES.OWNER || member.role === MEMBER_ROLES.TEACHER);
-
-    const overlay = document.createElement('div');
-    overlay.className = 'carry-forward-overlay manage-timetable-overlay';
-    const box = document.createElement('div');
-    box.className = 'carry-forward-overlay__box manage-timetable-overlay__box';
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
-
-    function field(labelText, inputEl) {
-      const wrap = document.createElement('label');
-      wrap.className = 'manage-timetable__field';
-      const labelEl = document.createElement('span');
-      labelEl.textContent = labelText;
-      wrap.append(labelEl, inputEl);
-      return wrap;
-    }
-
-    function effectiveFieldsFor(subject) {
-      const override = subject.override || {};
-      return {
-        startTime: override.startTime ?? common.startTime,
-        endTime: override.endTime ?? common.endTime,
-        room: override.room ?? common.room,
-        invigilatorUid: override.invigilatorUid !== undefined ? override.invigilatorUid : common.invigilatorUid,
-      };
-    }
-
-    function toggleCanonicalSubject(canonicalSubject) {
-      const key = `canonical:${canonicalSubject.id}`;
-      const existingIndex = selectedSubjects.findIndex((s) => s.key === key);
-      if (existingIndex !== -1) {
-        selectedSubjects.splice(existingIndex, 1);
-      } else {
-        selectedSubjects.push({ key, kind: 'canonical', subjectId: canonicalSubject.id, customSubjectName: null, title: canonicalSubject.title, override: null });
-      }
-      renderBox();
-    }
-
-    function addCustomSubject() {
-      const name = customSubjectDraftText.trim();
-      if (!name) return;
-      const key = `custom:${name.toLowerCase()}`;
-      if (!selectedSubjects.some((s) => s.key === key)) {
-        selectedSubjects.push({ key, kind: 'custom', subjectId: null, customSubjectName: name, title: name, override: null });
-      }
-      customSubjectDraftText = '';
-      renderBox();
-    }
-
-    function removeSubject(key) {
-      selectedSubjects = selectedSubjects.filter((s) => s.key !== key);
-      renderBox();
-    }
-
-    function renderBox() {
-      box.innerHTML = '';
-
-      const eyebrow = document.createElement('p');
-      eyebrow.className = 'carry-forward-overlay__eyebrow';
-      eyebrow.textContent = 'BULK ADD EXAMS';
-      box.appendChild(eyebrow);
-
-      const heading = document.createElement('h3');
-      heading.className = 'manage-timetable-overlay__heading';
-      heading.textContent = 'Add multiple exams at once';
-      box.appendChild(heading);
-
-      const hint = document.createElement('p');
-      hint.className = 'manage-timetable-overlay__hint';
-      hint.textContent = 'Enter the shared details once, pick every subject being examined, then create them all together — each becomes its own independent exam you can still edit individually afterward.';
-      box.appendChild(hint);
-
-      if (validationError) {
-        const errorBox = document.createElement('div');
-        errorBox.className = 'manage-timetable-overlay__errors';
-        const line = document.createElement('p');
-        line.textContent = validationError;
-        errorBox.appendChild(line);
-        box.appendChild(errorBox);
-      }
-
-      // ---- Common exam details ------------------------------------
-      const commonHeading = document.createElement('h4');
-      commonHeading.className = 'bulk-exam-form__section-heading';
-      commonHeading.textContent = 'Common exam details';
-      box.appendChild(commonHeading);
-
-      const commonForm = document.createElement('div');
-      commonForm.className = 'exam-form';
-
-      const titleInput = document.createElement('input');
-      titleInput.type = 'text';
-      titleInput.value = common.title;
-      titleInput.placeholder = 'e.g. Term 1 Examinations';
-      titleInput.addEventListener('change', () => { common.title = titleInput.value; });
-      commonForm.appendChild(field('Exam name', titleInput));
-
-      const dateInput = document.createElement('input');
-      dateInput.type = 'date';
-      dateInput.value = common.date;
-      dateInput.addEventListener('change', () => { common.date = dateInput.value; });
-      commonForm.appendChild(field('Date', dateInput));
-
-      const timeRow = document.createElement('div');
-      timeRow.className = 'manage-timetable__time-inputs';
-      const startInput = document.createElement('input');
-      startInput.type = 'time';
-      startInput.value = common.startTime;
-      startInput.addEventListener('change', () => { common.startTime = startInput.value; renderBox(); });
-      const dash = document.createElement('span');
-      dash.textContent = '–';
-      const endInput = document.createElement('input');
-      endInput.type = 'time';
-      endInput.value = common.endTime;
-      endInput.addEventListener('change', () => { common.endTime = endInput.value; renderBox(); });
-      timeRow.append(startInput, dash, endInput);
-      commonForm.appendChild(field('Default time', timeRow));
-
-      const gradeInput = document.createElement('input');
-      gradeInput.type = 'text';
-      gradeInput.value = common.gradeLabel;
-      gradeInput.placeholder = 'e.g. Grade 8A';
-      gradeInput.addEventListener('change', () => { common.gradeLabel = gradeInput.value; });
-      commonForm.appendChild(field('Grade/Class', gradeInput));
-
-      const roomInput = document.createElement('input');
-      roomInput.type = 'text';
-      roomInput.value = common.room;
-      roomInput.placeholder = 'e.g. 204';
-      roomInput.addEventListener('change', () => { common.room = roomInput.value; renderBox(); });
-      commonForm.appendChild(field('Default room', roomInput));
-
-      if (assignableMembers.length > 0) {
-        const invigilatorSelect = document.createElement('select');
-        const noInvigilatorOption = document.createElement('option');
-        noInvigilatorOption.value = '';
-        noInvigilatorOption.textContent = '— Unassigned —';
-        invigilatorSelect.appendChild(noInvigilatorOption);
-        assignableMembers.forEach((member) => {
-          const option = document.createElement('option');
-          option.value = member.uid;
-          option.textContent = member.displayName;
-          invigilatorSelect.appendChild(option);
-        });
-        invigilatorSelect.value = common.invigilatorUid || '';
-        invigilatorSelect.addEventListener('change', () => { common.invigilatorUid = invigilatorSelect.value || null; renderBox(); });
-        commonForm.appendChild(field('Default invigilator', invigilatorSelect));
-      }
-
-      box.appendChild(commonForm);
-
-      // ---- Subjects --------------------------------------------------
-      const subjectsHeading = document.createElement('h4');
-      subjectsHeading.className = 'bulk-exam-form__section-heading';
-      subjectsHeading.textContent = 'Subjects';
-      box.appendChild(subjectsHeading);
-
-      const checklist = document.createElement('div');
-      checklist.className = 'bulk-exam-form__checklist';
-      // Every canonical subject is offered here regardless of whether
-      // this classroom has it configured in Learning/Syllabus at all —
-      // this list sources straight from subjectIdentityService's own
-      // canonical registry (Tamil/Optional Language/Accounts/Physical
-      // Education included), never from Learning's own subject list.
-      subjectIdentityService.getCanonicalSubjects().forEach((canonicalSubject) => {
-        const key = `canonical:${canonicalSubject.id}`;
-        const optionLabel = document.createElement('label');
-        optionLabel.className = 'bulk-exam-form__checklist-item';
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.checked = selectedSubjects.some((s) => s.key === key);
-        checkbox.addEventListener('change', () => toggleCanonicalSubject(canonicalSubject));
-        optionLabel.append(checkbox, document.createTextNode(canonicalSubject.title));
-        checklist.appendChild(optionLabel);
-      });
-      box.appendChild(checklist);
-
-      const customSubjectRow = document.createElement('div');
-      customSubjectRow.className = 'bulk-exam-form__custom-subject-row';
-      const customSubjectInput = document.createElement('input');
-      customSubjectInput.type = 'text';
-      customSubjectInput.placeholder = 'Other subject not listed above';
-      customSubjectInput.value = customSubjectDraftText;
-      customSubjectInput.addEventListener('input', () => { customSubjectDraftText = customSubjectInput.value; });
-      customSubjectInput.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          addCustomSubject();
-        }
-      });
-      const addCustomSubjectButton = document.createElement('button');
-      addCustomSubjectButton.type = 'button';
-      addCustomSubjectButton.className = 'btn btn--ghost';
-      addCustomSubjectButton.textContent = '+ Add subject';
-      addCustomSubjectButton.addEventListener('click', addCustomSubject);
-      customSubjectRow.append(customSubjectInput, addCustomSubjectButton);
-      box.appendChild(customSubjectRow);
-
-      // ---- Per-subject rows, with inherited-vs-overridden values ------
-      if (selectedSubjects.length > 0) {
-        const rowsHeading = document.createElement('h4');
-        rowsHeading.className = 'bulk-exam-form__section-heading';
-        rowsHeading.textContent = `${selectedSubjects.length} exam${selectedSubjects.length === 1 ? '' : 's'} will be created`;
-        box.appendChild(rowsHeading);
-
-        const rowsList = document.createElement('div');
-        rowsList.className = 'bulk-exam-form__rows';
-
-        selectedSubjects.forEach((subject) => {
-          const effective = effectiveFieldsFor(subject);
-          const row = document.createElement('div');
-          row.className = 'bulk-exam-form__row';
-
-          const rowHeader = document.createElement('div');
-          rowHeader.className = 'bulk-exam-form__row-header';
-          const rowTitle = document.createElement('span');
-          rowTitle.className = 'bulk-exam-form__row-title';
-          rowTitle.textContent = subject.title;
-          rowHeader.appendChild(rowTitle);
-
-          const overrideBadge = document.createElement('span');
-          overrideBadge.className = 'bulk-exam-form__row-badge' + (subject.override ? ' bulk-exam-form__row-badge--custom' : '');
-          overrideBadge.textContent = subject.override ? 'Custom' : 'Default';
-          rowHeader.appendChild(overrideBadge);
-
-          const toggleOverrideButton = document.createElement('button');
-          toggleOverrideButton.type = 'button';
-          toggleOverrideButton.className = 'btn btn--text';
-          toggleOverrideButton.textContent = subject.override ? 'Use common details' : 'Override for this exam';
-          toggleOverrideButton.addEventListener('click', () => {
-            subject.override = subject.override ? null : {};
-            renderBox();
-          });
-          rowHeader.appendChild(toggleOverrideButton);
-
-          const removeButton = document.createElement('button');
-          removeButton.type = 'button';
-          removeButton.className = 'btn btn--icon-only';
-          removeButton.setAttribute('aria-label', `Remove ${subject.title} from this batch`);
-          removeButton.appendChild(createIcon('x', { size: 14 }));
-          removeButton.addEventListener('click', () => removeSubject(subject.key));
-          rowHeader.appendChild(removeButton);
-
-          row.appendChild(rowHeader);
-
-          const summary = document.createElement('p');
-          summary.className = 'bulk-exam-form__row-summary';
-          summary.textContent = `${effective.startTime}–${effective.endTime}${effective.room ? ` · Room ${effective.room}` : ''}`;
-          row.appendChild(summary);
-
-          if (subject.override) {
-            const overrideForm = document.createElement('div');
-            overrideForm.className = 'manage-timetable__time-inputs';
-
-            const overrideStart = document.createElement('input');
-            overrideStart.type = 'time';
-            overrideStart.value = effective.startTime;
-            overrideStart.addEventListener('change', () => { subject.override.startTime = overrideStart.value; renderBox(); });
-            const overrideDash = document.createElement('span');
-            overrideDash.textContent = '–';
-            const overrideEnd = document.createElement('input');
-            overrideEnd.type = 'time';
-            overrideEnd.value = effective.endTime;
-            overrideEnd.addEventListener('change', () => { subject.override.endTime = overrideEnd.value; renderBox(); });
-            overrideForm.append(overrideStart, overrideDash, overrideEnd);
-            row.appendChild(field('Time for this exam', overrideForm));
-
-            const overrideRoom = document.createElement('input');
-            overrideRoom.type = 'text';
-            overrideRoom.value = effective.room;
-            overrideRoom.placeholder = 'e.g. 204';
-            overrideRoom.addEventListener('change', () => { subject.override.room = overrideRoom.value; renderBox(); });
-            row.appendChild(field('Room for this exam', overrideRoom));
-
-            if (assignableMembers.length > 0) {
-              const overrideInvigilator = document.createElement('select');
-              const noInvigilatorOption = document.createElement('option');
-              noInvigilatorOption.value = '';
-              noInvigilatorOption.textContent = '— Unassigned —';
-              overrideInvigilator.appendChild(noInvigilatorOption);
-              assignableMembers.forEach((member) => {
-                const option = document.createElement('option');
-                option.value = member.uid;
-                option.textContent = member.displayName;
-                overrideInvigilator.appendChild(option);
-              });
-              overrideInvigilator.value = effective.invigilatorUid || '';
-              overrideInvigilator.addEventListener('change', () => { subject.override.invigilatorUid = overrideInvigilator.value || null; renderBox(); });
-              row.appendChild(field('Invigilator for this exam', overrideInvigilator));
-            }
-          }
-
-          rowsList.appendChild(row);
-        });
-
-        box.appendChild(rowsList);
-      }
-
-      const actions = document.createElement('div');
-      actions.className = 'carry-forward-overlay__actions';
-
-      const cancelButton = document.createElement('button');
-      cancelButton.type = 'button';
-      cancelButton.className = 'btn btn--ghost';
-      cancelButton.textContent = 'Cancel';
-      cancelButton.addEventListener('click', () => overlay.remove());
-      actions.appendChild(cancelButton);
-
-      const createButton = document.createElement('button');
-      createButton.type = 'button';
-      createButton.className = 'btn btn--primary';
-      createButton.textContent = `Create ${selectedSubjects.length} Exam${selectedSubjects.length === 1 ? '' : 's'}`;
-      createButton.disabled = selectedSubjects.length === 0;
-      createButton.addEventListener('click', () => createAll());
-      actions.appendChild(createButton);
-
-      box.appendChild(actions);
-    }
-
-    /**
-     * Creates one independent ScheduledEvent per selected subject —
-     * never a batch/grouped record. Each save is its own
-     * scheduledEventRepository.saveScheduledEvent() call, so a failure
-     * partway through (see runAction()'s own error handling) leaves
-     * whichever exams already saved fully intact and independently
-     * editable — there is no all-or-nothing transaction to roll back,
-     * matching "no hidden linkage between bulk-created exams" exactly.
-     */
-    async function createAll() {
-      if (selectedSubjects.length === 0) {
-        validationError = 'Select at least one subject to create exams for.';
-        renderBox();
-        return;
-      }
-      if (!common.date || !common.startTime || !common.endTime) {
-        validationError = 'Date, start time, and end time are all required.';
-        renderBox();
-        return;
-      }
-      if (timetableService.parseTimeToMinutes(common.endTime) <= timetableService.parseTimeToMinutes(common.startTime)) {
-        validationError = 'The default end time must be after the default start time.';
-        renderBox();
-        return;
-      }
-      for (const subject of selectedSubjects) {
-        const effective = effectiveFieldsFor(subject);
-        if (timetableService.parseTimeToMinutes(effective.endTime) <= timetableService.parseTimeToMinutes(effective.startTime)) {
-          validationError = `"${subject.title}"'s own end time must be after its start time.`;
-          renderBox();
-          return;
-        }
-      }
-      validationError = '';
-
-      await runAction(async () => {
-        for (const subject of selectedSubjects) {
-          const effective = effectiveFieldsFor(subject);
-          const event = createScheduledEvent({
-            classroomId: classroom.id,
-            date: common.date,
-            startTime: effective.startTime,
-            endTime: effective.endTime,
-            title: common.title,
-            subjectId: subject.kind === 'canonical' ? subject.subjectId : subjectIdentityService.generateCustomSubjectId(subject.customSubjectName),
-            customSubjectName: subject.kind === 'custom' ? subject.customSubjectName : null,
-            gradeLabel: common.gradeLabel,
-            room: effective.room,
-            invigilatorUid: effective.invigilatorUid,
-          });
-          // Sequential, not Promise.all — each exam is independent, but
-          // saving one at a time keeps this simple to reason about and
-          // avoids hammering Firestore with N simultaneous writes for
-          // what's normally a small batch (a handful of subjects).
-          await scheduledEventRepository.saveScheduledEvent(classroom.id, event);
-        }
-        overlay.remove();
-        await loadAndRender();
-        onChanged?.();
-      });
-    }
-
-    renderBox();
-  }
-
-  function openExamFormOverlay({ existingEvent = null, defaultDateKey = null, onChanged = null } = {}) {
+  function openExamFormOverlay({ existingEvent = null, defaultDateKey = null, prefill = null, onChanged = null } = {}) {
     const isEditing = Boolean(existingEvent);
     const draft = existingEvent
       ? { ...existingEvent }
-      : createScheduledEvent({ classroomId: classroom.id, date: defaultDateKey || getTodayDateKey(), startTime: '09:00', endTime: '10:00' });
+      : createScheduledEvent({
+          classroomId: classroom.id,
+          date: prefill?.date || defaultDateKey || getTodayDateKey(),
+          startTime: prefill?.startTime || '09:00',
+          endTime: prefill?.endTime || '10:00',
+          title: prefill?.title || '',
+          subjectId: prefill?.subjectId ?? null,
+          customSubjectName: prefill?.customSubjectName ?? null,
+          gradeLabel: prefill?.gradeLabel || '',
+          room: prefill?.room || '',
+          invigilatorUid: prefill?.invigilatorUid ?? null,
+        });
 
     let validationError = '';
     // Tracked separately from `Boolean(draft.customSubjectName)` — that
@@ -4297,6 +3897,11 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     // is the picker in," independent of whether the free-text field
     // happens to be empty right now.
     let showCustomSubjectField = Boolean(draft.customSubjectName);
+    // Same reasoning, same fix, for the exam-name picker's own "Other"
+    // option — an exam whose title doesn't match any of
+    // config/examNameConfig.js's own predefined EXAM_NAMES (a custom
+    // name already typed, on edit/duplicate) starts in custom mode too.
+    let showCustomExamNameField = Boolean(draft.title) && !EXAM_NAMES.includes(draft.title);
 
     const assignableMembers = memberService
       .listMembers(classroom)
@@ -4343,6 +3948,52 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       const form = document.createElement('div');
       form.className = 'exam-form';
 
+      // Exam name — a preloaded select of this school's own common exam
+      // names (config/examNameConfig.js), not a free-text field, so
+      // "Quarterly Examinations" is spelled identically every time it's
+      // picked rather than re-typed. "Other" reveals a free-typed name
+      // for anything not on that list, same show/hide interaction as
+      // the Subject picker below (including the same explicit-boolean-
+      // flag fix — see showCustomExamNameField's own declaration above).
+      const examNameSelect = document.createElement('select');
+      const noExamNameOption = document.createElement('option');
+      noExamNameOption.value = '';
+      noExamNameOption.textContent = '— Select exam name —';
+      examNameSelect.appendChild(noExamNameOption);
+      EXAM_NAMES.forEach((name) => {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        examNameSelect.appendChild(option);
+      });
+      const customExamNameOption = document.createElement('option');
+      customExamNameOption.value = EXAM_NAME_CUSTOM_VALUE;
+      customExamNameOption.textContent = 'Other (type a name)';
+      examNameSelect.appendChild(customExamNameOption);
+
+      examNameSelect.value = showCustomExamNameField ? EXAM_NAME_CUSTOM_VALUE : draft.title || '';
+      examNameSelect.addEventListener('change', () => {
+        showCustomExamNameField = examNameSelect.value === EXAM_NAME_CUSTOM_VALUE;
+        draft.title = showCustomExamNameField ? (EXAM_NAMES.includes(draft.title) ? '' : draft.title) : examNameSelect.value;
+        renderBox();
+      });
+      form.appendChild(field('Exam name', examNameSelect));
+
+      if (showCustomExamNameField) {
+        const customExamNameInput = document.createElement('input');
+        customExamNameInput.type = 'text';
+        customExamNameInput.value = draft.title || '';
+        customExamNameInput.placeholder = 'e.g. Unit Test 2';
+        // 'input', not 'change' — unlike the Subject picker's own free-
+        // typed field (which derives a real id from its text only at
+        // Save time, see this form's own save handler below), `title`
+        // IS the value being typed here; there is no separate derived
+        // field to re-compute later, so it needs no blur-tolerant
+        // fallback — binding live is simply correct.
+        customExamNameInput.addEventListener('input', () => { draft.title = customExamNameInput.value; });
+        form.appendChild(field('Custom exam name', customExamNameInput));
+      }
+
       const dateInput = document.createElement('input');
       dateInput.type = 'date';
       dateInput.value = draft.date;
@@ -4351,25 +4002,20 @@ export async function renderTimetableView(container, { classroom, currentUser, p
 
       const timeRow = document.createElement('div');
       timeRow.className = 'manage-timetable__time-inputs';
-      const startInput = document.createElement('input');
-      startInput.type = 'time';
-      startInput.value = draft.startTime;
-      startInput.addEventListener('change', () => { draft.startTime = startInput.value; });
+      const startPicker = createTimePicker({
+        value: draft.startTime,
+        ariaLabel: 'Start time',
+        onChange: (newValue) => { draft.startTime = newValue; },
+      });
       const dash = document.createElement('span');
       dash.textContent = '–';
-      const endInput = document.createElement('input');
-      endInput.type = 'time';
-      endInput.value = draft.endTime;
-      endInput.addEventListener('change', () => { draft.endTime = endInput.value; });
-      timeRow.append(startInput, dash, endInput);
+      const endPicker = createTimePicker({
+        value: draft.endTime,
+        ariaLabel: 'End time',
+        onChange: (newValue) => { draft.endTime = newValue; },
+      });
+      timeRow.append(startPicker.wrapper, dash, endPicker.wrapper);
       form.appendChild(field('Time', timeRow));
-
-      const titleInput = document.createElement('input');
-      titleInput.type = 'text';
-      titleInput.value = draft.title;
-      titleInput.placeholder = 'e.g. Term 1 Science Examination';
-      titleInput.addEventListener('change', () => { draft.title = titleInput.value; });
-      form.appendChild(field('Exam name', titleInput));
 
       // A subject picked here needs no configuration in this teacher's
       // own Learning/Syllabus at all — every canonical subject
@@ -4485,7 +4131,7 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       const saveButton = document.createElement('button');
       saveButton.type = 'button';
       saveButton.className = 'btn btn--primary';
-      saveButton.textContent = isEditing ? 'Save changes' : 'Add exam';
+      saveButton.textContent = isEditing ? 'Save' : 'Add Exam';
       saveButton.addEventListener('click', async () => {
         if (!draft.date || !draft.startTime || !draft.endTime) {
           validationError = 'Date, start time, and end time are all required.';
@@ -4863,17 +4509,19 @@ export async function renderTimetableView(container, { classroom, currentUser, p
           const row = document.createElement('div');
           row.className = 'school-calendar__custom-period-row';
 
-          const startInput = document.createElement('input');
-          startInput.type = 'time';
-          startInput.value = period.startTime;
-          startInput.addEventListener('change', () => { period.startTime = startInput.value; });
+          const startPicker = createTimePicker({
+            value: period.startTime,
+            ariaLabel: `Custom period ${period.periodNumber} start time`,
+            onChange: (newValue) => { period.startTime = newValue; },
+          });
           const dash = document.createElement('span');
           dash.textContent = '–';
-          const endInput = document.createElement('input');
-          endInput.type = 'time';
-          endInput.value = period.endTime;
-          endInput.addEventListener('change', () => { period.endTime = endInput.value; });
-          row.append(startInput, dash, endInput);
+          const endPicker = createTimePicker({
+            value: period.endTime,
+            ariaLabel: `Custom period ${period.periodNumber} end time`,
+            onChange: (newValue) => { period.endTime = newValue; },
+          });
+          row.append(startPicker.wrapper, dash, endPicker.wrapper);
 
           const subjectSelect = document.createElement('select');
           const noneOption = document.createElement('option');
@@ -4943,19 +4591,6 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       });
       eventsTabActions.appendChild(addButton);
 
-      // Bulk creation — same underlying independent-per-subject
-      // ScheduledEvent records, just entering shared info once instead
-      // of re-typing it 7 times for 7 subjects (see openBulkExamFormOverlay()'s
-      // own doc comment).
-      const bulkAddButton = document.createElement('button');
-      bulkAddButton.type = 'button';
-      bulkAddButton.className = 'btn btn--ghost';
-      bulkAddButton.textContent = '+ Bulk add exams';
-      bulkAddButton.addEventListener('click', () => {
-        openBulkExamFormOverlay({ onChanged: loadEventsList });
-      });
-      eventsTabActions.appendChild(bulkAddButton);
-
       wrap.appendChild(eventsTabActions);
 
       if (eventsListError) {
@@ -4998,6 +4633,20 @@ export async function renderTimetableView(container, { classroom, currentUser, p
           titleEl.className = 'school-calendar__row-reason';
           titleEl.textContent = event.title || scheduledEventService.getEventTypeLabel(event.eventType);
           info.appendChild(titleEl);
+
+          // The subject is this list's primary differentiator once
+          // several same-titled exams exist on different days (e.g. two
+          // "Quarterly Examinations" rows) — shown as its own prominent
+          // line via resolveEventSubjectTitle()'s existing custom/
+          // canonical/Learning-configured fallback, never re-derived
+          // here.
+          const subjectTitle = scheduledEventService.resolveEventSubjectTitle(classroom, event);
+          if (subjectTitle) {
+            const subjectEl = document.createElement('span');
+            subjectEl.className = 'school-calendar__row-subject';
+            subjectEl.textContent = subjectTitle;
+            info.appendChild(subjectEl);
+          }
           row.appendChild(info);
 
           const rowActions = document.createElement('div');
@@ -5008,6 +4657,23 @@ export async function renderTimetableView(container, { classroom, currentUser, p
           editButton.textContent = 'Edit';
           editButton.addEventListener('click', () => openExamFormOverlay({ existingEvent: event, onChanged: loadEventsList }));
           rowActions.appendChild(editButton);
+
+          // Duplicate — the whole point of this redesign: create one
+          // exam, then duplicate it for every other date/subject rather
+          // than re-entering shared details in a bulk form. Copies
+          // every real field (services/scheduledEventService.js's own
+          // buildDuplicateExamFields()) into a brand-new draft with no
+          // id and no reference back to `event` — opens in ordinary
+          // "create" mode, so saving it can never affect `event` itself.
+          const duplicateButton = document.createElement('button');
+          duplicateButton.type = 'button';
+          duplicateButton.className = 'btn btn--ghost';
+          duplicateButton.textContent = 'Duplicate';
+          duplicateButton.addEventListener('click', () =>
+            openExamFormOverlay({ prefill: scheduledEventService.buildDuplicateExamFields(event), onChanged: loadEventsList })
+          );
+          rowActions.appendChild(duplicateButton);
+
           row.appendChild(rowActions);
 
           list.appendChild(row);

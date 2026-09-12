@@ -68,3 +68,66 @@ test('getEventTypeLabel: "exam" labels as "Exam"; an unrecognized future type ti
   assert.equal(scheduledEventService.getEventTypeLabel('school_event'), 'School Event');
   assert.equal(scheduledEventService.getEventTypeLabel('field_trip'), 'Field Trip');
 });
+
+test('buildDuplicateExamFields: copies every real field a duplicate needs, and nothing else', () => {
+  const source = createScheduledEvent({
+    classroomId: 'c1',
+    date: MONDAY,
+    startTime: '10:00',
+    endTime: '12:30',
+    title: 'Quarterly Examinations',
+    subjectId: 'tamil',
+    customSubjectName: null,
+    gradeLabel: 'Grade 8A',
+    room: '204',
+    invigilatorUid: 'teacher-1',
+  });
+
+  const fields = scheduledEventService.buildDuplicateExamFields(source);
+
+  assert.deepEqual(fields, {
+    date: MONDAY,
+    startTime: '10:00',
+    endTime: '12:30',
+    title: 'Quarterly Examinations',
+    subjectId: 'tamil',
+    customSubjectName: null,
+    gradeLabel: 'Grade 8A',
+    room: '204',
+    invigilatorUid: 'teacher-1',
+  });
+});
+
+test('buildDuplicateExamFields: never carries id/classroomId/createdAt/updatedAt/eventType — no field a caller could mistake for a link back to the source', () => {
+  const source = createScheduledEvent({ classroomId: 'c1', date: MONDAY, startTime: '09:00', endTime: '09:45', title: 'Exam' });
+  const fields = scheduledEventService.buildDuplicateExamFields(source);
+
+  assert.equal('id' in fields, false);
+  assert.equal('classroomId' in fields, false);
+  assert.equal('createdAt' in fields, false);
+  assert.equal('updatedAt' in fields, false);
+  assert.equal('eventType' in fields, false);
+  assert.equal('batchId' in fields, false);
+  assert.equal('duplicatedFrom' in fields, false);
+});
+
+test('buildDuplicateExamFields + createScheduledEvent: the resulting duplicate is a genuinely independent record (its own id), editing one never touches the other', () => {
+  const source = createScheduledEvent({
+    classroomId: 'c1',
+    date: MONDAY,
+    startTime: '10:00',
+    endTime: '12:30',
+    title: 'Quarterly Examinations',
+    subjectId: 'tamil',
+  });
+
+  const duplicate = createScheduledEvent({ classroomId: 'c1', ...scheduledEventService.buildDuplicateExamFields(source) });
+
+  assert.notEqual(duplicate.id, source.id);
+
+  // Editing the duplicate's own copy must never mutate the source.
+  duplicate.date = TUESDAY;
+  duplicate.subjectId = 'science';
+  assert.equal(source.date, MONDAY);
+  assert.equal(source.subjectId, 'tamil');
+});

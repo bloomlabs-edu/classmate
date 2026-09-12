@@ -18047,19 +18047,87 @@ button.recognition-bento__hero-winner-name {
   white-space: nowrap;
 }
 
-.manage-timetable__time-inputs input[type='time'] {
+.manage-timetable__time-inputs span {
+  color: var(--color-muted);
+  font-size: 0.8rem;
+}
+
+/* TimePicker — see ui/components/TimePicker.js. Replaces every native
+   <input type="time"> this file used to open/edit an exam's or a
+   period's time, since a native time input's own OS/browser-rendered
+   dropdown UI cannot be reliably force-closed via JS nor guaranteed to
+   close immediately on selection across browsers. */
+.time-picker {
+  position: relative;
+  display: inline-block;
+}
+
+.time-picker__button {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   padding: var(--space-1) var(--space-2);
   font-size: 0.8rem;
+  font-family: inherit;
   color: var(--color-ink);
   background: var(--color-surface);
   width: 6.5rem;
+  text-align: left;
+  cursor: pointer;
 }
 
-.manage-timetable__time-inputs span {
-  color: var(--color-muted);
-  font-size: 0.8rem;
+.time-picker__button:hover {
+  border-color: var(--color-primary-deep);
+}
+
+.time-picker__popover {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  z-index: 200;
+  background-color: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  padding: var(--space-1);
+}
+
+.time-picker__popover[hidden] {
+  display: none;
+}
+
+.time-picker__columns {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.time-picker__column {
+  display: flex;
+  flex-direction: column;
+  max-height: 180px;
+  overflow-y: auto;
+  min-width: 3rem;
+}
+
+.time-picker__option {
+  background: none;
+  border: none;
+  text-align: center;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: inherit;
+  color: var(--color-ink);
+}
+
+.time-picker__option:hover {
+  background-color: var(--color-hover, #F2F5F7);
+}
+
+.time-picker__option--active {
+  background: color-mix(in srgb, var(--color-primary-deep) 15%, var(--color-surface));
+  color: var(--color-primary-deep);
+  font-weight: 700;
 }
 
 .manage-timetable__subject-select {
@@ -18263,87 +18331,6 @@ button.recognition-bento__hero-winner-name {
   flex-wrap: wrap;
 }
 
-/* Bulk exam creation (openBulkExamFormOverlay()) — COMMON EXAM DETAILS
-   entered once, a SUBJECTS checklist, then one per-subject row so an
-   individual override is clearly distinguishable from the inherited
-   common values (the "Default"/"Custom" badge below). */
-.bulk-exam-form__section-heading {
-  margin: var(--space-4) 0 var(--space-2);
-  font-size: 0.9rem;
-  font-weight: 700;
-}
-
-.bulk-exam-form__checklist {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-4);
-}
-
-.bulk-exam-form__checklist-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.9rem;
-}
-
-.bulk-exam-form__custom-subject-row {
-  display: flex;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
-}
-
-.bulk-exam-form__custom-subject-row input {
-  flex: 1;
-}
-
-.bulk-exam-form__rows {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.bulk-exam-form__row {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  padding: var(--space-3);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.bulk-exam-form__row-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.bulk-exam-form__row-title {
-  font-weight: 700;
-  flex: 1;
-}
-
-.bulk-exam-form__row-badge {
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  padding: 2px 8px;
-  border-radius: var(--radius-pill);
-  background: var(--color-bg);
-  color: var(--color-muted);
-}
-
-.bulk-exam-form__row-badge--custom {
-  background: color-mix(in srgb, var(--color-primary-deep) 15%, var(--color-surface));
-  color: var(--color-primary-deep);
-}
-
-.bulk-exam-form__row-summary {
-  margin: 0;
-  font-size: 0.8rem;
-  color: var(--color-muted);
-}
-
 .school-calendar__tabs {
   margin-bottom: var(--space-3);
 }
@@ -18394,6 +18381,18 @@ button.recognition-bento__hero-winner-name {
 .school-calendar__row-reason {
   font-size: 0.8rem;
   color: var(--color-muted);
+}
+
+/* The exam's subject — the primary differentiator once several
+   same-titled exams exist on different days (e.g. two "Quarterly
+   Examinations" rows), so it renders as its own bold line, not folded
+   into the muted reason/title text above it. */
+.school-calendar__row-subject {
+  display: block;
+  width: 100%;
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
 }
 
 .school-calendar__row-actions {
