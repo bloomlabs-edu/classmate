@@ -41,6 +41,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 import { getFirestore } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 import { firebaseConfig } from '../config/firebaseConfig.js';
+import { ensureFirestoreEnvironmentConfigured } from './firebaseApp.js';
 import * as studentDeviceService from './studentDeviceService.js';
 
 export const SLOT_COUNT = 3;
@@ -59,7 +60,15 @@ function slotAppName(slotIndex) {
 function getAppForSlot(slotIndex) {
   const name = slotAppName(slotIndex);
   const existing = getApps().find((app) => app.name === name);
-  return existing || initializeApp(firebaseConfig, name);
+  const slotApp = existing || initializeApp(firebaseConfig, name);
+  // This is its OWN separate Firebase App with its OWN separate
+  // Firestore instance — services/firebaseApp.js's own
+  // getFirebaseApp() never runs for it, so its Firestore-environment
+  // policy (production opt-in, emulator by default off a production
+  // hostname) has to be applied here explicitly rather than assumed to
+  // already cover it. See firebaseApp.js's own ensureFirestoreEnvironmentConfigured() doc comment.
+  ensureFirestoreEnvironmentConfigured(slotApp);
+  return slotApp;
 }
 
 /** This slot's own Auth instance — one per named app, never shared with the teacher's own default-app Auth instance. */

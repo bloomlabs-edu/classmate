@@ -11,24 +11,34 @@
  * the app transitively passes through — every one of them calls
  * `getFirestore(getFirebaseApp())` (16 files, at last count: see e.g.
  * services/scheduledEventRepository.js's own getDb()). That makes this
- * the single correct place to guarantee an EXPLICIT, opt-in redirect
- * to a local Firestore emulator for automated test/browser-verification
- * harnesses — see maybeConnectFirestoreEmulator() below. Added after a
- * 2026-09-12 incident where unauthorized exam records were found in
- * real production data (`classmate-302c2`) with no other Firebase
- * project configured anywhere in this repo to redirect to instead —
- * see this project's own memory "never-seed-production-data" for the
- * full incident writeup. Every repository gets this redirect for free,
- * with zero changes to any of those 16 files, because they all resolve
- * their own Firestore instance via this same function.
+ * the right place to enforce this project's own default-safe Firestore
+ * environment policy — see firestoreEnvironment.js's own header
+ * comment for the full policy and the 2026-09-12 incident that
+ * prompted it (also: this project's memory "never-seed-production-
+ * data"). In short: production is opt-in (only this app's own known
+ * real Hosting hostnames reach it by default); every other context —
+ * localhost, a scratchpad static-server port, a CI runner — defaults
+ * to a local Firestore emulator instead, with no flag required.
+ *
+ * services/studentAuthService.js's own per-slot named Firebase Apps
+ * are a SEPARATE code path this same policy also has to reach (each
+ * slot creates its own Firebase App + its own Firestore instance,
+ * bypassing getFirebaseApp() entirely) — see this file's own exported
+ * ensureFirestoreEnvironmentConfigured(), which studentAuthService.js
+ * calls directly for exactly that reason, so the same policy governs
+ * every Firestore instance this app ever creates, not just the default
+ * app's.
  */
 
 import { initializeApp, getApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import { getFirestore, connectFirestoreEmulator } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 import { firebaseConfig } from '../config/firebaseConfig.js';
+import { determineFirestoreTarget } from './firestoreEnvironment.js';
 
 let app = null;
-let firestoreEmulatorConnectAttempted = false;
+
+/** Which Firebase App instances (default + every named student-slot app) have already had ensureFirestoreEnvironmentConfigured() run — keyed by App object, since connectFirestoreEmulator() throws if called more than once for the same Firestore instance. */
+const configuredApps = new WeakSet();
 
 export function getFirebaseApp() {
   if (!app) {
@@ -44,66 +54,64 @@ export function getFirebaseApp() {
       app = initializeApp(firebaseConfig);
     }
   }
-  maybeConnectFirestoreEmulator(app);
+  ensureFirestoreEnvironmentConfigured(app);
   return app;
 }
 
 /**
- * Redirects ALL Firestore traffic for this app to a local emulator —
- * but ONLY when a test harness has explicitly opted in, via either a
- * `?firestoreEmulator=host:port` URL query param or a
- * `window.__CLASSMATE_FIRESTORE_EMULATOR__ = 'host:port'` global set
- * BEFORE this module first runs. Deliberately NEVER automatic (e.g.
- * never inferred from "running on localhost" or "no auth session") —
- * this repo's existing, intended workflow is real local development
- * against the real `classmate-302c2` project (there is no separate dev
- * Firebase project to redirect to by default), so only an explicit,
- * deliberate per-harness signal may redirect Firestore elsewhere.
- *
- * Idempotent (guarded by firestoreEmulatorConnectAttempted) — the
- * Firestore SDK throws if connectFirestoreEmulator() is called more
- * than once, or after any other operation already ran against that
- * Firestore instance. Called from getFirebaseApp() itself so it always
- * runs before any repository's own getFirestore(getFirebaseApp())
- * performs its first real operation, regardless of which repository
- * happens to be used first.
+ * Applies this app's Firestore-environment policy to `firebaseApp` —
+ * safe to call any number of times for the same app (idempotent via
+ * `configuredApps`), and safe/expected to be called once per DISTINCT
+ * app instance (the default app, plus each of
+ * studentAuthService.js's own per-slot named apps — each is its own
+ * separate Firebase App with its own separate Firestore instance that
+ * needs its own connectFirestoreEmulator() call). Exported specifically
+ * so studentAuthService.js's getAppForSlot() can call this directly,
+ * rather than duplicating (or, worse, silently omitting) this same
+ * policy for its own apps.
  */
-function maybeConnectFirestoreEmulator(app) {
-  if (firestoreEmulatorConnectAttempted) return;
-  firestoreEmulatorConnectAttempted = true;
+export function ensureFirestoreEnvironmentConfigured(firebaseApp) {
+  if (configuredApps.has(firebaseApp)) return;
+  configuredApps.add(firebaseApp);
 
-  const target = readEmulatorTarget();
-  if (!target) return;
+  const target = determineFirestoreTarget({
+    hostname: readHostname(),
+    getSearchParam: readSearchParam,
+    allowProductionGlobal: readAllowProductionGlobal(),
+  });
 
-  const [host, portText] = target.split(':');
-  const port = Number(portText);
-  if (!host || !Number.isFinite(port)) {
-    console.error(`[firebaseApp] Ignoring malformed Firestore emulator target "${target}" — expected "host:port". Firestore requests will go to production (${firebaseConfig.projectId}).`);
-    return;
-  }
+  if (target.mode === 'production') return; // The real getFirestore() call elsewhere already talks to production by default — nothing to redirect.
 
-  connectFirestoreEmulator(getFirestore(app), host, port);
+  connectFirestoreEmulator(getFirestore(firebaseApp), target.host, target.port);
   // Loud and unmissable on purpose — an emulator redirect silently
   // active in what looks like a normal app load is exactly the kind of
-  // thing that should never go unnoticed.
-  console.warn(`[firebaseApp] Firestore requests redirected to LOCAL EMULATOR at ${target}. Production Firestore (${firebaseConfig.projectId}) will NOT be read from or written to for the rest of this session.`);
+  // thing that should never go unnoticed, in either direction (someone
+  // expecting production and quietly not getting it is just as much a
+  // problem as the reverse this safeguard exists to prevent).
+  console.warn(`[firebaseApp] Firestore requests for app "${firebaseApp.name}" redirected to LOCAL EMULATOR at ${target.host}:${target.port}. Production Firestore (${firebaseConfig.projectId}) will NOT be read from or written to for the rest of this session. To use real production from a non-production hostname, pass ?firestoreProduction=1 explicitly.`);
 }
 
-function readEmulatorTarget() {
+function readHostname() {
   try {
-    if (typeof window !== 'undefined' && window.location?.search) {
-      const fromQuery = new URLSearchParams(window.location.search).get('firestoreEmulator');
-      if (fromQuery) return fromQuery;
-    }
+    return typeof window !== 'undefined' ? window.location?.hostname ?? null : null;
   } catch {
-    /* no window/location in a non-browser context (e.g. a Node test) — fall through */
+    return null;
   }
+}
+
+function readSearchParam(key) {
   try {
-    if (typeof window !== 'undefined' && window.__CLASSMATE_FIRESTORE_EMULATOR__) {
-      return window.__CLASSMATE_FIRESTORE_EMULATOR__;
-    }
+    if (typeof window === 'undefined' || !window.location?.search) return null;
+    return new URLSearchParams(window.location.search).get(key);
   } catch {
-    /* ignore */
+    return null;
   }
-  return null;
+}
+
+function readAllowProductionGlobal() {
+  try {
+    return typeof window !== 'undefined' ? window.__CLASSMATE_ALLOW_PRODUCTION_FIRESTORE__ === true : false;
+  } catch {
+    return false;
+  }
 }
