@@ -83,7 +83,15 @@ import * as learningIntegrationService from '../../services/learningIntegrationS
 import * as learningActivityService from '../../services/learningActivityService.js';
 import { fetchLearningHubCatalogue, groupExperiencesByType } from '../../services/learningHubCatalogueService.js';
 import { buildLearningHubLaunchUrl, LEARNING_HUB_TYPE_GROUP_LABELS } from './ConceptWorkspaceView.js';
-import { groupPeriodsForExamSpanning, computeExamOverlayInset } from './timetableExamSpanning.js';
+import {
+  groupPeriodsForExamSpanning,
+  computeDayAxisStartMinutes,
+  computeDayAxisEndMinutes,
+  computePeriodDurationMinutes,
+  computeEventOverlayGeometry,
+  PIXELS_PER_MINUTE,
+  FALLBACK_ROW_MIN_PX,
+} from './timetableExamSpanning.js';
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -533,16 +541,47 @@ export async function renderTimetableView(container, { classroom, currentUser, p
    * cell in that same period-row to grow with it in every layout
    * engine consistently, and a Holiday date rendered as 8 repeated
    * empty per-period cells instead of one day-level state. CSS Grid
-   * fixes both at once: `grid-template-rows: auto repeat(N, min-content)`
-   * gives every period row a real, shared, content-driven height across
-   * the whole week (never a fixed height, never independent per-cell
-   * heights that can overlap), and a Holiday's own cell can explicitly
-   * span every period row for its one column (`grid-row: 2 / span N`)
-   * instead of needing a separate empty cell per period.
+   * fixes both at once: every period row is a real, shared height
+   * across the whole week (never independent per-cell heights that
+   * can overlap), and a Holiday's own cell can explicitly span every
+   * period row for its one column (`grid-row: 2 / span N`) instead of
+   * needing a separate empty cell per period.
    *
    * Column/row indices are 1-based CSS Grid lines: column 1 is the
    * period-label rail, columns 2..8 are the 7 dates; row 1 is the day-
    * header row, rows 2..(N+1) are the N real periods.
+   *
+   * ROUND 5 rewrite — `grid-template-rows` used to be
+   * `auto repeat(N, min-content)`: every period row's height was
+   * PURELY content-driven, with no time-proportional floor at all (an
+   * empty 30-minute period and an empty 45-minute period rendered at
+   * the same height). Round 4 then positioned a suppressing exam's
+   * card via CSS `top`/`bottom` PERCENTAGES of that same
+   * content-driven cell — so a lesson growing taller ANYWHERE in a
+   * shared row track (any day column, since grid row tracks span the
+   * whole grid) silently dragged the exam's own percentage-based
+   * position with it. Now: (1) each period row gets an explicit
+   * `minmax(durationMinutes * PIXELS_PER_MINUTE px, auto)` track — a
+   * real time-proportional MINIMUM height, while still allowed to grow
+   * taller for heavy content (see computePeriodDurationMinutes()); and
+   * (2) an exam's own card no longer lives inside its suppressed
+   * periods' shared grid cell at all — it renders in a separate,
+   * absolutely-positioned per-day overlay layer (see the
+   * `examOverlayLayer` built below), whose `top`/`height` are pure
+   * pixels-per-minute arithmetic from computeEventOverlayGeometry() —
+   * never a percentage of, or measurement against, any rendered
+   * dimension. The overlay layer's own top edge is anchored to grid
+   * line 2 (the boundary right after the day-header row), which only
+   * moves if the header row itself changes height — never because a
+   * period row grew — so the exam's position is stable regardless of
+   * any lesson's content, by construction. (One residual, documented
+   * limitation: if a period BEFORE the exam's own time range grows
+   * past its time-proportional minimum, later grid lines — including
+   * the boundary the exam's OWN periods start at — shift down while
+   * the overlay's pixel math does not; this is an accepted tradeoff of
+   * giving the event layer a single stable coordinate system, per
+   * product direction, and does not affect an exam positioned relative
+   * to periods that come sequentially later than the inflated one.)
    */
   function renderWeekGrid(slots, range) {
     const grid = document.createElement('div');
@@ -560,7 +599,24 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     // negative/`span` line references only resolve predictably against
     // an EXPLICIT template, not implicit auto-generated tracks.
     weekGrid.style.gridTemplateColumns = `minmax(72px, 96px) repeat(${dateKeys.length}, minmax(200px, 1fr))`;
-    weekGrid.style.gridTemplateRows = `auto repeat(${Math.max(periods.length, 1)}, min-content)`;
+    // Each period row's own MINIMUM height is now time-proportional
+    // (see this function's own doc comment above) — `auto` as the max
+    // still lets a heavy-content lesson grow the row taller than that
+    // floor exactly as before.
+    const periodRowTracks =
+      periods.length > 0
+        ? periods.map((period) => `minmax(${(computePeriodDurationMinutes(period) ?? FALLBACK_ROW_MIN_PX / PIXELS_PER_MINUTE) * PIXELS_PER_MINUTE}px, auto)`).join(' ')
+        : `minmax(${FALLBACK_ROW_MIN_PX}px, auto)`;
+    weekGrid.style.gridTemplateRows = `auto ${periodRowTracks}`;
+
+    // The day axis every exam overlay in this week is positioned
+    // against — the classroom's own recurring period list's earliest
+    // start / latest end, computed ONCE for the whole grid (Week view
+    // shares one period-ROW structure across every date column, per
+    // this function's own existing scope note above `periods.forEach`
+    // below). Pure numbers, never touched again after this.
+    const dayAxisStartMinutes = computeDayAxisStartMinutes(periods);
+    const dayAxisEndMinutes = computeDayAxisEndMinutes(periods);
 
     const corner = document.createElement('div');
     corner.className = 'timetable-view__week-grid-corner';
@@ -638,30 +694,18 @@ export async function renderTimetableView(container, { classroom, currentUser, p
         cell.style.gridRow = group.length > 1 ? `${group.startIndex + 2} / span ${group.length}` : String(group.startIndex + 2);
 
         if (group.suppressedByEventId) {
-          const event = schedule.events.find((e) => e.id === group.suppressedByEventId);
-          // Round 4 fix: the grid-row spanning above (untouched) still
-          // correctly anchors this cell to the right rows, but its
-          // rendered pixel height is however tall those rows happen to
-          // be — not necessarily proportional to the event's own real
-          // clock time. `cell` becomes the `position: relative` wrapper
-          // that already fills that spanned area; the exam card itself
-          // is placed inside it as an absolutely-positioned child whose
-          // top/bottom are set from computeExamOverlayInset() so it
-          // visually starts/ends at the event's actual startTime/
-          // endTime rather than always filling the whole spanned block
-          // edge-to-edge. Aligned exams (the common case) compute to
-          // ~0/0 insets, so this is visually a no-op for them.
-          cell.classList.add('timetable-view__grid-cell--exam');
-          const coveredPeriods = periods
-            .slice(group.startIndex, group.startIndex + group.length)
-            .map((period) => schedule.periods.find((p) => p.periodNumber === period.periodNumber))
-            .filter(Boolean);
-          const inset = computeExamOverlayInset({ event, coveredPeriods });
-          const examCard = renderExamCard(event);
-          examCard.classList.add('timetable-period-card--event-overlay');
-          examCard.style.top = `${inset.topPercent}%`;
-          examCard.style.bottom = `${inset.bottomPercent}%`;
-          cell.appendChild(examCard);
+          // ROUND 5: no lesson card renders underneath a suppressing
+          // exam, exactly as before — but the exam's own visual
+          // representation no longer lives inside THIS cell at all
+          // (see this function's own doc comment on why: this cell's
+          // rendered height is not a time-accurate coordinate system).
+          // It's drawn once per day, in the separate `examOverlayLayer`
+          // built below, positioned by pure clock-time math. This cell
+          // stays as an empty, structurally-necessary placeholder — it
+          // keeps the grid's own row/column tracks intact and gives the
+          // suppressed area a normal surface background so nothing
+          // looks like a rendering hole while the overlay draws on top.
+          cell.classList.add('timetable-view__grid-cell--exam-placeholder');
         } else {
           const period = periods[group.startIndex];
           const effectivePeriod = schedule.periods.find((p) => p.periodNumber === period.periodNumber);
@@ -673,6 +717,39 @@ export async function renderTimetableView(container, { classroom, currentUser, p
         }
         weekGrid.appendChild(cell);
       });
+
+      // This day's own exam overlay layer — one per date column,
+      // spanning every period row (mirroring the Holiday block's own
+      // `grid-row: 2 / span N` technique above), rendered as a SIBLING
+      // to this day's ordinary period cells rather than nested inside
+      // any one of them. `pointer-events: none` on the layer itself so
+      // it never blocks clicks on lesson cells around/beneath it;
+      // `pointer-events: auto` on each individual exam card (see CSS)
+      // so the card itself stays clickable to open its edit form.
+      const examEventIdsForDay = [...new Set(periodGroups.map((group) => group.suppressedByEventId).filter(Boolean))];
+      if (examEventIdsForDay.length > 0) {
+        const examOverlayLayer = document.createElement('div');
+        examOverlayLayer.className = 'timetable-view__exam-overlay-layer';
+        examOverlayLayer.style.gridColumn = String(dayIndex + 2);
+        examOverlayLayer.style.gridRow = `2 / span ${Math.max(periods.length, 1)}`;
+
+        examEventIdsForDay.forEach((eventId) => {
+          const event = schedule.events.find((e) => e.id === eventId);
+          if (!event) return;
+          // Pure pixels-per-minute arithmetic — never a percentage of,
+          // or measurement against, this or any other rendered cell.
+          // See computeEventOverlayGeometry()'s own doc comment for the
+          // content-independence guarantee this exists to provide.
+          const geometry = computeEventOverlayGeometry({ event, dayAxisStartMinutes, dayAxisEndMinutes, pixelsPerMinute: PIXELS_PER_MINUTE });
+          const examCard = renderExamCard(event);
+          examCard.classList.add('timetable-period-card--event-overlay');
+          examCard.style.top = `${geometry.topPx}px`;
+          examCard.style.height = `${geometry.heightPx}px`;
+          examOverlayLayer.appendChild(examCard);
+        });
+
+        weekGrid.appendChild(examOverlayLayer);
+      }
     });
 
     grid.appendChild(weekGrid);
@@ -740,6 +817,31 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     );
   }
 
+  /**
+   * ROUND 5 — Day view's own version of this round's fix.
+   * `.timetable-view__day-row` is a single vertical flex list (no
+   * shared grid row tracks across columns like Week view has — Day
+   * view only ever shows ONE column, so there's no cross-column
+   * row-sharing complication to correct), but before this round each
+   * row's own height was still purely content-driven with no
+   * time-proportional floor at all — an exam row could visually read
+   * as "stretched/shrunk" relative to its real duration depending on
+   * whatever an ADJACENT row's own content happened to need. Setting
+   * an inline `min-height` here (pure arithmetic from
+   * computePeriodDurationMinutes(), which duck-types on the same
+   * `startTime`/`endTime` fields whether given a period or an event)
+   * gives every row — ordinary period or exam alike — a real
+   * time-proportional floor while still allowing genuine growth for
+   * heavy lesson content, exactly mirroring Week view's own
+   * `minmax(...)` row-track treatment. A row whose own time can't be
+   * parsed at all keeps its pre-existing purely-content-driven height
+   * (no floor applied) rather than guessing.
+   */
+  function applyDayRowMinHeight(row, timeLike) {
+    const duration = computePeriodDurationMinutes(timeLike);
+    if (duration != null) row.style.minHeight = `${duration * PIXELS_PER_MINUTE}px`;
+  }
+
   function renderDayGrid(slots, range) {
     const wrapper = document.createElement('div');
     wrapper.className = 'timetable-view__day-list';
@@ -760,6 +862,7 @@ export async function renderTimetableView(container, { classroom, currentUser, p
         renderedEventIds.add(period.suppressedByEventId);
         const event = schedule.events.find((e) => e.id === period.suppressedByEventId);
         row.classList.add('timetable-view__day-row--event');
+        applyDayRowMinHeight(row, event);
         const label = document.createElement('div');
         label.className = 'timetable-view__period-label';
         label.innerHTML = `<strong>${scheduledEventService.getEventTypeLabel(event.eventType)}</strong><span>${event.startTime} - ${event.endTime}</span>`;
@@ -775,6 +878,7 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       // per Phase P's "subtle subject accent" requirement for the
       // mobile Day view. No new data; an empty period stays neutral.
       row.style.borderLeftColor = getTimetableSubjectColor(slot.subjectId).text;
+      applyDayRowMinHeight(row, period);
       const label = document.createElement('div');
       label.className = 'timetable-view__period-label';
       label.innerHTML = `<strong>${period.periodNumber}</strong><span>${period.startTime} - ${period.endTime}</span>`;
@@ -792,6 +896,7 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       if (renderedEventIds.has(event.id)) return;
       const row = document.createElement('div');
       row.className = 'timetable-view__day-row timetable-view__day-row--event';
+      applyDayRowMinHeight(row, event);
       const label = document.createElement('div');
       label.className = 'timetable-view__period-label';
       label.innerHTML = `<strong>${scheduledEventService.getEventTypeLabel(event.eventType)}</strong><span>${event.startTime} - ${event.endTime}</span>`;

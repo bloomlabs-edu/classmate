@@ -16752,14 +16752,21 @@ button.recognition-bento__hero-winner-name {
 
 /* Week view — a real CSS Grid (see renderWeekGrid()'s own doc comment
    for why this replaced the old `<table>`): every period ROW is one
-   shared grid track sized by `min-content`, so the row automatically
-   grows to fit whichever day's cell has the most content that period
-   (multiple concept boxes, a long concept name, exam content) — never
-   a fixed height, and never a per-cell-independent height that could
-   let one day's card overlap the row below it. Explicit
-   grid-template-rows/columns (set inline by renderWeekGrid() itself,
-   since the row/column counts are dynamic) are required so a Holiday
-   column's own `grid-row: 2 / span N` resolves reliably. */
+   shared grid track, so the row automatically grows to fit whichever
+   day's cell has the most content that period (multiple concept
+   boxes, a long concept name) — never a per-cell-independent height
+   that could let one day's card overlap the row below it. As of
+   Round 5, each row's track is `minmax(durationMinutes *
+   PIXELS_PER_MINUTE px, auto)` rather than plain `min-content` — a
+   real time-proportional MINIMUM height, while still allowed to grow
+   for heavy content (see renderWeekGrid()'s own doc comment for why:
+   an exam's own visual position is no longer derived from any grid
+   cell's rendered height at all, but the row tracks themselves are
+   still given an honest time-proportional floor for the common,
+   unloaded case). Explicit grid-template-rows/columns (set inline by
+   renderWeekGrid() itself, since the row/column counts are dynamic)
+   are required so a Holiday column's own `grid-row: 2 / span N`
+   resolves reliably. */
 .timetable-view__week-grid {
   display: grid;
   gap: 1px;
@@ -18582,35 +18589,48 @@ button.recognition-bento__hero-winner-name {
   border-left-style: dashed;
 }
 
-/* A multi-period exam's grid cell spans several row tracks (see
-   renderWeekGrid()'s groupPeriodsForExamSpanning() usage) — the card
-   itself fills that full spanned height so it reads as ONE continuous
-   block, not a normal-height card floating at the top of a taller box
-   with empty space below it. */
+/* Day view's own exam row (`.timetable-view__day-row--event`, a flex
+   row with `align-items: stretch` — see renderDayGrid()) stretches
+   this card to fill the row's own height, which itself now carries a
+   time-proportional min-height (applyDayRowMinHeight()) — so the card
+   reads as filling its real duration, not floating at a fixed height
+   inside a taller box. Week view's own exam card additionally gets
+   `.timetable-period-card--event-overlay` (above), whose inline pixel
+   height/position take precedence over this 100%. */
 .timetable-period-card--event {
   height: 100%;
   box-sizing: border-box;
   justify-content: center;
 }
 
-/* Round 4 exact-time fix — Week view only. `.timetable-view__grid-
-   cell--exam` is the position:relative wrapper that already fills the
-   correct spanned grid rows (grid-row: N / span M, set inline in
-   renderWeekGrid(), untouched); `.timetable-period-card--event-
-   overlay` is the exam card itself, absolutely positioned inside it
-   with top/bottom set inline from computeExamOverlayInset() so its
-   visual top/bottom track the event's own real startTime/endTime
-   rather than always filling the whole spanned block edge-to-edge.
-   `min-height` is a floor only — a graceful fallback for the rare case
-   where no other content in that row/column combination would
-   otherwise give the row any real height, never a claim that the
-   block is always exactly this tall. Day view's own renderExamCard()
-   usage never gets these two classes — it's a sequential list, not a
-   shared multi-column grid, so it has no row-height ambiguity to
-   correct in the first place. */
-.timetable-view__grid-cell--exam {
+/* ROUND 5 rewrite — Week view only. An exam no longer renders inside
+   its own suppressed periods' spanned grid cell at all (that cell's
+   rendered height is shared across every day column via CSS Grid row
+   tracks, so a percentage-based position inside it — Round 4's
+   approach — silently drifted whenever ANY day's lesson in that same
+   row grew taller). `.timetable-view__grid-cell--exam-placeholder`
+   is now just an empty, structurally-necessary stand-in for the
+   suppressed period(s)' own grid cell (keeps the row/column tracks
+   intact, keeps a normal surface fill so nothing looks like a
+   rendering hole). The exam's actual visual representation lives in
+   `.timetable-view__exam-overlay-layer` — one per day column, built in
+   renderWeekGrid(), spanning every period row exactly like the
+   Holiday block above — with `.timetable-period-card--event-overlay`
+   cards absolutely positioned inside it via inline `top`/`height` in
+   PIXELS (computeEventOverlayGeometry() in timetableExamSpanning.js),
+   never a percentage of anything. Day view's own renderExamCard()
+   usage never gets any of these three classes — it's a sequential
+   list, not a shared multi-column grid, so it has no row-height
+   ambiguity to correct in the first place (see renderDayGrid()'s own
+   applyDayRowMinHeight() for Day view's own, simpler fix). */
+.timetable-view__grid-cell--exam-placeholder {
+  background: color-mix(in srgb, var(--color-primary-deep) 4%, var(--color-surface));
+}
+
+.timetable-view__exam-overlay-layer {
   position: relative;
-  min-height: 64px;
+  pointer-events: none;
+  z-index: 2;
 }
 
 .timetable-period-card--event-overlay {
@@ -18618,6 +18638,10 @@ button.recognition-bento__hero-winner-name {
   left: 0;
   right: 0;
   height: auto;
+  min-height: 28px;
+  box-sizing: border-box;
+  pointer-events: auto;
+  overflow: hidden;
 }
 
 /* Week view header — a small colored underline for a Holiday/Working-
