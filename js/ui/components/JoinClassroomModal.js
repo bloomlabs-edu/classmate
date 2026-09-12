@@ -1,14 +1,19 @@
 /**
  * ui/components/JoinClassroomModal.js
  *
- * The "Join a Classroom" modal — a co-teacher's counterpart to
- * "+ New Classroom" on the same screen. Collects just the classroom
- * ID (see Settings > Teachers on the owner's side, where the code is
- * shown/copied) and calls onJoin with it; the caller
- * (services/workspaceService.js's joinClassroomByCode) resolves the
- * code, adds the caller as a teacher member, and reports back whether
- * it worked. Matches NewClassroomModal.js's structure exactly, since
- * this is the same kind of "one small step" action, not a wizard.
+ * The "Join a Classroom" modal — a co-teacher's (or Program Manager's)
+ * counterpart to "+ New Classroom" on the same screen. Collects just
+ * the classroom ID/code (see ui/views/StudentAccessView.js on the
+ * owner's side, where either code is generated/shared) and calls
+ * onJoin with it; the caller (services/workspaceService.js's
+ * joinClassroomByCode) resolves the code to BOTH a classroom and the
+ * role that specific code grants, adds the caller as a member with
+ * that role, and reports back whether it worked. This modal itself has
+ * no notion of role at all — it's the same generic form either way,
+ * since the role was already decided by the code the person was given,
+ * never something they choose here. Matches NewClassroomModal.js's
+ * structure exactly, since this is the same kind of "one small step"
+ * action, not a wizard.
  */
 
 export function openJoinClassroomModal({ onJoin }) {

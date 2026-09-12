@@ -326,6 +326,20 @@ export function ensureVisitorAccessCode(classroom) {
 }
 
 /**
+ * Same lazy-generation pattern as ensureJoinCode() above, for the
+ * Program Manager join code (Programme Manager Weekly Plan Review —
+ * see models/Classroom.js's own `programManagerJoinCode` doc comment).
+ * Deliberately its own separate code/field, never reusing
+ * classroomJoinCode — a code that grants program_manager access must
+ * never be the same one that grants full co-teacher access.
+ */
+export function ensureProgramManagerJoinCode(classroom) {
+  if (classroom.programManagerJoinCode) return false;
+  classroom.programManagerJoinCode = generateJoinCode();
+  return true;
+}
+
+/**
  * Clears this classroom's own pointer to its Visitor Access code — the
  * caller is also responsible for marking that code's own
  * `visitorAccessCodes/{code}` lookup document `revoked: true` (see

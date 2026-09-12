@@ -236,15 +236,15 @@ class FirestoreClassroomRepository extends ClassroomRepository {
     await batch.commit();
   }
 
-  /** Populates the small public lookup used by "Join a Classroom" — called once, when a join code is first generated (see classroomService.ensureJoinCode()). */
-  async createJoinCodeMapping(code, classroomId) {
-    await setDoc(this._joinCodeDoc(code), { classroomId });
+  /** Populates the small public lookup used by "Join a Classroom" — called once, when a join code is first generated (see classroomService.ensureJoinCode()/ensureProgramManagerJoinCode()). `role` is baked in here, at generation time. */
+  async createJoinCodeMapping(code, classroomId, role) {
+    await setDoc(this._joinCodeDoc(code), { classroomId, role });
   }
 
-  /** Returns the classroomId a join code points to, or null if the code doesn't exist. */
-  async getClassroomIdByJoinCode(code) {
+  /** Returns `{classroomId, role}` a join code resolves to, or null if the code doesn't exist. */
+  async resolveJoinCode(code) {
     const docSnapshot = await getDoc(this._joinCodeDoc(code));
-    return docSnapshot.exists() ? docSnapshot.data().classroomId : null;
+    return docSnapshot.exists() ? docSnapshot.data() : null;
   }
 
   /** Same as createJoinCodeMapping(), for the separate student-facing code (see classroomService.ensureStudentJoinCode()). */
@@ -268,7 +268,7 @@ class FirestoreClassroomRepository extends ClassroomRepository {
    * write anything" — see firestore.rules for the proposed addition
    * this specific shape enables.
    */
-  async addSelfAsTeacher(classroomId, uid, memberInfo) {
+  async addSelfAsMember(classroomId, uid, memberInfo) {
     await setDoc(
       this._classroomDoc(classroomId),
       {

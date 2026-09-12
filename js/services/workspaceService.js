@@ -453,7 +453,7 @@ export function createClassroom(details, owner) {
   // generated the normal way, at creation, could never actually
   // resolve. Both mappings need creating right here, for both codes,
   // the moment a classroom is created.
-  createJoinCodeMapping(classroom.classroomJoinCode, classroom.id);
+  createJoinCodeMapping(classroom.classroomJoinCode, classroom.id, MEMBER_ROLES.TEACHER);
   createStudentJoinCodeMapping(classroom.classroomStudentJoinCode, classroom.id);
   return classroom;
 }
@@ -529,24 +529,51 @@ export async function reloadClassroomFromServer(classroomId) {
   }
 }
 
-/** Fire-and-forget, matching save()'s pattern — called once, alongside saving a classroom that just generated a new join code (see classroomService.ensureJoinCode()). */
-export function createJoinCodeMapping(code, classroomId) {
-  repository.createJoinCodeMapping(code, classroomId).catch((error) => {
+/** Fire-and-forget, matching save()'s pattern — called once, alongside saving a classroom that just generated a new join code (see classroomService.ensureJoinCode()/ensureProgramManagerJoinCode()). `role` is baked into the mapping at generation time — see repositories/classroomRepository.js's own createJoinCodeMapping() doc comment. */
+export function createJoinCodeMapping(code, classroomId, role) {
+  repository.createJoinCodeMapping(code, classroomId, role).catch((error) => {
     console.error('[workspaceService] Failed to create join code mapping:', error);
   });
 }
 
 /**
- * The "Join a Classroom" action a co-teacher uses, from their own
- * account, instead of an email-based invite (this app has no way to
- * look up another account by email). Resolves the code to a
- * classroom, then adds the caller as a teacher member via a narrow,
- * additive-only write — see firestoreClassroomRepository.js's
- * addSelfAsTeacher() for why that shape matters for the security rule
- * it needs.
+ * Every role a join code is ever allowed to grant a SELF-joining user —
+ * matches firestore.rules' own isSelfOnlyJoin() allowlist exactly (keep
+ * both in sync). Deliberately never OWNER/VIEWER/STUDENT/PARENT/
+ * HEAD_MASTER: a self-join must never be able to escalate beyond the two
+ * roles this app actually has a real invite tile for
+ * (ui/views/StudentAccessView.js's Co-Teacher and Program Manager tiles).
+ */
+const SELF_JOINABLE_ROLES = [MEMBER_ROLES.TEACHER, MEMBER_ROLES.PROGRAM_MANAGER];
+
+const JOIN_ROLE_COPY = {
+  [MEMBER_ROLES.TEACHER]: { notificationTitle: 'New co-teacher joined', joinedLabel: 'joined this classroom', memberLabel: 'Teacher' },
+  [MEMBER_ROLES.PROGRAM_MANAGER]: { notificationTitle: 'New Program Manager joined', joinedLabel: 'joined this classroom to review Weekly Plans', memberLabel: 'Program Manager' },
+};
+
+/**
+ * The "Join a Classroom" action a co-teacher OR a Program Manager uses,
+ * from their own account, instead of an email-based invite (this app
+ * has no way to look up another account by email). Resolves the code
+ * to a classroom AND the role that specific code grants (see
+ * repositories/classroomRepository.js's own createJoinCodeMapping()/
+ * resolveJoinCode() doc comments — the role was baked in when the code
+ * was generated, never chosen here by the person redeeming it), then
+ * adds the caller as a member with that role via a narrow, additive-only
+ * write — see firestoreClassroomRepository.js's addSelfAsMember() for
+ * why that shape matters for the security rule it needs.
+ *
+ * A code mapping created before Program Manager join codes existed has
+ * no stored `role` at all — defaults to TEACHER, the only role the
+ * co-teacher code has ever granted, so no pre-existing code's behavior
+ * changes. Any resolved role outside SELF_JOINABLE_ROLES (which should
+ * be structurally impossible, since only this file's own two invite
+ * tiles ever call createJoinCodeMapping()) is rejected defensively
+ * rather than trusted — the Firestore rule enforces the same allowlist
+ * independently either way (see firestore.rules' own isSelfOnlyJoin()).
  *
  * The newly-joined classroom does not need to be added to local state
- * here: addSelfAsTeacher() writes to this uid's own classroomRefs,
+ * here: addSelfAsMember() writes to this uid's own classroomRefs,
  * which the existing subscribeToClassroomRefs() listener (see
  * initForUser() above) already reacts to — the same mechanism that
  * already makes a newly-created classroom appear on Home.
@@ -557,13 +584,20 @@ export async function joinClassroomByCode(code, uid, displayName) {
     return { success: false, reason: 'empty' };
   }
 
-  const classroomId = await repository.getClassroomIdByJoinCode(normalizedCode);
-  if (!classroomId) {
+  const mapping = await repository.resolveJoinCode(normalizedCode);
+  if (!mapping) {
     return { success: false, reason: 'not_found' };
   }
 
-  await repository.addSelfAsTeacher(classroomId, uid, {
-    role: MEMBER_ROLES.TEACHER,
+  const { classroomId } = mapping;
+  const role = mapping.role || MEMBER_ROLES.TEACHER;
+  if (!SELF_JOINABLE_ROLES.includes(role)) {
+    return { success: false, reason: 'not_found' };
+  }
+  const copy = JOIN_ROLE_COPY[role];
+
+  await repository.addSelfAsMember(classroomId, uid, {
+    role,
     displayName: displayName || 'Teacher',
     joinedAt: new Date().toISOString(),
   });
@@ -574,20 +608,20 @@ export async function joinClassroomByCode(code, uid, displayName) {
   // publishNotification() itself never throws (see
   // notificationService.js's own header comment), so a failure here
   // can never turn an already-successful join into a reported failure.
-  // Called only after addSelfAsTeacher() above has actually committed,
+  // Called only after addSelfAsMember() above has actually committed,
   // so this uid is already present in memberUids by the time
   // firestore.rules evaluates this create — see that rule's own
   // comment on this collection.
   notificationService.publishNotification(classroomId, {
     type: 'member_joined',
     category: NOTIFICATION_CATEGORIES.CLASSROOM,
-    title: 'New co-teacher joined',
-    message: `${displayName || 'A teacher'} joined this classroom.`,
+    title: copy.notificationTitle,
+    message: `${displayName || copy.memberLabel} ${copy.joinedLabel}.`,
     payload: {},
     createdByUid: uid,
   });
 
-  return { success: true, classroomId };
+  return { success: true, classroomId, role };
 }
 
 /** Fire-and-forget, matching createJoinCodeMapping()'s pattern — called once, alongside saving a classroom that just generated a new student join code (see classroomService.ensureStudentJoinCode()). */

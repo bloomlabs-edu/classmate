@@ -453,13 +453,24 @@ function handleJoinClassroom() {
           if (!result.success) {
             onError(
               result.reason === 'not_found'
-                ? 'That Classroom ID doesn\u2019t match any classroom. Double-check it with your co-teacher.'
-                : 'Enter the Classroom ID your co-teacher shared with you.'
+                ? 'That Classroom ID doesn\u2019t match any classroom. Double-check it with whoever shared it.'
+                : 'Enter the Classroom ID that was shared with you.'
             );
             return;
           }
           onSuccess();
-          router.navigate(`/classroom/${result.classroomId}`);
+          // A Program Manager has no classroom-management permission at
+          // all (config/memberRoles.js) — landing them on that
+          // classroom's own Dashboard would show a screen full of
+          // actions they can't take. They join specifically to review
+          // Weekly Plans, so that's where they land instead; a
+          // co-teacher's own landing (this classroom's Dashboard) is
+          // completely unchanged.
+          if (result.role === 'program_manager') {
+            router.navigate('/program-manager/weekly-plans');
+          } else {
+            router.navigate(`/classroom/${result.classroomId}`);
+          }
         })
         .catch((error) => {
           console.error('[main] Failed to join classroom:', error);

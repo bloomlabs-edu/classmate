@@ -133,16 +133,22 @@ export class ClassroomRepository {
     throw new Error('ClassroomRepository.setAccentColorPreference() must be implemented by a subclass');
   }
 
-  /** Populates the small public lookup used by "Join a Classroom" — see services/classroomService.js's ensureJoinCode(). */
+  /**
+   * Populates the small public lookup used by "Join a Classroom" — see
+   * services/classroomService.js's ensureJoinCode()/
+   * ensureProgramManagerJoinCode(). `role` is the role redeeming this
+   * specific code will grant (baked in at generation time by whichever
+   * invite tile created it — never chosen by the person redeeming it).
+   */
   // eslint-disable-next-line no-unused-vars
-  async createJoinCodeMapping(code, classroomId) {
+  async createJoinCodeMapping(code, classroomId, role) {
     throw new Error('ClassroomRepository.createJoinCodeMapping() must be implemented by a subclass');
   }
 
-  /** Resolves a join code to a classroomId, or null if the code doesn't exist. */
+  /** Resolves a join code to `{classroomId, role}`, or null if the code doesn't exist. */
   // eslint-disable-next-line no-unused-vars
-  async getClassroomIdByJoinCode(code) {
-    throw new Error('ClassroomRepository.getClassroomIdByJoinCode() must be implemented by a subclass');
+  async resolveJoinCode(code) {
+    throw new Error('ClassroomRepository.resolveJoinCode() must be implemented by a subclass');
   }
 
   /** Same as createJoinCodeMapping(), for the separate student-facing code — see classroomService.js's ensureStudentJoinCode(). A distinct mapping so a student code can never resolve through the co-teacher lookup, or vice versa. */
@@ -157,10 +163,19 @@ export class ClassroomRepository {
     throw new Error('ClassroomRepository.getClassroomIdByStudentJoinCode() must be implemented by a subclass');
   }
 
-  /** A narrow, additive-only write adding exactly one uid as a member — see firestoreClassroomRepository.js's implementation for why this shape matters for the security rule it needs. */
+  /**
+   * A narrow, additive-only write adding exactly one uid as a member —
+   * see firestoreClassroomRepository.js's implementation for why this
+   * shape matters for the security rule it needs. Named generically
+   * (not "AsTeacher") since `memberInfo.role` may be any self-joinable
+   * role a join code can grant (today: TEACHER via the co-teacher code,
+   * PROGRAM_MANAGER via the Program Manager code — see
+   * firestore.rules' own isSelfOnlyJoin(), which allowlists exactly
+   * these two; a self-join can never grant OWNER/VIEWER/anything else).
+   */
   // eslint-disable-next-line no-unused-vars
-  async addSelfAsTeacher(classroomId, uid, memberInfo) {
-    throw new Error('ClassroomRepository.addSelfAsTeacher() must be implemented by a subclass');
+  async addSelfAsMember(classroomId, uid, memberInfo) {
+    throw new Error('ClassroomRepository.addSelfAsMember() must be implemented by a subclass');
   }
 
   /** A one-time read of a classroom document — used by services/classSessionService.js's discardSession(), to throw away in-memory-only draft mutations by re-fetching the last-saved server state. Not a subscription. */

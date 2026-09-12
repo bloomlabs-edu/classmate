@@ -68,24 +68,35 @@
 // reason. Two additions, kept as narrow as possible:
 //
 //   1. A new joinCodes/{code} collection — a tiny, low-sensitivity
-//      lookup (`{ classroomId: "..." }`) that reveals only an opaque
-//      classroom id for a known code, nothing about the classroom's
-//      actual content (no student names, no scores, nothing). Readable
-//      by any signed-in user; write-once (create, never update/delete)
-//      so a code can't be silently repointed at a different classroom
-//      after being shared.
+//      lookup (`{ classroomId: "...", role: "..." }` — Programme
+//      Manager Weekly Plan Review added `role`, baked in at generation
+//      time by whichever invite tile created the code, so a single
+//      generic redemption path can grant either role without the
+//      redeemer ever choosing it) that reveals only an opaque
+//      classroom id (and which role its own code grants) for a known
+//      code, nothing about the classroom's actual content (no student
+//      names, no scores, nothing). Readable by any signed-in user;
+//      write-once (create, never update/delete) so a code can't be
+//      silently repointed at a different classroom or role after being
+//      shared.
 //
 //   2. classrooms/{classroomId}'s `allow update` rule gains a second
 //      path: a non-member may write, but ONLY if the resulting document
 //      still has every field identical to before except their own
-//      uid being added to `memberUids` and `members` — they cannot
-//      touch scores, students, settings, ownerUid, or remove/modify
-//      any other member's entry. This is exactly why
-//      addSelfAsTeacher() was written as a narrow, additive-only update
-//      (arrayUnion + a single new map key) rather than a full document
-//      overwrite: a rule permitting "add exactly your own uid" is
-//      possible to write safely; a rule permitting "a non-member may
-//      write anything" is not.
+//      uid being added to `memberUids` and `members`, AND the role they
+//      claim for themselves is on an explicit allowlist (`teacher` or
+//      `program_manager` — see isSelfOnlyJoin()'s own comment below;
+//      this allowlist check was added as part of Programme Manager
+//      Weekly Plan Review's join-code work and closes a real,
+//      pre-existing gap: earlier, nothing stopped a self-join from
+//      claiming `role: 'owner'`). They cannot touch scores, students,
+//      settings, ownerUid, or remove/modify any other member's entry.
+//      This is exactly why addSelfAsMember() was written as a narrow,
+//      additive-only update (arrayUnion + a single new map key) rather
+//      than a full document overwrite: a rule permitting "add exactly
+//      your own uid, with one of these two roles" is possible to write
+//      safely; a rule permitting "a non-member may write anything" is
+//      not.
 
 // ---------------------------------------------------------------------
 // Student join codes (no student authentication, by design)
@@ -1519,12 +1530,26 @@ service cloud.firestore {
 // top-level field (teams, notebooks, settings, learningActivities,
 // ownerUid, classroomJoinCode, etc.) must be byte-for-byte identical
 // to what it was before the write.
+//
+// SECURITY FIX (Programme Manager Weekly Plan Review, join-code hardening):
+// this rule previously placed NO constraint at all on the ROLE a
+// self-joiner could claim for themselves — only on which uid/fields
+// could change. A self-join write could therefore have set
+// members[uid].role to 'owner' (or anything else) and gone entirely
+// undetected by this check, a real privilege-escalation gap that
+// predates this feature. Closed here by requiring the claimed role be
+// one of exactly the two this app's own join-code UI ever grants via
+// self-join (see services/workspaceService.js's own
+// SELF_JOINABLE_ROLES, kept in sync with this list) — 'owner' can only
+// ever be set by createClassroomWithOwner() (a create, not this update
+// path) or a future transfer-ownership flow, never by a self-join.
 function isSelfOnlyJoin(request, resource) {
   return request.auth.uid in request.resource.data.memberUids &&
     !(request.auth.uid in resource.data.memberUids) &&
     request.resource.data.memberUids.size() == resource.data.memberUids.size() + 1 &&
     request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([request.auth.uid]) &&
-    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'memberUids']);
+    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'memberUids']) &&
+    request.resource.data.members[request.auth.uid].role in ['teacher', 'program_manager'];
 }
 
 // LessonPlan (Phase 3 hardening) — see that match block's own header

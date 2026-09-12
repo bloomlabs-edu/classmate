@@ -9370,6 +9370,10 @@ button.recognition-bento__hero-winner-name {
   background-color: #E1F5F1;
   color: #0F9E8E;
 }
+.classroom-access-bento__icon-badge--program-manager {
+  background-color: #EAF5E3;
+  color: #4C9A2A;
+}
 .classroom-access-bento__heading {
   font-size: 1rem;
   font-weight: var(--font-weight-black);

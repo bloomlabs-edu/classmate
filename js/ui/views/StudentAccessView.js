@@ -2,20 +2,27 @@
  * ui/views/StudentAccessView.js
  *
  * "Classroom Access" — a Bento-style access hub, not a stack of
- * identically-weighted settings sections. Three genuinely different
- * purposes, given three genuinely different visual weights (per
- * explicit product direction — these must never read as "three
- * versions of the same permission"):
+ * identically-weighted settings sections. Genuinely different
+ * purposes, given genuinely different visual weights (per explicit
+ * product direction — these must never read as "N versions of the
+ * same permission"):
  *
  *   Students  -> join my class   (large/primary tile — the one thing
  *                                 this page leads with)
  *   Co-Teacher -> teach with me  (medium tile — full access)
+ *   Program Manager -> review my Weekly Plans (medium tile — narrow,
+ *                                 real membership: REVIEW_LESSON_PLAN/
+ *                                 APPROVE_LESSON_PLAN only, added
+ *                                 alongside Co-Teacher for Programme
+ *                                 Manager Weekly Plan Review — its own
+ *                                 separate code, never interchangeable
+ *                                 with the Co-Teacher one)
  *   Visitor    -> explore my class (medium tile — read-only demo,
  *                                 never a classroom member — see
  *                                 services/visitorAccessService.js's
  *                                 own header comment for why this is
  *                                 architecturally NOTHING like the
- *                                 other two)
+ *                                 other three)
  *
  * Device Security is real, kept working exactly as before, but
  * deliberately demoted to a small, quiet section below the three
@@ -32,8 +39,9 @@ import * as classroomService from '../../services/classroomService.js';
 import * as workspaceService from '../../services/workspaceService.js';
 import * as memberService from '../../services/memberService.js';
 import * as visitorAccessService from '../../services/visitorAccessService.js';
-import { buildCoTeacherInvitationMessage, buildVisitorInvitationMessage } from '../../services/invitationMessageService.js';
-import { ensureJoinCode } from '../../services/classroomService.js';
+import { buildCoTeacherInvitationMessage, buildVisitorInvitationMessage, buildProgramManagerInvitationMessage } from '../../services/invitationMessageService.js';
+import { ensureJoinCode, ensureProgramManagerJoinCode } from '../../services/classroomService.js';
+import { MEMBER_ROLES } from '../../config/memberRoles.js';
 import { showToast } from '../components/Toast.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { getDisplayName } from '../../services/classroomService.js';
@@ -74,6 +82,7 @@ export function renderStudentAccessView(container, { classroom, currentUser, onB
   bento.className = 'classroom-access-bento';
   bento.appendChild(createInviteStudentsTile(classroom, rerender));
   bento.appendChild(createInviteCoTeacherTile(classroom, currentUser, rerender));
+  bento.appendChild(createInviteProgramManagerTile(classroom, currentUser, rerender));
   bento.appendChild(createVisitorAccessTile(classroom, currentUser, rerender));
   content.appendChild(bento);
 
@@ -291,7 +300,7 @@ function createInviteCoTeacherTile(classroom, currentUser, rerender) {
     generateButton.addEventListener('click', () => {
       ensureJoinCode(classroom);
       workspaceService.save(classroom);
-      workspaceService.createJoinCodeMapping(classroom.classroomJoinCode, classroom.id);
+      workspaceService.createJoinCodeMapping(classroom.classroomJoinCode, classroom.id, MEMBER_ROLES.TEACHER);
       rerender();
     });
     card.appendChild(generateButton);
@@ -318,6 +327,87 @@ function createInviteCoTeacherTile(classroom, currentUser, rerender) {
     } catch (error) {
       console.error('[StudentAccessView] Failed to copy join code:', error);
       window.alert(`Classroom ID: ${classroom.classroomJoinCode}`);
+    }
+  });
+  card.appendChild(copyButton);
+
+  return card;
+}
+
+/**
+ * The Program Manager join code — Programme Manager Weekly Plan Review's
+ * own invite tile, deliberately its own code (never
+ * classroom.classroomJoinCode) and its own member role, never full
+ * co-teacher access. Owner-only, same gate as Co-Teacher above — this
+ * is exactly as high-stakes a grant (a new person gains standing
+ * membership on this classroom), just a narrower one.
+ *
+ * This is the concrete answer to "how does a Program Manager actually
+ * get authorized against a specific classroom": the classroom's own
+ * OWNER decides to share this code with them; redeeming it (the same
+ * "Join a Classroom" flow a co-teacher already uses) adds them as a
+ * real `members` entry with role `program_manager` — see
+ * services/workspaceService.js's joinClassroomByCode(), which resolves
+ * the role from this code's own mapping, never from anything the
+ * joining user chooses.
+ */
+function createInviteProgramManagerTile(classroom, currentUser, rerender) {
+  const card = document.createElement('div');
+  card.className = 'classroom-access-bento__tile classroom-access-bento__tile--medium';
+
+  const isOwner = currentUser && memberService.isOwner(classroom, currentUser.uid);
+  if (!isOwner) return card;
+
+  const iconBadge = document.createElement('div');
+  iconBadge.className = 'classroom-access-bento__icon-badge classroom-access-bento__icon-badge--program-manager';
+  iconBadge.appendChild(createIcon('clipboard-list', { size: 20 }));
+  card.appendChild(iconBadge);
+
+  const heading = document.createElement('h2');
+  heading.className = 'classroom-access-bento__heading';
+  heading.textContent = 'Invite a Program Manager';
+  card.appendChild(heading);
+
+  const description = document.createElement('p');
+  description.className = 'classroom-access-bento__description';
+  description.textContent = 'Review my Weekly Plans — access to review submitted lesson plans and leave feedback. No access to students, scores, or settings.';
+  card.appendChild(description);
+
+  if (!classroom.programManagerJoinCode) {
+    const generateButton = document.createElement('button');
+    generateButton.type = 'button';
+    generateButton.className = 'btn btn--primary';
+    generateButton.textContent = 'Generate Program Manager Code';
+    generateButton.addEventListener('click', () => {
+      ensureProgramManagerJoinCode(classroom);
+      workspaceService.save(classroom);
+      workspaceService.createJoinCodeMapping(classroom.programManagerJoinCode, classroom.id, MEMBER_ROLES.PROGRAM_MANAGER);
+      rerender();
+    });
+    card.appendChild(generateButton);
+    return card;
+  }
+
+  const codeDisplay = document.createElement('div');
+  codeDisplay.className = 'invite-students-card__code';
+  codeDisplay.textContent = classroom.programManagerJoinCode;
+  card.appendChild(codeDisplay);
+
+  const message = buildProgramManagerInvitationMessage({ classroomName: getDisplayName(classroom), code: classroom.programManagerJoinCode });
+  card.appendChild(createInvitationActions({ message, shareLabel: 'Share with Program Manager' }));
+
+  const copyButton = document.createElement('button');
+  copyButton.type = 'button';
+  copyButton.className = 'btn btn--ghost';
+  copyButton.textContent = 'Copy Code';
+  copyButton.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(classroom.programManagerJoinCode);
+      copyButton.textContent = 'Copied!';
+      setTimeout(() => { copyButton.textContent = 'Copy Code'; }, 1500);
+    } catch (error) {
+      console.error('[StudentAccessView] Failed to copy program manager join code:', error);
+      window.alert(`Classroom ID: ${classroom.programManagerJoinCode}`);
     }
   });
   card.appendChild(copyButton);

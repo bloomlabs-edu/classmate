@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCoTeacherInvitationMessage, buildVisitorInvitationMessage } from '../../js/services/invitationMessageService.js';
+import { buildCoTeacherInvitationMessage, buildVisitorInvitationMessage, buildProgramManagerInvitationMessage } from '../../js/services/invitationMessageService.js';
 
 test('buildCoTeacherInvitationMessage: includes classroom name, code, and join instructions', () => {
   const message = buildCoTeacherInvitationMessage({ classroomName: 'Grade 8A', code: 'AB12CD' });
@@ -8,6 +8,15 @@ test('buildCoTeacherInvitationMessage: includes classroom name, code, and join i
   assert.ok(message.includes('AB12CD'));
   assert.ok(/join a classroom/i.test(message));
   assert.ok(/full access/i.test(message));
+});
+
+test('buildProgramManagerInvitationMessage: includes classroom name, code, join instructions, and explicitly narrower access than the Co-Teacher message', () => {
+  const message = buildProgramManagerInvitationMessage({ classroomName: 'Grade 8A', code: 'PM12QR' });
+  assert.ok(message.includes('Grade 8A'));
+  assert.ok(message.includes('PM12QR'));
+  assert.ok(/join a classroom/i.test(message));
+  assert.ok(/review/i.test(message));
+  assert.ok(!/full access/i.test(message));
 });
 
 test('buildVisitorInvitationMessage: includes classroom name, visitor code, and visitor link', () => {

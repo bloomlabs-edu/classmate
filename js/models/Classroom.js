@@ -141,8 +141,14 @@
  *                    createJoinCodeMapping()/joinClassroomByCode(), and
  *                    the Teachers section in SettingsView.js where an
  *                    owner shares it). Redeeming it adds the joining
- *                    teacher via memberService.addMember() — the same
- *                    function used everywhere else a member is added.
+ *                    teacher via repositories/firestoreClassroomRepository.js's
+ *                    addSelfAsMember() — a narrow, additive-only,
+ *                    self-service write (see that function's own header
+ *                    comment), not services/memberService.js's addMember()
+ *                    (that one is in-memory-only and today only ever
+ *                    called for the classroom's own OWNER, at creation/
+ *                    migration time — this comment previously claimed
+ *                    otherwise, which was inaccurate).
  *   classroomStudentJoinCode - a second, separately-scoped code for
  *                    students to join the Portal directly (enter code
  *                    -> see the real roster -> tap their own name),
@@ -203,6 +209,27 @@
  *                    to null AND marks that lookup document `revoked`,
  *                    so an old shared link stops resolving even for
  *                    someone who still has it.
+ *   programManagerJoinCode - a fifth, separately-scoped code (Programme
+ *                    Manager Weekly Plan Review): redeeming it adds the
+ *                    joining user as a real `members` entry with role
+ *                    `program_manager` (config/memberRoles.js) — REVIEW_LESSON_PLAN
+ *                    and APPROVE_LESSON_PLAN only, no classroom-management
+ *                    permission of any kind. Deliberately its own code,
+ *                    never interchangeable with classroomJoinCode above,
+ *                    for the identical reason classroomStudentJoinCode
+ *                    is separate from it — the role a code grants must
+ *                    never be ambiguous from the code itself. Generated
+ *                    lazily (services/classroomService.js's
+ *                    ensureProgramManagerJoinCode()), shared via
+ *                    ui/views/StudentAccessView.js's own "Invite a
+ *                    Program Manager" tile, redeemed through the exact
+ *                    same "Join a Classroom" modal/flow as the co-teacher
+ *                    code — see services/workspaceService.js's
+ *                    joinClassroomByCode(), which resolves which role a
+ *                    given code grants from the join-code mapping itself
+ *                    (repositories/firestoreClassroomRepository.js's
+ *                    resolveJoinCode()), never from anything the joining
+ *                    user chooses.
  *   settings       - classroom-level settings: bucket scoring, point
  *                    scoring, badge catalog, and Setup Wizard progress —
  *                    see config/classroomDefaults.js for the defaults,
@@ -253,6 +280,7 @@ export function createClassroom({
   classroomStudentJoinCode = null,
   deviceResetPin = null,
   visitorAccessCode = null,
+  programManagerJoinCode = null,
   seatingConfig = null,
   currentScoringPeriodStartedAt = null,
   settings = buildDefaultSettings(),
@@ -284,6 +312,7 @@ export function createClassroom({
     classroomStudentJoinCode,
     deviceResetPin,
     visitorAccessCode,
+    programManagerJoinCode,
     seatingConfig,
     currentScoringPeriodStartedAt,
     settings,
