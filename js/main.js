@@ -57,6 +57,7 @@ import { renderPersonalHubView } from './ui/views/PersonalHubView.js';
 import { renderCurriculumManagementView } from './ui/views/CurriculumManagementView.js';
 import { renderLearningManagementView } from './ui/views/LearningManagementView.js';
 import { renderLessonPlansListView } from './ui/views/LessonPlansListView.js';
+import { renderProgramManagerWeeklyPlansView } from './ui/views/ProgramManagerWeeklyPlansView.js';
 import { renderLessonPlanBuilderView } from './ui/views/LessonPlanBuilderView.js';
 import { renderLessonPlanReviewQueueView } from './ui/views/LessonPlanReviewQueueView.js';
 import { renderLessonPlanReviewView } from './ui/views/LessonPlanReviewView.js';
@@ -800,6 +801,19 @@ function renderRoute(route, reason = 'unspecified') {
     return;
   }
 
+  if (route.name === 'programManagerWeeklyPlans') {
+    renderProgramManagerWeeklyPlansView(appContainer, {
+      classrooms: workspaceService.getState().classrooms,
+      currentUser,
+      onBack: () => router.navigate('/teacher'),
+      onOpenPlanReview: (classroomId, lessonPlanId) =>
+        router.navigate(
+          `/classroom/${classroomId}/lesson-plans/${lessonPlanId}/review?returnTo=${encodeURIComponent('/program-manager/weekly-plans')}`
+        ),
+    });
+    return;
+  }
+
   if (CLASSROOM_ROUTE_NAMES.includes(route.name)) {
     const classroom = workspaceService.getClassroomById(route.classroomId);
     // TEMPORARY — diagnostics deliberately does NOT redirect away when
@@ -968,11 +982,19 @@ function renderRoute(route, reason = 'unspecified') {
         onOpenLessonPlanReview: (lessonPlanId) => router.navigate(`/classroom/${classroom.id}/lesson-plans/${lessonPlanId}/review`),
       });
     } else if (route.name === 'lessonPlanReview') {
+      // `returnTo` (same convention as the `studentProfile`/`tracker`
+      // routes above) — a Program Manager arriving here from
+      // #/program-manager/weekly-plans carries `?returnTo=` back to that
+      // cross-classroom queue, so "Back" returns them there instead of
+      // this classroom's own same-classroom review queue. Falls through
+      // to the exact pre-existing hardcoded behavior when absent, so a
+      // same-classroom teacher/reviewer's own "Back" is completely
+      // unchanged.
       renderLessonPlanReviewView(appContainer, {
         classroom,
         currentUser,
         lessonPlanId: route.lessonPlanId,
-        onBack: () => router.navigate(`/classroom/${classroom.id}/lesson-plans/review`),
+        onBack: () => router.navigate(route.query?.returnTo || `/classroom/${classroom.id}/lesson-plans/review`),
       });
     } else if (route.name === 'feed') {
       renderFeedModerationView(appContainer, {
@@ -1279,6 +1301,7 @@ function renderRoute(route, reason = 'unspecified') {
       onDeleteClassroom: handleDeleteClassroomFromHome,
       onOpenCurriculumManagement: () => router.navigate('/curriculum-management'),
       onOpenTimetable: (classroomId) => router.navigate(`/classroom/${classroomId}/timetable`),
+      onOpenWeeklyPlans: () => router.navigate('/program-manager/weekly-plans'),
     });
   }
 }

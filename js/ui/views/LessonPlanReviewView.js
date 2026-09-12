@@ -41,6 +41,8 @@ import * as lessonPlanService from '../../services/lessonPlanService.js';
 import * as lessonPlanReviewService from '../../services/lessonPlanReviewService.js';
 import * as teachingIdeasService from '../../services/teachingIdeasService.js';
 import * as teachingIdeasRepository from '../../repositories/teachingIdeasRepository.js';
+import * as weeklyPlanReviewIndexRepository from '../../repositories/weeklyPlanReviewIndexRepository.js';
+import * as weeklyPlanReviewIndexService from '../../services/weeklyPlanReviewIndexService.js';
 import { LESSON_PLAN_STATUS, LESSON_PLAN_SECTION_KEYS } from '../../models/LessonPlan.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createIcon } from '../components/Icon.js';
@@ -109,6 +111,16 @@ export function renderLessonPlanReviewView(container, { classroom, currentUser, 
             });
             await lessonPlanRepository.saveLessonPlan(classroom.id, plan);
             pendingComments.length = 0;
+            try {
+              await weeklyPlanReviewIndexRepository.upsertReviewIndexEntry(weeklyPlanReviewIndexService.buildReviewIndexEntry(classroom, plan));
+            } catch (indexError) {
+              // Same non-blocking treatment as the Teaching Ideas publish
+              // failure below — the real status change already succeeded
+              // and is saved; the discovery index is never the source of
+              // truth (see services/weeklyPlanReviewIndexService.js's own
+              // header comment).
+              console.error('[LessonPlanReviewView] Requested changes, but failed to update the Weekly Plan review index:', indexError);
+            }
           } catch (error) {
             console.error('[LessonPlanReviewView] Failed to request changes:', error);
             actionError = "Couldn't send this — check your connection and try again.";
@@ -145,6 +157,11 @@ export function renderLessonPlanReviewView(container, { classroom, currentUser, 
               // be misleading — the approval the reviewer asked for did
               // work).
               console.error('[LessonPlanReviewView] Approved, but failed to publish to Teaching Ideas:', publishError);
+            }
+            try {
+              await weeklyPlanReviewIndexRepository.upsertReviewIndexEntry(weeklyPlanReviewIndexService.buildReviewIndexEntry(classroom, plan));
+            } catch (indexError) {
+              console.error('[LessonPlanReviewView] Approved, but failed to update the Weekly Plan review index:', indexError);
             }
           } catch (error) {
             console.error('[LessonPlanReviewView] Failed to approve:', error);

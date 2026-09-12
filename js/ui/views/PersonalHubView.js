@@ -81,7 +81,7 @@ const FACILITATOR_HEX = getGroupColorHex('purple');
 
 export function renderPersonalHubView(
   container,
-  { classrooms, currentUser, onSelectClassroom, onNewClassroom, onJoinClassroom, onDeleteClassroom, onOpenCurriculumManagement, onOpenTimetable }
+  { classrooms, currentUser, onSelectClassroom, onNewClassroom, onJoinClassroom, onDeleteClassroom, onOpenCurriculumManagement, onOpenTimetable, onOpenWeeklyPlans }
 ) {
   container.innerHTML = '';
 
@@ -821,6 +821,29 @@ export function renderPersonalHubView(
 
   // --- Management ------------------------------------------------------
 
+  function buildManagementRow({ icon, category, title, description, onClick }) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'hub-management__row';
+    row.addEventListener('click', onClick);
+
+    row.appendChild(createIconBadge(icon, category, { size: 40 }));
+
+    const text = document.createElement('span');
+    text.className = 'hub-management__text';
+    const rowTitle = document.createElement('span');
+    rowTitle.className = 'hub-management__row-title';
+    rowTitle.textContent = title;
+    const rowDescription = document.createElement('span');
+    rowDescription.className = 'hub-management__row-description';
+    rowDescription.textContent = description;
+    text.append(rowTitle, rowDescription);
+    row.appendChild(text);
+
+    row.appendChild(createIcon('arrow-right', { size: 18, className: 'hub-management__chevron' }));
+    return row;
+  }
+
   function renderManagementSection() {
     const section = document.createElement('section');
     section.className = 'hub-section hub-management';
@@ -833,27 +856,39 @@ export function renderPersonalHubView(
     header.appendChild(title);
     section.appendChild(header);
 
-    const row = document.createElement('button');
-    row.type = 'button';
-    row.className = 'hub-management__row';
-    row.addEventListener('click', onOpenCurriculumManagement);
+    section.appendChild(
+      buildManagementRow({
+        icon: 'book-open',
+        category: 'notebook',
+        title: 'Curriculum Packs',
+        description: 'Browse and manage curriculum packs across your classrooms and programs.',
+        onClick: onOpenCurriculumManagement,
+      })
+    );
 
-    row.appendChild(createIconBadge('book-open', 'notebook', { size: 40 }));
+    // Weekly Plans — Programme Manager Weekly Plan Review. Only ever
+    // shown to someone who is actually a `program_manager` on at least
+    // one of their own classrooms (see config/memberRoles.js's own
+    // PROGRAM_MANAGER comment for how that membership is established) —
+    // never shown to a plain teacher with nothing to review here, per
+    // explicit "do not overuse this everywhere" restraint. This is the
+    // one dashboard entry point Weekly Plan Review adds; the queue
+    // itself (ui/views/ProgramManagerWeeklyPlansView.js) aggregates
+    // across every classroom this check found, so opening it is never
+    // "pick a classroom first."
+    const isProgramManagerAnywhere = classrooms.some((classroom) => classroom.members?.[uid]?.role === 'program_manager');
+    if (isProgramManagerAnywhere && onOpenWeeklyPlans) {
+      section.appendChild(
+        buildManagementRow({
+          icon: 'clipboard-list',
+          category: 'progress',
+          title: 'Weekly Plans',
+          description: 'Review Weekly Plans submitted for your review, across every classroom.',
+          onClick: onOpenWeeklyPlans,
+        })
+      );
+    }
 
-    const text = document.createElement('span');
-    text.className = 'hub-management__text';
-    const rowTitle = document.createElement('span');
-    rowTitle.className = 'hub-management__row-title';
-    rowTitle.textContent = 'Curriculum Packs';
-    const rowDescription = document.createElement('span');
-    rowDescription.className = 'hub-management__row-description';
-    rowDescription.textContent = 'Browse and manage curriculum packs across your classrooms and programs.';
-    text.append(rowTitle, rowDescription);
-    row.appendChild(text);
-
-    row.appendChild(createIcon('arrow-right', { size: 18, className: 'hub-management__chevron' }));
-
-    section.appendChild(row);
     return section;
   }
 }

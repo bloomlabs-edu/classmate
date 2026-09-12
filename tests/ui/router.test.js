@@ -108,6 +108,18 @@ test('pre-existing route: goals', () => {
   assert.deepEqual(resolvePathParts(parts('classroom/classroom-1/goals')), { name: 'goalManagement', classroomId: 'classroom-1' });
 });
 
+// ---------------------------------------------------------------------
+// PROGRAMME MANAGER WEEKLY PLAN REVIEW — the one new top-level route
+// ---------------------------------------------------------------------
+
+test('program-manager weekly-plans route — not classroom-scoped, no classroomId in the resolved route', () => {
+  assert.deepEqual(resolvePathParts(parts('program-manager/weekly-plans')), { name: 'programManagerWeeklyPlans' });
+});
+
+test('program-manager with no matching second segment does not resolve to the weekly-plans route', () => {
+  assert.notDeepEqual(resolvePathParts(parts('program-manager/something-else')), { name: 'programManagerWeeklyPlans' });
+});
+
 test('pre-existing route: learning management', () => {
   assert.deepEqual(resolvePathParts(parts('classroom/classroom-1/learning')), { name: 'learningManagement', classroomId: 'classroom-1' });
 });

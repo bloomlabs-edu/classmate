@@ -888,6 +888,86 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Weekly Plan Review Index (Programme Manager Weekly Plan Review —
+    // see services/weeklyPlanReviewIndexService.js,
+    // repositories/weeklyPlanReviewIndexRepository.js). A DELIBERATELY
+    // SEPARATE, TOP-LEVEL, REFERENCE-ONLY collection — never a
+    // subcollection of `classrooms`, and never a copy of a LessonPlan's
+    // own content. Its only job is letting a Program Manager discover
+    // which of their own classrooms currently have a plan awaiting
+    // review without fetching every LessonPlan in every classroom they
+    // belong to (see ui/views/ProgramManagerWeeklyPlansView.js) — it is
+    // NOT a security boundary on its own, and NOT a second state
+    // machine: `classrooms/{classroomId}/lessonPlans/{lessonPlanId}`
+    // above remains the one authoritative document for both content and
+    // status. This block exists specifically so a stale/forged index
+    // entry can never (a) grant read/review access beyond what the real
+    // `lessonPlans` rule above already grants that same uid on that same
+    // classroom, or (b) misrepresent the real document's current status
+    // to a Program Manager deciding what needs their attention.
+    //
+    // read: same membership scope as `lessonPlans` itself, checked
+    // against THIS document's own `classroomId` field (there is no
+    // classroomId path segment here to read from directly, unlike the
+    // subcollection above) — a Program Manager can only discover entries
+    // for classrooms they are actually a member of, exactly matching
+    // what they could already read directly from `lessonPlans`. This is
+    // intentionally the SAME boundary as that collection, not a looser
+    // one — the index makes something already-readable discoverable in
+    // bulk, it never makes something new readable.
+    //
+    // create/update: keyed by lessonPlanId (never a new document per
+    // review round — see this collection's own service-layer header
+    // comment on why), gated on:
+    //   1. the writer is a current member of the classroom the entry
+    //      itself claims (`request.resource.data.classroomId`) — the
+    //      same actor who could legitimately read/write that real
+    //      LessonPlan in the first place;
+    //   2. the document's own id matches its own claimed lessonPlanId
+    //      (prevents an entry for plan A being written under plan B's
+    //      id);
+    //   3. `status` and `createdByUid` in the write are byte-for-byte
+    //      identical to the REAL source LessonPlan's own current values,
+    //      verified via a fresh `get()` — never trusted from the
+    //      client's own payload, the same "verify against the live
+    //      source document" principle `isFaithfulTeachingIdeaProjection()`
+    //      above already established for /teachingIdeas. A client cannot
+    //      write an index entry claiming SUBMITTED (or any other status)
+    //      for a plan that isn't actually in that state right now.
+    //
+    // delete: always false — an index entry for a plan that's since
+    // moved to APPROVED simply gets overwritten to reflect that (still
+    // discoverable, just no longer in a PM's "needs review" filter),
+    // never removed; matches `lessonPlans`' own "never deleted" rule.
+    match /weeklyPlanReviewIndex/{lessonPlanId} {
+      // NOTE: deliberately nested INSIDE this match block, not a
+      // top-level file function — same reason
+      // isFaithfulTeachingIdeaProjection() above is nested inside
+      // /teachingIdeas (see that function's own comment): it needs the
+      // `database` binding, only in scope inside the enclosing
+      // `match /databases/{database}/documents { ... }` block, and it
+      // reads `lessonPlanId` off this block's own path wildcard. Fetches
+      // the real source LessonPlan exactly ONCE via `let` (never two
+      // separate get() calls against the same path within one rule
+      // evaluation) — the same convention every other multi-field
+      // faithfulness check in this file already uses.
+      function isFaithfulToSourceLessonPlan() {
+        let sourcePlan = get(/databases/$(database)/documents/classrooms/$(request.resource.data.classroomId)/lessonPlans/$(lessonPlanId)).data;
+        return sourcePlan.status == request.resource.data.status &&
+          sourcePlan.createdByUid == request.resource.data.createdByUid;
+      }
+
+      allow read: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(resource.data.classroomId)).data.memberUids;
+
+      allow create, update: if request.auth != null &&
+        request.resource.data.lessonPlanId == lessonPlanId &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(request.resource.data.classroomId)).data.memberUids &&
+        isFaithfulToSourceLessonPlan();
+
+      allow delete: if false;
+    }
+
     // Learning Hub — Resource (see models/Resource.js,
     // services/resourceService.js, services/resourceRepository.js).
     // Fixes the exact pre-existing gap flagged in this file's own NOTE
@@ -1490,13 +1570,18 @@ function isLessonPlanAuthorEdit(resource, request) {
 // status/reviewerUid/reviewHistory/activeComments/updatedAt — lesson
 // CONTENT is completely off-limits to a reviewer, full stop. Exactly
 // one well-formed round appended, attributed to the actual writer.
-// The 'owner'/'teacher' literal lists below are two SEPARATE checks
-// (not one shared list) on purpose, matching
+// The 'owner'/'teacher'/'program_manager' literal lists below are two
+// SEPARATE checks (not one shared list) on purpose, matching
 // services/lessonPlanReviewService.js's own separate
 // canReviewLessonPlan()/canApproveLessonPlan() functions — today they
 // resolve to the same roles (config/memberRoles.js grants both
-// permissions to the same two roles), but this stays ready for a
-// future split without needing to change shape here.
+// permissions to the same three roles), but this stays ready for a
+// future split without needing to change shape here. 'program_manager'
+// added for Programme Manager Weekly Plan Review — a PM only ever
+// reaches this branch by first being a real member of THIS classroom
+// (same scope every other role already requires; see this collection's
+// own `allow read`/`allow update` above), never a separate cross-
+// classroom authority.
 function isLessonPlanReviewerAction(resource, request, reviewerRole) {
   return request.auth.uid != resource.data.createdByUid &&
     resource.data.status == 'submitted' &&
@@ -1505,13 +1590,13 @@ function isLessonPlanReviewerAction(resource, request, reviewerRole) {
     request.resource.data.reviewHistory[resource.data.reviewHistory.size()].byUid == request.auth.uid &&
     (
       (
-        reviewerRole in ['owner', 'teacher'] && // REVIEW_LESSON_PLAN — keep in sync with config/memberRoles.js
+        reviewerRole in ['owner', 'teacher', 'program_manager'] && // REVIEW_LESSON_PLAN — keep in sync with config/memberRoles.js
         request.resource.data.status == 'changes_requested' &&
         request.resource.data.reviewHistory[resource.data.reviewHistory.size()].status == 'changes_requested' &&
         request.resource.data.reviewHistory[resource.data.reviewHistory.size()].comments.size() >= 1
       ) ||
       (
-        reviewerRole in ['owner', 'teacher'] && // APPROVE_LESSON_PLAN — keep in sync with config/memberRoles.js
+        reviewerRole in ['owner', 'teacher', 'program_manager'] && // APPROVE_LESSON_PLAN — keep in sync with config/memberRoles.js
         request.resource.data.status == 'approved' &&
         request.resource.data.reviewHistory[resource.data.reviewHistory.size()].status == 'approved' &&
         request.resource.data.activeComments.size() == 0

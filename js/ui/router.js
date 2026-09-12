@@ -45,6 +45,13 @@
  *   #/curriculum-management                   -> Curriculum Management (admin tool — create/review/save Curriculum
  *                                                 Packs; not classroom-scoped, since a pack is shared across every
  *                                                 classroom, not owned by one — see ui/views/CurriculumManagementView.js)
+ *   #/program-manager/weekly-plans             -> Programme Manager Weekly Plan Review — the cross-classroom Weekly
+ *                                                 Plans queue (see ui/views/ProgramManagerWeeklyPlansView.js). Not
+ *                                                 classroom-scoped for the same reason Curriculum Management isn't:
+ *                                                 a Program Manager reviews across every classroom they belong to,
+ *                                                 never one at a time. Opening a plan still navigates to the
+ *                                                 existing #/classroom/{id}/lesson-plans/{lessonPlanId}/review below
+ *                                                 with a `?returnTo=` back to this route (see that route's own entry).
  * Deep links work on refresh since the route is derived from the URL,
  * not from in-memory state.
  *
@@ -235,6 +242,10 @@ export function resolvePathParts(parts) {
 
   if (parts[0] === 'curriculum-management') {
     return { name: 'curriculumManagement' };
+  }
+
+  if (parts[0] === 'program-manager' && parts[1] === 'weekly-plans') {
+    return { name: 'programManagerWeeklyPlans' };
   }
 
   if (parts[0] === 'student') {

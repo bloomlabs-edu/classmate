@@ -63,6 +63,8 @@
 import * as lessonPlanRepository from '../../services/lessonPlanRepository.js';
 import * as lessonPlanService from '../../services/lessonPlanService.js';
 import * as lessonPlanReviewService from '../../services/lessonPlanReviewService.js';
+import * as weeklyPlanReviewIndexRepository from '../../repositories/weeklyPlanReviewIndexRepository.js';
+import * as weeklyPlanReviewIndexService from '../../services/weeklyPlanReviewIndexService.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
 import * as learningRecordTeacherService from '../../services/learningRecordTeacherService.js';
 import * as timetableService from '../../services/timetableService.js';
@@ -207,8 +209,9 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
   }
 
   function persistAndRerender() {
-    saveIndicator.persistPatch(() => lessonPlanRepository.saveLessonPlan(classroom.id, plan));
+    const savePromise = saveIndicator.persistPatch(() => lessonPlanRepository.saveLessonPlan(classroom.id, plan));
     rerender();
+    return savePromise;
   }
 
   /**
@@ -250,7 +253,21 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
 
   function submitForReview() {
     lessonPlanReviewService.submitForReview(plan, { byUid: currentUser?.uid || null });
-    persistAndRerender();
+    // Weekly Plan Review Index — best-effort, exactly like
+    // ui/views/LessonPlanReviewView.js's own Teaching Ideas publish after
+    // approve(): chained after the real save so the Firestore rule's own
+    // re-read of the canonical LessonPlan sees the NEW ('submitted')
+    // status, not the one before this save (see firestore.rules' own
+    // weeklyPlanReviewIndex block). A failure here never blocks or
+    // reports as an error against the submit action itself, which has
+    // already fully succeeded by this point — see
+    // services/weeklyPlanReviewIndexService.js's own header comment for
+    // why this index is a discovery aid, never the source of truth.
+    persistAndRerender()
+      .then(() => weeklyPlanReviewIndexRepository.upsertReviewIndexEntry(weeklyPlanReviewIndexService.buildReviewIndexEntry(classroom, plan)))
+      .catch((error) => {
+        console.error('[LessonPlanBuilderView] Failed to update the Weekly Plan review index after submit:', error);
+      });
   }
 
   function refreshReadinessPanel() {

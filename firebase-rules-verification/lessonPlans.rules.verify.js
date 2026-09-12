@@ -384,3 +384,99 @@ test('24. delete is always denied (no one, including the author, can delete a le
   const db = testEnv.authenticatedContext('teacher-1').firestore();
   await assertFails(deleteDoc(doc(db, planPath('classroom-test', 'plan-1'))));
 });
+
+// ---------------------------------------------------------------------
+// Programme Manager Weekly Plan Review — 'program_manager' added to the
+// reviewer-role whitelist (see this file's own header comment for the
+// exact rule change). A Program Manager is authorized the SAME way any
+// other reviewer is: by being a real member of THIS classroom — no
+// separate cross-classroom authority is introduced by this feature.
+// ---------------------------------------------------------------------
+
+const CLASSROOM_WITH_PM = {
+  'teacher-1': { role: 'teacher', displayName: 'Teacher One' },
+  'pm-1': { role: 'program_manager', displayName: 'A Programme Manager' },
+};
+
+test('25. an authorized Program Manager (real classroom member, role program_manager) can read the canonical SUBMITTED plan', async () => {
+  await seedClassroom(CLASSROOM_WITH_PM);
+  await seedPlan(draftPlan({ status: 'submitted', reviewHistory: [submittedRound('teacher-1')] }));
+  const db = testEnv.authenticatedContext('pm-1').firestore();
+  await assertSucceeds(getDoc(doc(db, planPath('classroom-test', 'plan-1'))));
+});
+
+test('26. an authorized Program Manager can request changes on a SUBMITTED plan -> ALLOW', async () => {
+  await seedClassroom(CLASSROOM_WITH_PM);
+  await seedPlan(draftPlan({ status: 'submitted', reviewHistory: [submittedRound('teacher-1')] }));
+  const db = testEnv.authenticatedContext('pm-1').firestore();
+  await assertSucceeds(
+    updateDoc(doc(db, planPath('classroom-test', 'plan-1')), {
+      status: 'changes_requested',
+      reviewerUid: 'pm-1',
+      activeComments: [{ id: 'c1', sectionKey: 'spark', text: 'Make it punchier.', byUid: 'pm-1', createdAt: '2026-09-02T00:00:00.000Z', resolvedAt: null, roundNumber: 2 }],
+      reviewHistory: [
+        submittedRound('teacher-1'),
+        { id: 'r2', status: 'changes_requested', byUid: 'pm-1', at: '2026-09-02T00:00:00.000Z', comments: [{ id: 'c1', sectionKey: 'spark', text: 'Make it punchier.', byUid: 'pm-1', createdAt: '2026-09-02T00:00:00.000Z', resolvedAt: null, roundNumber: 2 }] }
+      ],
+      updatedAt: '2026-09-02T00:00:00.000Z',
+    })
+  );
+});
+
+test('27. an authorized Program Manager can approve a SUBMITTED plan -> ALLOW', async () => {
+  await seedClassroom(CLASSROOM_WITH_PM);
+  await seedPlan(draftPlan({ status: 'submitted', reviewHistory: [submittedRound('teacher-1')] }));
+  const db = testEnv.authenticatedContext('pm-1').firestore();
+  await assertSucceeds(
+    updateDoc(doc(db, planPath('classroom-test', 'plan-1')), {
+      status: 'approved',
+      reviewerUid: 'pm-1',
+      reviewHistory: [submittedRound('teacher-1'), { id: 'r2', status: 'approved', byUid: 'pm-1', at: '2026-09-02T00:00:00.000Z', comments: [] }],
+      updatedAt: '2026-09-02T00:00:00.000Z',
+    })
+  );
+});
+
+test('28. a Program Manager who is NOT a member of THIS classroom cannot read or review this plan, even though they are program_manager somewhere else -> DENY (same cross-classroom scope as any other role)', async () => {
+  await seedClassroom(CLASSROOM_WITH_PM);
+  await seedPlan(draftPlan({ status: 'submitted', reviewHistory: [submittedRound('teacher-1')] }));
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'classrooms', 'other-classroom'), {
+      ownerUid: 'other-teacher',
+      memberUids: ['other-teacher', 'outsider-pm'],
+      members: {
+        'other-teacher': { role: 'teacher', displayName: 'Other Teacher' },
+        'outsider-pm': { role: 'program_manager', displayName: 'Outsider PM' },
+      },
+    });
+  });
+  const db = testEnv.authenticatedContext('outsider-pm').firestore();
+  await assertFails(getDoc(doc(db, planPath('classroom-test', 'plan-1'))));
+  await assertFails(
+    updateDoc(doc(db, planPath('classroom-test', 'plan-1')), {
+      status: 'approved',
+      reviewHistory: [submittedRound('teacher-1'), { id: 'r2', status: 'approved', byUid: 'outsider-pm', at: '2026-09-02T00:00:00.000Z', comments: [] }],
+    })
+  );
+});
+
+test('29. a Program Manager cannot edit plan CONTENT directly (not the author, and reviewer actions are status-transition-only) -> DENY', async () => {
+  await seedClassroom(CLASSROOM_WITH_PM);
+  await seedPlan(draftPlan({ status: 'submitted', reviewHistory: [submittedRound('teacher-1')] }));
+  const db = testEnv.authenticatedContext('pm-1').firestore();
+  await assertFails(updateDoc(doc(db, planPath('classroom-test', 'plan-1')), { topic: 'PM rewrote the lesson directly' }));
+});
+
+test('30. the plan\'s own author, even if they also hold program_manager elsewhere, cannot self-review through the PM branch -> DENY', async () => {
+  await seedClassroom({
+    'pm-author': { role: 'program_manager', displayName: 'PM Who Also Authored This' },
+  });
+  await seedPlan(draftPlan({ createdByUid: 'pm-author', status: 'submitted', reviewHistory: [submittedRound('pm-author')] }));
+  const db = testEnv.authenticatedContext('pm-author').firestore();
+  await assertFails(
+    updateDoc(doc(db, planPath('classroom-test', 'plan-1')), {
+      status: 'approved',
+      reviewHistory: [submittedRound('pm-author'), { id: 'r2', status: 'approved', byUid: 'pm-author', at: '2026-09-02T00:00:00.000Z', comments: [] }],
+    })
+  );
+});
