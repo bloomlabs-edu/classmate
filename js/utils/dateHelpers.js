@@ -121,6 +121,24 @@ export function formatDateKey(dateKey) {
   });
 }
 
+/**
+ * "Monday, 14 September" — a "YYYY-MM-DD" key with its weekday name and
+ * full month spelled out, no year (built for
+ * ui/components/TodaysScheduleWidget.js's own "Next Schedule" heading,
+ * which is always near-term enough that the year is redundant — see
+ * that widget's own header comment). Kept here, not duplicated at that
+ * call site, so any other Timetable-adjacent surface needing this exact
+ * phrasing later reuses the one definition.
+ */
+export function formatDateKeyWithWeekday(dateKey) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+}
+
 /** The current "YYYY-MM" key — the Timeline View's default month. */
 export function getCurrentYearMonth() {
   const now = new Date();

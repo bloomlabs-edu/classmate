@@ -51,6 +51,11 @@ import * as subjectIdentityService from '../../services/subjectIdentityService.j
 import * as memberService from '../../services/memberService.js';
 import { MEMBER_ROLES } from '../../config/memberRoles.js';
 import { createTimetablePeriod, createTimetableSlot } from '../../models/Timetable.js';
+import { createCustomPeriod, CALENDAR_EXCEPTION_TYPES } from '../../models/CalendarException.js';
+import { createScheduledEvent } from '../../models/ScheduledEvent.js';
+import * as schoolCalendarService from '../../services/schoolCalendarService.js';
+import * as scheduledEventService from '../../services/scheduledEventService.js';
+import * as scheduledEventRepository from '../../services/scheduledEventRepository.js';
 import { hydrateConceptRecordsForConcepts } from '../../services/conceptRecordHydrationService.js';
 import { getFeedbackEligibleConceptIds, resetLessonForUnitChange } from '../../models/Lesson.js';
 import { getWeeklyPlanReadiness } from '../../services/weeklyPlanValidationService.js';
@@ -66,6 +71,7 @@ import {
   shiftYearMonth,
   formatYearMonth,
   getDaysInYearMonth,
+  formatDateKeyWithWeekday,
 } from '../../utils/dateHelpers.js';
 import { createIcon } from '../components/Icon.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
@@ -108,6 +114,13 @@ export async function renderTimetableView(container, { classroom, currentUser, p
           calendarSubjectFilter: null, // null = "All Subjects" (the existing compact dot view); a canonical subjectId switches Calendar into the per-subject curriculum-progress view
           calendarProgress: null, // populated by loadCalendarUnitProgress() below, only when calendarSubjectFilter is set and viewMode === 'calendar'
           lessonsByTeachingSlotId: {},
+          // School Calendar / Scheduled Events — {"YYYY-MM-DD": ScheduledEvent[]}
+          // for every date-specific event in the currently-visible range,
+          // refetched by loadAndRender() alongside lessons. Calendar
+          // exceptions need no equivalent fetch at all — they live
+          // embedded on `classroom` itself (see
+          // services/schoolCalendarService.js), already in memory.
+          eventsByDateKey: {},
           selectedTeachingSlotId: null,
           activeDetailTab: 'overview', // 'overview' | 'concepts' | 'plan' | 'studentResources' | 'lessonPlan' | 'reflection' — Phase P; studentResources/lessonPlan were one combined 'resources' tab until the explicit IA split below (student-facing vs teacher-facing are two different tabs, never one "Resources" tab containing both). 'plan' (Weekly Plan objectives/Big Question + the Detailed Lesson Plan bridge) is additive, separate from the pre-existing 'lessonPlan' tab (which is actually a teacher-facing resource-link list, unrelated despite the name — see docs/CLASSMATE_WEEKLY_PLAN_AND_LESSON_PLAN_ARCHITECTURE.md).
         };
@@ -142,6 +155,24 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     } catch (error) {
       console.error('[TimetableView] Failed to load lessons for the visible range:', error);
       state.lessonsByTeachingSlotId = {};
+    }
+
+    // Scheduled Events (exams) for the same visible range — a second,
+    // small query alongside Lessons, matching the exact same
+    // "real local grid, degrade gracefully on a failed fetch" shape
+    // just above. Grouped by date here once, so every render helper
+    // below (Week/Day/Calendar) just looks up state.eventsByDateKey[dateKey]
+    // rather than re-filtering the flat list itself.
+    try {
+      const events = await scheduledEventRepository.getScheduledEventsForDateRange(classroom.id, range.start, range.end);
+      state.eventsByDateKey = {};
+      events.forEach((event) => {
+        if (!state.eventsByDateKey[event.date]) state.eventsByDateKey[event.date] = [];
+        state.eventsByDateKey[event.date].push(event);
+      });
+    } catch (error) {
+      console.error('[TimetableView] Failed to load scheduled events for the visible range:', error);
+      state.eventsByDateKey = {};
     }
 
     if (state.viewMode === 'calendar') {
@@ -282,6 +313,20 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     return getWeekRange(state.anchorDateKey);
   }
 
+  /**
+   * THE one effective-schedule read every render helper below (Week/
+   * Day/Calendar) goes through — recurring Timetable + calendar
+   * exceptions + this date's own already-loaded Scheduled Events (see
+   * loadAndRender()'s own state.eventsByDateKey), composed by
+   * services/schoolCalendarService.js's own getEffectiveScheduleForDate().
+   * Pure and synchronous (everything it needs is already in memory by
+   * the time render() runs) — never a second, view-local reimplementation
+   * of "is this date a holiday / does this event override that period."
+   */
+  function getEffectiveScheduleForDate(dateKey) {
+    return schoolCalendarService.getEffectiveScheduleForDate(classroom, dateKey, state.eventsByDateKey[dateKey] || []);
+  }
+
   function render(slots, range) {
     container.innerHTML = '';
     const root = document.createElement('div');
@@ -351,6 +396,20 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     manageButton.textContent = 'Manage timetable';
     manageButton.addEventListener('click', () => openManageTimetableFlow());
     headerRow.appendChild(manageButton);
+
+    // School Calendar — holidays/special working days + exams/events.
+    // Deliberately a SEPARATE button/flow from "Manage timetable" above,
+    // never a tab bolted onto it: that flow edits the RECURRING weekly
+    // pattern itself; this one only ever adds DATED exceptions/events on
+    // top of it, per this feature's own central architectural
+    // principle ("the recurring Timetable is never modified by a
+    // calendar exception"). Same restrained .btn--ghost weight.
+    const calendarButton = document.createElement('button');
+    calendarButton.type = 'button';
+    calendarButton.className = 'btn btn--ghost timetable-view__manage-button';
+    calendarButton.textContent = 'School calendar';
+    calendarButton.addEventListener('click', () => openSchoolCalendarFlow());
+    headerRow.appendChild(calendarButton);
 
     header.appendChild(headerRow);
     return header;
@@ -445,6 +504,22 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     return toggle;
   }
 
+  /**
+   * Week view keeps its existing shared period-ROW structure (every
+   * date is a column against the SAME period numbers/times) — a
+   * deliberate, disclosed scope boundary: a special Working-Day
+   * exception's own customPeriods are shown here only insofar as they
+   * reuse this shared grid's own period numbers; a custom day whose
+   * periods genuinely differ (different count/times) is fully accurate
+   * in Day view (services/schoolCalendarService.js's own
+   * getEffectivePeriodsForDate() is honored exactly there), and Week
+   * view still correctly shows that date as non-empty rather than
+   * silently wrong — it just can't offer a wider/narrower column than
+   * every other date's own row structure without a much larger grid
+   * rewrite this phase doesn't need. A Holiday date, and an exam's own
+   * override of whichever period(s) it overlaps, are both fully
+   * accurate here regardless.
+   */
   function renderWeekGrid(slots, range) {
     const grid = document.createElement('div');
     grid.className = 'timetable-view__grid';
@@ -452,6 +527,7 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     const periods = timetableService.getPeriods(classroom);
     const dateKeys = [];
     for (let d = range.start; d <= range.end; d = shiftDateKey(d, 1)) dateKeys.push(d);
+    const scheduleByDateKey = new Map(dateKeys.map((dateKey) => [dateKey, getEffectiveScheduleForDate(dateKey)]));
 
     const table = document.createElement('table');
     table.className = 'timetable-view__table';
@@ -462,8 +538,11 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       const th = document.createElement('th');
       th.className = 'timetable-view__day-header';
       if (dateKey === getTodayDateKey()) th.classList.add('timetable-view__day-header--today');
+      const schedule = scheduleByDateKey.get(dateKey);
+      if (schedule.exceptionType) th.classList.add(`timetable-view__day-header--${schedule.exceptionType === CALENDAR_EXCEPTION_TYPES.HOLIDAY ? 'holiday' : 'working-day'}`);
       const [, , day] = dateKey.split('-');
-      th.innerHTML = `<span class="timetable-view__day-name">${WEEKDAY_LABELS[weekdayOf(dateKey)]}</span><span class="timetable-view__day-date">${day} ${monthAbbrev(dateKey)}</span>`;
+      const examBadge = schedule.events.length > 0 ? '<span class="timetable-view__day-header-exam-dot" title="Exam/event scheduled"></span>' : '';
+      th.innerHTML = `<span class="timetable-view__day-name">${WEEKDAY_LABELS[weekdayOf(dateKey)]}${examBadge}</span><span class="timetable-view__day-date">${day} ${monthAbbrev(dateKey)}</span>`;
       headRow.appendChild(th);
     });
     table.appendChild(headRow);
@@ -476,9 +555,18 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       row.appendChild(periodCell);
 
       dateKeys.forEach((dateKey) => {
-        const slot = slots.find((s) => s.date === dateKey && s.periodNumber === period.periodNumber);
+        const schedule = scheduleByDateKey.get(dateKey);
+        const effectivePeriod = schedule.periods.find((p) => p.periodNumber === period.periodNumber);
         const cell = document.createElement('td');
-        cell.appendChild(slot ? renderPeriodCard(slot) : renderEmptyCell());
+
+        if (effectivePeriod?.suppressedByEventId) {
+          const event = schedule.events.find((e) => e.id === effectivePeriod.suppressedByEventId);
+          cell.appendChild(renderExamCard(event));
+        } else if (effectivePeriod) {
+          cell.appendChild(renderPeriodCard(resolveSlotForEffectivePeriod(slots, dateKey, effectivePeriod)));
+        } else {
+          cell.appendChild(renderEmptyCell());
+        }
         row.appendChild(cell);
       });
 
@@ -489,29 +577,160 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     return grid;
   }
 
+  /**
+   * Synthesizes a real, correctly-keyed TeachingSlot-shaped object for
+   * one effective period on one date — used when `slots` (derived by
+   * services/timetableService.js's own getConcreteSlotsForDateRange(),
+   * which only ever knows about the RECURRING pattern) has no matching
+   * entry, which happens for exactly one case: a special Working-Day
+   * exception's own customPeriods on a weekday with no recurring
+   * pattern of its own (e.g. a temporary working Saturday). `id` is
+   * still the same deterministic buildTeachingSlotId(classroomId, date,
+   * periodNumber) either way, so Lesson attachment/lookup works
+   * identically regardless of which source the period definition came
+   * from.
+   */
+  function resolveSlotForEffectivePeriod(slots, dateKey, period) {
+    return (
+      slots.find((s) => s.periodNumber === period.periodNumber && s.date === dateKey) || {
+        id: timetableService.buildTeachingSlotId(classroom.id, dateKey, period.periodNumber),
+        date: dateKey,
+        weekday: timetableService.weekdayOfDateKey(dateKey),
+        periodNumber: period.periodNumber,
+        duration: 0,
+        subjectId: period.subjectId,
+        teacherUid: period.teacherUid,
+      }
+    );
+  }
+
   function renderDayGrid(slots, range) {
     const wrapper = document.createElement('div');
     wrapper.className = 'timetable-view__day-list';
-    const periods = timetableService.getPeriods(classroom);
 
-    periods.forEach((period) => {
-      const slot = slots.find((s) => s.periodNumber === period.periodNumber && s.date === range.start);
+    const schedule = getEffectiveScheduleForDate(range.start);
+    wrapper.appendChild(renderCalendarStatusBanner(schedule));
+
+    if (!schedule.isWorkingDay) return wrapper; // Holiday — no periods at all, banner above already explains why.
+
+    const renderedEventIds = new Set();
+
+    schedule.periods.forEach((period) => {
       const row = document.createElement('div');
       row.className = 'timetable-view__day-row';
+
+      if (period.suppressedByEventId) {
+        if (renderedEventIds.has(period.suppressedByEventId)) return; // this event already got its own row from an earlier overlapped period
+        renderedEventIds.add(period.suppressedByEventId);
+        const event = schedule.events.find((e) => e.id === period.suppressedByEventId);
+        row.classList.add('timetable-view__day-row--event');
+        const label = document.createElement('div');
+        label.className = 'timetable-view__period-label';
+        label.innerHTML = `<strong>${scheduledEventService.getEventTypeLabel(event.eventType)}</strong><span>${event.startTime} - ${event.endTime}</span>`;
+        row.appendChild(label);
+        row.appendChild(renderExamCard(event));
+        wrapper.appendChild(row);
+        return;
+      }
+
+      const slot = resolveSlotForEffectivePeriod(slots, range.start, period);
       // A subtle subject-accent left border — the same color already
       // computed for the subject strip, just carried onto the row too,
       // per Phase P's "subtle subject accent" requirement for the
       // mobile Day view. No new data; an empty period stays neutral.
-      if (slot) row.style.borderLeftColor = getTimetableSubjectColor(slot.subjectId).text;
+      row.style.borderLeftColor = getTimetableSubjectColor(slot.subjectId).text;
       const label = document.createElement('div');
       label.className = 'timetable-view__period-label';
       label.innerHTML = `<strong>${period.periodNumber}</strong><span>${period.startTime} - ${period.endTime}</span>`;
       row.appendChild(label);
-      row.appendChild(slot ? renderPeriodCard(slot) : renderEmptyCell());
+      row.appendChild(renderPeriodCard(slot));
+      wrapper.appendChild(row);
+    });
+
+    // An event that doesn't overlap any configured period at all (a
+    // special working day with zero periods of its own, or an exam
+    // scheduled entirely outside every period's time range) still needs
+    // its own row — it's real, date-specific, scheduled content,
+    // regardless of whether the ordinary period grid has room for it.
+    schedule.events.forEach((event) => {
+      if (renderedEventIds.has(event.id)) return;
+      const row = document.createElement('div');
+      row.className = 'timetable-view__day-row timetable-view__day-row--event';
+      const label = document.createElement('div');
+      label.className = 'timetable-view__period-label';
+      label.innerHTML = `<strong>${scheduledEventService.getEventTypeLabel(event.eventType)}</strong><span>${event.startTime} - ${event.endTime}</span>`;
+      row.appendChild(label);
+      row.appendChild(renderExamCard(event));
       wrapper.appendChild(row);
     });
 
     return wrapper;
+  }
+
+  /**
+   * "Why don't I have classes Monday" / "Why am I working this
+   * Saturday" — answered at a glance, per explicit product direction.
+   * Shown only when there's something to explain (a real exception);
+   * an ordinary working/non-working day with no exception shows
+   * nothing extra here at all, matching this file's own existing
+   * restraint elsewhere.
+   */
+  function renderCalendarStatusBanner(schedule) {
+    const banner = document.createElement('div');
+    if (schedule.exceptionType === CALENDAR_EXCEPTION_TYPES.HOLIDAY) {
+      banner.className = 'timetable-view__calendar-banner timetable-view__calendar-banner--holiday';
+      banner.appendChild(createIcon('calendar-x', { size: 16 }));
+      const text = document.createElement('span');
+      text.textContent = schedule.exceptionReason ? `Holiday — ${schedule.exceptionReason}` : 'Holiday';
+      banner.appendChild(text);
+    } else if (schedule.exceptionType === CALENDAR_EXCEPTION_TYPES.WORKING_DAY) {
+      banner.className = 'timetable-view__calendar-banner timetable-view__calendar-banner--working-day';
+      banner.appendChild(createIcon('calendar-check', { size: 16 }));
+      const text = document.createElement('span');
+      text.textContent = schedule.exceptionReason ? `Special working day — ${schedule.exceptionReason}` : 'Special working day';
+      banner.appendChild(text);
+    } else {
+      banner.className = 'timetable-view__calendar-banner';
+      banner.hidden = true;
+    }
+    return banner;
+  }
+
+  /**
+   * A Scheduled Event's own card — deliberately NOT renderPeriodCard()
+   * with different content stuffed in: an exam has no concept list, no
+   * "+ Attach lesson," no carried-forward/feedback status, none of
+   * which apply to it (per explicit product direction not to force the
+   * Lesson hierarchy onto events). Clicking opens the same edit form
+   * used to create it (see openExamFormOverlay()), with Delete
+   * available there — no separate read-only detail step.
+   */
+  function renderExamCard(event) {
+    const color = getTimetableSubjectColor(event.subjectId);
+    const subjectTitle = scheduledEventService.resolveEventSubjectTitle(classroom, event);
+    const typeLabel = scheduledEventService.getEventTypeLabel(event.eventType);
+
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'timetable-period-card timetable-period-card--event';
+    card.style.background = getTimetableSubjectWash(event.subjectId);
+
+    card.appendChild(renderSubjectBadge(subjectTitle ? `${subjectTitle} ${typeLabel}` : typeLabel, color));
+
+    const titleEl = document.createElement('span');
+    titleEl.className = 'timetable-period-card__topic';
+    titleEl.textContent = event.title || typeLabel;
+    card.appendChild(titleEl);
+
+    if (event.room || event.gradeLabel) {
+      const meta = document.createElement('span');
+      meta.className = 'timetable-period-card__meta';
+      meta.textContent = [event.gradeLabel, event.room ? `Room ${event.room}` : null].filter(Boolean).join(' · ');
+      card.appendChild(meta);
+    }
+
+    card.addEventListener('click', () => openExamFormOverlay({ existingEvent: event }));
+    return card;
   }
 
   /**
@@ -649,6 +868,38 @@ export async function renderTimetableView(container, { classroom, currentUser, p
    * taller blank cell stretches its whole week row for nothing (the
    * exact bug this same fix corrects).
    */
+  /**
+   * Calendar's own per-date indicator — holiday/special-working-day
+   * status and "an exam/event is scheduled here" both need to be
+   * PROMINENT on the real date cell (per explicit product direction),
+   * distinct from the Unit-strip machinery below (which stays exactly
+   * as it already is: Unit-focused, no concept-level detail, per the
+   * pre-existing, unrelated Calendar requirement). A plain working day
+   * with nothing scheduled shows nothing extra at all.
+   */
+  function renderCalendarDateIndicator(dateKey) {
+    const schedule = getEffectiveScheduleForDate(dateKey);
+    if (schedule.exceptionType === CALENDAR_EXCEPTION_TYPES.HOLIDAY) {
+      const badge = document.createElement('span');
+      badge.className = 'timetable-view__calendar-date-badge timetable-view__calendar-date-badge--holiday';
+      badge.textContent = 'Holiday';
+      return badge;
+    }
+    if (schedule.exceptionType === CALENDAR_EXCEPTION_TYPES.WORKING_DAY) {
+      const badge = document.createElement('span');
+      badge.className = 'timetable-view__calendar-date-badge timetable-view__calendar-date-badge--working-day';
+      badge.textContent = schedule.events.length > 0 ? 'Working + Exam' : 'Working Day';
+      return badge;
+    }
+    if (schedule.events.length > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'timetable-view__calendar-date-badge timetable-view__calendar-date-badge--exam';
+      badge.textContent = schedule.events.length === 1 ? scheduledEventService.getEventTypeLabel(schedule.events[0].eventType) : `${schedule.events.length} Events`;
+      return badge;
+    }
+    return null;
+  }
+
   function renderCalendarProgressionDateCell(dateKey, isToday) {
     const cell = document.createElement('button');
     cell.type = 'button';
@@ -659,6 +910,9 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     dateLabel.className = 'timetable-view__calendar-date';
     dateLabel.textContent = String(Number(dateKey.split('-')[2]));
     cell.appendChild(dateLabel);
+
+    const indicator = renderCalendarDateIndicator(dateKey);
+    if (indicator) cell.appendChild(indicator);
 
     cell.addEventListener('click', () => {
       state.viewMode = 'day';
@@ -887,6 +1141,22 @@ export async function renderTimetableView(container, { classroom, currentUser, p
    * text (`3/4 taught`) is kept and restyled instead; flagged here for
    * a deliberate follow-up decision, not silently skipped.
    */
+  /**
+   * Week/Day information-hierarchy fix (browser-feedback pass,
+   * 2026-09-11): a teacher scanning Week/Day needs "what concept am I
+   * teaching," not "what unit is this" — the Unit name was the
+   * dominant text on every card, with concepts reduced to a bare count
+   * ("3 concepts"). Concepts (by name) are now the prominent line when
+   * a lesson has any; the Unit/topic drops to secondary metadata
+   * underneath, via a new --secondary modifier on the exact same
+   * shared renderLessonTopicLabel() element ui/components/
+   * TodaysScheduleWidget.js also uses — that shared component/its
+   * default styling is untouched, so the Dashboard's Today's Schedule
+   * card is unaffected. Calendar view (renderCalendarUnitStrip, this
+   * file, elsewhere) is a separate rendering path entirely and already
+   * shows Subject -> Unit with no concept list — deliberately left
+   * alone, per the explicit "Calendar is different" requirement.
+   */
   function renderPeriodCard(slot) {
     const lesson = state.lessonsByTeachingSlotId[slot.id] || null;
     const color = getTimetableSubjectColor(slot.subjectId);
@@ -900,14 +1170,26 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     card.appendChild(renderSubjectBadge(timetableDisplayService.resolveSubjectTitle(classroom, slot.subjectId), color));
 
     const topic = timetableDisplayService.resolveLessonTopic(classroom, lesson);
-    card.appendChild(renderLessonTopicLabel(topic));
+    const concepts = timetableDisplayService.resolveLessonConcepts(classroom, lesson);
+
+    if (concepts.length > 0) {
+      // Concepts take the primary slot; Unit becomes secondary metadata
+      // underneath it, not omitted — still "available," just no longer
+      // dominant (per the explicit requirement).
+      card.appendChild(renderPeriodCardConcepts(concepts));
+      if (topic) {
+        const secondaryTopic = renderLessonTopicLabel(topic);
+        secondaryTopic.classList.add('timetable-period-card__topic--secondary');
+        card.appendChild(secondaryTopic);
+      }
+    } else {
+      // No concepts assigned yet (or no lesson at all) — nothing to
+      // promote, so the topic/"+ Attach lesson" prompt stays exactly
+      // as it always has.
+      card.appendChild(renderLessonTopicLabel(topic));
+    }
 
     if (lesson) {
-      const meta = document.createElement('span');
-      meta.className = 'timetable-period-card__meta';
-      meta.textContent = `${lesson.conceptIds.length} concept${lesson.conceptIds.length === 1 ? '' : 's'}`;
-      card.appendChild(meta);
-
       const carriedIn = Object.keys(lesson.conceptProvenance || {}).length;
       const carriedOut = (lesson.carriedForwardConceptIds || []).length;
       if (lesson.executedConceptIds.length > 0) {
@@ -938,6 +1220,34 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     });
 
     return card;
+  }
+
+  /**
+   * The new primary content for a Week/Day card once a lesson has real
+   * concepts — real titles (services/timetableDisplayService.js's own
+   * resolveLessonConcepts(), never invented), one per line.
+   *
+   * Browser-feedback correction (2026-09-11, third pass): the first
+   * version joined every concept into one line-clamped span, which
+   * cropped multi-concept periods down to what looked like a single,
+   * truncated concept — exactly the "only the first concept appears"
+   * complaint. There is no fixed-height constraint anywhere upstream
+   * (.timetable-view__table's `table-layout: fixed` only fixes column
+   * *widths*; cells/rows still grow to fit content) — the truncation
+   * was entirely this function's own line-clamp CSS, not a real layout
+   * limit. Each concept is now its own full, unclamped line and the
+   * card grows vertically to fit as many as a lesson actually has.
+   */
+  function renderPeriodCardConcepts(concepts) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'timetable-period-card__concepts';
+    concepts.forEach((concept) => {
+      const line = document.createElement('span');
+      line.className = 'timetable-period-card__concept-line';
+      line.textContent = concept.title;
+      wrapper.appendChild(line);
+    });
+    return wrapper;
   }
 
   function renderLegend() {
@@ -3399,6 +3709,691 @@ export async function renderTimetableView(container, { classroom, currentUser, p
         overlay.remove();
         await loadAndRender();
       });
+    }
+
+    renderBox();
+  }
+
+  /**
+   * Add/Edit/Delete one Scheduled Event (today: always an Exam — see
+   * models/ScheduledEvent.js's own SCHEDULED_EVENT_TYPES) — one small,
+   * self-contained overlay, reused identically whether opened by
+   * clicking an existing exam card (renderExamCard() above) or by
+   * "+ Add Exam" from the School Calendar flow (openSchoolCalendarFlow()
+   * below). Deliberately NOT the Period Detail panel — an exam has no
+   * Unit/Concept/taught-status/lesson-plan concept at all, so this form
+   * only ever asks for the fields models/ScheduledEvent.js actually has.
+   *
+   * Persists directly via services/scheduledEventRepository.js (its own
+   * Firestore subcollection, never `classroom.timetable`) — never
+   * touches the recurring pattern, matching this feature's own central
+   * architectural principle.
+   */
+  function openExamFormOverlay({ existingEvent = null, defaultDateKey = null, onChanged = null } = {}) {
+    const isEditing = Boolean(existingEvent);
+    const draft = existingEvent
+      ? { ...existingEvent }
+      : createScheduledEvent({ classroomId: classroom.id, date: defaultDateKey || getTodayDateKey(), startTime: '09:00', endTime: '10:00' });
+
+    let validationError = '';
+
+    const assignableMembers = memberService
+      .listMembers(classroom)
+      .filter((member) => member.role === MEMBER_ROLES.OWNER || member.role === MEMBER_ROLES.TEACHER);
+
+    const overlay = document.createElement('div');
+    overlay.className = 'carry-forward-overlay manage-timetable-overlay';
+    const box = document.createElement('div');
+    box.className = 'carry-forward-overlay__box';
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    function field(labelText, inputEl) {
+      const wrap = document.createElement('label');
+      wrap.className = 'manage-timetable__field';
+      const labelEl = document.createElement('span');
+      labelEl.textContent = labelText;
+      wrap.append(labelEl, inputEl);
+      return wrap;
+    }
+
+    function renderBox() {
+      box.innerHTML = '';
+
+      const eyebrow = document.createElement('p');
+      eyebrow.className = 'carry-forward-overlay__eyebrow';
+      eyebrow.textContent = scheduledEventService.getEventTypeLabel(draft.eventType).toUpperCase();
+      box.appendChild(eyebrow);
+
+      const heading = document.createElement('h3');
+      heading.className = 'manage-timetable-overlay__heading';
+      heading.textContent = isEditing ? 'Edit Exam' : 'Add Exam';
+      box.appendChild(heading);
+
+      if (validationError) {
+        const errorBox = document.createElement('div');
+        errorBox.className = 'manage-timetable-overlay__errors';
+        const line = document.createElement('p');
+        line.textContent = validationError;
+        errorBox.appendChild(line);
+        box.appendChild(errorBox);
+      }
+
+      const form = document.createElement('div');
+      form.className = 'exam-form';
+
+      const dateInput = document.createElement('input');
+      dateInput.type = 'date';
+      dateInput.value = draft.date;
+      dateInput.addEventListener('change', () => { draft.date = dateInput.value; });
+      form.appendChild(field('Date', dateInput));
+
+      const timeRow = document.createElement('div');
+      timeRow.className = 'manage-timetable__time-inputs';
+      const startInput = document.createElement('input');
+      startInput.type = 'time';
+      startInput.value = draft.startTime;
+      startInput.addEventListener('change', () => { draft.startTime = startInput.value; });
+      const dash = document.createElement('span');
+      dash.textContent = '–';
+      const endInput = document.createElement('input');
+      endInput.type = 'time';
+      endInput.value = draft.endTime;
+      endInput.addEventListener('change', () => { draft.endTime = endInput.value; });
+      timeRow.append(startInput, dash, endInput);
+      form.appendChild(field('Time', timeRow));
+
+      const titleInput = document.createElement('input');
+      titleInput.type = 'text';
+      titleInput.value = draft.title;
+      titleInput.placeholder = 'e.g. Term 1 Science Examination';
+      titleInput.addEventListener('change', () => { draft.title = titleInput.value; });
+      form.appendChild(field('Exam name', titleInput));
+
+      const subjectSelect = document.createElement('select');
+      const noSubjectOption = document.createElement('option');
+      noSubjectOption.value = '';
+      noSubjectOption.textContent = '— No subject —';
+      subjectSelect.appendChild(noSubjectOption);
+      subjectIdentityService.getCanonicalSubjects().forEach((subject) => {
+        const option = document.createElement('option');
+        option.value = subject.id;
+        option.textContent = subject.title;
+        subjectSelect.appendChild(option);
+      });
+      subjectSelect.value = draft.subjectId || '';
+      subjectSelect.addEventListener('change', () => { draft.subjectId = subjectSelect.value || null; });
+      form.appendChild(field('Subject', subjectSelect));
+
+      const gradeInput = document.createElement('input');
+      gradeInput.type = 'text';
+      gradeInput.value = draft.gradeLabel;
+      gradeInput.placeholder = 'e.g. Grade 8A';
+      gradeInput.addEventListener('change', () => { draft.gradeLabel = gradeInput.value; });
+      form.appendChild(field('Grade/Class', gradeInput));
+
+      const roomInput = document.createElement('input');
+      roomInput.type = 'text';
+      roomInput.value = draft.room;
+      roomInput.placeholder = 'e.g. 204';
+      roomInput.addEventListener('change', () => { draft.room = roomInput.value; });
+      form.appendChild(field('Room', roomInput));
+
+      if (assignableMembers.length > 0) {
+        const invigilatorSelect = document.createElement('select');
+        const noInvigilatorOption = document.createElement('option');
+        noInvigilatorOption.value = '';
+        noInvigilatorOption.textContent = '— Unassigned —';
+        invigilatorSelect.appendChild(noInvigilatorOption);
+        assignableMembers.forEach((member) => {
+          const option = document.createElement('option');
+          option.value = member.uid;
+          option.textContent = member.displayName;
+          invigilatorSelect.appendChild(option);
+        });
+        invigilatorSelect.value = draft.invigilatorUid || '';
+        invigilatorSelect.addEventListener('change', () => { draft.invigilatorUid = invigilatorSelect.value || null; });
+        form.appendChild(field('Invigilator', invigilatorSelect));
+      }
+
+      box.appendChild(form);
+
+      const actions = document.createElement('div');
+      actions.className = 'carry-forward-overlay__actions';
+
+      if (isEditing) {
+        const deleteButton = document.createElement('button');
+        deleteButton.type = 'button';
+        deleteButton.className = 'btn btn--text btn--danger-text';
+        deleteButton.textContent = 'Delete';
+        deleteButton.addEventListener('click', async () => {
+          const confirmed = window.confirm(`Delete "${draft.title || scheduledEventService.getEventTypeLabel(draft.eventType)}"? This cannot be undone.`);
+          if (!confirmed) return;
+          await runAction(async () => {
+            await scheduledEventRepository.deleteScheduledEvent(classroom.id, draft.id);
+            overlay.remove();
+            await loadAndRender();
+            onChanged?.();
+          });
+        });
+        actions.appendChild(deleteButton);
+      }
+
+      const cancelButton = document.createElement('button');
+      cancelButton.type = 'button';
+      cancelButton.className = 'btn btn--ghost';
+      cancelButton.textContent = 'Cancel';
+      cancelButton.addEventListener('click', () => overlay.remove());
+      actions.appendChild(cancelButton);
+
+      const saveButton = document.createElement('button');
+      saveButton.type = 'button';
+      saveButton.className = 'btn btn--primary';
+      saveButton.textContent = isEditing ? 'Save changes' : 'Add exam';
+      saveButton.addEventListener('click', async () => {
+        if (!draft.date || !draft.startTime || !draft.endTime) {
+          validationError = 'Date, start time, and end time are all required.';
+          renderBox();
+          return;
+        }
+        if (timetableService.parseTimeToMinutes(draft.endTime) <= timetableService.parseTimeToMinutes(draft.startTime)) {
+          validationError = 'End time must be after start time.';
+          renderBox();
+          return;
+        }
+        validationError = '';
+        draft.updatedAt = new Date().toISOString();
+        await runAction(async () => {
+          await scheduledEventRepository.saveScheduledEvent(classroom.id, draft);
+          overlay.remove();
+          await loadAndRender();
+          onChanged?.();
+        });
+      });
+      actions.appendChild(saveButton);
+
+      box.appendChild(actions);
+    }
+
+    renderBox();
+  }
+
+  /**
+   * School Calendar — the one, coherent home for both calendar
+   * exceptions (Holiday / Special Working Day) and Scheduled Events
+   * (Exams), per this feature's own explicit "one coherent system, not
+   * independent patches" direction. Two tabs, same overlay chrome as
+   * openManageTimetableFlow()/openExamFormOverlay() above — this is
+   * deliberately NOT a third, differently-styled admin screen.
+   *
+   * Exceptions are mutated directly on `classroom.schoolCalendar` (see
+   * services/schoolCalendarService.js) and saved via the exact same
+   * workspaceService.saveExplicitly() path Manage Timetable already
+   * uses — never classroom.timetable itself, matching this feature's
+   * own central architectural principle. Events are fetched/saved
+   * through services/scheduledEventRepository.js, their own Firestore
+   * subcollection.
+   */
+  function openSchoolCalendarFlow() {
+    let activeTab = 'exceptions'; // 'exceptions' | 'events'
+    let exceptionDraft = null; // null = showing the list; an in-progress add/edit form otherwise
+    let eventsListCache = null; // fetched lazily, once, the first time the Events tab is opened
+    let eventsListError = null;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'carry-forward-overlay manage-timetable-overlay';
+    const box = document.createElement('div');
+    box.className = 'carry-forward-overlay__box manage-timetable-overlay__box';
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    async function loadEventsList() {
+      eventsListError = null;
+      try {
+        // A wide, generous window (60 days back, a full year ahead) —
+        // this list is a management surface, not the Dashboard/Timetable
+        // grid's own bounded visible-range read; a teacher scheduling
+        // next term's exams needs to see them here regardless of what
+        // date the Timetable itself currently happens to be showing.
+        const start = shiftDateKey(getTodayDateKey(), -60);
+        const end = shiftDateKey(getTodayDateKey(), 365);
+        eventsListCache = await scheduledEventRepository.getScheduledEventsForDateRange(classroom.id, start, end);
+      } catch (error) {
+        console.error('[TimetableView] Failed to load Scheduled Events for School Calendar:', error);
+        eventsListCache = [];
+        eventsListError = "Couldn't load exams/events. Check your connection and try again.";
+      }
+      renderBox();
+    }
+
+    function renderBox() {
+      box.innerHTML = '';
+
+      const eyebrow = document.createElement('p');
+      eyebrow.className = 'carry-forward-overlay__eyebrow';
+      eyebrow.textContent = 'SCHOOL CALENDAR';
+      box.appendChild(eyebrow);
+
+      const heading = document.createElement('h3');
+      heading.className = 'manage-timetable-overlay__heading';
+      heading.textContent = 'School Calendar';
+      box.appendChild(heading);
+
+      const hint = document.createElement('p');
+      hint.className = 'manage-timetable-overlay__hint';
+      hint.textContent = 'Mark holidays and special working days, and schedule exams — the recurring weekly timetable itself is never changed by anything here.';
+      box.appendChild(hint);
+
+      const tabs = document.createElement('div');
+      tabs.className = 'timetable-view__mode-toggle school-calendar__tabs';
+      [
+        { id: 'exceptions', label: 'Calendar Exceptions' },
+        { id: 'events', label: 'Exams & Events' },
+      ].forEach(({ id, label }) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = label;
+        if (activeTab === id) button.classList.add('timetable-view__mode-toggle-item--active');
+        button.addEventListener('click', () => {
+          activeTab = id;
+          exceptionDraft = null;
+          if (id === 'events' && eventsListCache === null) {
+            loadEventsList();
+            return;
+          }
+          renderBox();
+        });
+        tabs.appendChild(button);
+      });
+      box.appendChild(tabs);
+
+      box.appendChild(activeTab === 'exceptions' ? renderExceptionsTab() : renderEventsTab());
+
+      const actions = document.createElement('div');
+      actions.className = 'carry-forward-overlay__actions';
+      const closeButton = document.createElement('button');
+      closeButton.type = 'button';
+      closeButton.className = 'btn btn--ghost';
+      closeButton.textContent = 'Close';
+      closeButton.addEventListener('click', () => overlay.remove());
+      actions.appendChild(closeButton);
+      box.appendChild(actions);
+    }
+
+    // ---- Calendar Exceptions tab ----------------------------------------
+
+    function renderExceptionsTab() {
+      const wrap = document.createElement('div');
+      wrap.className = 'school-calendar__tab-content';
+
+      if (exceptionDraft) {
+        wrap.appendChild(renderExceptionForm());
+        return wrap;
+      }
+
+      const addButton = document.createElement('button');
+      addButton.type = 'button';
+      addButton.className = 'btn btn--primary';
+      addButton.textContent = '+ Mark a date';
+      addButton.addEventListener('click', () => {
+        exceptionDraft = { date: getTodayDateKey(), type: CALENDAR_EXCEPTION_TYPES.HOLIDAY, reason: '', customize: false, customPeriods: [] };
+        renderBox();
+      });
+      wrap.appendChild(addButton);
+
+      const exceptions = schoolCalendarService.getCalendarExceptions(classroom);
+      if (exceptions.length === 0) {
+        wrap.appendChild(createEmptyStateElement({ message: 'No holidays or special working days marked yet.' }));
+        return wrap;
+      }
+
+      const list = document.createElement('div');
+      list.className = 'school-calendar__list';
+      exceptions.forEach((exception) => {
+        const row = document.createElement('div');
+        row.className = 'school-calendar__row';
+
+        const info = document.createElement('div');
+        info.className = 'school-calendar__row-info';
+        const dateLabel = document.createElement('span');
+        dateLabel.className = 'school-calendar__row-date';
+        dateLabel.textContent = formatDateKeyWithWeekday(exception.date);
+        const typeBadge = document.createElement('span');
+        typeBadge.className = `school-calendar__badge school-calendar__badge--${exception.type === CALENDAR_EXCEPTION_TYPES.HOLIDAY ? 'holiday' : 'working-day'}`;
+        typeBadge.textContent = exception.type === CALENDAR_EXCEPTION_TYPES.HOLIDAY ? 'Holiday' : 'Working Day';
+        info.append(dateLabel, typeBadge);
+        if (exception.reason) {
+          const reasonEl = document.createElement('span');
+          reasonEl.className = 'school-calendar__row-reason';
+          reasonEl.textContent = exception.reason;
+          info.appendChild(reasonEl);
+        }
+        row.appendChild(info);
+
+        const rowActions = document.createElement('div');
+        rowActions.className = 'school-calendar__row-actions';
+
+        const editButton = document.createElement('button');
+        editButton.type = 'button';
+        editButton.className = 'btn btn--ghost';
+        editButton.textContent = 'Edit';
+        editButton.addEventListener('click', () => {
+          exceptionDraft = {
+            date: exception.date,
+            type: exception.type,
+            reason: exception.reason,
+            customize: Boolean(exception.customPeriods),
+            customPeriods: exception.customPeriods ? exception.customPeriods.map((period) => ({ ...period })) : [],
+          };
+          renderBox();
+        });
+        rowActions.appendChild(editButton);
+
+        const removeButton = document.createElement('button');
+        removeButton.type = 'button';
+        removeButton.className = 'btn btn--text btn--danger-text';
+        removeButton.textContent = 'Remove';
+        removeButton.addEventListener('click', async () => {
+          const confirmed = window.confirm(`Clear the ${exception.type === CALENDAR_EXCEPTION_TYPES.HOLIDAY ? 'Holiday' : 'Working Day'} mark on ${formatDateKeyWithWeekday(exception.date)}? It will go back to its normal weekly schedule.`);
+          if (!confirmed) return;
+          await runAction(async () => {
+            schoolCalendarService.clearException(classroom, exception.date);
+            await workspaceService.saveExplicitly(classroom);
+            await loadAndRender();
+            renderBox();
+          });
+        });
+        rowActions.appendChild(removeButton);
+
+        row.appendChild(rowActions);
+        list.appendChild(row);
+      });
+      wrap.appendChild(list);
+
+      return wrap;
+    }
+
+    function renderExceptionForm() {
+      const form = document.createElement('div');
+      form.className = 'exam-form';
+
+      const dateInput = document.createElement('input');
+      dateInput.type = 'date';
+      dateInput.value = exceptionDraft.date;
+      dateInput.addEventListener('change', () => { exceptionDraft.date = dateInput.value; });
+      const dateField = document.createElement('label');
+      dateField.className = 'manage-timetable__field';
+      dateField.append('Date', dateInput);
+      form.appendChild(dateField);
+
+      const typeFieldset = document.createElement('div');
+      typeFieldset.className = 'school-calendar__type-choice';
+      [
+        { value: CALENDAR_EXCEPTION_TYPES.HOLIDAY, label: 'Holiday / Non-working day' },
+        { value: CALENDAR_EXCEPTION_TYPES.WORKING_DAY, label: 'Special working day' },
+      ].forEach(({ value, label }) => {
+        const optionLabel = document.createElement('label');
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'school-calendar-exception-type';
+        radio.value = value;
+        radio.checked = exceptionDraft.type === value;
+        radio.addEventListener('change', () => {
+          exceptionDraft.type = value;
+          renderBox();
+        });
+        optionLabel.append(radio, ` ${label}`);
+        typeFieldset.appendChild(optionLabel);
+      });
+      form.appendChild(typeFieldset);
+
+      const reasonInput = document.createElement('input');
+      reasonInput.type = 'text';
+      reasonInput.value = exceptionDraft.reason;
+      reasonInput.placeholder = 'e.g. Local school holiday';
+      reasonInput.addEventListener('change', () => { exceptionDraft.reason = reasonInput.value; });
+      const reasonField = document.createElement('label');
+      reasonField.className = 'manage-timetable__field';
+      reasonField.append('Reason (optional)', reasonInput);
+      form.appendChild(reasonField);
+
+      if (exceptionDraft.type === CALENDAR_EXCEPTION_TYPES.WORKING_DAY) {
+        const weekday = timetableService.weekdayOfDateKey(exceptionDraft.date);
+        const hasOwnRecurringPattern = timetableService.getSlotsForWeekday(classroom, weekday).length > 0;
+
+        const note = document.createElement('p');
+        note.className = 'manage-timetable-overlay__hint';
+        note.textContent = hasOwnRecurringPattern
+          ? `${WEEKDAY_LABELS[weekday]} already has its own recurring timetable — that will be used unless you customize this date's own periods below.`
+          : `${WEEKDAY_LABELS[weekday]} has no recurring timetable of its own yet — customize this date's own periods below, or it will have no periods at all.`;
+        form.appendChild(note);
+
+        const customizeLabel = document.createElement('label');
+        const customizeCheckbox = document.createElement('input');
+        customizeCheckbox.type = 'checkbox';
+        customizeCheckbox.checked = exceptionDraft.customize;
+        customizeCheckbox.addEventListener('change', () => {
+          exceptionDraft.customize = customizeCheckbox.checked;
+          if (exceptionDraft.customize && exceptionDraft.customPeriods.length === 0) {
+            // Seed from this weekday's own recurring pattern (if any) —
+            // a real starting point to edit, never a blank slate when a
+            // perfectly good pattern already exists to copy from.
+            exceptionDraft.customPeriods = timetableService.getPeriods(classroom).flatMap((period) => {
+              const slot = timetableService.getSlot(classroom, weekday, period.periodNumber);
+              return slot ? [createCustomPeriod({ periodNumber: period.periodNumber, startTime: period.startTime, endTime: period.endTime, subjectId: slot.subjectId, teacherUid: slot.teacherUid })] : [];
+            });
+          }
+          renderBox();
+        });
+        customizeLabel.append(customizeCheckbox, ' Customize this day’s periods');
+        form.appendChild(customizeLabel);
+
+        if (exceptionDraft.customize) {
+          form.appendChild(renderCustomPeriodsEditor());
+        }
+      }
+
+      const errorBox = document.createElement('div');
+      errorBox.className = 'manage-timetable-overlay__errors';
+      if (exceptionDraft.validationError) {
+        const line = document.createElement('p');
+        line.textContent = exceptionDraft.validationError;
+        errorBox.appendChild(line);
+        form.appendChild(errorBox);
+      }
+
+      const actions = document.createElement('div');
+      actions.className = 'carry-forward-overlay__actions';
+
+      const cancelButton = document.createElement('button');
+      cancelButton.type = 'button';
+      cancelButton.className = 'btn btn--ghost';
+      cancelButton.textContent = 'Cancel';
+      cancelButton.addEventListener('click', () => {
+        exceptionDraft = null;
+        renderBox();
+      });
+      actions.appendChild(cancelButton);
+
+      const saveButton = document.createElement('button');
+      saveButton.type = 'button';
+      saveButton.className = 'btn btn--primary';
+      saveButton.textContent = 'Save';
+      saveButton.addEventListener('click', async () => {
+        if (!exceptionDraft.date) {
+          exceptionDraft.validationError = 'Choose a date.';
+          renderBox();
+          return;
+        }
+        exceptionDraft.validationError = null;
+
+        await runAction(async () => {
+          if (exceptionDraft.type === CALENDAR_EXCEPTION_TYPES.HOLIDAY) {
+            schoolCalendarService.setHolidayException(classroom, exceptionDraft.date, exceptionDraft.reason);
+          } else {
+            schoolCalendarService.setWorkingDayException(
+              classroom,
+              exceptionDraft.date,
+              exceptionDraft.reason,
+              exceptionDraft.customize && exceptionDraft.customPeriods.length > 0 ? exceptionDraft.customPeriods : null
+            );
+          }
+          await workspaceService.saveExplicitly(classroom);
+          exceptionDraft = null;
+          await loadAndRender();
+          renderBox();
+        });
+      });
+      actions.appendChild(saveButton);
+
+      form.appendChild(actions);
+      return form;
+    }
+
+    function renderCustomPeriodsEditor() {
+      const wrap = document.createElement('div');
+      wrap.className = 'school-calendar__custom-periods';
+
+      exceptionDraft.customPeriods
+        .sort((a, b) => a.periodNumber - b.periodNumber)
+        .forEach((period, index) => {
+          const row = document.createElement('div');
+          row.className = 'school-calendar__custom-period-row';
+
+          const startInput = document.createElement('input');
+          startInput.type = 'time';
+          startInput.value = period.startTime;
+          startInput.addEventListener('change', () => { period.startTime = startInput.value; });
+          const dash = document.createElement('span');
+          dash.textContent = '–';
+          const endInput = document.createElement('input');
+          endInput.type = 'time';
+          endInput.value = period.endTime;
+          endInput.addEventListener('change', () => { period.endTime = endInput.value; });
+          row.append(startInput, dash, endInput);
+
+          const subjectSelect = document.createElement('select');
+          const noneOption = document.createElement('option');
+          noneOption.value = '';
+          noneOption.textContent = '— No class —';
+          subjectSelect.appendChild(noneOption);
+          subjectIdentityService.getCanonicalSubjects().forEach((subject) => {
+            const option = document.createElement('option');
+            option.value = subject.id;
+            option.textContent = subject.title;
+            subjectSelect.appendChild(option);
+          });
+          subjectSelect.value = period.subjectId || '';
+          subjectSelect.addEventListener('change', () => { period.subjectId = subjectSelect.value || null; });
+          row.appendChild(subjectSelect);
+
+          const removeButton = document.createElement('button');
+          removeButton.type = 'button';
+          removeButton.className = 'btn btn--ghost';
+          removeButton.appendChild(createIcon('x', { size: 14 }));
+          removeButton.addEventListener('click', () => {
+            exceptionDraft.customPeriods.splice(index, 1);
+            renderBox();
+          });
+          row.appendChild(removeButton);
+
+          wrap.appendChild(row);
+        });
+
+      const addPeriodButton = document.createElement('button');
+      addPeriodButton.type = 'button';
+      addPeriodButton.className = 'btn btn--ghost';
+      addPeriodButton.textContent = '+ Add period';
+      addPeriodButton.addEventListener('click', () => {
+        const lastPeriod = exceptionDraft.customPeriods[exceptionDraft.customPeriods.length - 1];
+        exceptionDraft.customPeriods.push(
+          createCustomPeriod({
+            periodNumber: (lastPeriod?.periodNumber || 0) + 1,
+            startTime: lastPeriod?.endTime || '09:00',
+            endTime: addMinutesToTime(lastPeriod?.endTime || '09:00', 40),
+            subjectId: null,
+            teacherUid: null,
+          })
+        );
+        renderBox();
+      });
+      wrap.appendChild(addPeriodButton);
+
+      return wrap;
+    }
+
+    // ---- Exams & Events tab ---------------------------------------------
+
+    function renderEventsTab() {
+      const wrap = document.createElement('div');
+      wrap.className = 'school-calendar__tab-content';
+
+      const addButton = document.createElement('button');
+      addButton.type = 'button';
+      addButton.className = 'btn btn--primary';
+      addButton.textContent = '+ Add Exam';
+      addButton.addEventListener('click', () => {
+        openExamFormOverlay({ defaultDateKey: getTodayDateKey(), onChanged: loadEventsList });
+      });
+      wrap.appendChild(addButton);
+
+      if (eventsListError) {
+        const error = document.createElement('p');
+        error.className = 'manage-timetable-overlay__errors';
+        error.textContent = eventsListError;
+        wrap.appendChild(error);
+      }
+
+      if (eventsListCache === null) {
+        const loading = document.createElement('p');
+        loading.textContent = 'Loading…';
+        wrap.appendChild(loading);
+        return wrap;
+      }
+
+      if (eventsListCache.length === 0) {
+        wrap.appendChild(createEmptyStateElement({ message: 'No exams or events scheduled yet.' }));
+        return wrap;
+      }
+
+      const list = document.createElement('div');
+      list.className = 'school-calendar__list';
+      [...eventsListCache]
+        .sort((a, b) => (a.date === b.date ? (a.startTime < b.startTime ? -1 : 1) : a.date < b.date ? -1 : 1))
+        .forEach((event) => {
+          const row = document.createElement('div');
+          row.className = 'school-calendar__row';
+
+          const info = document.createElement('div');
+          info.className = 'school-calendar__row-info';
+          const dateLabel = document.createElement('span');
+          dateLabel.className = 'school-calendar__row-date';
+          dateLabel.textContent = `${formatDateKeyWithWeekday(event.date)} · ${event.startTime}–${event.endTime}`;
+          const typeBadge = document.createElement('span');
+          typeBadge.className = 'school-calendar__badge school-calendar__badge--exam';
+          typeBadge.textContent = scheduledEventService.getEventTypeLabel(event.eventType);
+          info.append(dateLabel, typeBadge);
+          const titleEl = document.createElement('span');
+          titleEl.className = 'school-calendar__row-reason';
+          titleEl.textContent = event.title || scheduledEventService.getEventTypeLabel(event.eventType);
+          info.appendChild(titleEl);
+          row.appendChild(info);
+
+          const rowActions = document.createElement('div');
+          rowActions.className = 'school-calendar__row-actions';
+          const editButton = document.createElement('button');
+          editButton.type = 'button';
+          editButton.className = 'btn btn--ghost';
+          editButton.textContent = 'Edit';
+          editButton.addEventListener('click', () => openExamFormOverlay({ existingEvent: event, onChanged: loadEventsList }));
+          rowActions.appendChild(editButton);
+          row.appendChild(rowActions);
+
+          list.appendChild(row);
+        });
+      wrap.appendChild(list);
+
+      return wrap;
     }
 
     renderBox();

@@ -669,6 +669,33 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Scheduled Events (Timetable/School Calendar feature — see
+    // models/ScheduledEvent.js, services/scheduledEventRepository.js).
+    // Its own subcollection, mirroring the Lessons block immediately
+    // above almost exactly — a date-specific occurrence, member-scoped
+    // create/update, same "any authenticated identity may read, an id
+    // is never guessable/listable" boundary (an exam's own content —
+    // subject/time/room — is no more sensitive than a Lesson's).
+    //
+    // The one real difference from Lessons: DELETE is member-scoped
+    // here, not permanently disallowed — deleting a mistakenly-created
+    // exam is a real, expected teacher action (see
+    // ui/views/TimetableView.js's own openExamFormOverlay()), matching
+    // the same member-scoped-delete precedent this file's own Resource
+    // block already establishes for the identical reason.
+    match /classrooms/{classroomId}/scheduledEvents/{eventId} {
+      allow read: if request.auth != null;
+
+      allow create: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+
+      allow update: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+
+      allow delete: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+    }
+
     // Lesson Plan (Phase 2/3 — see models/LessonPlan.js,
     // services/lessonPlanService.js, services/lessonPlanReviewService.js).
     // PRE-EXISTING GAP FIXED IN PHASE 3: this collection had no rule at

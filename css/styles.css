@@ -18087,6 +18087,215 @@ button.recognition-bento__hero-winner-name {
 }
 
 /* ---------------------------------------------------------------------
+   School Calendar / Exams (ui/views/TimetableView.js's own
+   openSchoolCalendarFlow()/openExamFormOverlay()) — reuses the exact
+   same .carry-forward-overlay/.manage-timetable-overlay__* shell and
+   tokens as Manage Timetable just above; only the tab list, row list,
+   and small form-field wrapper below are genuinely new.
+   --------------------------------------------------------------------- */
+
+.manage-timetable__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: 0.8rem;
+  color: var(--color-muted);
+  margin-bottom: var(--space-3);
+}
+
+.manage-timetable__field input[type='text'],
+.manage-timetable__field input[type='date'] {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: var(--space-2);
+  font-size: 0.85rem;
+  color: var(--color-ink);
+  background: var(--color-surface);
+}
+
+.exam-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.school-calendar__tabs {
+  margin-bottom: var(--space-3);
+}
+
+.school-calendar__tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.school-calendar__type-choice {
+  display: flex;
+  gap: var(--space-4);
+  font-size: 0.85rem;
+  margin-bottom: var(--space-3);
+}
+
+.school-calendar__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.school-calendar__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+}
+
+.school-calendar__row-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.school-calendar__row-date {
+  font-weight: var(--font-weight-bold);
+  font-size: 0.85rem;
+}
+
+.school-calendar__row-reason {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
+.school-calendar__row-actions {
+  display: flex;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+.school-calendar__badge {
+  font-size: 0.7rem;
+  font-weight: var(--font-weight-bold);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.school-calendar__badge--holiday {
+  background: color-mix(in srgb, var(--color-danger) 15%, var(--color-surface));
+  color: var(--color-danger);
+}
+
+.school-calendar__badge--working-day {
+  background: color-mix(in srgb, var(--color-success) 20%, var(--color-surface));
+  color: var(--color-success);
+}
+
+.school-calendar__badge--exam {
+  background: color-mix(in srgb, var(--color-primary-deep) 15%, var(--color-surface));
+  color: var(--color-primary-deep);
+}
+
+.school-calendar__custom-periods {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 var(--space-3);
+  padding: var(--space-3);
+  background: var(--color-bg);
+  border-radius: var(--radius-control);
+}
+
+.school-calendar__custom-period-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Day view — the holiday/special-working-day banner (Day mode's own
+   "why don't I have classes today / why am I working this Saturday"
+   answer, per explicit product direction) and an exam/event row's
+   subtle dashed accent, distinct from an ordinary period row without a
+   second full color language. */
+.timetable-view__calendar-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: var(--space-3);
+}
+
+.timetable-view__calendar-banner--holiday {
+  background: color-mix(in srgb, var(--color-danger) 10%, var(--color-surface));
+  color: var(--color-danger);
+}
+
+.timetable-view__calendar-banner--working-day {
+  background: color-mix(in srgb, var(--color-success) 12%, var(--color-surface));
+  color: var(--color-success);
+}
+
+.timetable-view__day-row--event,
+.timetable-period-card--event {
+  border-left-style: dashed;
+}
+
+/* Week view header — a small colored underline for a Holiday/Working-
+   Day date column, and a small dot for "an exam/event is scheduled
+   here," both visible at a glance without opening Day mode. */
+.timetable-view__day-header--holiday {
+  box-shadow: inset 0 -3px 0 var(--color-danger);
+}
+
+.timetable-view__day-header--working-day {
+  box-shadow: inset 0 -3px 0 var(--color-success);
+}
+
+.timetable-view__day-header-exam-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-primary-deep);
+  margin-left: 4px;
+}
+
+/* Calendar view — the per-date badge (holiday/working-day/exam),
+   distinct from the Unit-strip curriculum-progress layer below it. */
+.timetable-view__calendar-date-badge {
+  display: block;
+  font-size: 0.6rem;
+  font-weight: var(--font-weight-bold);
+  padding: 1px 4px;
+  border-radius: var(--radius-pill);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timetable-view__calendar-date-badge--holiday {
+  background: color-mix(in srgb, var(--color-danger) 15%, var(--color-surface));
+  color: var(--color-danger);
+}
+
+.timetable-view__calendar-date-badge--working-day {
+  background: color-mix(in srgb, var(--color-success) 20%, var(--color-surface));
+  color: var(--color-success);
+}
+
+.timetable-view__calendar-date-badge--exam {
+  background: color-mix(in srgb, var(--color-primary-deep) 15%, var(--color-surface));
+  color: var(--color-primary-deep);
+}
+
+/* ---------------------------------------------------------------------
    Teacher mobile bottom nav (ui/components/TeacherMobileNav.js) —
    Home / Timetable / Students / More, shown only below the desktop
    sidebar's own 960px breakpoint, so exactly one of the two
@@ -18274,6 +18483,28 @@ button.recognition-bento__hero-winner-name {
   font-size: 0.8rem;
   color: var(--color-muted);
   font-weight: 600;
+}
+
+/* School Calendar / Scheduled Events — the Dashboard's own time-aware
+   "Next Schedule" heading (shown instead of "Today's Schedule" once
+   today's own final period has passed, or today isn't a working day at
+   all — see services/schoolCalendarService.js's own
+   resolveDashboardScheduleDate()) and an exam/event row, visually
+   distinguished from an ordinary period row by a dashed left edge —
+   restrained, not a second color language. */
+.todays-schedule-widget__next-date {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+.todays-schedule-widget__row--event {
+  border-left: 3px dashed var(--color-muted);
+}
+
+.todays-schedule-widget__room {
+  font-size: 0.75rem;
+  color: var(--color-muted);
 }
 
 /* ---------------------------------------------------------------------

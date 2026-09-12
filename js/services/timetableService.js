@@ -308,8 +308,8 @@ export function validateTimetableDraft(periods) {
   return { errors, valid: errors.length === 0 };
 }
 
-/** "HH:mm" -> minutes since midnight, or null if malformed — used by validateTimetableDraft() above, which (unlike minutesBetween()) must tolerate not-yet-valid draft input without throwing. */
-function parseTimeToMinutes(time) {
+/** "HH:mm" -> minutes since midnight, or null if malformed — used by validateTimetableDraft() above, which (unlike minutesBetween()) must tolerate not-yet-valid draft input without throwing. Exported so services/schoolCalendarService.js's own time-aware resolution reuses this one parser rather than a second copy. */
+export function parseTimeToMinutes(time) {
   if (typeof time !== 'string' || !/^\d{1,2}:\d{2}$/.test(time)) return null;
   const [hour, minute] = time.split(':').map(Number);
   if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
