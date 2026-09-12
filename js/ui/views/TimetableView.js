@@ -520,6 +520,27 @@ export async function renderTimetableView(container, { classroom, currentUser, p
    * override of whichever period(s) it overlaps, are both fully
    * accurate here regardless.
    */
+  /**
+   * Week grid — a real CSS Grid (`timetable-view__week-grid`), not an
+   * HTML `<table>`. This is the fix for the "content overflow" bug: a
+   * `<table>`'s row height is shared automatically, but this file used
+   * to build 8 independent `<tr>`s and rely on incidental row-sharing;
+   * once a cell's content (multiple concept boxes, a long concept
+   * name) grew taller than a neighbor's, nothing forced every OTHER
+   * cell in that same period-row to grow with it in every layout
+   * engine consistently, and a Holiday date rendered as 8 repeated
+   * empty per-period cells instead of one day-level state. CSS Grid
+   * fixes both at once: `grid-template-rows: auto repeat(N, min-content)`
+   * gives every period row a real, shared, content-driven height across
+   * the whole week (never a fixed height, never independent per-cell
+   * heights that can overlap), and a Holiday's own cell can explicitly
+   * span every period row for its one column (`grid-row: 2 / span N`)
+   * instead of needing a separate empty cell per period.
+   *
+   * Column/row indices are 1-based CSS Grid lines: column 1 is the
+   * period-label rail, columns 2..8 are the 7 dates; row 1 is the day-
+   * header row, rows 2..(N+1) are the N real periods.
+   */
   function renderWeekGrid(slots, range) {
     const grid = document.createElement('div');
     grid.className = 'timetable-view__grid';
@@ -529,35 +550,80 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     for (let d = range.start; d <= range.end; d = shiftDateKey(d, 1)) dateKeys.push(d);
     const scheduleByDateKey = new Map(dateKeys.map((dateKey) => [dateKey, getEffectiveScheduleForDate(dateKey)]));
 
-    const table = document.createElement('table');
-    table.className = 'timetable-view__table';
+    const weekGrid = document.createElement('div');
+    weekGrid.className = 'timetable-view__week-grid';
+    // Explicit row/column track counts (not left to grid-auto-*) so a
+    // Holiday block can reliably use `grid-row: 2 / -1` / `span N` —
+    // negative/`span` line references only resolve predictably against
+    // an EXPLICIT template, not implicit auto-generated tracks.
+    weekGrid.style.gridTemplateColumns = `minmax(72px, 96px) repeat(${dateKeys.length}, minmax(200px, 1fr))`;
+    weekGrid.style.gridTemplateRows = `auto repeat(${Math.max(periods.length, 1)}, min-content)`;
 
-    const headRow = document.createElement('tr');
-    headRow.appendChild(document.createElement('th'));
-    dateKeys.forEach((dateKey) => {
-      const th = document.createElement('th');
+    const corner = document.createElement('div');
+    corner.className = 'timetable-view__week-grid-corner';
+    corner.style.gridColumn = '1';
+    corner.style.gridRow = '1';
+    weekGrid.appendChild(corner);
+
+    dateKeys.forEach((dateKey, dayIndex) => {
+      const schedule = scheduleByDateKey.get(dateKey);
+      const weekday = weekdayOf(dateKey);
+      const th = document.createElement('div');
       th.className = 'timetable-view__day-header';
       if (dateKey === getTodayDateKey()) th.classList.add('timetable-view__day-header--today');
-      const schedule = scheduleByDateKey.get(dateKey);
+      // Weekend is a purely visual accent, independent of (and always
+      // layered under) any Holiday/Working-Day exception treatment —
+      // never a hard "unavailable" state. A weekend explicitly turned
+      // into a Special Working Day still shows both: the quiet weekend
+      // tint AND the working-day exception's own stronger indicator.
+      if (weekday === 0 || weekday === 6) th.classList.add('timetable-view__day-header--weekend');
       if (schedule.exceptionType) th.classList.add(`timetable-view__day-header--${schedule.exceptionType === CALENDAR_EXCEPTION_TYPES.HOLIDAY ? 'holiday' : 'working-day'}`);
+      th.style.gridColumn = String(dayIndex + 2);
+      th.style.gridRow = '1';
       const [, , day] = dateKey.split('-');
       const examBadge = schedule.events.length > 0 ? '<span class="timetable-view__day-header-exam-dot" title="Exam/event scheduled"></span>' : '';
-      th.innerHTML = `<span class="timetable-view__day-name">${WEEKDAY_LABELS[weekdayOf(dateKey)]}${examBadge}</span><span class="timetable-view__day-date">${day} ${monthAbbrev(dateKey)}</span>`;
-      headRow.appendChild(th);
+      th.innerHTML = `<span class="timetable-view__day-name">${WEEKDAY_LABELS[weekday]}${examBadge}</span><span class="timetable-view__day-date">${day} ${monthAbbrev(dateKey)}</span>`;
+      weekGrid.appendChild(th);
     });
-    table.appendChild(headRow);
 
-    periods.forEach((period) => {
-      const row = document.createElement('tr');
-      const periodCell = document.createElement('td');
+    periods.forEach((period, periodIndex) => {
+      const periodCell = document.createElement('div');
       periodCell.className = 'timetable-view__period-label';
+      periodCell.style.gridColumn = '1';
+      periodCell.style.gridRow = String(periodIndex + 2);
       periodCell.innerHTML = `<strong>${period.periodNumber}</strong><span>${period.startTime} - ${period.endTime}</span>`;
-      row.appendChild(periodCell);
+      weekGrid.appendChild(periodCell);
+    });
 
-      dateKeys.forEach((dateKey) => {
-        const schedule = scheduleByDateKey.get(dateKey);
+    dateKeys.forEach((dateKey, dayIndex) => {
+      const schedule = scheduleByDateKey.get(dateKey);
+      const weekday = weekdayOf(dateKey);
+      const isWeekend = weekday === 0 || weekday === 6;
+
+      // A non-working (Holiday) date is a DAY-LEVEL state — one block
+      // spanning every period row for this one column, replacing the
+      // per-period cells entirely, never 8 repeated empty/holiday
+      // cells. `getWorkingDayStatus()`'s own isWorkingDay already
+      // covers "Holiday exception" AND "a normally-non-working weekday
+      // with no override" identically (see schoolCalendarService.js) —
+      // an ordinary non-working Sunday and an explicit Holiday both
+      // render this same spanning block, just with different labeling
+      // (schedule.exceptionType tells renderHolidayColumnBlock() which).
+      if (!schedule.isWorkingDay) {
+        const holidayBlock = renderHolidayColumnBlock(schedule, isWeekend);
+        holidayBlock.style.gridColumn = String(dayIndex + 2);
+        holidayBlock.style.gridRow = `2 / span ${Math.max(periods.length, 1)}`;
+        weekGrid.appendChild(holidayBlock);
+        return;
+      }
+
+      periods.forEach((period, periodIndex) => {
         const effectivePeriod = schedule.periods.find((p) => p.periodNumber === period.periodNumber);
-        const cell = document.createElement('td');
+        const cell = document.createElement('div');
+        cell.className = 'timetable-view__grid-cell';
+        if (isWeekend) cell.classList.add('timetable-view__grid-cell--weekend');
+        cell.style.gridColumn = String(dayIndex + 2);
+        cell.style.gridRow = String(periodIndex + 2);
 
         if (effectivePeriod?.suppressedByEventId) {
           const event = schedule.events.find((e) => e.id === effectivePeriod.suppressedByEventId);
@@ -567,14 +633,46 @@ export async function renderTimetableView(container, { classroom, currentUser, p
         } else {
           cell.appendChild(renderEmptyCell());
         }
-        row.appendChild(cell);
+        weekGrid.appendChild(cell);
       });
-
-      table.appendChild(row);
     });
 
-    grid.appendChild(table);
+    grid.appendChild(weekGrid);
     return grid;
+  }
+
+  /**
+   * One Holiday/non-working date's own full-column block — replaces
+   * every per-period cell for that date entirely (see renderWeekGrid()'s
+   * own comment on why). Distinct from the ordinary empty-period dash
+   * (renderEmptyCell()) and from weekend's own quiet header tint: this
+   * is the strong, unmistakable "nothing is scheduled here at all"
+   * state, prominent enough that a teacher scanning the week never
+   * mistakes it for "not yet planned." Shows the exception's own reason
+   * when one exists (a real Holiday); an ordinary non-working weekend
+   * with no explicit exception gets a quieter, honest "Weekend" label
+   * instead of implying a real Holiday was declared.
+   */
+  function renderHolidayColumnBlock(schedule, isWeekend) {
+    const block = document.createElement('div');
+    const isRealHoliday = schedule.exceptionType === CALENDAR_EXCEPTION_TYPES.HOLIDAY;
+    block.className = 'timetable-view__holiday-column' + (isRealHoliday ? ' timetable-view__holiday-column--holiday' : ' timetable-view__holiday-column--weekend');
+
+    block.appendChild(createIcon(isRealHoliday ? 'calendar-x' : 'calendar', { size: 18 }));
+
+    const label = document.createElement('span');
+    label.className = 'timetable-view__holiday-column__label';
+    label.textContent = isRealHoliday ? 'Holiday' : isWeekend ? 'Weekend' : 'Not a working day';
+    block.appendChild(label);
+
+    if (isRealHoliday && schedule.exceptionReason) {
+      const reason = document.createElement('span');
+      reason.className = 'timetable-view__holiday-column__reason';
+      reason.textContent = schedule.exceptionReason;
+      block.appendChild(reason);
+    }
+
+    return block;
   }
 
   /**
@@ -1176,7 +1274,7 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       // Concepts take the primary slot; Unit becomes secondary metadata
       // underneath it, not omitted — still "available," just no longer
       // dominant (per the explicit requirement).
-      card.appendChild(renderPeriodCardConcepts(concepts));
+      card.appendChild(renderPeriodCardConcepts(concepts, slot, lesson));
       if (topic) {
         const secondaryTopic = renderLessonTopicLabel(topic);
         secondaryTopic.classList.add('timetable-period-card__topic--secondary');
@@ -1237,14 +1335,42 @@ export async function renderTimetableView(container, { classroom, currentUser, p
    * was entirely this function's own line-clamp CSS, not a real layout
    * limit. Each concept is now its own full, unclamped line and the
    * card grows vertically to fit as many as a lesson actually has.
+   *
+   * Each concept is now also its own distinct, clickable box — see
+   * this requirement's own architecture note: navigating to a concept
+   * reuses the EXISTING concept-detail destination
+   * (ui/views/ConceptWorkspaceView.js's renderConceptWorkspaceView(),
+   * reached via LearningManagementView.js's own onSelectConcept
+   * mechanism), never a new destination. The click is deliberately a
+   * plain, focusable, keyboard-activatable `<div role="button">` — NOT
+   * a nested `<button>` — because renderPeriodCard()'s own outer card
+   * is itself a `<button>`, and a `<button>` inside a `<button>` is
+   * invalid HTML that browsers silently mis-parse (the inner button
+   * would be hoisted out, breaking click targeting). `stopPropagation()`
+   * on both click and keydown keeps this from also re-triggering the
+   * period card's own select/open-detail handler.
    */
-  function renderPeriodCardConcepts(concepts) {
+  function renderPeriodCardConcepts(concepts, slot, lesson) {
     const wrapper = document.createElement('div');
     wrapper.className = 'timetable-period-card__concepts';
     concepts.forEach((concept) => {
-      const line = document.createElement('span');
+      const line = document.createElement('div');
       line.className = 'timetable-period-card__concept-line';
       line.textContent = concept.title;
+      line.setAttribute('role', 'button');
+      line.tabIndex = 0;
+      line.setAttribute('aria-label', `Open ${concept.title} in Learning Management`);
+      const openConcept = (event) => {
+        event.stopPropagation();
+        onOpenLearningManagement(slot.subjectId, { unitId: lesson?.curriculumUnitId || null, conceptId: concept.id });
+      };
+      line.addEventListener('click', openConcept);
+      line.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          openConcept(event);
+        }
+      });
       wrapper.appendChild(line);
     });
     return wrapper;
@@ -3729,6 +3855,431 @@ export async function renderTimetableView(container, { classroom, currentUser, p
    * touches the recurring pattern, matching this feature's own central
    * architectural principle.
    */
+  /**
+   * Bulk exam creation — one COMMON EXAM DETAILS section (title, date,
+   * default start/end time, grade/class, room, default invigilator)
+   * entered once, then a SUBJECTS section (canonical subjects as
+   * checkboxes, plus free-typed custom subjects — same "Other" idea as
+   * openExamFormOverlay()'s own single-exam picker), then one "Create
+   * N Exams" action. Each selected subject becomes its OWN independent
+   * models/ScheduledEvent.js record (one `saveScheduledEvent()` call
+   * per subject) — deliberately no batchId/grouping field anywhere:
+   * once created, editing one via the ordinary openExamFormOverlay()
+   * edit flow affects only that one record, exactly like any other
+   * exam. A subject's own row can be individually overridden (start/
+   * end time, room, invigilator) before creation — clearly marked
+   * "Default" vs "Custom" so it's obvious which rows inherit the
+   * common details and which don't; overriding one row never touches
+   * any other row or the common details themselves.
+   */
+  function openBulkExamFormOverlay({ onChanged = null } = {}) {
+    const common = {
+      title: '',
+      date: getTodayDateKey(),
+      startTime: '09:00',
+      endTime: '10:00',
+      gradeLabel: '',
+      room: '',
+      invigilatorUid: null,
+    };
+    // One entry per subject the teacher has added to this batch —
+    // `override` is null until the teacher explicitly opens that row's
+    // own override editor; while null, every field is inherited live
+    // from `common` (editing common details after adding a subject
+    // still updates that subject's own effective values, exactly per
+    // "editing common/default info only affects pending, not-yet-
+    // created entries").
+    let selectedSubjects = []; // { key, kind: 'canonical'|'custom', subjectId, customSubjectName, title, override: null | {startTime?, endTime?, room?, invigilatorUid?} }
+    let customSubjectDraftText = '';
+    let validationError = '';
+
+    const assignableMembers = memberService
+      .listMembers(classroom)
+      .filter((member) => member.role === MEMBER_ROLES.OWNER || member.role === MEMBER_ROLES.TEACHER);
+
+    const overlay = document.createElement('div');
+    overlay.className = 'carry-forward-overlay manage-timetable-overlay';
+    const box = document.createElement('div');
+    box.className = 'carry-forward-overlay__box manage-timetable-overlay__box';
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    function field(labelText, inputEl) {
+      const wrap = document.createElement('label');
+      wrap.className = 'manage-timetable__field';
+      const labelEl = document.createElement('span');
+      labelEl.textContent = labelText;
+      wrap.append(labelEl, inputEl);
+      return wrap;
+    }
+
+    function effectiveFieldsFor(subject) {
+      const override = subject.override || {};
+      return {
+        startTime: override.startTime ?? common.startTime,
+        endTime: override.endTime ?? common.endTime,
+        room: override.room ?? common.room,
+        invigilatorUid: override.invigilatorUid !== undefined ? override.invigilatorUid : common.invigilatorUid,
+      };
+    }
+
+    function toggleCanonicalSubject(canonicalSubject) {
+      const key = `canonical:${canonicalSubject.id}`;
+      const existingIndex = selectedSubjects.findIndex((s) => s.key === key);
+      if (existingIndex !== -1) {
+        selectedSubjects.splice(existingIndex, 1);
+      } else {
+        selectedSubjects.push({ key, kind: 'canonical', subjectId: canonicalSubject.id, customSubjectName: null, title: canonicalSubject.title, override: null });
+      }
+      renderBox();
+    }
+
+    function addCustomSubject() {
+      const name = customSubjectDraftText.trim();
+      if (!name) return;
+      const key = `custom:${name.toLowerCase()}`;
+      if (!selectedSubjects.some((s) => s.key === key)) {
+        selectedSubjects.push({ key, kind: 'custom', subjectId: null, customSubjectName: name, title: name, override: null });
+      }
+      customSubjectDraftText = '';
+      renderBox();
+    }
+
+    function removeSubject(key) {
+      selectedSubjects = selectedSubjects.filter((s) => s.key !== key);
+      renderBox();
+    }
+
+    function renderBox() {
+      box.innerHTML = '';
+
+      const eyebrow = document.createElement('p');
+      eyebrow.className = 'carry-forward-overlay__eyebrow';
+      eyebrow.textContent = 'BULK ADD EXAMS';
+      box.appendChild(eyebrow);
+
+      const heading = document.createElement('h3');
+      heading.className = 'manage-timetable-overlay__heading';
+      heading.textContent = 'Add multiple exams at once';
+      box.appendChild(heading);
+
+      const hint = document.createElement('p');
+      hint.className = 'manage-timetable-overlay__hint';
+      hint.textContent = 'Enter the shared details once, pick every subject being examined, then create them all together — each becomes its own independent exam you can still edit individually afterward.';
+      box.appendChild(hint);
+
+      if (validationError) {
+        const errorBox = document.createElement('div');
+        errorBox.className = 'manage-timetable-overlay__errors';
+        const line = document.createElement('p');
+        line.textContent = validationError;
+        errorBox.appendChild(line);
+        box.appendChild(errorBox);
+      }
+
+      // ---- Common exam details ------------------------------------
+      const commonHeading = document.createElement('h4');
+      commonHeading.className = 'bulk-exam-form__section-heading';
+      commonHeading.textContent = 'Common exam details';
+      box.appendChild(commonHeading);
+
+      const commonForm = document.createElement('div');
+      commonForm.className = 'exam-form';
+
+      const titleInput = document.createElement('input');
+      titleInput.type = 'text';
+      titleInput.value = common.title;
+      titleInput.placeholder = 'e.g. Term 1 Examinations';
+      titleInput.addEventListener('change', () => { common.title = titleInput.value; });
+      commonForm.appendChild(field('Exam name', titleInput));
+
+      const dateInput = document.createElement('input');
+      dateInput.type = 'date';
+      dateInput.value = common.date;
+      dateInput.addEventListener('change', () => { common.date = dateInput.value; });
+      commonForm.appendChild(field('Date', dateInput));
+
+      const timeRow = document.createElement('div');
+      timeRow.className = 'manage-timetable__time-inputs';
+      const startInput = document.createElement('input');
+      startInput.type = 'time';
+      startInput.value = common.startTime;
+      startInput.addEventListener('change', () => { common.startTime = startInput.value; renderBox(); });
+      const dash = document.createElement('span');
+      dash.textContent = '–';
+      const endInput = document.createElement('input');
+      endInput.type = 'time';
+      endInput.value = common.endTime;
+      endInput.addEventListener('change', () => { common.endTime = endInput.value; renderBox(); });
+      timeRow.append(startInput, dash, endInput);
+      commonForm.appendChild(field('Default time', timeRow));
+
+      const gradeInput = document.createElement('input');
+      gradeInput.type = 'text';
+      gradeInput.value = common.gradeLabel;
+      gradeInput.placeholder = 'e.g. Grade 8A';
+      gradeInput.addEventListener('change', () => { common.gradeLabel = gradeInput.value; });
+      commonForm.appendChild(field('Grade/Class', gradeInput));
+
+      const roomInput = document.createElement('input');
+      roomInput.type = 'text';
+      roomInput.value = common.room;
+      roomInput.placeholder = 'e.g. 204';
+      roomInput.addEventListener('change', () => { common.room = roomInput.value; renderBox(); });
+      commonForm.appendChild(field('Default room', roomInput));
+
+      if (assignableMembers.length > 0) {
+        const invigilatorSelect = document.createElement('select');
+        const noInvigilatorOption = document.createElement('option');
+        noInvigilatorOption.value = '';
+        noInvigilatorOption.textContent = '— Unassigned —';
+        invigilatorSelect.appendChild(noInvigilatorOption);
+        assignableMembers.forEach((member) => {
+          const option = document.createElement('option');
+          option.value = member.uid;
+          option.textContent = member.displayName;
+          invigilatorSelect.appendChild(option);
+        });
+        invigilatorSelect.value = common.invigilatorUid || '';
+        invigilatorSelect.addEventListener('change', () => { common.invigilatorUid = invigilatorSelect.value || null; renderBox(); });
+        commonForm.appendChild(field('Default invigilator', invigilatorSelect));
+      }
+
+      box.appendChild(commonForm);
+
+      // ---- Subjects --------------------------------------------------
+      const subjectsHeading = document.createElement('h4');
+      subjectsHeading.className = 'bulk-exam-form__section-heading';
+      subjectsHeading.textContent = 'Subjects';
+      box.appendChild(subjectsHeading);
+
+      const checklist = document.createElement('div');
+      checklist.className = 'bulk-exam-form__checklist';
+      // Every canonical subject is offered here regardless of whether
+      // this classroom has it configured in Learning/Syllabus at all —
+      // this list sources straight from subjectIdentityService's own
+      // canonical registry (Tamil/Optional Language/Accounts/Physical
+      // Education included), never from Learning's own subject list.
+      subjectIdentityService.getCanonicalSubjects().forEach((canonicalSubject) => {
+        const key = `canonical:${canonicalSubject.id}`;
+        const optionLabel = document.createElement('label');
+        optionLabel.className = 'bulk-exam-form__checklist-item';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = selectedSubjects.some((s) => s.key === key);
+        checkbox.addEventListener('change', () => toggleCanonicalSubject(canonicalSubject));
+        optionLabel.append(checkbox, document.createTextNode(canonicalSubject.title));
+        checklist.appendChild(optionLabel);
+      });
+      box.appendChild(checklist);
+
+      const customSubjectRow = document.createElement('div');
+      customSubjectRow.className = 'bulk-exam-form__custom-subject-row';
+      const customSubjectInput = document.createElement('input');
+      customSubjectInput.type = 'text';
+      customSubjectInput.placeholder = 'Other subject not listed above';
+      customSubjectInput.value = customSubjectDraftText;
+      customSubjectInput.addEventListener('input', () => { customSubjectDraftText = customSubjectInput.value; });
+      customSubjectInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          addCustomSubject();
+        }
+      });
+      const addCustomSubjectButton = document.createElement('button');
+      addCustomSubjectButton.type = 'button';
+      addCustomSubjectButton.className = 'btn btn--ghost';
+      addCustomSubjectButton.textContent = '+ Add subject';
+      addCustomSubjectButton.addEventListener('click', addCustomSubject);
+      customSubjectRow.append(customSubjectInput, addCustomSubjectButton);
+      box.appendChild(customSubjectRow);
+
+      // ---- Per-subject rows, with inherited-vs-overridden values ------
+      if (selectedSubjects.length > 0) {
+        const rowsHeading = document.createElement('h4');
+        rowsHeading.className = 'bulk-exam-form__section-heading';
+        rowsHeading.textContent = `${selectedSubjects.length} exam${selectedSubjects.length === 1 ? '' : 's'} will be created`;
+        box.appendChild(rowsHeading);
+
+        const rowsList = document.createElement('div');
+        rowsList.className = 'bulk-exam-form__rows';
+
+        selectedSubjects.forEach((subject) => {
+          const effective = effectiveFieldsFor(subject);
+          const row = document.createElement('div');
+          row.className = 'bulk-exam-form__row';
+
+          const rowHeader = document.createElement('div');
+          rowHeader.className = 'bulk-exam-form__row-header';
+          const rowTitle = document.createElement('span');
+          rowTitle.className = 'bulk-exam-form__row-title';
+          rowTitle.textContent = subject.title;
+          rowHeader.appendChild(rowTitle);
+
+          const overrideBadge = document.createElement('span');
+          overrideBadge.className = 'bulk-exam-form__row-badge' + (subject.override ? ' bulk-exam-form__row-badge--custom' : '');
+          overrideBadge.textContent = subject.override ? 'Custom' : 'Default';
+          rowHeader.appendChild(overrideBadge);
+
+          const toggleOverrideButton = document.createElement('button');
+          toggleOverrideButton.type = 'button';
+          toggleOverrideButton.className = 'btn btn--text';
+          toggleOverrideButton.textContent = subject.override ? 'Use common details' : 'Override for this exam';
+          toggleOverrideButton.addEventListener('click', () => {
+            subject.override = subject.override ? null : {};
+            renderBox();
+          });
+          rowHeader.appendChild(toggleOverrideButton);
+
+          const removeButton = document.createElement('button');
+          removeButton.type = 'button';
+          removeButton.className = 'btn btn--icon-only';
+          removeButton.setAttribute('aria-label', `Remove ${subject.title} from this batch`);
+          removeButton.appendChild(createIcon('x', { size: 14 }));
+          removeButton.addEventListener('click', () => removeSubject(subject.key));
+          rowHeader.appendChild(removeButton);
+
+          row.appendChild(rowHeader);
+
+          const summary = document.createElement('p');
+          summary.className = 'bulk-exam-form__row-summary';
+          summary.textContent = `${effective.startTime}–${effective.endTime}${effective.room ? ` · Room ${effective.room}` : ''}`;
+          row.appendChild(summary);
+
+          if (subject.override) {
+            const overrideForm = document.createElement('div');
+            overrideForm.className = 'manage-timetable__time-inputs';
+
+            const overrideStart = document.createElement('input');
+            overrideStart.type = 'time';
+            overrideStart.value = effective.startTime;
+            overrideStart.addEventListener('change', () => { subject.override.startTime = overrideStart.value; renderBox(); });
+            const overrideDash = document.createElement('span');
+            overrideDash.textContent = '–';
+            const overrideEnd = document.createElement('input');
+            overrideEnd.type = 'time';
+            overrideEnd.value = effective.endTime;
+            overrideEnd.addEventListener('change', () => { subject.override.endTime = overrideEnd.value; renderBox(); });
+            overrideForm.append(overrideStart, overrideDash, overrideEnd);
+            row.appendChild(field('Time for this exam', overrideForm));
+
+            const overrideRoom = document.createElement('input');
+            overrideRoom.type = 'text';
+            overrideRoom.value = effective.room;
+            overrideRoom.placeholder = 'e.g. 204';
+            overrideRoom.addEventListener('change', () => { subject.override.room = overrideRoom.value; renderBox(); });
+            row.appendChild(field('Room for this exam', overrideRoom));
+
+            if (assignableMembers.length > 0) {
+              const overrideInvigilator = document.createElement('select');
+              const noInvigilatorOption = document.createElement('option');
+              noInvigilatorOption.value = '';
+              noInvigilatorOption.textContent = '— Unassigned —';
+              overrideInvigilator.appendChild(noInvigilatorOption);
+              assignableMembers.forEach((member) => {
+                const option = document.createElement('option');
+                option.value = member.uid;
+                option.textContent = member.displayName;
+                overrideInvigilator.appendChild(option);
+              });
+              overrideInvigilator.value = effective.invigilatorUid || '';
+              overrideInvigilator.addEventListener('change', () => { subject.override.invigilatorUid = overrideInvigilator.value || null; renderBox(); });
+              row.appendChild(field('Invigilator for this exam', overrideInvigilator));
+            }
+          }
+
+          rowsList.appendChild(row);
+        });
+
+        box.appendChild(rowsList);
+      }
+
+      const actions = document.createElement('div');
+      actions.className = 'carry-forward-overlay__actions';
+
+      const cancelButton = document.createElement('button');
+      cancelButton.type = 'button';
+      cancelButton.className = 'btn btn--ghost';
+      cancelButton.textContent = 'Cancel';
+      cancelButton.addEventListener('click', () => overlay.remove());
+      actions.appendChild(cancelButton);
+
+      const createButton = document.createElement('button');
+      createButton.type = 'button';
+      createButton.className = 'btn btn--primary';
+      createButton.textContent = `Create ${selectedSubjects.length} Exam${selectedSubjects.length === 1 ? '' : 's'}`;
+      createButton.disabled = selectedSubjects.length === 0;
+      createButton.addEventListener('click', () => createAll());
+      actions.appendChild(createButton);
+
+      box.appendChild(actions);
+    }
+
+    /**
+     * Creates one independent ScheduledEvent per selected subject —
+     * never a batch/grouped record. Each save is its own
+     * scheduledEventRepository.saveScheduledEvent() call, so a failure
+     * partway through (see runAction()'s own error handling) leaves
+     * whichever exams already saved fully intact and independently
+     * editable — there is no all-or-nothing transaction to roll back,
+     * matching "no hidden linkage between bulk-created exams" exactly.
+     */
+    async function createAll() {
+      if (selectedSubjects.length === 0) {
+        validationError = 'Select at least one subject to create exams for.';
+        renderBox();
+        return;
+      }
+      if (!common.date || !common.startTime || !common.endTime) {
+        validationError = 'Date, start time, and end time are all required.';
+        renderBox();
+        return;
+      }
+      if (timetableService.parseTimeToMinutes(common.endTime) <= timetableService.parseTimeToMinutes(common.startTime)) {
+        validationError = 'The default end time must be after the default start time.';
+        renderBox();
+        return;
+      }
+      for (const subject of selectedSubjects) {
+        const effective = effectiveFieldsFor(subject);
+        if (timetableService.parseTimeToMinutes(effective.endTime) <= timetableService.parseTimeToMinutes(effective.startTime)) {
+          validationError = `"${subject.title}"'s own end time must be after its start time.`;
+          renderBox();
+          return;
+        }
+      }
+      validationError = '';
+
+      await runAction(async () => {
+        for (const subject of selectedSubjects) {
+          const effective = effectiveFieldsFor(subject);
+          const event = createScheduledEvent({
+            classroomId: classroom.id,
+            date: common.date,
+            startTime: effective.startTime,
+            endTime: effective.endTime,
+            title: common.title,
+            subjectId: subject.kind === 'canonical' ? subject.subjectId : subjectIdentityService.generateCustomSubjectId(subject.customSubjectName),
+            customSubjectName: subject.kind === 'custom' ? subject.customSubjectName : null,
+            gradeLabel: common.gradeLabel,
+            room: effective.room,
+            invigilatorUid: effective.invigilatorUid,
+          });
+          // Sequential, not Promise.all — each exam is independent, but
+          // saving one at a time keeps this simple to reason about and
+          // avoids hammering Firestore with N simultaneous writes for
+          // what's normally a small batch (a handful of subjects).
+          await scheduledEventRepository.saveScheduledEvent(classroom.id, event);
+        }
+        overlay.remove();
+        await loadAndRender();
+        onChanged?.();
+      });
+    }
+
+    renderBox();
+  }
+
   function openExamFormOverlay({ existingEvent = null, defaultDateKey = null, onChanged = null } = {}) {
     const isEditing = Boolean(existingEvent);
     const draft = existingEvent
@@ -3736,6 +4287,16 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       : createScheduledEvent({ classroomId: classroom.id, date: defaultDateKey || getTodayDateKey(), startTime: '09:00', endTime: '10:00' });
 
     let validationError = '';
+    // Tracked separately from `Boolean(draft.customSubjectName)` — that
+    // derivation looked right but breaks the instant a teacher picks
+    // "Other" with nothing typed yet: draft.customSubjectName becomes
+    // `''` (a real, deliberately non-undefined default), which is
+    // falsy, so re-deriving from it on the very next render would hide
+    // the just-revealed text input again before anything was even
+    // typed. This flag is the actual source of truth for "which mode
+    // is the picker in," independent of whether the free-text field
+    // happens to be empty right now.
+    let showCustomSubjectField = Boolean(draft.customSubjectName);
 
     const assignableMembers = memberService
       .listMembers(classroom)
@@ -3810,6 +4371,15 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       titleInput.addEventListener('change', () => { draft.title = titleInput.value; });
       form.appendChild(field('Exam name', titleInput));
 
+      // A subject picked here needs no configuration in this teacher's
+      // own Learning/Syllabus at all — every canonical subject
+      // (including the 4 non-academic ones: Tamil/Optional Language/
+      // Accounts/Physical Education) is selectable regardless, since
+      // this select sources straight from subjectIdentityService's own
+      // canonical registry, not from anything Learning-specific. The
+      // trailing "Other" option covers any subject not on that list at
+      // all, via a free-typed customSubjectName (see models/ScheduledEvent.js)
+      // rather than requiring a code change for every one-off subject.
       const subjectSelect = document.createElement('select');
       const noSubjectOption = document.createElement('option');
       noSubjectOption.value = '';
@@ -3821,9 +4391,35 @@ export async function renderTimetableView(container, { classroom, currentUser, p
         option.textContent = subject.title;
         subjectSelect.appendChild(option);
       });
-      subjectSelect.value = draft.subjectId || '';
-      subjectSelect.addEventListener('change', () => { draft.subjectId = subjectSelect.value || null; });
+      const customSubjectOption = document.createElement('option');
+      customSubjectOption.value = '__custom__';
+      customSubjectOption.textContent = 'Other (type a subject)';
+      subjectSelect.appendChild(customSubjectOption);
+
+      subjectSelect.value = showCustomSubjectField ? '__custom__' : draft.subjectId || '';
+      subjectSelect.addEventListener('change', () => {
+        showCustomSubjectField = subjectSelect.value === '__custom__';
+        if (showCustomSubjectField) {
+          draft.subjectId = null;
+          draft.customSubjectName = draft.customSubjectName || '';
+        } else {
+          draft.subjectId = subjectSelect.value || null;
+          draft.customSubjectName = null;
+        }
+        renderBox();
+      });
       form.appendChild(field('Subject', subjectSelect));
+
+      if (showCustomSubjectField) {
+        const customSubjectInput = document.createElement('input');
+        customSubjectInput.type = 'text';
+        customSubjectInput.value = draft.customSubjectName || '';
+        customSubjectInput.placeholder = 'e.g. Robotics';
+        customSubjectInput.addEventListener('change', () => {
+          draft.customSubjectName = customSubjectInput.value;
+        });
+        form.appendChild(field('Custom subject name', customSubjectInput));
+      }
 
       const gradeInput = document.createElement('input');
       gradeInput.type = 'text';
@@ -3900,6 +4496,13 @@ export async function renderTimetableView(container, { classroom, currentUser, p
           validationError = 'End time must be after start time.';
           renderBox();
           return;
+        }
+        // A custom-typed subject's own subjectId is derived here (not
+        // only in the input's own 'change' handler) so clicking Save
+        // right after typing — without first blurring the field —
+        // still computes it; `change` only fires on blur/Enter.
+        if (draft.customSubjectName) {
+          draft.subjectId = subjectIdentityService.generateCustomSubjectId(draft.customSubjectName);
         }
         validationError = '';
         draft.updatedAt = new Date().toISOString();
@@ -4328,6 +4931,9 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       const wrap = document.createElement('div');
       wrap.className = 'school-calendar__tab-content';
 
+      const eventsTabActions = document.createElement('div');
+      eventsTabActions.className = 'school-calendar__events-tab-actions';
+
       const addButton = document.createElement('button');
       addButton.type = 'button';
       addButton.className = 'btn btn--primary';
@@ -4335,7 +4941,22 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       addButton.addEventListener('click', () => {
         openExamFormOverlay({ defaultDateKey: getTodayDateKey(), onChanged: loadEventsList });
       });
-      wrap.appendChild(addButton);
+      eventsTabActions.appendChild(addButton);
+
+      // Bulk creation — same underlying independent-per-subject
+      // ScheduledEvent records, just entering shared info once instead
+      // of re-typing it 7 times for 7 subjects (see openBulkExamFormOverlay()'s
+      // own doc comment).
+      const bulkAddButton = document.createElement('button');
+      bulkAddButton.type = 'button';
+      bulkAddButton.className = 'btn btn--ghost';
+      bulkAddButton.textContent = '+ Bulk add exams';
+      bulkAddButton.addEventListener('click', () => {
+        openBulkExamFormOverlay({ onChanged: loadEventsList });
+      });
+      eventsTabActions.appendChild(bulkAddButton);
+
+      wrap.appendChild(eventsTabActions);
 
       if (eventsListError) {
         const error = document.createElement('p');

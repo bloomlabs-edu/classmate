@@ -46,6 +46,7 @@ import { ACCENT_COLOR_OPTIONS } from '../../config/accentColorConfig.js';
 import { createSpectrumColorPicker } from './SpectrumColorPicker.js';
 import { createIcon } from './Icon.js';
 import { getDisplayName } from '../../services/classroomService.js';
+import { registerOpenPopup, clearOpenPopup } from '../../utils/popupCoordinator.js';
 
 export function renderUserBar(container, { user, onSignOut, currentAccentColorId, onSelectAccentColor, onSelectCustomAccentColor, onPreviewCustomAccentColor, onGoToOverview, notificationPermissionState, onEnableNotifications, onDisableNotifications, notificationUnreadCount, notifications, hasClassroomContext, onOpenNotification, onNotificationsViewed, currentClassroom, classroomList, onSwitchClassroom }) {
   container.innerHTML = '';
@@ -135,22 +136,30 @@ export function renderUserBar(container, { user, onSignOut, currentAccentColorId
   const secondaryMenu = document.createElement('div');
   secondaryMenu.className = 'user-bar__secondary-menu';
 
+  const secondaryMenuApi = { close: closeSecondaryMenu };
+
   menuToggle.addEventListener('click', (event) => {
     event.stopPropagation();
     const isOpen = secondaryMenu.classList.toggle('user-bar__secondary-menu--open');
     menuToggle.setAttribute('aria-expanded', String(isOpen));
     if (isOpen) {
+      registerOpenPopup(secondaryMenuApi);
       setTimeout(() => document.addEventListener('click', handleOutsideMenuClick), 0);
     } else {
       document.removeEventListener('click', handleOutsideMenuClick);
+      clearOpenPopup(secondaryMenuApi);
     }
   });
   function handleOutsideMenuClick(event) {
     if (!secondaryMenu.contains(event.target) && event.target !== menuToggle) {
-      secondaryMenu.classList.remove('user-bar__secondary-menu--open');
-      menuToggle.setAttribute('aria-expanded', 'false');
-      document.removeEventListener('click', handleOutsideMenuClick);
+      closeSecondaryMenu();
     }
+  }
+  function closeSecondaryMenu() {
+    secondaryMenu.classList.remove('user-bar__secondary-menu--open');
+    menuToggle.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', handleOutsideMenuClick);
+    clearOpenPopup(secondaryMenuApi);
   }
   // Appended now, filled in below — keeps this group's own children
   // (color editor, Home, Sign Out) in exactly the same relative DOM
@@ -218,21 +227,26 @@ export function renderUserBar(container, { user, onSignOut, currentAccentColorId
       popover.classList.remove('user-bar__color-popover--open');
       editButton.setAttribute('aria-expanded', 'false');
       document.removeEventListener('click', handleOutsideClick);
+      clearOpenPopup(colorPopoverApi);
     }
 
     function handleOutsideClick(event) {
       if (!pickerWrapper.contains(event.target)) closePopover();
     }
 
+    const colorPopoverApi = { close: closePopover };
+
     editButton.addEventListener('click', (event) => {
       event.stopPropagation();
       const isOpen = popover.classList.toggle('user-bar__color-popover--open');
       editButton.setAttribute('aria-expanded', String(isOpen));
       if (isOpen) {
+        registerOpenPopup(colorPopoverApi);
         // Registered a tick later so this same click doesn't immediately close what it just opened.
         setTimeout(() => document.addEventListener('click', handleOutsideClick), 0);
       } else {
         document.removeEventListener('click', handleOutsideClick);
+        clearOpenPopup(colorPopoverApi);
       }
     });
 
@@ -348,6 +362,7 @@ function createClassroomSwitcherControl({ currentClassroom, classroomList, onSwi
     toggleButton.setAttribute('aria-expanded', 'false');
     document.removeEventListener('click', handleOutsideClick);
     document.removeEventListener('keydown', handleKeydown);
+    clearOpenPopup(classroomSwitcherApi);
   }
 
   function handleOutsideClick(event) {
@@ -361,11 +376,14 @@ function createClassroomSwitcherControl({ currentClassroom, classroomList, onSwi
     if (event.key === 'Escape') closePopover();
   }
 
+  const classroomSwitcherApi = { close: closePopover };
+
   toggleButton.addEventListener('click', (event) => {
     event.stopPropagation();
     const isOpen = popover.classList.toggle('user-bar__classroom-switcher-popover--open');
     toggleButton.setAttribute('aria-expanded', String(isOpen));
     if (isOpen) {
+      registerOpenPopup(classroomSwitcherApi);
       setTimeout(() => {
         document.addEventListener('click', handleOutsideClick);
         document.addEventListener('keydown', handleKeydown);
@@ -373,6 +391,7 @@ function createClassroomSwitcherControl({ currentClassroom, classroomList, onSwi
     } else {
       document.removeEventListener('click', handleOutsideClick);
       document.removeEventListener('keydown', handleKeydown);
+      clearOpenPopup(classroomSwitcherApi);
     }
   });
 
@@ -578,22 +597,27 @@ function createNotificationControl({ permissionState, onEnable, onDisable, unrea
     toggleButton.setAttribute('aria-expanded', 'false');
     document.removeEventListener('click', handleOutsideClick);
     cancelAutoMarkRead();
+    clearOpenPopup(notificationPopoverApi);
   }
 
   function handleOutsideClick(event) {
     if (!wrapper.contains(event.target)) closePopover();
   }
 
+  const notificationPopoverApi = { close: closePopover };
+
   toggleButton.addEventListener('click', (event) => {
     event.stopPropagation();
     const isOpen = popover.classList.toggle('user-bar__notification-popover--open');
     toggleButton.setAttribute('aria-expanded', String(isOpen));
     if (isOpen) {
+      registerOpenPopup(notificationPopoverApi);
       setTimeout(() => document.addEventListener('click', handleOutsideClick), 0);
       scheduleAutoMarkRead();
     } else {
       document.removeEventListener('click', handleOutsideClick);
       cancelAutoMarkRead();
+      clearOpenPopup(notificationPopoverApi);
     }
   });
 

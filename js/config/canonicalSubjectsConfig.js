@@ -32,4 +32,8 @@ export const CANONICAL_SUBJECTS = Object.freeze([
   Object.freeze({ id: 'computer_science', title: 'Computer Science' }),
   Object.freeze({ id: 'environmental_studies', title: 'Environmental Studies' }),
   Object.freeze({ id: 'art', title: 'Art' }),
+  Object.freeze({ id: 'tamil', title: 'Tamil' }),
+  Object.freeze({ id: 'optional_language', title: 'Optional Language' }),
+  Object.freeze({ id: 'accounts', title: 'Accounts' }),
+  Object.freeze({ id: 'physical_education', title: 'Physical Education' }),
 ]);

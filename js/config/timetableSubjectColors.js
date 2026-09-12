@@ -26,6 +26,10 @@ export const TIMETABLE_SUBJECT_COLORS = Object.freeze({
   computer_science: Object.freeze({ tint: '#E8EAF9', text: '#3949AB' }),
   environmental_studies: Object.freeze({ tint: '#F1F8E3', text: '#689F38' }),
   art: Object.freeze({ tint: '#FDEEE0', text: '#BF5F1A' }),
+  tamil: Object.freeze({ tint: '#FBF0D9', text: '#C9971D' }),
+  optional_language: Object.freeze({ tint: '#E8EAF9', text: '#3949AB' }),
+  accounts: Object.freeze({ tint: '#DFF3EE', text: '#0E7C66' }),
+  physical_education: Object.freeze({ tint: '#FBE9ED', text: '#D8546F' }),
   default: Object.freeze({ tint: '#EBEDEF', text: '#5B6672' }),
 });
 

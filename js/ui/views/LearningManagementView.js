@@ -106,7 +106,7 @@ import { logPersistenceEvent, logViewMounted } from '../../services/persistenceL
 import * as workspaceCoordinator from '../../services/workspaceCoordinator.js';
 import { renderConceptWorkspaceView } from './ConceptWorkspaceView.js';
 
-export function renderLearningManagementView(container, { classrooms, onBack, onOpenCurriculumManagement, initialSubjectId = null }) {
+export function renderLearningManagementView(container, { classrooms, onBack, onOpenCurriculumManagement, initialSubjectId = null, initialUnitId = null, initialConceptId = null }) {
   logViewMounted('LearningManagementView');
 
   // One-time backfill for Subjects predating subjectId, and one-time
@@ -702,6 +702,27 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
       .find((subject) => subject.subjectId === initialSubjectId);
     if (matchingSubject) {
       handlers.onChooseSubject(matchingSubject);
+
+      // A clicked concept box in Timetable's Week/Day view (see
+      // ui/views/TimetableView.js's own renderPeriodCardConcepts())
+      // lands here with ?unitId=&conceptId= alongside subjectId —
+      // resolve the real Unit+Concept and jump straight into the
+      // Concept Workspace, reusing the EXACT existing
+      // handlers.onSelectUnit()/onSelectConcept() mechanism every
+      // other "open a Concept" path in this screen already uses —
+      // never a new destination or a parallel navigation path.
+      // Silently falls through (stays on the Subject's own home page,
+      // just opened above) if the Unit/Concept can no longer be found
+      // (e.g. deleted since the Timetable link was generated) — never
+      // an error.
+      if (initialUnitId && initialConceptId) {
+        const unit = learningRecordService.getUnitById(selectedClassroom, initialUnitId);
+        const concept = unit?.concepts.find((c) => c.id === initialConceptId);
+        if (unit && concept) {
+          handlers.onSelectUnit(unit.id);
+          handlers.onSelectConcept(concept);
+        }
+      }
     }
   }
 

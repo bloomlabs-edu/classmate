@@ -43,6 +43,26 @@ test('resolveEventSubjectTitle: an event with no subjectId at all (a future non-
   assert.equal(scheduledEventService.resolveEventSubjectTitle(classroom, assembly), '');
 });
 
+test('resolveEventSubjectTitle: a canonical subjectId NOT yet configured in this classroom\'s Learning Record still resolves to the canonical registry\'s own title, not the raw id', () => {
+  const classroom = createClassroom({ id: 'c1', schoolName: 'Test', gradeSection: 'G1' });
+  const exam = createScheduledEvent({ classroomId: 'c1', date: MONDAY, startTime: '09:00', endTime: '10:30', subjectId: 'tamil' });
+  assert.equal(scheduledEventService.resolveEventSubjectTitle(classroom, exam), 'Tamil');
+});
+
+test('resolveEventSubjectTitle: customSubjectName wins outright, even when subjectId is also set', () => {
+  const classroom = createClassroom({ id: 'c1', schoolName: 'Test', gradeSection: 'G1' });
+  classroom.learningRecord.subjects.push({ id: 'record-1', subjectId: 'science', title: 'Science', units: [] });
+  const exam = createScheduledEvent({
+    classroomId: 'c1',
+    date: MONDAY,
+    startTime: '09:00',
+    endTime: '10:30',
+    subjectId: 'custom_french',
+    customSubjectName: 'French',
+  });
+  assert.equal(scheduledEventService.resolveEventSubjectTitle(classroom, exam), 'French');
+});
+
 test('getEventTypeLabel: "exam" labels as "Exam"; an unrecognized future type title-cases sensibly instead of showing a raw enum value', () => {
   assert.equal(scheduledEventService.getEventTypeLabel('exam'), 'Exam');
   assert.equal(scheduledEventService.getEventTypeLabel('school_event'), 'School Event');

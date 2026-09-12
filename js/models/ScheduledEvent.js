@@ -45,6 +45,22 @@
  * optional, since not every future event type will have one (an
  * Assembly has no subject), but an Exam always should.
  *
+ * `customSubjectName` is the free-typed display text for a subject not
+ * on config/canonicalSubjectsConfig.js's own list — optional, and only
+ * ever set together with `subjectId`, never instead of it: whichever
+ * UI creates the event (ui/views/TimetableView.js) is responsible for
+ * first deriving `subjectId` from this same typed text via
+ * services/subjectIdentityService.js's own generateCustomSubjectId()
+ * (the identical deterministic-slugify convention every other free-
+ * typed subject already uses), and setting both fields on the event
+ * together. Nothing here does that derivation itself — this model only
+ * carries the two already-decided values. When present,
+ * `resolveEventSubjectTitle()` (services/scheduledEventService.js)
+ * returns this text directly as the display title, ahead of any
+ * canonical/Learning-Record lookup, since a free-typed title is never
+ * something a lookup could reconstruct from `subjectId` alone.
+ *
+
  * Deliberately does NOT carry curriculumUnitId, conceptIds,
  * executedConceptIds, lessonPlanId, or any other Lesson-specific field
  * — per explicit product direction, nothing here should ever tempt a
@@ -68,6 +84,7 @@ export function createScheduledEvent({
   eventType = SCHEDULED_EVENT_TYPES.EXAM,
   title = '', // e.g. "Term 1 Science Examination"
   subjectId = null, // canonical subjectId, optional (not every future event type has one)
+  customSubjectName = null, // free-typed display text for a subject not on the canonical list, optional — see this file's own header comment
   gradeLabel = '',
   room = '',
   invigilatorUid = null, // a classroom member's uid — same "reference, not a copy" convention models/Timetable.js's own teacherUid already uses
@@ -84,6 +101,7 @@ export function createScheduledEvent({
     eventType,
     title,
     subjectId,
+    customSubjectName,
     gradeLabel,
     room,
     invigilatorUid,

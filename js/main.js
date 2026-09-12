@@ -916,8 +916,21 @@ function renderRoute(route, reason = 'unspecified') {
         currentUser,
         preserveState: reason === 'workspace-init-onchange',
         onOpenLessonPlan: (lessonPlanId) => router.navigate(`/classroom/${classroom.id}/lesson-plans/${lessonPlanId}`),
-        onOpenLearningManagement: (subjectId) =>
-          router.navigate(`/classroom/${classroom.id}/learning?subjectId=${encodeURIComponent(subjectId)}`),
+        // The existing "Go to {subject} in Learning Management" gateway
+        // passes just a subjectId; a clicked concept box (see
+        // ui/views/TimetableView.js's own renderPeriodCardConcepts())
+        // additionally passes unitId/conceptId so Learning Management
+        // can land directly on that Concept's own workspace instead of
+        // just the Subject home — same route, same query-string
+        // mechanism (ui/router.js's parseHash() already flows any
+        // query param through generically), just more of them when
+        // present.
+        onOpenLearningManagement: (subjectId, { unitId, conceptId } = {}) => {
+          const params = new URLSearchParams({ subjectId });
+          if (unitId) params.set('unitId', unitId);
+          if (conceptId) params.set('conceptId', conceptId);
+          router.navigate(`/classroom/${classroom.id}/learning?${params.toString()}`);
+        },
       });
     } else if (route.name === 'assessments') {
       renderAssessmentManagementView(appContainer, {
@@ -950,6 +963,12 @@ function renderRoute(route, reason = 'unspecified') {
         // route.query is already generic (see ui/router.js), so this
         // just reads it straight through.
         initialSubjectId: route.query.subjectId || null,
+        // A clicked concept box in Week/Day (see ui/views/TimetableView.js's
+        // own renderPeriodCardConcepts()) additionally sets ?unitId=&
+        // conceptId= — read straight through the same generic
+        // route.query, same as subjectId above.
+        initialUnitId: route.query.unitId || null,
+        initialConceptId: route.query.conceptId || null,
         // Preserves the exact existing "return to the same subject"
         // behavior (see LearningManagementView.js's own call sites,
         // which pass { onBack: () => rerender() }) — only the

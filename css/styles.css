@@ -16750,13 +16750,96 @@ button.recognition-bento__hero-winner-name {
   vertical-align: top;
 }
 
+/* Week view — a real CSS Grid (see renderWeekGrid()'s own doc comment
+   for why this replaced the old `<table>`): every period ROW is one
+   shared grid track sized by `min-content`, so the row automatically
+   grows to fit whichever day's cell has the most content that period
+   (multiple concept boxes, a long concept name, exam content) — never
+   a fixed height, and never a per-cell-independent height that could
+   let one day's card overlap the row below it. Explicit
+   grid-template-rows/columns (set inline by renderWeekGrid() itself,
+   since the row/column counts are dynamic) are required so a Holiday
+   column's own `grid-row: 2 / span N` resolves reliably. */
+.timetable-view__week-grid {
+  display: grid;
+  gap: 1px;
+  background: var(--color-border);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.timetable-view__week-grid-corner {
+  background: var(--color-bg);
+}
+
+.timetable-view__grid-cell {
+  background: var(--color-surface);
+  padding: var(--space-2);
+  min-width: 0;
+}
+
+/* A subtle, quiet tint — distinct from (and always visually weaker
+   than) the Holiday block's own strong treatment below. Purely a
+   visual accent: a weekend explicitly turned into a Special Working
+   Day still renders its real periods normally inside these cells,
+   never blocked. */
+.timetable-view__grid-cell--weekend {
+  background: color-mix(in srgb, var(--color-muted) 6%, var(--color-surface));
+}
+
 .timetable-view__day-header {
   text-align: left;
   background: var(--color-bg);
+  padding: var(--space-2);
 }
 
 .timetable-view__day-header--today {
   background: color-mix(in srgb, var(--color-primary-deep) 10%, var(--color-bg));
+}
+
+.timetable-view__day-header--weekend {
+  background: color-mix(in srgb, var(--color-muted) 10%, var(--color-bg));
+}
+
+/* One Holiday/non-working date's own full-column block (see
+   renderHolidayColumnBlock()) — spans every period row for that date
+   via inline grid-row, replacing the per-period cells entirely rather
+   than repeating an empty state 8 times. Strong, unmistakable color so
+   it never reads as merely "not yet planned." The plain --weekend
+   modifier (an ordinary non-working Saturday/Sunday with no explicit
+   Holiday exception) is deliberately quieter than --holiday, so a real
+   declared Holiday still stands out as the stronger statement. */
+.timetable-view__holiday-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  text-align: center;
+  background: var(--color-surface);
+}
+
+.timetable-view__holiday-column--holiday {
+  background: color-mix(in srgb, var(--color-danger) 8%, var(--color-surface));
+  color: var(--color-danger);
+}
+
+.timetable-view__holiday-column--weekend {
+  background: color-mix(in srgb, var(--color-muted) 8%, var(--color-surface));
+  color: var(--color-muted);
+}
+
+.timetable-view__holiday-column__label {
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.timetable-view__holiday-column__reason {
+  font-size: 0.75rem;
+  opacity: 0.85;
+  word-break: break-word;
 }
 
 .timetable-view__day-name {
@@ -16847,6 +16930,62 @@ button.recognition-bento__hero-winner-name {
   font-weight: 400;
   font-size: 0.8rem;
   color: var(--color-primary-deep);
+}
+
+/* Unit/Chapter as SECONDARY metadata once real Concepts are shown
+   above it (see renderPeriodCard()) — deliberately much quieter than
+   the default .timetable-period-card__topic: smaller, muted, never
+   bold, and wraps safely rather than ever truncating/clipping a long
+   Unit name. */
+.timetable-period-card__topic--secondary {
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--color-muted);
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+/* Concepts — the PRIMARY content once a lesson has any (see
+   renderPeriodCardConcepts()). Each concept is its own distinct,
+   clickable "box": a real border/background/radius identity, stacked
+   vertically with real spacing, full unclamped text (no line-clamp/
+   ellipsis — a cell with several concepts must show all of them, and
+   the Week grid's own CSS-Grid row sizing (min-content) is what lets
+   the whole row grow to fit this rather than the card fighting a fixed
+   height). */
+.timetable-period-card__concepts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.timetable-period-card__concept-line {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-ink);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-3);
+  white-space: normal;
+  overflow-wrap: break-word;
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+}
+
+.timetable-period-card__concept-line:hover,
+.timetable-period-card__concept-line:focus-visible {
+  border-color: var(--color-primary-deep);
+  background: color-mix(in srgb, var(--color-primary-deep) 6%, var(--color-surface));
+  outline: none;
+}
+
+.timetable-period-card__concept-line:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary-deep) 35%, transparent);
 }
 
 .timetable-period-card__meta {
@@ -18118,6 +18257,93 @@ button.recognition-bento__hero-winner-name {
   flex-direction: column;
 }
 
+.school-calendar__events-tab-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* Bulk exam creation (openBulkExamFormOverlay()) — COMMON EXAM DETAILS
+   entered once, a SUBJECTS checklist, then one per-subject row so an
+   individual override is clearly distinguishable from the inherited
+   common values (the "Default"/"Custom" badge below). */
+.bulk-exam-form__section-heading {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.bulk-exam-form__checklist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+
+.bulk-exam-form__checklist-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+
+.bulk-exam-form__custom-subject-row {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.bulk-exam-form__custom-subject-row input {
+  flex: 1;
+}
+
+.bulk-exam-form__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.bulk-exam-form__row {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.bulk-exam-form__row-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.bulk-exam-form__row-title {
+  font-weight: 700;
+  flex: 1;
+}
+
+.bulk-exam-form__row-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg);
+  color: var(--color-muted);
+}
+
+.bulk-exam-form__row-badge--custom {
+  background: color-mix(in srgb, var(--color-primary-deep) 15%, var(--color-surface));
+  color: var(--color-primary-deep);
+}
+
+.bulk-exam-form__row-summary {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
 .school-calendar__tabs {
   margin-bottom: var(--space-3);
 }
@@ -18361,6 +18587,14 @@ button.recognition-bento__hero-winner-name {
   .timetable-view__table {
     table-layout: auto;
     min-width: 640px;
+  }
+
+  /* The Week grid (CSS Grid replacement for the old `<table>` — see
+     renderWeekGrid()'s own doc comment) scrolls horizontally within
+     .timetable-view__grid the exact same way the old table did, rather
+     than squeezing 7 real day columns down to nothing. */
+  .timetable-view__week-grid {
+    min-width: 720px;
   }
 
   /* Day view cards get more breathing room and a more dominant topic
