@@ -13,13 +13,15 @@
  * that native control).
  *
  * Renders as a text-like button showing the current "HH:mm" (or a
- * placeholder), which opens a small popover of Hour / Minute columns.
- * Clicking EITHER column's option commits that dimension immediately
- * (the other dimension defaults to "00" the first time anything is
- * picked from empty) and closes the popover right away — never
- * waiting for a second pick, and never relying on "eventually, an
- * outside click will dismiss it." `close()` always runs before the
- * caller's own `onChange` is invoked, specifically so the popover's
+ * placeholder), which opens a small popover that steps through an
+ * explicit two-stage flow: Hour selection first, then Minute
+ * selection. Opening the picker always starts at the Hour stage (even
+ * when editing an existing "HH:mm" value) so the interaction is
+ * consistent every time. Picking an hour records it and advances to
+ * the Minute stage WITHOUT closing the popover; only picking a minute
+ * commits the complete value and closes the popover — never closing
+ * on the hour pick alone. `close()` always runs before the caller's
+ * own `onChange` is invoked, specifically so the popover's
  * document-level listeners are torn down by reference before whatever
  * `onChange` does next (commonly triggering a full parent re-render,
  * this file's own established pattern — see e.g.
@@ -33,6 +35,7 @@
  */
 
 import { registerOpenPopup, clearOpenPopup } from '../../utils/popupCoordinator.js';
+import { createTimePickerState, resetToHourStage, pickHour as pickHourState, pickMinute as pickMinuteState, getCommittedValue } from './TimePickerState.js';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
 const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0'));
@@ -46,7 +49,8 @@ const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '
  * lines' own `${startTime}–${endTime}`).
  */
 export function createTimePicker({ value = '', onChange, ariaLabel = 'Time' } = {}) {
-  let [hour, minute] = value ? value.split(':') : ['', ''];
+  /** Backed by ./TimePickerState.js's pure Hour->Minute state machine — see that file for the actual transition logic (kept there so it's testable without a DOM). */
+  let state = createTimePickerState(value);
 
   const wrapper = document.createElement('div');
   wrapper.className = 'time-picker';
@@ -63,22 +67,30 @@ export function createTimePicker({ value = '', onChange, ariaLabel = 'Time' } = 
   wrapper.appendChild(popover);
 
   function currentValue() {
-    return hour && minute ? `${hour}:${minute}` : '';
+    return getCommittedValue(state);
   }
 
+  /** Closed/committed-state contract unchanged: shows the committed "HH:mm" or the 'Set time' placeholder. While an hour has been picked but the popover is still open awaiting a minute, shows an in-progress "HH:--" label so the teacher sees their hour choice reflected. */
   function updateButtonLabel() {
+    if (!popover.hidden && state.stage === 'minute') {
+      button.textContent = `${state.pendingHour}:--`;
+      return;
+    }
     button.textContent = currentValue() || 'Set time';
   }
 
   function close() {
     if (popover.hidden) return;
     popover.hidden = true;
+    state = resetToHourStage(state);
     document.removeEventListener('click', onOutsideClick);
     document.removeEventListener('keydown', onKeyDown);
     clearOpenPopup(api);
+    updateButtonLabel();
   }
 
   function open() {
+    state = resetToHourStage(state);
     registerOpenPopup(api);
     renderPopover();
     popover.hidden = false;
@@ -94,44 +106,80 @@ export function createTimePicker({ value = '', onChange, ariaLabel = 'Time' } = 
     if (event.key === 'Escape') close();
   }
 
-  function pick(nextHour, nextMinute) {
-    close();
-    hour = nextHour;
-    minute = nextMinute;
+  /** Stage 1: picking an hour records it as pending and advances to minute selection. Does NOT close the popover and does NOT commit — a dismissal from here discards the pick. */
+  function onPickHour(h) {
+    state = pickHourState(state, h);
     updateButtonLabel();
+    renderPopover();
+  }
+
+  /** Stage 2: picking a minute commits the complete value using the pending hour, then closes, then notifies onChange — in that order, per this file's own close-before-onChange contract. */
+  function onPickMinute(m) {
+    state = pickMinuteState(state, m);
+    close();
     onChange?.(currentValue());
   }
 
   function renderPopover() {
     popover.innerHTML = '';
+
+    if (state.stage === 'hour') {
+      const columns = document.createElement('div');
+      columns.className = 'time-picker__columns';
+      const hourColumn = document.createElement('div');
+      hourColumn.className = 'time-picker__column';
+      hourColumn.setAttribute('aria-label', 'Hour');
+      HOURS.forEach((h) => {
+        const opt = document.createElement('button');
+        opt.type = 'button';
+        opt.className = 'time-picker__option' + (h === state.hour ? ' time-picker__option--active' : '');
+        opt.textContent = h;
+        // Stopped here, not just on the outer toggle button: picking an
+        // hour no longer closes the popover (see onPickHour()), so
+        // without this the click would keep bubbling to `document`'s
+        // still-registered onOutsideClick() — which, by the time it
+        // runs, sees a DETACHED event.target (renderPopover() already
+        // replaced this button's whole column via popover.innerHTML =
+        // '' for the minute stage), reads that as "outside," and closes
+        // the popover it was never actually meant to close.
+        opt.addEventListener('click', (event) => {
+          event.stopPropagation();
+          onPickHour(h);
+        });
+        hourColumn.appendChild(opt);
+      });
+      columns.appendChild(hourColumn);
+      popover.appendChild(columns);
+      return;
+    }
+
+    // state.stage === 'minute'
+    const header = document.createElement('div');
+    header.className = 'time-picker__stage-header';
+    header.textContent = `${state.pendingHour} : —`;
+    popover.appendChild(header);
+
     const columns = document.createElement('div');
     columns.className = 'time-picker__columns';
-
-    const hourColumn = document.createElement('div');
-    hourColumn.className = 'time-picker__column';
-    hourColumn.setAttribute('aria-label', 'Hour');
-    HOURS.forEach((h) => {
-      const opt = document.createElement('button');
-      opt.type = 'button';
-      opt.className = 'time-picker__option' + (h === hour ? ' time-picker__option--active' : '');
-      opt.textContent = h;
-      opt.addEventListener('click', () => pick(h, minute || '00'));
-      hourColumn.appendChild(opt);
-    });
-
     const minuteColumn = document.createElement('div');
     minuteColumn.className = 'time-picker__column';
     minuteColumn.setAttribute('aria-label', 'Minute');
     MINUTES.forEach((m) => {
       const opt = document.createElement('button');
       opt.type = 'button';
-      opt.className = 'time-picker__option' + (m === minute ? ' time-picker__option--active' : '');
+      opt.className = 'time-picker__option' + (m === state.minute ? ' time-picker__option--active' : '');
       opt.textContent = m;
-      opt.addEventListener('click', () => pick(hour || '00', m));
+      // Same stopPropagation reasoning as the hour column above —
+      // harmless here too (onPickMinute() closes deliberately anyway),
+      // but keeps both option columns' click handling symmetric rather
+      // than relying on which stage happens to call close() itself.
+      opt.addEventListener('click', (event) => {
+        event.stopPropagation();
+        onPickMinute(m);
+      });
       minuteColumn.appendChild(opt);
     });
-
-    columns.append(hourColumn, minuteColumn);
+    columns.appendChild(minuteColumn);
     popover.appendChild(columns);
   }
 
@@ -149,7 +197,7 @@ export function createTimePicker({ value = '', onChange, ariaLabel = 'Time' } = 
 
   /** Replaces the displayed value without notifying `onChange` — for a caller that needs to sync this picker to a value that changed elsewhere (e.g. a fresh draft loaded after save). Never called by this file itself; provided for API parity with ui/components/SearchableSelect.js's own setOptions(). */
   function setValue(newValue) {
-    [hour, minute] = newValue ? newValue.split(':') : ['', ''];
+    state = createTimePickerState(newValue);
     updateButtonLabel();
   }
 

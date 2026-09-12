@@ -18095,6 +18095,15 @@ button.recognition-bento__hero-winner-name {
   display: none;
 }
 
+.time-picker__stage-header {
+  text-align: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-muted);
+  padding: 0.15rem 0.5rem 0.35rem;
+  letter-spacing: 0.02em;
+}
+
 .time-picker__columns {
   display: flex;
   gap: var(--space-1);
@@ -18105,7 +18114,7 @@ button.recognition-bento__hero-winner-name {
   flex-direction: column;
   max-height: 180px;
   overflow-y: auto;
-  min-width: 3rem;
+  min-width: 3.5rem;
 }
 
 .time-picker__option {
@@ -18310,6 +18319,12 @@ button.recognition-bento__hero-winner-name {
   margin-bottom: var(--space-3);
 }
 
+.manage-timetable__field-caption {
+  font-size: 0.7rem;
+  color: var(--color-muted);
+  font-style: italic;
+}
+
 .manage-timetable__field input[type='text'],
 .manage-timetable__field input[type='date'] {
   border: 1px solid var(--color-border);
@@ -18332,6 +18347,7 @@ button.recognition-bento__hero-winner-name {
 }
 
 .school-calendar__tabs {
+  margin-top: var(--space-3);
   margin-bottom: var(--space-3);
 }
 
@@ -18383,16 +18399,40 @@ button.recognition-bento__hero-winner-name {
   color: var(--color-muted);
 }
 
-/* The exam's subject — the primary differentiator once several
-   same-titled exams exist on different days (e.g. two "Quarterly
-   Examinations" rows), so it renders as its own bold line, not folded
-   into the muted reason/title text above it. */
-.school-calendar__row-subject {
-  display: block;
-  width: 100%;
-  font-size: 0.85rem;
+/* Exams & Events rows only (Calendar Exceptions rows keep the plain
+   `.school-calendar__row-info` inline-wrap layout above) — stacked
+   subject -> title -> date/time so the visual weight actually matches
+   that reading order, strongest first. */
+.school-calendar__row-info--exam {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.school-calendar__row-topline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* The exam's title — prominent, but deliberately a step down from the
+   subject badge above it (that badge, via renderSubjectBadge(), is
+   this list's primary differentiator once several same-titled exams
+   exist on different days, e.g. two "Quarterly Examinations" rows). */
+.school-calendar__row-title {
+  font-size: 0.95rem;
   font-weight: var(--font-weight-bold);
   color: var(--color-ink);
+}
+
+/* Date + time — quiet metadata, intentionally the least visually
+   prominent line in an Exams & Events row (previously this repo's own
+   `.school-calendar__row-date` class read bolder than the title, which
+   was the actual bug this fixes). */
+.school-calendar__row-meta {
+  font-size: 0.75rem;
+  color: var(--color-muted);
 }
 
 .school-calendar__row-actions {
@@ -18469,6 +18509,17 @@ button.recognition-bento__hero-winner-name {
 .timetable-view__day-row--event,
 .timetable-period-card--event {
   border-left-style: dashed;
+}
+
+/* A multi-period exam's grid cell spans several row tracks (see
+   renderWeekGrid()'s groupPeriodsForExamSpanning() usage) — the card
+   itself fills that full spanned height so it reads as ONE continuous
+   block, not a normal-height card floating at the top of a taller box
+   with empty space below it. */
+.timetable-period-card--event {
+  height: 100%;
+  box-sizing: border-box;
+  justify-content: center;
 }
 
 /* Week view header — a small colored underline for a Holiday/Working-

@@ -83,6 +83,7 @@ import * as learningIntegrationService from '../../services/learningIntegrationS
 import * as learningActivityService from '../../services/learningActivityService.js';
 import { fetchLearningHubCatalogue, groupExperiencesByType } from '../../services/learningHubCatalogueService.js';
 import { buildLearningHubLaunchUrl, LEARNING_HUB_TYPE_GROUP_LABELS } from './ConceptWorkspaceView.js';
+import { groupPeriodsForExamSpanning } from './timetableExamSpanning.js';
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -619,21 +620,34 @@ export async function renderTimetableView(container, { classroom, currentUser, p
         return;
       }
 
-      periods.forEach((period, periodIndex) => {
-        const effectivePeriod = schedule.periods.find((p) => p.periodNumber === period.periodNumber);
+      // Consecutive periods suppressed by the SAME exam are grouped into
+      // one rendering run (see timetableExamSpanning.js) so a
+      // multi-period exam draws as ONE continuous block spanning those
+      // rows — mirroring the exact same `grid-row: N / span M` pattern
+      // already used for the day-level Holiday block above — instead of
+      // N separate, visually-repeated cards. This is purely how the
+      // already-computed `suppressedByEventId` is DRAWN; it neither
+      // creates a new ScheduledEvent nor touches the effective-schedule
+      // engine that computed it.
+      const periodGroups = groupPeriodsForExamSpanning(periods, schedule.periods);
+      periodGroups.forEach((group) => {
         const cell = document.createElement('div');
         cell.className = 'timetable-view__grid-cell';
         if (isWeekend) cell.classList.add('timetable-view__grid-cell--weekend');
         cell.style.gridColumn = String(dayIndex + 2);
-        cell.style.gridRow = String(periodIndex + 2);
+        cell.style.gridRow = group.length > 1 ? `${group.startIndex + 2} / span ${group.length}` : String(group.startIndex + 2);
 
-        if (effectivePeriod?.suppressedByEventId) {
-          const event = schedule.events.find((e) => e.id === effectivePeriod.suppressedByEventId);
+        if (group.suppressedByEventId) {
+          const event = schedule.events.find((e) => e.id === group.suppressedByEventId);
           cell.appendChild(renderExamCard(event));
-        } else if (effectivePeriod) {
-          cell.appendChild(renderPeriodCard(resolveSlotForEffectivePeriod(slots, dateKey, effectivePeriod)));
         } else {
-          cell.appendChild(renderEmptyCell());
+          const period = periods[group.startIndex];
+          const effectivePeriod = schedule.periods.find((p) => p.periodNumber === period.periodNumber);
+          if (effectivePeriod) {
+            cell.appendChild(renderPeriodCard(resolveSlotForEffectivePeriod(slots, dateKey, effectivePeriod)));
+          } else {
+            cell.appendChild(renderEmptyCell());
+          }
         }
         weekGrid.appendChild(cell);
       });
@@ -3881,7 +3895,16 @@ export async function renderTimetableView(container, { classroom, currentUser, p
           title: prefill?.title || '',
           subjectId: prefill?.subjectId ?? null,
           customSubjectName: prefill?.customSubjectName ?? null,
-          gradeLabel: prefill?.gradeLabel || '',
+          // A brand-new exam (no existingEvent, no duplicated gradeLabel
+          // to inherit) defaults to this classroom's own grade so the
+          // teacher isn't re-typing what's already implied by which
+          // classroom they're in — editing/duplicating an event keeps
+          // that event's own gradeLabel via `prefill?.gradeLabel` above
+          // taking priority (getGradeLabelForClassroom() is the same
+          // canonical helper already used elsewhere in this file, e.g.
+          // the recurring-lesson path around line 1729 — not a second
+          // grade-resolution mechanism).
+          gradeLabel: prefill?.gradeLabel || getGradeLabelForClassroom(classroom) || '',
           room: prefill?.room || '',
           invigilatorUid: prefill?.invigilatorUid ?? null,
         });
@@ -4072,7 +4095,20 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       gradeInput.value = draft.gradeLabel;
       gradeInput.placeholder = 'e.g. Grade 8A';
       gradeInput.addEventListener('change', () => { draft.gradeLabel = gradeInput.value; });
-      form.appendChild(field('Grade/Class', gradeInput));
+      const gradeFieldWrap = field('Grade/Class', gradeInput);
+      // A brand-new exam's Grade/Class is pre-filled (see the
+      // getGradeLabelForClassroom() default above) rather than left
+      // blank — this caption exists so that pre-filled value doesn't
+      // read as a locked/derived display; it's a normal editable text
+      // input the teacher can just type over for the exceptional case
+      // of an exam that isn't for this classroom's own grade.
+      if (!isEditing && draft.gradeLabel) {
+        const caption = document.createElement('span');
+        caption.className = 'manage-timetable__field-caption';
+        caption.textContent = 'Pre-filled from this classroom — edit if this exam is for a different grade/class.';
+        gradeFieldWrap.appendChild(caption);
+      }
+      form.appendChild(gradeFieldWrap);
 
       const roomInput = document.createElement('input');
       roomInput.type = 'text';
@@ -4227,11 +4263,6 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       heading.className = 'manage-timetable-overlay__heading';
       heading.textContent = 'School Calendar';
       box.appendChild(heading);
-
-      const hint = document.createElement('p');
-      hint.className = 'manage-timetable-overlay__hint';
-      hint.textContent = 'Mark holidays and special working days, and schedule exams — the recurring weekly timetable itself is never changed by anything here.';
-      box.appendChild(hint);
 
       const tabs = document.createElement('div');
       tabs.className = 'timetable-view__mode-toggle school-calendar__tabs';
@@ -4620,33 +4651,40 @@ export async function renderTimetableView(container, { classroom, currentUser, p
           const row = document.createElement('div');
           row.className = 'school-calendar__row';
 
+          // Visual hierarchy, strongest to weakest: subject (reusing the
+          // exact same subject-badge/color treatment as the Week/Day
+          // timetable cards — see renderExamCard() above) → exam title
+          // (prominent, but secondary to the subject badge) → date/time
+          // (quiet metadata, last). `subjectTitle` (resolved via
+          // resolveEventSubjectTitle()) and `event.title` (the exam's
+          // own name) are two genuinely separate fields the whole way
+          // through — never concatenated into one string.
           const info = document.createElement('div');
-          info.className = 'school-calendar__row-info';
-          const dateLabel = document.createElement('span');
-          dateLabel.className = 'school-calendar__row-date';
-          dateLabel.textContent = `${formatDateKeyWithWeekday(event.date)} · ${event.startTime}–${event.endTime}`;
+          info.className = 'school-calendar__row-info school-calendar__row-info--exam';
+
+          const typeLabel = scheduledEventService.getEventTypeLabel(event.eventType);
+          const subjectTitle = scheduledEventService.resolveEventSubjectTitle(classroom, event);
+          const topLine = document.createElement('div');
+          topLine.className = 'school-calendar__row-topline';
+          if (subjectTitle) {
+            topLine.appendChild(renderSubjectBadge(subjectTitle, getTimetableSubjectColor(event.subjectId)));
+          }
           const typeBadge = document.createElement('span');
           typeBadge.className = 'school-calendar__badge school-calendar__badge--exam';
-          typeBadge.textContent = scheduledEventService.getEventTypeLabel(event.eventType);
-          info.append(dateLabel, typeBadge);
+          typeBadge.textContent = typeLabel;
+          topLine.appendChild(typeBadge);
+          info.appendChild(topLine);
+
           const titleEl = document.createElement('span');
-          titleEl.className = 'school-calendar__row-reason';
-          titleEl.textContent = event.title || scheduledEventService.getEventTypeLabel(event.eventType);
+          titleEl.className = 'school-calendar__row-title';
+          titleEl.textContent = event.title || typeLabel;
           info.appendChild(titleEl);
 
-          // The subject is this list's primary differentiator once
-          // several same-titled exams exist on different days (e.g. two
-          // "Quarterly Examinations" rows) — shown as its own prominent
-          // line via resolveEventSubjectTitle()'s existing custom/
-          // canonical/Learning-configured fallback, never re-derived
-          // here.
-          const subjectTitle = scheduledEventService.resolveEventSubjectTitle(classroom, event);
-          if (subjectTitle) {
-            const subjectEl = document.createElement('span');
-            subjectEl.className = 'school-calendar__row-subject';
-            subjectEl.textContent = subjectTitle;
-            info.appendChild(subjectEl);
-          }
+          const dateLabel = document.createElement('span');
+          dateLabel.className = 'school-calendar__row-meta';
+          dateLabel.textContent = `${formatDateKeyWithWeekday(event.date)} · ${event.startTime}–${event.endTime}`;
+          info.appendChild(dateLabel);
+
           row.appendChild(info);
 
           const rowActions = document.createElement('div');
