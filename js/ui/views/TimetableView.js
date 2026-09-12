@@ -83,7 +83,7 @@ import * as learningIntegrationService from '../../services/learningIntegrationS
 import * as learningActivityService from '../../services/learningActivityService.js';
 import { fetchLearningHubCatalogue, groupExperiencesByType } from '../../services/learningHubCatalogueService.js';
 import { buildLearningHubLaunchUrl, LEARNING_HUB_TYPE_GROUP_LABELS } from './ConceptWorkspaceView.js';
-import { groupPeriodsForExamSpanning } from './timetableExamSpanning.js';
+import { groupPeriodsForExamSpanning, computeExamOverlayInset } from './timetableExamSpanning.js';
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -639,7 +639,29 @@ export async function renderTimetableView(container, { classroom, currentUser, p
 
         if (group.suppressedByEventId) {
           const event = schedule.events.find((e) => e.id === group.suppressedByEventId);
-          cell.appendChild(renderExamCard(event));
+          // Round 4 fix: the grid-row spanning above (untouched) still
+          // correctly anchors this cell to the right rows, but its
+          // rendered pixel height is however tall those rows happen to
+          // be — not necessarily proportional to the event's own real
+          // clock time. `cell` becomes the `position: relative` wrapper
+          // that already fills that spanned area; the exam card itself
+          // is placed inside it as an absolutely-positioned child whose
+          // top/bottom are set from computeExamOverlayInset() so it
+          // visually starts/ends at the event's actual startTime/
+          // endTime rather than always filling the whole spanned block
+          // edge-to-edge. Aligned exams (the common case) compute to
+          // ~0/0 insets, so this is visually a no-op for them.
+          cell.classList.add('timetable-view__grid-cell--exam');
+          const coveredPeriods = periods
+            .slice(group.startIndex, group.startIndex + group.length)
+            .map((period) => schedule.periods.find((p) => p.periodNumber === period.periodNumber))
+            .filter(Boolean);
+          const inset = computeExamOverlayInset({ event, coveredPeriods });
+          const examCard = renderExamCard(event);
+          examCard.classList.add('timetable-period-card--event-overlay');
+          examCard.style.top = `${inset.topPercent}%`;
+          examCard.style.bottom = `${inset.bottomPercent}%`;
+          cell.appendChild(examCard);
         } else {
           const period = periods[group.startIndex];
           const effectivePeriod = schedule.periods.find((p) => p.periodNumber === period.periodNumber);
@@ -829,22 +851,72 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     card.className = 'timetable-period-card timetable-period-card--event';
     card.style.background = getTimetableSubjectWash(event.subjectId);
 
-    card.appendChild(renderSubjectBadge(subjectTitle ? `${subjectTitle} ${typeLabel}` : typeLabel, color));
-
-    const titleEl = document.createElement('span');
-    titleEl.className = 'timetable-period-card__topic';
-    titleEl.textContent = event.title || typeLabel;
-    card.appendChild(titleEl);
-
-    if (event.room || event.gradeLabel) {
-      const meta = document.createElement('span');
-      meta.className = 'timetable-period-card__meta';
-      meta.textContent = [event.gradeLabel, event.room ? `Room ${event.room}` : null].filter(Boolean).join(' · ');
-      card.appendChild(meta);
-    }
+    const metaLine = [typeLabel, event.gradeLabel, event.room ? `Room ${event.room}` : null].filter(Boolean).join(' · ');
+    card.appendChild(
+      renderExamHierarchy({
+        subjectTitle,
+        examTitle: event.title || typeLabel,
+        typeLabel,
+        color,
+        metaLine,
+      })
+    );
 
     card.addEventListener('click', () => openExamFormOverlay({ existingEvent: event }));
     return card;
+  }
+
+  /**
+   * The subject-primary → exam-name-secondary → date/time(-or-other)-
+   * quiet visual hierarchy shared by the Week/Day exam card
+   * (renderExamCard() above) and the School Calendar's Exams & Events
+   * list (renderEventsTab(), inside openSchoolCalendarFlow() below) —
+   * one shared building block, not two independently-drifting copies
+   * of the same visual language, since both live in this same file's
+   * closure.
+   *
+   * Per explicit product direction, subject must be the genuinely
+   * large/heavy PRIMARY heading here — NOT renderSubjectBadge()'s small
+   * uppercase pill (that badge is kept, unchanged, for ordinary lesson
+   * period cards elsewhere in this file, where "a small category label"
+   * is exactly the right vocabulary; it is deliberately never used for
+   * an exam's own subject, which needs to read as the dominant fact of
+   * the card/row instead).
+   *
+   * `subjectTitle` (services/scheduledEventService.js's own
+   * resolveEventSubjectTitle()) and `examTitle` (the event's own
+   * `title` field) are always kept as two separate text nodes here —
+   * never concatenated into one string — so a caller can always tell
+   * them apart later. `examTitle` is optional: the School Calendar list
+   * omits it once an exam name becomes a shared group heading (see
+   * renderEventsTab()), since repeating it on every tile underneath
+   * that heading would be exactly the redundancy this round removes.
+   */
+  function renderExamHierarchy({ subjectTitle, examTitle, typeLabel, color, metaLine }) {
+    const wrap = document.createElement('div');
+    wrap.className = 'exam-hierarchy';
+
+    const subjectEl = document.createElement('span');
+    subjectEl.className = 'exam-hierarchy__subject';
+    subjectEl.style.color = color.text;
+    subjectEl.textContent = subjectTitle || typeLabel;
+    wrap.appendChild(subjectEl);
+
+    if (examTitle) {
+      const titleEl = document.createElement('span');
+      titleEl.className = 'exam-hierarchy__title';
+      titleEl.textContent = examTitle;
+      wrap.appendChild(titleEl);
+    }
+
+    if (metaLine) {
+      const metaEl = document.createElement('span');
+      metaEl.className = 'exam-hierarchy__meta';
+      metaEl.textContent = metaLine;
+      wrap.appendChild(metaEl);
+    }
+
+    return wrap;
   }
 
   /**
@@ -4645,45 +4717,45 @@ export async function renderTimetableView(container, { classroom, currentUser, p
 
       const list = document.createElement('div');
       list.className = 'school-calendar__list';
-      [...eventsListCache]
-        .sort((a, b) => (a.date === b.date ? (a.startTime < b.startTime ? -1 : 1) : a.date < b.date ? -1 : 1))
-        .forEach((event) => {
+
+      // Round 4 regroup: many events genuinely share one exam name
+      // (e.g. five subjects all under "Quarterly Examinations") — that
+      // name now shows ONCE as a group heading
+      // (scheduledEventService.groupEventsByTitle(), a pure/unit-tested
+      // helper) rather than being repeated as prominent content inside
+      // every individual tile. Each tile underneath shows subject as
+      // the dominant element (renderExamHierarchy() above — the exact
+      // same shared hierarchy the Week/Day exam card uses, so the two
+      // surfaces never visually drift apart) with date/time as quiet
+      // metadata beneath it; the exam name itself is deliberately
+      // omitted from the per-tile hierarchy here since the group
+      // heading above already says it once. A title held by only one
+      // event still gets its own (single-tile) group — no special-
+      // casing collapses it away.
+      scheduledEventService.groupEventsByTitle(eventsListCache).forEach((group) => {
+        const groupSection = document.createElement('div');
+        groupSection.className = 'school-calendar__group';
+
+        const heading = document.createElement('h3');
+        heading.className = 'school-calendar__group-heading';
+        heading.textContent = group.title || scheduledEventService.getEventTypeLabel(group.events[0].eventType);
+        groupSection.appendChild(heading);
+
+        const groupList = document.createElement('div');
+        groupList.className = 'school-calendar__group-list';
+
+        group.events.forEach((event) => {
           const row = document.createElement('div');
           row.className = 'school-calendar__row';
 
-          // Visual hierarchy, strongest to weakest: subject (reusing the
-          // exact same subject-badge/color treatment as the Week/Day
-          // timetable cards — see renderExamCard() above) → exam title
-          // (prominent, but secondary to the subject badge) → date/time
-          // (quiet metadata, last). `subjectTitle` (resolved via
-          // resolveEventSubjectTitle()) and `event.title` (the exam's
-          // own name) are two genuinely separate fields the whole way
-          // through — never concatenated into one string.
           const info = document.createElement('div');
           info.className = 'school-calendar__row-info school-calendar__row-info--exam';
 
           const typeLabel = scheduledEventService.getEventTypeLabel(event.eventType);
           const subjectTitle = scheduledEventService.resolveEventSubjectTitle(classroom, event);
-          const topLine = document.createElement('div');
-          topLine.className = 'school-calendar__row-topline';
-          if (subjectTitle) {
-            topLine.appendChild(renderSubjectBadge(subjectTitle, getTimetableSubjectColor(event.subjectId)));
-          }
-          const typeBadge = document.createElement('span');
-          typeBadge.className = 'school-calendar__badge school-calendar__badge--exam';
-          typeBadge.textContent = typeLabel;
-          topLine.appendChild(typeBadge);
-          info.appendChild(topLine);
-
-          const titleEl = document.createElement('span');
-          titleEl.className = 'school-calendar__row-title';
-          titleEl.textContent = event.title || typeLabel;
-          info.appendChild(titleEl);
-
-          const dateLabel = document.createElement('span');
-          dateLabel.className = 'school-calendar__row-meta';
-          dateLabel.textContent = `${formatDateKeyWithWeekday(event.date)} · ${event.startTime}–${event.endTime}`;
-          info.appendChild(dateLabel);
+          const color = getTimetableSubjectColor(event.subjectId);
+          const metaLine = `${typeLabel} · ${formatDateKeyWithWeekday(event.date)} · ${event.startTime}–${event.endTime}`;
+          info.appendChild(renderExamHierarchy({ subjectTitle, typeLabel, color, metaLine }));
 
           row.appendChild(info);
 
@@ -4714,8 +4786,12 @@ export async function renderTimetableView(container, { classroom, currentUser, p
 
           row.appendChild(rowActions);
 
-          list.appendChild(row);
+          groupList.appendChild(row);
         });
+
+        groupSection.appendChild(groupList);
+        list.appendChild(groupSection);
+      });
       wrap.appendChild(list);
 
       return wrap;

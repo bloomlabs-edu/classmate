@@ -17002,6 +17002,48 @@ button.recognition-bento__hero-winner-name {
   color: var(--color-danger);
 }
 
+/* Round 4 hierarchy fix — the subject → exam-name → date/time visual
+   stack shared by the Week/Day exam card (TimetableView.js's
+   renderExamCard()) and the School Calendar's Exams & Events list
+   (renderEventsTab()), both built through the same
+   renderExamHierarchy() helper so the two surfaces can never visually
+   drift apart. Subject is the genuinely large/heavy PRIMARY heading —
+   deliberately NOT the small `.timetable-period-card__subject` pill
+   treatment used for ordinary lesson cards, which reads as "a category
+   label" rather than the dominant fact of the card. */
+.exam-hierarchy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  width: 100%;
+}
+
+.exam-hierarchy__subject {
+  font-size: 1.15rem;
+  font-weight: var(--font-weight-black);
+  line-height: 1.2;
+  color: var(--color-ink);
+  overflow-wrap: break-word;
+}
+
+/* The exam's own name — secondary, clearly a step down from the
+   subject heading above it. */
+.exam-hierarchy__title {
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-muted);
+  overflow-wrap: break-word;
+}
+
+/* Date/time (or, on the Week/Day card, event-type + grade/room) — the
+   smallest, quietest line in the stack. */
+.exam-hierarchy__meta {
+  font-size: 0.7rem;
+  color: var(--color-muted);
+  opacity: 0.85;
+}
+
 .timetable-view__legend {
   display: flex;
   flex-wrap: wrap;
@@ -18399,6 +18441,35 @@ button.recognition-bento__hero-winner-name {
   color: var(--color-muted);
 }
 
+/* Round 4 grouping fix — Exams & Events tiles sharing the same
+   `event.title` (e.g. five subjects all under one "Quarterly
+   Examinations") are grouped under one shared heading instead of
+   repeating that name as prominent content on every tile (see
+   renderEventsTab()'s use of scheduledEventService.groupEventsByTitle()).
+   Calendar Exceptions rows never use `.school-calendar__group*` — they
+   keep rendering directly into the plain `.school-calendar__list`
+   above, untouched. */
+.school-calendar__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.school-calendar__group-heading {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.school-calendar__group-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
 /* Exams & Events rows only (Calendar Exceptions rows keep the plain
    `.school-calendar__row-info` inline-wrap layout above) — stacked
    subject -> title -> date/time so the visual weight actually matches
@@ -18520,6 +18591,33 @@ button.recognition-bento__hero-winner-name {
   height: 100%;
   box-sizing: border-box;
   justify-content: center;
+}
+
+/* Round 4 exact-time fix — Week view only. `.timetable-view__grid-
+   cell--exam` is the position:relative wrapper that already fills the
+   correct spanned grid rows (grid-row: N / span M, set inline in
+   renderWeekGrid(), untouched); `.timetable-period-card--event-
+   overlay` is the exam card itself, absolutely positioned inside it
+   with top/bottom set inline from computeExamOverlayInset() so its
+   visual top/bottom track the event's own real startTime/endTime
+   rather than always filling the whole spanned block edge-to-edge.
+   `min-height` is a floor only — a graceful fallback for the rare case
+   where no other content in that row/column combination would
+   otherwise give the row any real height, never a claim that the
+   block is always exactly this tall. Day view's own renderExamCard()
+   usage never gets these two classes — it's a sequential list, not a
+   shared multi-column grid, so it has no row-height ambiguity to
+   correct in the first place. */
+.timetable-view__grid-cell--exam {
+  position: relative;
+  min-height: 64px;
+}
+
+.timetable-period-card--event-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: auto;
 }
 
 /* Week view header — a small colored underline for a Holiday/Working-

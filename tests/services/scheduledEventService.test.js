@@ -111,6 +111,57 @@ test('buildDuplicateExamFields: never carries id/classroomId/createdAt/updatedAt
   assert.equal('duplicatedFrom' in fields, false);
 });
 
+// ---- groupEventsByTitle() -------------------------------------------------
+//
+// Round 4's School Calendar grouping fix: events sharing the same
+// `title` (e.g. five subjects all under "Quarterly Examinations")
+// group together under one shared heading instead of each repeating
+// the exam name as prominent per-tile content.
+
+test('groupEventsByTitle: events sharing the same title are grouped together, ordered by date/time within the group', () => {
+  const examTamil = createScheduledEvent({ classroomId: 'c1', date: MONDAY, startTime: '09:00', endTime: '10:00', title: 'Quarterly Examinations', subjectId: 'tamil' });
+  const examScience = createScheduledEvent({ classroomId: 'c1', date: MONDAY, startTime: '08:00', endTime: '09:00', title: 'Quarterly Examinations', subjectId: 'science' });
+  const examMaths = createScheduledEvent({ classroomId: 'c1', date: TUESDAY, startTime: '09:00', endTime: '10:00', title: 'Quarterly Examinations', subjectId: 'maths' });
+
+  const groups = scheduledEventService.groupEventsByTitle([examTamil, examScience, examMaths]);
+
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].title, 'Quarterly Examinations');
+  assert.deepEqual(groups[0].events.map((e) => e.subjectId), ['science', 'tamil', 'maths']);
+});
+
+test('groupEventsByTitle: a title held by only one event still forms a valid (single-member) group — no special-casing collapses it away', () => {
+  const soloExam = createScheduledEvent({ classroomId: 'c1', date: MONDAY, startTime: '09:00', endTime: '10:00', title: 'Unit Test', subjectId: 'science' });
+  const groups = scheduledEventService.groupEventsByTitle([soloExam]);
+  assert.deepEqual(groups, [{ title: 'Unit Test', events: [soloExam] }]);
+});
+
+test('groupEventsByTitle: multiple distinct exam names produce multiple distinct groups, ordered by each group\'s earliest member', () => {
+  const quarterly = createScheduledEvent({ classroomId: 'c1', date: TUESDAY, startTime: '09:00', endTime: '10:00', title: 'Quarterly Examinations' });
+  const unitTest = createScheduledEvent({ classroomId: 'c1', date: MONDAY, startTime: '09:00', endTime: '10:00', title: 'Unit Test' });
+
+  const groups = scheduledEventService.groupEventsByTitle([quarterly, unitTest]);
+
+  assert.equal(groups.length, 2);
+  // Unit Test (Monday) sorts before Quarterly Examinations (Tuesday).
+  assert.deepEqual(groups.map((g) => g.title), ['Unit Test', 'Quarterly Examinations']);
+});
+
+test('groupEventsByTitle: never mutates or duplicates the underlying events — group members are the exact same object references', () => {
+  const examA = createScheduledEvent({ classroomId: 'c1', date: MONDAY, startTime: '09:00', endTime: '10:00', title: 'Quarterly Examinations' });
+  const examB = createScheduledEvent({ classroomId: 'c1', date: TUESDAY, startTime: '09:00', endTime: '10:00', title: 'Quarterly Examinations' });
+  const original = [examA, examB];
+  const originalSnapshot = JSON.stringify(original);
+
+  const groups = scheduledEventService.groupEventsByTitle(original);
+
+  assert.equal(groups[0].events.length, 2);
+  assert.equal(groups[0].events[0], examA);
+  assert.equal(groups[0].events[1], examB);
+  assert.equal(JSON.stringify(original), originalSnapshot); // untouched
+  assert.equal(original.length, 2); // no duplication into the source array either
+});
+
 test('buildDuplicateExamFields + createScheduledEvent: the resulting duplicate is a genuinely independent record (its own id), editing one never touches the other', () => {
   const source = createScheduledEvent({
     classroomId: 'c1',

@@ -101,4 +101,50 @@ export function buildDuplicateExamFields(sourceEvent) {
   };
 }
 
+/** (date, startTime) ascending — the same ordering getEventsForDate() already sorts by, factored out so groupEventsByTitle() below sorts both members and groups with the identical comparison rather than a second copy. */
+function compareEventsByDateTime(a, b) {
+  if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+  if (a.startTime === b.startTime) return 0;
+  return a.startTime < b.startTime ? -1 : 1;
+}
+
+/**
+ * Groups a flat list of ScheduledEvents by their own `title` — for
+ * display contexts (ui/views/TimetableView.js's School Calendar "Exams
+ * & Events" list) where several events genuinely share one exam name
+ * (e.g. five subjects all under "Quarterly Examinations") and repeating
+ * that name as prominent content on every individual tile is noise;
+ * the caller instead shows the shared title once as a group heading,
+ * with per-event tiles underneath differentiated by subject and
+ * date/time.
+ *
+ * Returns `[{ title, events }]`:
+ * - Grouped by exact `title` string match — deliberately simple/strict.
+ *   Fuzzy-merging user-typed titles (trimming, case-folding, etc.) risks
+ *   silently conflating two genuinely different exams that merely typed
+ *   their name a little differently; that's judged the worse failure
+ *   mode, so it's not done here.
+ * - A title held by only one event still gets its own one-member group
+ *   — there is no special-casing that drops or reshapes singleton
+ *   groups; every event ends up in exactly one group either way.
+ * - Groups are ordered by their earliest member's (date, startTime);
+ *   members within a group are ordered the same way.
+ * - Never mutates `events` or any individual event, and never
+ *   duplicates an event — each group's `events` array holds the exact
+ *   same object references handed in, just partitioned and sorted.
+ */
+export function groupEventsByTitle(events) {
+  const groupsByTitle = new Map();
+  events.forEach((event) => {
+    const key = event.title || '';
+    if (!groupsByTitle.has(key)) groupsByTitle.set(key, { title: key, events: [] });
+    groupsByTitle.get(key).events.push(event);
+  });
+
+  const groups = [...groupsByTitle.values()];
+  groups.forEach((group) => group.events.sort(compareEventsByDateTime));
+  groups.sort((a, b) => compareEventsByDateTime(a.events[0], b.events[0]));
+  return groups;
+}
+
 export { createScheduledEvent, SCHEDULED_EVENT_TYPES };
