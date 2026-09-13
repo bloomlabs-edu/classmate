@@ -1,8 +1,20 @@
 {
   "schema_version": "1.0",
   "description": "See registry/SCHEMA.md for field definitions. Severity: INFO (no action) | WARNING (continue, watch) | SIGNIFICANT (notify user) | BLOCKING (stop, needs a decision). Status: potential | confirmed | resolved | requires_human_decision.",
-  "next_id": 2,
+  "next_id": 3,
   "items": [
+    {
+      "id": "CONFLICT-0002",
+      "severity": "WARNING",
+      "status": "potential",
+      "involved_work_items": ["WORK-0001", "WORK-0004"],
+      "project": "classmate",
+      "description": "classmate-visual-qa's first calibration pass flagged a wordmark color inconsistency (the 'Class' half of 'ClassMate' renders a different blue on Landing vs. the Teacher sign-in gate) on js/ui/views/LandingView.js, a file with active, uncommitted edits from the user's own separate work session (WORK-0001). It is unknown whether this finding describes something the user's in-progress edit already fixes, something it introduced, or something pre-existing and unrelated. Not investigated further, per the Supervisor's role of recording rather than resolving.",
+      "detected_at": "2026-09-13",
+      "resolution": null,
+      "resolved_at": null,
+      "notes": "Do not treat this finding as a bug report against the user's in-progress work without checking with them first - the file is mid-edit and this may be moot, already-known, or unrelated to whatever they're changing."
+    },
     {
       "id": "CONFLICT-0001",
       "severity": "SIGNIFICANT",

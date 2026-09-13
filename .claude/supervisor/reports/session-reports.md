@@ -50,3 +50,27 @@ history.
 - Not pushed, not deployed, per instruction.
 
 **Next planned step (not yet authorized to start):** creating the `classmate-visual-qa` specialist agent.
+
+---
+
+## REPORT-0003 — Pushed foundation; created classmate-visual-qa; first calibration run
+
+- **Date:** 2026-09-13
+- **Session type:** Same conversation, next phase.
+
+**Push:** Verified only `b042da0` was ahead of `origin/main`, pushed it, confirmed local and remote `HEAD` match afterward. User's product changes remained untouched throughout.
+
+**Investigation before building anything:** Checked for existing browser-automation tooling (the project's own `run` skill recommends `chromium-cli` — not installed/on PATH; no Playwright/Puppeteer in `package.json`) and confirmed a second, more serious constraint: `js/config/firebaseConfig.js` is committed and points at the live production Firebase project (`classmate-302c2`); there is no dev/emulator auth wiring in `authService.js`. Serving the app locally, as the README's own instructions describe, connects straight to production Auth + Firestore. Both findings were reported to the user before proceeding (not worked around silently) — see the conversation. User chose: install Playwright now; limit the first experiment to the 4 routes reachable with zero authentication.
+
+**Built:**
+- Added `playwright` as a devDependency (`package.json`/`package-lock.json` modified — **left uncommitted**, distinct from the user's own product edits, pending the user's go-ahead to commit).
+- Confirmed Chromium was already cached locally from a prior session (`C:\Users\ASUS\AppData\Local\ms-playwright\chromium-1243\`) — no fresh download needed.
+- `.claude/agents/classmate-visual-qa.md` — the specialist's persistent definition: read-only, reports to the Supervisor, documents the capture mechanism and the production-auth boundary explicitly so future runs don't re-discover it.
+- Discovered real routes from `js/ui/router.js` (never invented): `#/`, `#/teacher`, `#/student`, `#/visitor` are the only 4 reachable with zero auth.
+- Captured 8 screenshots (4 routes x 1440px/1024px) via a temporary Playwright driver script (kept in the session scratchpad, briefly copied into the repo root to resolve `node_modules` during the run, then deleted — confirmed via `git status` that no stray files were left in the repo).
+
+**Important operational finding:** attempting to invoke the `classmate-visual-qa` custom agent via the Agent tool failed — `Agent type 'classmate-visual-qa' not found`. This session's agent registry was loaded at startup and does not hot-load newly created `.claude/agents/*.md` files. **The same will be true of `classmate-supervisor`** (created in REPORT-0001, never yet successfully invoked as a named agent type either). Worked around for this run only by using the `general-purpose` agent type with the full classmate-visual-qa persona/instructions embedded inline in the prompt — reported to the user as a deviation, not silently substituted. A future session (fresh registry load) should be able to invoke both by name; this should be verified next time either is needed, rather than assumed fixed.
+
+**Findings:** see `reports/visual-qa-findings.md` (`FINDINGS-0001`) and `WORK-0004`. No breakage found on any of the 4 pages; 3 concrete visual-consistency findings (wordmark color, code-input placeholder styling, inconsistent inline-highlight scope). One finding overlaps the user's active `WORK-0001` edit — recorded as `CONFLICT-0002` (WARNING), not treated as a confirmed bug against their in-progress work.
+
+**Not done:** no portal-wide scan, no authenticated/data-rich screens, no fixes applied to any finding, nothing committed beyond the earlier Supervisor-foundation commit, nothing pushed or deployed this phase.

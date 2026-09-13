@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "next_id": 4,
+  "next_id": 5,
   "items": [
     {
       "id": "WORK-0001",
@@ -63,7 +63,29 @@
       "updated_at": "2026-09-13",
       "current_state": "Foundation established: registry, decisions log, conflicts log, cross-project dependency index, reports log, README/operating rules, and the classmate-supervisor agent definition all created in the classroom-tracker repo. Nothing committed, pushed, or deployed. See reports/session-reports.md entry REPORT-0001 for the full account.",
       "blocked_reason": null,
-      "notes": "Anchored in classroom-tracker (classmate) repo rather than learning-hub or a third neutral location - see README.md 'Where this state lives' for the rationale and the open question flagged back to the user about this choice."
+      "notes": "Anchored in classroom-tracker (classmate) repo rather than learning-hub or a third neutral location - see README.md 'Where this state lives' for the rationale and the open question flagged back to the user about this choice. DEC-0001 subsequently CONFIRMED by the user."
+    },
+    {
+      "id": "WORK-0004",
+      "worker_type": "SPECIALIST",
+      "worker_id": "specialist:classmate-visual-qa",
+      "project": "classmate",
+      "task": "First calibration pass: visual QA on the 4 ClassMate routes reachable with zero authentication (Landing, Teacher sign-in gate, Student portal entry, Visitor Access), at 1440px and 1024px, to validate whether the specialist's visual judgement is useful before granting portal-wide responsibility.",
+      "status": "completed",
+      "affected_areas": [
+        "js/ui/views/LandingView.js",
+        "js/ui/views/LoginView.js",
+        "js/ui/student-portal/onboarding/ (student entry flow)",
+        "js/ui/views/VisitorAccessView.js",
+        "shared code-input placeholder component (used by both Student entry and Visitor Access)"
+      ],
+      "dependencies": [],
+      "worktree": null,
+      "started_at": "2026-09-13",
+      "updated_at": "2026-09-13",
+      "current_state": "Completed. Findings recorded in reports/visual-qa-findings.md (FINDINGS-0001). Screenshots captured via Playwright (added as a devDependency this session) + Chromium against a local http-server instance; no production Firebase touched. IMPORTANT: run as a general-purpose agent carrying the classmate-visual-qa persona inline, not the real custom agent type - this session's agent registry does not hot-load newly created .claude/agents/*.md files. See reports/session-reports.md REPORT-0003.",
+      "blocked_reason": null,
+      "notes": "Authenticated/data-rich routes (Dashboard, Curriculum, Timetable, dense card views) were explicitly out of scope for this run per user decision - see decisions-log.md. One finding (wordmark color) overlaps WORK-0001's active file - see CONFLICT-0002."
     }
   ]
 }
