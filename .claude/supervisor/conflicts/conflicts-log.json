@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "description": "See registry/SCHEMA.md for field definitions. Severity: INFO (no action) | WARNING (continue, watch) | SIGNIFICANT (notify user) | BLOCKING (stop, needs a decision). Status: potential | confirmed | resolved | requires_human_decision.",
+  "next_id": 2,
+  "items": [
+    {
+      "id": "CONFLICT-0001",
+      "severity": "SIGNIFICANT",
+      "status": "confirmed",
+      "involved_work_items": ["WORK-0002"],
+      "project": "cross-project",
+      "description": "The term 'Concept' names at least three structurally unrelated things across the two codebases, with no shared ID space: (1) ClassMate's curriculum-pipeline Concept (Unit -> Concept, see ARCHITECTURE.md in classroom-tracker), (2) Learning Hub's RepositoryConcept (concepts/{conceptId}, Firestore, learner/exploration-facing), and (3) Learning Hub's legacy in-memory MissionConcept (never persisted). A ClassMate-side 'conceptId' does not resolve in Learning Hub, and vice versa, without the not-yet-built learningHubConcept mapping field. This is an architectural ambiguity, not a bug in either codebase, and not something either team did wrong.",
+      "detected_at": "2026-09-13",
+      "resolution": null,
+      "resolved_at": null,
+      "notes": "By explicit user instruction: record this and do not attempt to resolve it yet. Any future task in either repo that touches a 'Concept'-named entity, or any cross-project work involving conceptId, must check this record and cross-reference cross-project/dependencies.md before assuming shared meaning. Do not close or resolve this record without a real, ratified decision (see decisions-log.md, DEC-PENDING items) establishing how - or whether - the meanings are reconciled."
+    }
+  ]
+}

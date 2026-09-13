@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0",
+  "description": "Static identity map for every project the Supervisor is aware of. Work items, decisions, and conflicts reference projects only by the 'id' field below — never by inferring identity from file paths alone.",
+  "projects": [
+    {
+      "id": "classmate",
+      "display_name": "ClassMate",
+      "repo_path": "C:/Users/ASUS/OneDrive/Documents/GitHub/classroom-tracker",
+      "git_remote": "https://github.com/bloomlabs-edu/classmate.git",
+      "firebase_project": "classmate-302c2",
+      "role": "Teacher workspace — orchestrates the classroom (timetable, submissions, feedback, curriculum).",
+      "deploy": "GitHub Actions (.github/workflows/firebase-hosting-merge.yml) on merge to main; firebase-hosting-pull-request.yml for PR previews.",
+      "notes": "Vanilla HTML/CSS/JS, no build step, no bundler."
+    },
+    {
+      "id": "learning-hub",
+      "display_name": "Learning Hub",
+      "repo_path": "C:/Users/ASUS/OneDrive/Documents/GitHub/learning-hub",
+      "git_remote": "https://github.com/bloomlabs-edu/learning-hub.git",
+      "firebase_project": "learning-hub-b2586",
+      "role": "Learner workspace — independent learning, Concept Repository, legacy mission engine.",
+      "deploy": "GitHub Actions (.github/workflows/firebase-hosting-merge.yml on merge to main; firebase-hosting-pull-request.yml for PR previews) — same pattern as ClassMate, separate workflow files, separate Firebase project.",
+      "notes": "Client-only, no build step, no Cloud Functions/backend today. Firestore rules committed but per the rules file's own top-of-file comment, not confirmed live on the production project as of last inspection (2026-09-13)."
+    },
+    {
+      "id": "cross-project",
+      "display_name": "ClassMate <-> Learning Hub (integration boundary)",
+      "repo_path": null,
+      "git_remote": null,
+      "firebase_project": null,
+      "role": "Not a repository. Used to tag work items, decisions, and conflicts that concern the boundary between the two products rather than either codebase alone.",
+      "deploy": null,
+      "notes": "No shared repo, no shared Firebase project, no shared deploy pipeline exists or is proposed. Any 'cross-project' work item must still ultimately land as a change in exactly one of the two repos above (or a genuinely new, separate integration service, per open Decision 1 in decisions-log.md)."
+    }
+  ],
+  "relationship_notes": [
+    "ClassMate and Learning Hub are separate Git repositories, separate Firebase projects, and separate deploy pipelines. There is no code sharing, no shared Firestore project, and no build-time coupling of any kind today.",
+    "The only live coupling (as of the 2026-09 joint architecture research in learning-hub/docs/) is one-directional and static: ClassMate fetches Learning Hub's catalogue.json/packs.json directly, and can deep-link into Learning Hub via '?entry=<type>:<id>' URL params. Nothing pushes data from Learning Hub back to ClassMate.",
+    "A full, code-grounded integration contract already exists — see cross-project/dependencies.md, which indexes learning-hub/docs/CLASSMATE_LEARNING_HUB_INTEGRATION_CONTRACT.md, ..._DECISIONS.md, ..._RECOMMENDATIONS.md, and LEARNING_HUB_ARCHITECTURE_CURRENT_STATE.md rather than duplicating them.",
+    "Those four documents are currently UNTRACKED (not committed) in the learning-hub repo. The Supervisor must treat them as live, uncommitted work product — not yet a stable reference — until the user commits them."
+  ]
+}

@@ -1,0 +1,69 @@
+{
+  "schema_version": "1.0",
+  "next_id": 4,
+  "items": [
+    {
+      "id": "WORK-0001",
+      "worker_type": "USER",
+      "worker_id": "human:rejeesh",
+      "project": "classmate",
+      "task": "In-progress manual edits (session/window unknown to the Supervisor) touching CSS, CurriculumMetadataLine, UserBar, LandingView, LearningManagementView, plus a new untracked badge-system styleguide doc.",
+      "status": "active",
+      "affected_areas": [
+        "css/styles.css",
+        "js/ui/components/CurriculumMetadataLine.js",
+        "js/ui/components/UserBar.js",
+        "js/ui/views/LandingView.js",
+        "js/ui/views/LearningManagementView.js",
+        "docs/design/badges/CLASSMATE_BADGE_SYSTEM_IMPLEMENTATION_STYLEGUIDE.md"
+      ],
+      "dependencies": [],
+      "worktree": null,
+      "started_at": "unknown - discovered as pre-existing uncommitted state at Supervisor-foundation inspection time",
+      "updated_at": "2026-09-13",
+      "current_state": "Uncommitted, unstaged changes in the main checkout. Not committed, not pushed. The Supervisor foundation task discovered this state via `git status` and recorded it without reading file contents or modifying it, per the instruction to treat the user's own work as an active workstream rather than product code to inspect.",
+      "blocked_reason": null,
+      "notes": "This is exactly the USER-as-worker case the task description anticipates: any future agent proposing work touching these five files or the badge-system doc must check this entry first. Update this record's status/notes if this work is committed, abandoned, or superseded."
+    },
+    {
+      "id": "WORK-0002",
+      "worker_type": "AGENT",
+      "worker_id": "agent:unknown-prior-session",
+      "project": "cross-project",
+      "task": "Joint architecture research: ClassMate <-> Learning Hub integration contract, governance-decision analysis, recommended decisions, and a from-scratch Learning Hub current-state architecture audit.",
+      "status": "completed",
+      "affected_areas": [
+        "learning-hub/docs/CLASSMATE_LEARNING_HUB_INTEGRATION_CONTRACT.md",
+        "learning-hub/docs/CLASSMATE_LEARNING_HUB_INTEGRATION_DECISIONS.md",
+        "learning-hub/docs/CLASSMATE_LEARNING_HUB_INTEGRATION_RECOMMENDATIONS.md",
+        "learning-hub/docs/LEARNING_HUB_ARCHITECTURE_CURRENT_STATE.md"
+      ],
+      "dependencies": [],
+      "worktree": null,
+      "started_at": "unknown - predates this Supervisor-foundation session",
+      "updated_at": "2026-09-13",
+      "current_state": "Research deliverables are complete and self-consistent, but all four files are UNTRACKED in the learning-hub repo (confirmed via `git status` at inspection time) - i.e. real, substantive, uncommitted work product sitting in a repo the Supervisor does not modify. Six governance decisions raised by this research are open and unresolved - see decisions-log.md.",
+      "blocked_reason": null,
+      "notes": "Do not treat these docs as 'just documentation debt' - they are the entire cross-project dependency map today. See cross-project/dependencies.md for the indexed summary. The 6 open decisions inside them are the actual gate on any future ClassMate<->Learning Hub integration build work (per the docs' own staged plan)."
+    },
+    {
+      "id": "WORK-0003",
+      "worker_type": "SUPERVISOR",
+      "worker_id": "supervisor",
+      "project": "cross-project",
+      "task": "Establish the ClassMate Supervisor foundation: persistent coordination state, operating rules, authority model, and the classmate-supervisor agent definition. No product code, no commits, no worker/specialist agents.",
+      "status": "completed",
+      "affected_areas": [
+        ".claude/supervisor/",
+        ".claude/agents/classmate-supervisor.md"
+      ],
+      "dependencies": [],
+      "worktree": null,
+      "started_at": "2026-09-13",
+      "updated_at": "2026-09-13",
+      "current_state": "Foundation established: registry, decisions log, conflicts log, cross-project dependency index, reports log, README/operating rules, and the classmate-supervisor agent definition all created in the classroom-tracker repo. Nothing committed, pushed, or deployed. See reports/session-reports.md entry REPORT-0001 for the full account.",
+      "blocked_reason": null,
+      "notes": "Anchored in classroom-tracker (classmate) repo rather than learning-hub or a third neutral location - see README.md 'Where this state lives' for the rationale and the open question flagged back to the user about this choice."
+    }
+  ]
+}
