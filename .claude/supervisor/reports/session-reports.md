@@ -94,3 +94,16 @@ history.
 - UNKNOWN: whether `WORK-0001` already addresses the wordmark-color finding, is unrelated to it, or introduced it; whether/when it will be committed.
 
 **Not done:** No new `classmate-visual-qa` delegation. No screenshots taken this session. No application code read or modified. No commits, pushes, or deploys. No worktree created.
+
+## REPORT-0005 — LH-02 (Learning Hub Weather concept seed) recorded as USER work, manually completed / verification blocked
+
+- **Date:** 2026-09-13
+- **Session type:** State-recording only, per explicit instruction from the requesting session - no new investigation, no repository changes, no Firestore writes.
+
+**Task:** Record persistent Supervisor state for an item externally labeled "LH-02" by the requesting session (Weather concept Firestore seed, Learning Hub project `learning-hub-b2586`). No `LH-0N` id previously existed in this registry; this is the first Supervisor-tracked record of it.
+
+**What was inspected:** `README.md` (re-read in full), `registry/work-registry.json`, `registry/SCHEMA.md`, `decisions/decisions-log.md`, `conflicts/conflicts-log.json`, `cross-project/dependencies.md`, `registry/projects.json`. No new investigation was performed in the `learning-hub` repo itself this session - the background (git status clean of new changes, no `firebase-admin`/service-account credential, no generic Firebase CLI document-read command) was supplied by the requesting session as already-established and was not re-derived here.
+
+**Recorded:** `WORK-0007` - `worker_type: USER`, `project: learning-hub`, `status: blocked`. Represents the user's own reported manual action (creating/updating `concepts/weather` via the Firebase Console in `learning-hub-b2586` production Firestore), analogous in kind to how `WORK-0001` records the user's own out-of-band work. `status: blocked` was chosen deliberately - not `completed` - specifically to keep the unresolved verification gap visible: the user's manual action is not in question, but no agent has independently confirmed the document's existence or its fields'/types' correctness in production, and no safe read-only mechanism currently exists to do so. `blocked_reason` states exactly that gap. `current_state` explicitly separates OBSERVED (no repo changes, no credential/tooling exists, no agent performed any write this session) from INFERRED (a pre-existing `firestore-seed-data.md` reference is consistent with but does not confirm the user's report) from UNKNOWN (whether `concepts/weather` or `concepts/climate` actually exist in production, and all field values/types).
+
+**Not done:** No new work item created for the related read-access blocker (informally tracked by the requesting session as "LH-03") - out of scope for this task, referenced only in `WORK-0007`'s notes for continuity. No decision-log entry added (this is a state record, not a product/architectural decision). No conflict-log entry added (no overlap detected with any other tracked item's `affected_areas`). No Firestore read or write of any kind performed. No repository code touched in either repo - the only change made anywhere this session is this registry update itself.

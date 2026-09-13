@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "next_id": 7,
+  "next_id": 8,
   "items": [
     {
       "id": "WORK-0001",
@@ -133,6 +133,24 @@
       "current_state": "Read work-registry.json, reports/visual-qa-findings.md, conflicts-log.json, and ran git status directly. Confirmed: (a) WORK-0005 already covered all 4 routes at all 4 requested viewports (1440/1024/768/390) with no breakage and exactly 3 findings, all reconfirmed identical across every width; (b) WORK-0001 affected files (including LandingView.js) are in the same uncommitted state now as recorded at WORK-0005 time (git status shows the same 5 files + docs/design/ untracked, no new edits observed by the Supervisor). Given identical scope, identical viewports, and no observable change to the routes/files being inspected since the last real-agent pass, a third classmate-visual-qa run would reinspect the same rendered output and produce no new information. Did NOT re-delegate to classmate-visual-qa this time. No new specialist run performed; no new screenshots taken.",
       "blocked_reason": null,
       "notes": "This determination is scoped to the current unchanged state only — it is not a standing rule to skip future requests for these 4 routes. If WORK-0001 is committed/abandoned/changed, or scope/viewports/routes expand, or enough time passes that drift is plausible, a fresh classmate-visual-qa pass would be warranted again. See FINDINGS-0001/FINDINGS-0002 for the substantive findings this determination relies on."
+    },
+    {
+      "id": "WORK-0007",
+      "worker_type": "USER",
+      "worker_id": "human:rejeesh",
+      "project": "learning-hub",
+      "task": "Externally labeled 'LH-02' by the requesting session: seed/update the Weather concept document (concepts/weather) in Learning Hub production Firestore (learning-hub-b2586) via the Firebase Console, as part of a small batch of Concept-Repository seed items. User reports this was done manually by their own action, not by any agent. This is the first time this item has a Supervisor registry entry - no prior WORK-000N id existed for it.",
+      "status": "blocked",
+      "affected_areas": [
+        "learning-hub-b2586 production Firestore: concepts/weather (no repository files in either repo were touched by this item)"
+      ],
+      "dependencies": [],
+      "worktree": null,
+      "started_at": "unknown - user-reported manual Firebase Console action, timing not independently observed",
+      "updated_at": "2026-09-13",
+      "current_state": "OBSERVED (this session, read-only, in the learning-hub repo working tree): `git status --short --branch` showed no changes beyond the 4 pre-existing untracked WORK-0002 research docs - i.e. no repository file was created or modified in connection with this item, consistent with the action being a direct Firebase Console edit rather than code/tooling-driven. OBSERVED: no `firebase-admin` dependency and no service-account/key JSON file present in the repo, and the Firebase CLI has no generic document-read command - so there is no already-established, safe, read-only mechanism available to this agent to independently query learning-hub-b2586 production Firestore (same blocker identified this session under the item informally tracked as 'LH-03'). INFERRED: `firestore-seed-data.md` in the learning-hub repo (a manual-Console-entry reference doc, not automated tooling) documents 'weather' as a document that already existed prior to that doc and needed field updates - this is consistent with, but does not independently confirm, the user's report of the current state. UNKNOWN: whether concepts/weather currently exists in production, and if so, the actual values/types of its fields (title, subject, domain, description, relatedConceptIds, curriculumMappings, status, createdBy, createdAt, updatedAt) - none of this has been read back from production by any agent. UNKNOWN: whether concepts/climate exists in production. OBSERVED: no agent performed any Firestore write (to concepts/weather, concepts/climate, or anything else) during this session - this item involved no seeding action by any agent, only state-recording.",
+      "blocked_reason": "No safe, already-established read-only mechanism exists to independently verify concepts/weather's existence or field values/types in learning-hub-b2586 production Firestore (no firebase-admin/service-account credential in the repo, no generic Firebase CLI document-read command, and per this session's scope, no new credential was created or requested to work around this). This blocks INDEPENDENT VERIFICATION only - the user has reported the underlying manual Console action is complete. Do not mark this item VERIFIED or otherwise treat the document/fields as confirmed until a safe read path exists and is actually used.",
+      "notes": "Status is intentionally 'blocked' rather than 'completed' to keep the unresolved verification gap visible to future sessions, not to imply the user's own manual action is incomplete or in question. If/when the user provides a read-scoped credential (or another safe read mechanism becomes available), a future session should read back concepts/weather directly, confirm field presence/types against the list above, and confirm concepts/climate was not also created, before this item could be reclassified as verified. Cross-reference: this item and the related read-access blocker were externally tracked by the requesting session as 'LH-02' and 'LH-03' respectively; neither label previously existed in this registry before this entry."
     }
   ]
 }
