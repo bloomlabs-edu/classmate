@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "next_id": 9,
+  "next_id": 11,
   "items": [
     {
       "id": "WORK-0001",
@@ -169,6 +169,46 @@
       "current_state": "FACT (established prior to this session, unchanged by it): LH-01's implementation/checkpoint was already complete and pushed at commit 8b7cd24 in the learning-hub repo. OBSERVED (this session): `npm run test:rules` had previously been blocked because port 8080 was occupied by a stale process. OBSERVED: that process, PID 23180, was confirmed via WMI command-line inspection to be a Firestore emulator (`java -jar ...cloud-firestore-emulator-v1.22.0.jar --port 8080 ... --project_id classmate-rules-verification`) rather than a Learning Hub or ClassMate application process. OBSERVED: PID 23180 was terminated with the user's explicit authorization (not autonomously), and port 8080 was verified free afterward. OBSERVED: `npm run test:rules` was then run successfully in `C:/Users/ASUS/OneDrive/Documents/GitHub/learning-hub`, producing 65/65 security tests passed, script exit code 0, zero failures - including the LSRW-specific tests in the current suite (tests 27-34: anonymous read/create denied, owner read/create allowed, cross-user access denied, update/delete denied), all passing. OBSERVED: git status in the learning-hub repo was unchanged throughout apart from the four pre-existing untracked WORK-0002 research documents; no application code, test configuration, Firebase configuration, deployment configuration, or Firestore data was modified - the only system-level action taken was terminating the stray local emulator process to free the port. CONCLUSION: LH-01 is now considered fully verified - both its implementation (previously confirmed via commit 8b7cd24) and its rules-test verification (independently confirmed this session, 65/65) are established.",
       "blocked_reason": null,
       "notes": "This is the first Supervisor-tracked registry entry for LH-01 - no prior WORK-000N item existed for its implementation/checkpoint milestone (the milestone and its original 35/35 figure live in Learning Hub's own records, not in this registry, and are NOT restated or altered here). The current 65-test suite has grown since that original milestone was recorded elsewhere as '35/35' - this is normal test-suite growth, not a discrepancy or regression, and this entry does not correct, restate, or rewrite that historical figure anywhere. 'LH-01' is an external label used by the requesting session; cross-reference WORK-0007, which similarly recorded a first-time entry for an externally-labeled 'LH-02' item."
+    },
+    {
+      "id": "WORK-0009",
+      "worker_type": "AGENT",
+      "worker_id": "agent:prior-session",
+      "project": "classmate",
+      "task": "Externally labeled 'CM-01' by the requesting session: bookkeeping backfill for the Recognition Page Bento redesign - already implemented and merged into ClassMate main across 4 commits, discovered during an earlier reconciliation pass but never given a Supervisor registry entry until now.",
+      "status": "completed",
+      "affected_areas": [
+        "js/ui/views/RecognitionScreenView.js",
+        "js/ui/components/RecognitionWall.js",
+        "js/ui/components/RecognitionCard.js",
+        "config/recognitionCategories.js",
+        "services/weeklyReportService.js"
+      ],
+      "dependencies": [],
+      "worktree": null,
+      "started_at": "unknown - implementation predates this Supervisor session; 4 commits dated 2026-09-10 and 2026-09-11",
+      "updated_at": "2026-09-13",
+      "current_state": "OBSERVED (independently re-verified this session via `git show --stat -s <hash>` for each): commits 41be915 (2026-09-10, \"Redesign the Recognition screen with the ClassMate Bento language\"), 56e3206 (2026-09-11, \"Surface Recognition: Student Profile, Reports Bento, Recognition Wall\"), 907d445 (2026-09-11, \"Recognition UI visual refinement: badges at meaningful scale, Bento archives\"), and 7a464a8 (2026-09-11, \"Make Team Profile a real, discoverable destination\") all exist in classmate's git history exactly as cited. OBSERVED (carried over from the prior reconciliation pass, not re-derived this session): all 4 are confirmed ancestors of current HEAD via `git merge-base --is-ancestor`; js/ui/views/RecognitionScreenView.js carries its own header comment documenting the Bento composition (\"one dominant hero tile... grouped supporting tiles... REDESIGN SCOPE\"); none of Recognition's affected files appear in the current working-tree diff (git status --short confirms this again this session: only css/styles.css, CurriculumMetadataLine.js, UserBar.js, LandingView.js, LearningManagementView.js modified + docs/design/ untracked - none of these are Recognition files); the only shared surface with WORK-0001 is the global css/styles.css, a low-risk WARNING-level overlap, not a direct file conflict. INFERRED, NOT independently re-confirmed this session: production deployment - per the documented auto-deploy-on-merge pipeline in registry/projects.json, a merge to main should have triggered a production deploy, but this was not re-checked via GitHub Actions run status (gh CLI is not available in this environment) - deploy status here is inferred from the pipeline's documented behavior, not observed directly.",
+      "blocked_reason": null,
+      "notes": "This is a bookkeeping-only backfill entry: no new investigation, testing, or code change was performed to produce it - it records work that was already done and previously verified by an earlier reconciliation pass, per the requesting session's explicit instruction. The only re-verification performed for this entry was confirming the 5 cited commit hashes actually exist in git history (see current_state's OBSERVED section) - ancestor-of-HEAD status, the code comment, and the working-tree-overlap check were carried over from that prior pass, not re-run fresh. 'CM-01' is an external label used by the requesting session; cross-reference the analogous LH-0N backfill pattern in WORK-0007/WORK-0008."
+    },
+    {
+      "id": "WORK-0010",
+      "worker_type": "USER",
+      "worker_id": "human:rejeesh",
+      "project": "classmate",
+      "task": "Externally labeled 'CM-02' by the requesting session: bookkeeping backfill for the Learning Activities Teacher Action / Student Action two-column layout - already implemented (commit e861bc3) and personally verified by the user (not by an agent), never given a Supervisor registry entry until now.",
+      "status": "completed",
+      "affected_areas": [
+        "js/ui/views/LearningManagementView.js"
+      ],
+      "dependencies": [],
+      "worktree": null,
+      "started_at": "2026-09-07 - implementation commit date",
+      "updated_at": "2026-09-13",
+      "current_state": "OBSERVED (independently re-verified this session via `git show --stat -s e861bc3`): commit e861bc3 exists in classmate's git history exactly as cited, dated 2026-09-07, \"Give Learning Activities a two-column Teacher Action / Student Action layout\". USER-VERIFIED (per the user's own report in a prior conversation, not an agent-performed verification - recorded here as such and not restated as if an agent had confirmed it): the user personally verified side-by-side desktop layout, normal activity editing, content persistence, differentiation on/off, activity controls, mobile layout around 390px, and found no major layout/behavior issues. INCIDENTAL, NON-CONTRADICTING FINDING (from an unrelated task this session): reading WORK-0001's in-progress, uncommitted diff to js/ui/views/LearningManagementView.js (for an unrelated reason - a curriculum-index bug fix) found that diff to be unrelated to the two-column Teacher/Student Action layout, with no sign of a revert or contradiction of it. This is cited as supporting evidence that nothing has since undermined the user's verification - it is explicitly NOT a fresh verification pass performed now, and does not itself confirm the two-column layout still renders correctly; it only confirms WORK-0001's active edit does not appear to touch or contradict it.",
+      "blocked_reason": null,
+      "notes": "This is a bookkeeping-only backfill entry: no new testing, browser verification, or visual QA was performed to produce it. The verification of substance (desktop/mobile layout, editing, persistence, differentiation, controls) was performed by the user themselves in a prior conversation, not by this or any agent - this entry records that fact rather than claiming agent-performed verification. Only the commit hash's existence was independently re-checked this session. 'CM-02' is an external label used by the requesting session. Because WORK-0001 still holds an active, uncommitted edit to this same file (js/ui/views/LearningManagementView.js), any future agent touching that file should re-check WORK-0001's current status before assuming this file is fully settled - this entry attests to the two-column layout specifically, not to the file's overall stability."
     }
   ]
 }
