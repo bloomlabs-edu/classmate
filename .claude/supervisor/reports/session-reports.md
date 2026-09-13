@@ -74,3 +74,23 @@ history.
 **Findings:** see `reports/visual-qa-findings.md` (`FINDINGS-0001`) and `WORK-0004`. No breakage found on any of the 4 pages; 3 concrete visual-consistency findings (wordmark color, code-input placeholder styling, inconsistent inline-highlight scope). One finding overlaps the user's active `WORK-0001` edit — recorded as `CONFLICT-0002` (WARNING), not treated as a confirmed bug against their in-progress work.
 
 **Not done:** no portal-wide scan, no authenticated/data-rich screens, no fixes applied to any finding, nothing committed beyond the earlier Supervisor-foundation commit, nothing pushed or deployed this phase.
+
+## REPORT-0004 — Visual QA re-run request evaluated as duplicate; no new specialist pass
+
+- **Date:** 2026-09-13
+- **Session type:** Invoked as the real `classmate-supervisor` custom agent type (controlled orchestration test), same conversation scope as prior reports.
+
+**Task:** Coordinate a request to run Visual QA on the 4 zero-auth ClassMate routes (`#/`, `#/teacher`, `#/student`, `#/visitor`) at 1440/1024/768/390px.
+
+**What was inspected before delegating:** `README.md` (operating charter, re-read in full), `registry/work-registry.json`, `reports/visual-qa-findings.md`, `conflicts/conflicts-log.json`, `reports/session-reports.md`, and a live `git status` in `classroom-tracker`.
+
+**Determination:** This exact scope (4 routes, all 4 viewports) was already fully run twice — `WORK-0004` (calibration pass, persona-mimicry due to a stale agent registry) and `WORK-0005` (first run as the real `classmate-visual-qa` agent, both viewport sets, 0 new breakage, 3 findings reconfirmed identically at every width). Live `git status` showed no change to any route-relevant file since `WORK-0005`: `WORK-0001`'s affected files (`css/styles.css`, `CurriculumMetadataLine.js`, `UserBar.js`, `LandingView.js`, `LearningManagementView.js`, `docs/design/`) remain in the same uncommitted state. Concluded a third identical pass would inspect the same rendered output and produce no new information — recorded as `WORK-0006` (status `completed`, `worker_type: SUPERVISOR`, no specialist delegated). Findings log annotated for traceability, not re-populated with new findings.
+
+**Parallel-safety assessment for WORK-0001:** Ran the 8-question checklist. Visual QA (had it been re-run) is read-only against the working tree (Playwright screenshots via a local static server) — it cannot write to or clobber `WORK-0001`'s files, so it would have been safe to run in parallel in the sense of not damaging the user's work. The one standing caveat (also true of WORK-0004/WORK-0005, not new) is that inspecting the live working tree means any QA screenshot of `LandingView.js` reflects `WORK-0001`'s in-progress, uncommitted edits, not a stable committed baseline — already captured as `CONFLICT-0002` (WARNING, status `potential`), which was updated this session to add `WORK-0006` to its `involved_work_items`.
+
+**KNOWN vs. INFERRED vs. UNKNOWN on WORK-0001 (per this session's own instruction, not assumed from memory):**
+- KNOWN: the 5 modified files + untracked `docs/design/` directory, directly from `git status` and the existing registry entry.
+- INFERRED (the registry entry’s own guess, not confirmed by the user): that this is "in-progress manual edits... touching CSS, CurriculumMetadataLine, UserBar, LandingView, LearningManagementView, plus a new untracked badge-system styleguide doc" — a description of *what* changed, not a confirmed statement of intent/purpose.
+- UNKNOWN: whether `WORK-0001` already addresses the wordmark-color finding, is unrelated to it, or introduced it; whether/when it will be committed.
+
+**Not done:** No new `classmate-visual-qa` delegation. No screenshots taken this session. No application code read or modified. No commits, pushes, or deploys. No worktree created.
