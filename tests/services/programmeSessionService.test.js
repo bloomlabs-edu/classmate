@@ -565,6 +565,8 @@ test('a student\'s classroom identity is never duplicated into programme session
 
 test('MEMBERSHIP: wasStudentMemberOn is true for a date within an active membership span', () => {
   const { programme } = makeClassroomWithProgramme();
+  const membership = learningProgrammeService.getActiveMembership(programme, 'student-1');
+  membership.joinedAt = '2026-08-01T00:00:00.000Z';
   assert.equal(learningProgrammeService.wasStudentMemberOn(programme, 'student-1', '2026-08-19'), true);
 });
 
