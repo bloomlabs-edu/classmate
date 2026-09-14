@@ -303,3 +303,50 @@ These are two clearly different blues. The cross-page divergence `CONFLICT-0002`
 **Not done:** No product code was read for modification (only `css/styles.css` was read, read-only, to independently verify the color values). No commit, push, or deploy performed. No new work item created — this is a correction to existing state, not new work.
 
 ---
+
+---
+
+## REPORT-0015 — WORK-0014 registered: Teacher sign-in gate wordmark color fix (PLAN-ONLY, nothing implemented)
+
+- **Date:** 2026-09-14
+- **Session type:** Work-item registration only (no product code touched, nothing committed/pushed/deployed, no other agent invoked)
+
+**What was registered:**
+- `WORK-0014` — precise, single-property scope: change `.login-view__title-class`'s `color` from `#1565c0` to `#5ea5d9` in `css/styles.css` (currently lines 5329-5331), to resolve `CONFLICT-0002` / Visual QA `FINDING-A01` (the Landing-vs-Teacher-gate wordmark color mismatch first raised at WORK-0004, reconfirmed by WORK-0005/WORK-0006/WORK-0013).
+- Status set to `ready` (not `queued`): the parallel-work checklist found no active-work overlap (`WORK-0001`, the only other item to ever touch `css/styles.css`, is completed and pushed at `a0aeafc`; `git status` confirmed a fully clean working tree at registration time), no dependency to resolve, and no outstanding user clarification needed to begin implementation.
+
+**Verified this session (read-only) before registering:**
+- `.login-view__title-class` has exactly one real CSS rule (`css/styles.css:5329`) — grep found 3 textual occurrences of the string total, but 2 are comment references (lines 506, 513), not selectors. Changing this rule is CSS-isolated: confirmed it is not shared with `--color-primary-deep` (line 42, the teacher-customizable accent token — the CSS comment directly above the rule, lines 5324-5328, explicitly documents this as deliberate), and (per the task's own prior research, not re-derived independently this session) not shared with `timetableSubjectColors.js` or `avatarGenerator.js`.
+- `.landing-view__title-class` (`css/styles.css:515-517`) independently reconfirmed still `#5ea5d9`, per `WORK-0001`/commit `a0aeafc`.
+- Read `LoginView.js`'s header comment (lines 16-26): confirms `#1565C0` was a deliberate choice to mirror `assets/icons/classmate-icon.svg`'s own "C" glyph fill color — a genuine, currently-true design rationale, not a stale/arbitrary value. This is the real source of the conflict: Landing and the app-icon SVG are both legitimate, mutually-incompatible reference points for one wordmark color.
+
+**Decision recorded (made by the user, not this session, prior to registration):** match Landing (`#5ea5d9`), accepting that the Teacher gate wordmark will then diverge from the app icon SVG's `#1565C0`. This is recorded in `WORK-0014`'s `current_state`/`notes` as the explicit basis for the task — not inferred or defaulted by the Supervisor.
+
+**Conflicts log:** `CONFLICT-0002` updated — `WORK-0014` added to `involved_work_items`, an addendum note added explaining this registration does not itself resolve the conflict. `status` deliberately left `"potential"` (not `"resolved"`) — per `WORK-0014`'s own acceptance criteria, closure requires an actual implementation pass plus an independent cross-page Visual QA comparison, neither of which has happened yet.
+
+**Explicitly not done this session:** no CSS was edited; no commit, push, or deploy; no worktree created; no worker/specialist agent invoked; `WORK-0001` was not reopened or altered beyond being cited as context (its own record is untouched).
+
+---
+
+## REPORT-0016 — WORK-0014 completed and CONFLICT-0002 genuinely resolved: Teacher sign-in gate wordmark color fix
+
+- **Date:** 2026-09-14
+- **Session type:** Full implementation chain (delegated to an isolated-worktree agent, reviewed and independently re-verified by the orchestrator, visually QA'd cross-page by classmate-visual-qa, integrated, committed, pushed). This Supervisor session's own action was state-recording only: updating `WORK-0014` and `CONFLICT-0002` to reflect that completed and verified chain, and confirming the record against `git log`/`git show`/`git worktree list` directly. No product code was touched by this Supervisor session.
+
+**Chain executed (summarized; full detail in `WORK-0014.current_state`):**
+1. PLAN (prior session) — scope, 7 acceptance criteria, exclusions registered.
+2. DELEGATE / ISOLATED WORKTREE — `agent-adca4aeecbda6fb5f` / `worktree-agent-adca4aeecbda6fb5f`, never touched the primary working tree.
+3. IMPLEMENT (agent-reported) — one line: `.login-view__title-class` `color`: `#1565c0` → `#5ea5d9`. Agent's own brace-balance check: 2884/2884.
+4. REVIEW (orchestrator-verified) — read the actual worktree diff directly; confirmed exactly one line changed.
+5. VERIFY (orchestrator-verified) — independently re-ran brace-balance against `main` post-integration: balanced.
+6. VISUAL QA (specialist-verified) — `classmate-visual-qa` loaded both `#/` and `#/teacher` at 1440px and 390px, read `getComputedStyle().color` live for both wordmark halves on both pages. "Class" → `rgb(94, 165, 217)` / `#5EA5D9` identically on both pages at both widths. "Mate" → `#FF9B65` unchanged on both. No console errors, no overflow.
+7. INTEGRATE — file copy from worktree into `main` (uncommitted change, same pattern as WORK-0011/WORK-0012).
+8. COMMIT — `2e85a57`, 1 file/1 insertion/1 deletion. This Supervisor session independently re-confirmed via `git show 2e85a57 --stat` and `git show 2e85a57 -- css/styles.css` that the committed diff is exactly that one line.
+9. PUSH — `249abc7..2e85a57 main -> main`. This Supervisor session independently re-confirmed `git rev-parse HEAD` == `git rev-parse origin/main` == `2e85a576aabff56dddfb08981f6f3b568a840029`.
+10. WORKTREE CLEANUP — removed. This Supervisor session independently re-confirmed via `git worktree list`: only the primary checkout remains.
+
+**Registry updates made this session:**
+- `WORK-0014`: `status` → `"completed"`. `current_state` expanded with the full PLAN→...→cleanup chain, explicitly distinguishing agent-reported results (worktree brace-balance count, the implementation itself) from the orchestrator's own independent re-verification (diff re-read, post-integration brace-balance re-count, commit/push/worktree-list re-checks). All 7 originally-registered acceptance criteria evaluated explicitly: 6 fully met; criterion 4 (no responsive regressions at 1440/1024/768/390px) is honestly recorded as only *partially* directly re-verified this round — Visual QA this time tested 1440px and 390px only, not 1024px/768px — with the residual risk assessed as minimal (single CSS color property, no layout impact) but not claimed as positively re-confirmed at all four widths.
+- `CONFLICT-0002`: `status` → `"resolved"`, `resolved_at` → `2026-09-14`. `resolution` records the fix, the specific cross-page live-DOM verification method, the accepted app-icon-SVG trade-off, and explicitly contrasts this resolution with the earlier same-day retracted one — this time an actual Landing-vs-Teacher-gate comparison was performed by `classmate-visual-qa`, not a same-page (Landing-internal) substitute.
+
+**Explicitly not done this session:** no product/application code was edited, read for modification, or reverted by this Supervisor session (only `git log`/`git show`/`git worktree list`/`git status`/a targeted `grep` were used, all read-only). No commit, push, or deploy performed by this Supervisor session (the commit/push described above were already done, by the prior implementation chain, before this state-recording session began). `WORK-0001` was not reopened, edited, or reinterpreted — confirmed via diff inspection that this session's edits touch only `WORK-0014` in `work-registry.json`. No new work item or conflict record created — this session only updated the two existing records the task specified.
