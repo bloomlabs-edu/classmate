@@ -161,18 +161,49 @@ Supervisor records `worktree: {path, branch}` on the work item once created;
 integration back to `main` is a distinct, Supervisor-coordinated step, not
 something an individual agent does unilaterally.
 
-## Explicitly deferred (do not build without a separate go-ahead)
+## Specialist/worker agents that now actually exist
 
-- **`classmate-visual-qa`** specialist agent — its intended scope (Bento
-  consistency, spacing, typography/Plus Jakarta Sans, overflow/clipping,
-  responsive behavior, contrast, visual hierarchy) is documented here so a
-  future session knows what it's for, but it is not created. It would report
-  findings to the Supervisor, not make product decisions unilaterally.
-- Any other worker/specialist agent.
-- Actual worktree creation/assignment/merge automation.
+This section used to say these were all "explicitly deferred." That's no
+longer accurate as of 2026-09-14 — update it again the next time it drifts
+rather than trusting it blindly.
+
+- **`classmate-visual-qa`** (`../agents/classmate-visual-qa.md`, ClassMate
+  repo) — read-only visual QA specialist. Scope: Bento consistency, spacing,
+  typography/Plus Jakarta Sans, overflow/clipping, responsive behavior,
+  contrast, visual hierarchy. Reports findings to the Supervisor; does not
+  edit code, decide priority, or commit/push/deploy. In active use since
+  WORK-0004 (see `reports/visual-qa-findings.md`).
+- **`learning-hub-visual-system`**
+  (`C:/Users/ASUS/OneDrive/Documents/GitHub/learning-hub/.claude/agents/
+  learning-hub-visual-system.md`, **Learning Hub repo, not this one**) —
+  owns building/maintaining Learning Hub's visual design system: tokens,
+  reusable primitives, and Learning Hub-specific visual patterns (concept
+  cards, activity cards, progress, statuses, curriculum nav, search, learning
+  states). Does not touch information architecture, Firestore schemas,
+  auth, or learning/scoring logic. Does not create a second Concept
+  Repository — a real one already exists in Learning Hub
+  (`app/repository/*.js`) alongside the legacy mission engine's own separate
+  concept model; this agent styles whichever one a given page already uses.
+  Does not commit/push/deploy — reports files changed, architectural impact,
+  visual-system additions, and unresolved inconsistencies before handing
+  off. Escalates architectural questions (e.g. anything that would touch
+  `CONFLICT-0001`'s "what does Concept mean" ambiguity) rather than deciding
+  them unilaterally — in practice this means it states the question plainly
+  and the invoking session is responsible for routing it here, to the
+  Supervisor, since the agent cannot invoke another agent directly itself.
+  Registered here on creation (2026-09-14); this Supervisor has not yet
+  actually coordinated a task with it.
+- Actual worktree creation/assignment/merge automation for the Supervisor's
+  own use is still deferred as a *Supervisor* capability, even though
+  individual orchestration runs (e.g. WORK-0011 through WORK-0014) have
+  since used ad hoc coding-agent worktrees successfully — the Supervisor
+  itself still does not have a standing policy that creates/assigns/merges
+  worktrees on its own initiative.
 - Any automation that commits, pushes, or deploys on the Supervisor's own
-  initiative.
-- Hooks or scheduled/autonomous overnight execution.
+  initiative — still deferred; every commit/push in this project's history
+  so far has been performed by the invoking session after explicit review,
+  never by the Supervisor agent itself.
+- Hooks or scheduled/autonomous overnight execution — still deferred.
 
 ## How to add work without disrupting active work
 

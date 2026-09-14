@@ -372,3 +372,24 @@ These are two clearly different blues. The cross-page divergence `CONFLICT-0002`
 **Not done:** No conflict-log entry was created — neither correction touches any active work item or creates a new overlap risk (`CONFLICT-0002` is already resolved; nothing here reopens it). `decisions/decisions-log.md` was not touched — no product/architectural decision was made (only rejected candidates). No product code was modified in either repo. No commit, push, or deploy performed by this recording step — handled separately, per instruction.
 
 ---
+
+## REPORT-0018 — Created and registered the `learning-hub-visual-system` agent
+
+- **Date:** 2026-09-14
+- **Session type:** Agent creation + Supervisor documentation update. No product code touched in either repo; this is infrastructure/documentation, not an implementation task.
+
+**Task:** Per the user's explicit brief, create a new repo-scoped custom agent for Learning Hub responsible for auditing and building a centralized visual design system (tokens, primitives, Learning Hub-specific patterns, documentation, a small validation surface), while preserving existing functionality/data architecture and never creating a duplicate Concept Repository.
+
+**What was created:** `learning-hub/.claude/agents/learning-hub-visual-system.md` — a new agent definition (`tools: Read, Write, Edit, Glob, Grep, Bash`; unlike `classmate-visual-qa` or `classmate-supervisor`, this agent DOES implement — it writes token/primitive/pattern files and documentation — but is explicitly instructed never to commit/push/deploy, mirroring how coding-agent worktree work has been integrated by the invoking session throughout this project's history rather than by agents themselves).
+
+**A real mistake was caught and corrected before finishing, not after:** an early draft of the agent file, read literally off the user's brief, implied Learning Hub currently has no Concept Repository at all — only the legacy mission engine's own embedded `LESSON_DATA.concepts` array (documented in `docs/CONCEPT_PROGRESS_ARCHITECTURE.md`). Direct inspection of `docs/LEARNING_HUB_ARCHITECTURE_CURRENT_STATE.md` showed this was wrong: a real, already-implemented, Firestore-backed Concept Repository already exists (`app/repository/*.js` + `repository-ui.js`, "Phase 1 onward" — global Concepts, Resources, Learning Checks, a Contributor Workspace), bridged (not merged) with the legacy engine's own separate concept model. "Do not create a Concept Repository" actually means "don't build a second, competing one" — the agent file was corrected to say this explicitly, name both existing systems, and instruct the agent to style whichever one a given page already uses rather than inventing a unified model. This directly touches `CONFLICT-0001` (the cross-project "what does Concept mean" ambiguity) — the corrected agent file explicitly tells the new agent not to attempt to resolve that ambiguity as part of visual work.
+
+**Also verified directly (not assumed) before writing the agent's "ground truth" section:** `app/style.css` (~950 lines) is Learning Hub's one stylesheet, zero CSS custom properties/tokens exist anywhere in it today, the typeface is Poppins (not ClassMate's Plus Jakarta Sans — deliberately called out so the new agent doesn't cross-contaminate the two products' type identities), and `app/subjects/lets-get-social/theme.css` exists but is empty (a scaffold, not yet real duplicated styling — flagged as a pattern to watch, not a problem to fix today).
+
+**Recorded:**
+- `WORK-0016` — new work-registry entry (`worker_type: AGENT`, `status: "completed"`, covers only the agent's creation/registration, not any actual visual-system work — none has been performed yet). `next_id` advanced 16 → 17.
+- `.claude/supervisor/README.md` — the "Explicitly deferred" section (stale since `classmate-visual-qa` has been real and in active use since WORK-0004) was corrected to a new "Specialist/worker agents that now actually exist" section, documenting both `classmate-visual-qa` and the new `learning-hub-visual-system` — including the latter's file location (in the `learning-hub` repo, not this one), scope, and the standing instruction that it escalates architectural-weight questions to the Supervisor rather than deciding them, even though it cannot invoke the Supervisor agent directly itself.
+
+**Not done:** No actual audit, token, primitive, or pattern work was performed — this session only created the agent and registered it. Like `classmate-visual-qa` before it, `learning-hub-visual-system` cannot be invoked as a real custom agent type until a fresh session loads Learning Hub's `.claude/agents/` directory (the same hot-load limitation already documented in `WORK-0004`'s notes). No commit, push, or deploy performed in either repo by this session — handled separately, per this project's established pattern.
+
+---
