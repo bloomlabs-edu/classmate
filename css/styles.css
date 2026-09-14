@@ -5327,7 +5327,7 @@ button.wizard-checklist__row:hover {
    teacher's own customizable accent color, not a fixed brand constant,
    and this screen renders before any teacher/accent color is known). */
 .login-view__title-class {
-  color: #1565c0;
+  color: #5ea5d9;
 }
 .login-view__title-mate {
   color: #ff9b65;
