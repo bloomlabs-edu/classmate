@@ -90,18 +90,46 @@ function createJourneyCard({ icon, category, title, description, buttonLabel, on
   // default primary-blue button styling, which is tied to each
   // teacher's personal accent-color preference (see
   // services/accentColorService.js) and would otherwise make this
-  // pre-login landing screen's buttons vary per teacher. Teacher's
-  // button color matches the landing title's own hardcoded blue (see
-  // styles.css's .landing-view__title-class) and the Teacher icon
-  // badge above it; Student's button stays the bolder ff9b65 its icon
-  // badge doesn't use, per this app's CHANGELOG.
-  const categoryButtonColor = ICON_CATEGORIES[category]?.button;
+  // pre-login landing screen's buttons vary per teacher.
+  //
+  // Deliberately NOT ICON_CATEGORIES[category].button for 'teacher':
+  // that config's teacher tint (#5ea6da, the "Ocean" accent-color
+  // default) is meant for in-app icon badges, not this fixed brand
+  // treatment — this screen has its own fixed pairing instead, so its
+  // "Class"/button/icon all agree with each other and with the
+  // wordmark, regardless of what any signed-in teacher later picks as
+  // their personal accent. #5ea5d9 per explicit browser-feedback
+  // instruction (round 2, 2026-09-11) — a lighter shade than the
+  // #1565C0 this used round 1, confirmed against a screenshot as too
+  // dark. Note this is intentionally NOT the same value as Ocean's
+  // #5ea6da above, even though the two are visually close — a
+  // deliberate, explicitly-specified brand constant, not a reference to
+  // that accent-color preset. Student's stays ICON_CATEGORIES-driven
+  // since that value (#ff9b65) already matches the brand orange exactly
+  // and this feedback round explicitly said not to touch it.
+  const LANDING_BRAND_COLOR = { teacher: '#5ea5d9', student: ICON_CATEGORIES.student?.button };
+  const categoryButtonColor = LANDING_BRAND_COLOR[category];
   if (categoryButtonColor) {
     button.style.backgroundColor = categoryButtonColor;
     button.style.borderColor = categoryButtonColor;
-    button.style.color = '#ffffff';
+    // White text was correct against the old, much darker #1565C0
+    // (5.49:1) and still is against Student's #ff9b65. #5ea5d9 is
+    // considerably lighter — computed contrast with white text is only
+    // ~2.67:1, well under the 4.5:1 WCAG AA floor for text this size.
+    // Dark ink text against #5ea5d9 computes to ~6.5:1, so Teacher's
+    // button gets dark text instead of silently shipping a contrast
+    // failure just to keep both buttons visually identical.
+    button.style.color = category === 'teacher' ? '#1a1a1a' : '#ffffff';
   }
   button.addEventListener('click', onSelect);
+
+  // The Teacher icon badge otherwise reads its glyph color from the
+  // same ICON_CATEGORIES.teacher tint the button used to — overridden
+  // here for the same reason, so the badge doesn't end up a different
+  // blue from the button directly below it.
+  if (category === 'teacher') {
+    iconEl.style.color = '#5ea5d9';
+  }
 
   card.append(iconEl, titleEl, descriptionEl, button);
   return card;

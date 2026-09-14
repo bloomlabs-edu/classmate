@@ -314,6 +314,15 @@ function createClassroomSwitcherControl({ currentClassroom, classroomList, onSwi
   toggleButton.setAttribute('aria-expanded', 'false');
   toggleButton.title = 'Switch classroom';
 
+  // A small leading icon, not just text+chevron — the browser-feedback
+  // ask was for this control to carry enough visual weight to be
+  // noticed on its own, without becoming a large/dominant button. An
+  // icon reads as "this is a wayfinding control" at a glance, the way
+  // a workspace switcher in other tools usually has one.
+  const icon = createIcon('chalkboard-easel', { size: 15 });
+  icon.classList.add('user-bar__classroom-switcher-icon');
+  toggleButton.appendChild(icon);
+
   const label = document.createElement('span');
   label.className = 'user-bar__classroom-switcher-label';
   label.textContent = getDisplayName(currentClassroom);

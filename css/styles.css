@@ -502,8 +502,18 @@ select:focus-visible,
     font-size: 3rem;
   }
 }
+/* Browser-feedback pass round 2 (2026-09-11) — round 1 reverted this to
+   #1565C0 (the classmate-icon.svg monogram / login-view__title-class
+   blue), on the reasoning that it matched an old CHANGELOG-verified
+   value. Explicit follow-up feedback: #1565C0 is too dark for this
+   specific brandmark/portal-selection treatment — the desired shade
+   here is #5ea5d9, confirmed against a browser screenshot. Scoped
+   deliberately to just this screen's title/Teacher Portal button/icon
+   (see LandingView.js's own LANDING_BRAND_COLOR) — not
+   login-view__title-class or any other blue in the app, per explicit
+   instruction not to change every occurrence of blue site-wide. */
 .landing-view__title-class {
-  color: #5ea6da;
+  color: #5ea5d9;
 }
 .landing-view__title-mate {
   color: #ff9b65;
@@ -5420,25 +5430,29 @@ button.wizard-checklist__row:hover {
 .user-bar__classroom-switcher-button {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
-  max-width: 160px;
-  /* Browser-feedback pass (2026-09-11) — a translucent white wash over
-     the dark chrome strip still read as too low-contrast to register
-     as a control ("blends into the dark top navigation bar"). A solid,
-     slightly-lighter slate surface (not a colour, not a badge fill)
-     reads as its own distinct navigation surface at a glance, the way
-     a real product nav's classroom/workspace switcher would. */
+  gap: 0.4rem;
+  max-width: 180px;
+  /* Browser-feedback pass round 2 (2026-09-11) — the solid slate surface
+     from the previous round had enough contrast but still read as "a
+     relatively small pill," easy to skim past. A touch more padding and
+     a soft outer shadow (depth, not colour) give it the raised,
+     obviously-interactive weight of a workspace switcher, and the
+     leading icon (below) adds a wayfinding cue text alone didn't — all
+     without growing it into a competing button next to the user's name
+     and Sign Out. */
   background-color: #3a3f47;
-  border: 1px solid #5b6472;
+  border: 1px solid #6b7684;
   border-radius: var(--radius-pill);
-  padding: 0.3rem 0.7rem;
+  padding: 0.4rem 0.85rem;
   color: var(--color-chrome-text);
   cursor: pointer;
-  transition: background-color var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: background-color var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard);
 }
 .user-bar__classroom-switcher-button:hover:not(:disabled) {
   background-color: #454b55;
-  border-color: #6b7684;
+  border-color: #7d8998;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35);
 }
 .user-bar__classroom-switcher-button:focus-visible {
   outline: 2px solid var(--color-yellow);
@@ -5448,10 +5462,15 @@ button.wizard-checklist__row:hover {
   cursor: default;
   background-color: #2e333a;
   border-color: #454b54;
+  box-shadow: none;
   opacity: 0.85;
 }
+.user-bar__classroom-switcher-icon {
+  flex-shrink: 0;
+  opacity: 0.9;
+}
 .user-bar__classroom-switcher-label {
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   font-weight: var(--font-weight-bold);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5500,7 +5519,7 @@ button.wizard-checklist__row:hover {
 }
 @media (max-width: 960px) {
   .user-bar__classroom-switcher-button {
-    max-width: 110px;
+    max-width: 125px;
   }
 }
 
@@ -16943,7 +16962,14 @@ button.recognition-bento__hero-winner-name {
    above it (see renderPeriodCard()) — deliberately much quieter than
    the default .timetable-period-card__topic: smaller, muted, never
    bold, and wraps safely rather than ever truncating/clipping a long
-   Unit name. */
+   Unit name.
+   NOTE: this supersedes an earlier, simpler round-3 draft of this
+   same idea (plain bold concept text, no box) that was still pending
+   browser approval when this task started — the round-3 draft never
+   gave concepts their own clickable box identity, which this task's
+   own requirements explicitly call for, so this version (already
+   browser-verified) replaces it rather than leaving two conflicting
+   declarations for the same selectors. */
 .timetable-period-card__topic--secondary {
   font-size: 0.7rem;
   font-weight: 400;
@@ -18779,6 +18805,10 @@ button.recognition-bento__hero-winner-name {
 
   .timetable-period-card__topic {
     font-size: 1.05rem;
+  }
+
+  .timetable-period-card__concept-line {
+    font-size: 0.95rem;
   }
 }
 

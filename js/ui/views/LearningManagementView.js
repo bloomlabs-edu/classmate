@@ -320,7 +320,21 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
         // A different Subject may have been opened while this was in
         // flight — don't let a stale response overwrite it.
         if (selectedSubject !== subject) return;
-        selectedSubjectCurriculumState = curriculumIndex ? { status: 'ready', curriculumIndex } : { status: 'none' };
+        // Root-cause fix (2026-09-11 second browser pass) — getIndex()
+        // reads services/curriculumIndexRepository.js's own IndexedDB,
+        // which is local to THIS browser and never synced. A null
+        // result here means "linkedCurriculumIndexId is genuinely set,
+        // but that record isn't in this browser's IndexedDB" — a real,
+        // existing link the app just can't resolve locally, not the
+        // same thing as `!subject.linkedCurriculumIndexId` above. This
+        // used to collapse into the same {status:'none'} as a Subject
+        // that was never linked at all, which is exactly why "no
+        // Curriculum Index linked" could show for a Subject that
+        // actually had one. See ui/components/CurriculumMetadataLine.js's
+        // own header comment for the full story.
+        selectedSubjectCurriculumState = curriculumIndex
+          ? { status: 'ready', curriculumIndex }
+          : { status: 'missing' };
         rerender();
       })
       .catch((error) => {
@@ -1091,7 +1105,7 @@ function renderSubjectStep(subject, classroom, curriculumState, selectedPartName
   // real, always-inspectable state, not something that only becomes
   // worth showing once Units happen to exist.
   const metadataSlot = document.createElement('div');
-  renderCurriculumMetadataLine(metadataSlot, { curriculumState, hasUnits });
+  renderCurriculumMetadataLine(metadataSlot, { curriculumState, unitCount: subject.units.length });
   curriculumTile.appendChild(metadataSlot);
 
   const curriculumActionButton = document.createElement('button');
