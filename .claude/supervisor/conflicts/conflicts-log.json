@@ -11,14 +11,15 @@
         "WORK-0001",
         "WORK-0004",
         "WORK-0005",
-        "WORK-0006"
+        "WORK-0006",
+        "WORK-0013"
       ],
       "project": "classmate",
       "description": "classmate-visual-qa's first calibration pass flagged a wordmark color inconsistency (the 'Class' half of 'ClassMate' renders a different blue on Landing vs. the Teacher sign-in gate) on js/ui/views/LandingView.js, a file with active, uncommitted edits from the user's own separate work session (WORK-0001). It is unknown whether this finding describes something the user's in-progress edit already fixes, something it introduced, or something pre-existing and unrelated. Not investigated further, per the Supervisor's role of recording rather than resolving.",
       "detected_at": "2026-09-13",
       "resolution": null,
       "resolved_at": null,
-      "notes": "Do not treat this finding as a bug report against the user's in-progress work without checking with them first - the file is mid-edit and this may be moot, already-known, or unrelated to whatever they're changing. Reconfirmed by WORK-0005 (2026-09-13): the same wordmark color difference (Landing vs. Teacher sign-in gate) is visible identically at 1440px, 1024px, 768px, and 390px, i.e. it is not a responsive/viewport-dependent artifact. Still not investigated further and still not to be treated as a settled bug against the user's in-progress LandingView.js edit without checking with them first. Re-checked at WORK-0006 (2026-09-13): a request to re-run the same 4-route/4-viewport Visual QA scope was evaluated rather than re-delegated, since WORK-0001 affected files (including LandingView.js) were confirmed unchanged since WORK-0005 via git status. This conflict record therefore still stands unresolved and unchanged in substance — no new investigation of the wordmark color itself was performed."
+      "notes": "Do not treat this finding as a bug report against the user's in-progress work without checking with them first - the file is mid-edit and this may be moot, already-known, or unrelated to whatever they're changing. Reconfirmed by WORK-0005 (2026-09-13): the same wordmark color difference (Landing vs. Teacher sign-in gate) is visible identically at 1440px, 1024px, 768px, and 390px, i.e. it is not a responsive/viewport-dependent artifact. Still not investigated further and still not to be treated as a settled bug against the user's in-progress LandingView.js edit without checking with them first. Re-checked at WORK-0006 (2026-09-13): a request to re-run the same 4-route/4-viewport Visual QA scope was evaluated rather than re-delegated, since WORK-0001 affected files (including LandingView.js) were confirmed unchanged since WORK-0005 via git status. This conflict record therefore still stands unresolved and unchanged in substance — no new investigation of the wordmark color itself was performed. Reconfirmed a third time, independently, by WORK-0013 (2026-09-13, Bento-consistency-specific audit pass): the same 'Class' half of 'ClassMate' wordmark color difference (Landing vs. Teacher sign-in gate) reproduces identically at all 4 widths, labeled there as FINDING-A01 (WARNING, OBSERVED). This is the same underlying issue, not a new one - cross-checked against this record before filing. Status remains 'potential' and unresolved; still not to be treated as a settled bug against WORK-0001's in-progress LandingView.js edit without checking with the user first."
     },
     {
       "id": "CONFLICT-0001",

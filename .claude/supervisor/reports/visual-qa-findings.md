@@ -77,3 +77,45 @@ This was 4 static, low-complexity, no-auth pages at 4 widths each — a straight
 - **Determination:** No new `classmate-visual-qa` run was delegated. `WORK-0005` already covered this exact scope (all 4 routes x all 4 viewports) as the real agent type, with 0 new breakage and the same 3 findings reconfirmed at every width (see FINDINGS-0002 above). `git status` at request time showed the relevant files unchanged since that run — `WORK-0001`'s affected files (including `LandingView.js`) were in the same uncommitted state, and no other route-relevant files had changed. A third identical pass over unchanged rendered output was judged to produce no new information.
 - **No new findings.** This entry exists purely as a record of the evaluation, not a new inspection. FINDINGS-0001/FINDINGS-0002 remain the current, complete findings for this scope.
 - **Standing note:** this is not a permanent skip rule — see `WORK-0006` notes in `work-registry.json` for what would trigger a fresh pass (WORK-0001 committed/changed, expanded scope, or meaningful time elapsed).
+
+## FINDINGS-0003 — Third pass: Bento-consistency-specific audit (4 no-auth routes, 4 viewports, new report format)
+
+- **Date:** 2026-09-13
+- **Work item:** `WORK-0013`
+- **Run as:** the real `classmate-visual-qa` custom agent type.
+- **Scope:** same 4 zero-auth routes as `WORK-0004`/`WORK-0005` — `#/` (Landing), `#/teacher` signed out (Login gate), `#/student` (Student portal entry), `#/visitor` no code (Visitor Access) — at 1440px, 1024px, 768px, 390px. Before running, the agent checked the codebase itself (grepped for `connectAuthEmulator`/demo-mode/mock-auth wiring in `js/services/firebaseApp.js` and elsewhere) and confirmed no safe local/dev auth path exists to reach authenticated screens (dashboard, curriculum, recognition, timetable, etc.) without live production credentials — so "portal-wide" in the originating request could not actually be achieved this pass either; this is a re-verified scope limitation, not a shortcut.
+- **Mechanism:** Playwright + Chromium against a local `http-server` (port 8933, stopped afterward) — 16 fresh full-page screenshots (4 routes x 4 viewports). Console/`pageerror` listeners attached (zero fired) and `scrollWidth`/`clientWidth` compared (equal, no overflow) at all 16 combinations.
+- **Why this was run rather than treated as a `WORK-0006`-style duplicate skip:** the underlying routes/viewports are identical to `WORK-0005`, and the working tree has not changed since (confirmed via `git status` — same `WORK-0001` files, same untracked `docs/design/`), but the *requested report format* differs materially: a Bento-specific consistency lens, explicit OBSERVED/INFERRED/UNKNOWN confidence framing, systemic-vs-isolated framing, and 6 explicit Bento-assessment questions, none of which `WORK-0004`/`WORK-0005` were asked to produce. Substantive findings reproduced identically to the prior two passes (no drift, as expected since nothing in scope has changed) — this pass's value is the new analytical lens and framing, not new defects.
+
+### Findings
+
+- **FINDING-A01 (WARNING, OBSERVED).** The wordmark "Class" (of "ClassMate") renders in a different blue on Landing versus the Teacher sign-in gate, reproducing identically at all 4 widths. This is the same underlying issue already tracked as `CONFLICT-0002` (first flagged at `WORK-0004`, reconfirmed at `WORK-0005`) — now a third independent confirmation, not a new finding. Overlaps `js/ui/views/LandingView.js`, a `WORK-0001` file. `CONFLICT-0002` updated to record this as a 3rd confirmation; its severity/status/resolution were not changed.
+- **FINDING-A02 (WARNING, OBSERVED).** The classroom-code input placeholder "E.G. ABCD12" (shared component, used by both Student entry and Visitor Access) renders in two unrelated colors within the same placeholder string — "E.G." in amber, "ABCD12" in green. Substantively the same placeholder-styling issue first noted at `WORK-0004`/`WORK-0005` (there described as multi-color per character/group), now restated with specific color values and OBSERVED framing. Does not touch any `WORK-0001` file.
+- **FINDING-A03 (INFO, OBSERVED).** Inconsistent inline-highlight scope between Student entry's "your" and Visitor Access's "your colleague" in near-identical subtitle copy. Same underlying issue as previously reported at `WORK-0004`/`WORK-0005`, restated with OBSERVED framing. Does not touch any `WORK-0001` file.
+- **FINDING-A04 (INFO, OBSERVED).** Large, unstructured empty space below content on all 4 screens, most pronounced at 1440/1024px on the Teacher gate and Visitor Access. This is the same whitespace-balance characteristic already noted at `WORK-0005` (there explicitly recorded as "present and proportionally consistent... noted as a plain observation, not flagged as a defect"), now formally logged as an INFO-severity finding under the Bento-specific lens rather than a passing aside. Partially overlaps `LandingView.js` (one of the 4 screens exhibiting it); the other 3 screens involved (`LoginView.js`, student-portal onboarding, `VisitorAccessView.js`) are not `WORK-0001` files, and the characteristic itself is general/systemic across all 4 screens rather than localized to anything `WORK-0001` is actively changing.
+- **FINDING-A05 (INFO, OBSERVED, positive finding).** Zero console/page errors, zero horizontal overflow, clean responsive stacking/reflow across all 16 route x viewport combinations.
+
+### The agent's own 6 explicit answers (specialist's assessment, not a ratified product decision)
+
+1. Bento consistency assessment is necessarily bounded to these 4 entry/gate screens — it cannot speak to Dashboard/Curriculum/Recognition, which are exactly where "Bento" is most on display per the codebase's own Recognition redesign (`WORK-0009`).
+2. Strongest example of the Bento system: Landing's two portal-picker cards.
+3. Biggest inconsistencies: FINDING-A01 and FINDING-A02.
+4. Pages most needing attention: Teacher gate and Visitor Access (combines a hard finding with the emptiest layout).
+5. Overall assessment: "mostly one coherent system" — the two color inconsistencies (A01, A02) are what puncture that read.
+6. Prioritized list: A01 > A02 > A04 > A03 > A05.
+
+### Classification summary
+
+- **OBSERVED:** all 5 findings above, directly visible and reproduced screenshot-to-screenshot across all 4 widths; the "no breakage" / zero-overflow conclusion for all 16 combinations.
+- **INFERRED:** none this run.
+- **UNKNOWN:** none for the 4 inspected routes. Authenticated/data-rich routes remain out of reach and are not commented on here — same standing caveat as `WORK-0004`/`WORK-0005`.
+
+### Conflict-log disposition (Supervisor judgment, recorded per the Safety Principle rather than left implicit)
+
+- **FINDING-A01:** already covered by `CONFLICT-0002` — updated to add `WORK-0013` as a 3rd independent confirmation. No new conflict entry.
+- **FINDING-A02, FINDING-A03:** do not touch any `WORK-0001` file — no overlap with active work exists to record. No conflict entry.
+- **FINDING-A04:** touches `LandingView.js` as 1 of 4 screens exhibiting the same characteristic, but (a) it is INFO severity, (b) it is a general/systemic layout characteristic present identically across all 4 screens (not localized to whatever `WORK-0001` is actually changing in `LandingView.js`), and (c) it was already observed in identical substance at `WORK-0005` without prompting a conflict entry then. Judged not to constitute a new, distinguishable overlap risk beyond what already exists in the record — no new conflict entry created for it. This is a judgment call, recorded here rather than silently applied, so a future session (or the user) can revisit it if they read the registry's "record even at INFO" principle more strictly.
+
+### Not done
+
+No implementation work item created for any finding — this is an audit-only pass. No product code, `docs/design/`, or `WORK-0001` file was modified. No commit, push, or deploy performed.
