@@ -17269,24 +17269,23 @@ button.recognition-bento__hero-winner-name {
   align-items: flex-start;
 }
 
-/* Completed vs in-progress is never color alone — solid vs dashed
-   border (below) is the redundant, always-visible cue, readable even
-   once ellipsis has clipped away the ✓/→ text mark on a short
-   (single-day) strip. */
+/* ROUND (2026-09-15) — every strip gets the same clean solid border
+   now, regardless of completion status (see the render function's own
+   header comment in ui/views/TimetableView.js for why the previous
+   dashed/solid distinction was removed rather than kept as a second
+   cue). Border color itself comes from getTimetableSubjectBorder() — a
+   toned-down mix of the subject's color, not the full-strength value,
+   so it reads as understated rather than a saturated outline. */
 .timetable-view__calendar-strip {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  border: 1px dashed;
+  border: 1px solid;
   border-radius: 8px;
   padding: 3px var(--space-2);
   font-size: 0.72rem;
   font-weight: var(--font-weight-medium, 600);
   color: var(--color-ink);
-}
-
-.timetable-view__calendar-strip--completed {
-  border-style: solid;
 }
 
 /* A strip flush against its own edge (no rounded cap, border style

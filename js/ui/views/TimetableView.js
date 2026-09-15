@@ -60,7 +60,7 @@ import { hydrateConceptRecordsForConcepts } from '../../services/conceptRecordHy
 import { getFeedbackEligibleConceptIds, resetLessonForUnitChange } from '../../models/Lesson.js';
 import { getWeeklyPlanReadiness } from '../../services/weeklyPlanValidationService.js';
 import { getGradeLabelForClassroom } from '../../services/classroomService.js';
-import { getTimetableSubjectColor, getTimetableSubjectWash } from '../../config/timetableSubjectColors.js';
+import { getTimetableSubjectColor, getTimetableSubjectWash, getTimetableSubjectBorder } from '../../config/timetableSubjectColors.js';
 import {
   getWeekRange,
   shiftDateKey,
@@ -1232,12 +1232,21 @@ export async function renderTimetableView(container, { classroom, currentUser, p
    * subjects; harmless in a specific-subject scope, where every Unit's
    * own subjectId is simply the one selected filter value anyway.
    * Soft subject-tinted fill (getTimetableSubjectWash(), the same
-   * helper period cards already use) + a subject-colored border, never
-   * a saturated solid block. Completion is communicated redundantly —
-   * never color alone — via the ✓/→ mark, a solid vs dashed border,
-   * AND the flush-vs-rounded continuation edges; a strip clipped by
-   * ellipsis on a narrow (short-span) week still reads its status from
-   * the border/edges alone.
+   * helper period cards already use) + a subject-colored solid border
+   * (getTimetableSubjectBorder() — a toned-down version of the same
+   * subject color, not the full-strength `text` value, so it reads as
+   * understated rather than a saturated outline), never a saturated
+   * solid block.
+   *
+   * ROUND (2026-09-15) — every strip now gets the same solid border
+   * regardless of completion; the border used to switch to dashed for
+   * an in-progress Unit specifically so completion status survived
+   * even when ellipsis clipped the ✓/→ mark on a narrow (short-span)
+   * week. That redundant fallback is gone now, per explicit product
+   * direction — completion is communicated by the ✓/→ mark and this
+   * element's own `title` tooltip only. The flush-vs-rounded
+   * continuation edges (below) are a separate concern (a segment
+   * continuing past this week/month), unaffected by this change.
    *
    * The subject name itself is only prefixed onto the strip's own
    * label in "All Subjects" scope (state.calendarSubjectFilter is
@@ -1249,12 +1258,11 @@ export async function renderTimetableView(container, { classroom, currentUser, p
   function renderCalendarUnitStrip(unit, segment, range) {
     const strip = document.createElement('div');
     strip.className = 'timetable-view__calendar-strip';
-    if (unit.isCompleted) strip.classList.add('timetable-view__calendar-strip--completed');
     if (segment.continuesBefore) strip.classList.add('timetable-view__calendar-strip--continues-before');
     if (segment.continuesAfter) strip.classList.add('timetable-view__calendar-strip--continues-after');
 
     strip.style.backgroundColor = getTimetableSubjectWash(unit.subjectId);
-    strip.style.borderColor = getTimetableSubjectColor(unit.subjectId).text;
+    strip.style.borderColor = getTimetableSubjectBorder(unit.subjectId);
 
     const isAllSubjects = !state.calendarSubjectFilter;
     const subjectPrefix = isAllSubjects ? `${timetableDisplayService.resolveSubjectTitle(classroom, unit.subjectId)} · ` : '';

@@ -58,3 +58,22 @@ export function getTimetableSubjectWash(subjectId) {
   const color = getTimetableSubjectColor(subjectId);
   return `color-mix(in srgb, ${color.text} 8%, var(--color-surface))`;
 }
+
+/**
+ * A solid, subject-colored border that reads as understated rather
+ * than a saturated brand-color outline — used by the Timetable
+ * calendar's Unit progression strips (ui/views/TimetableView.js's
+ * renderCalendarUnitStrip()), which sit on top of getTimetableSubjectWash()'s
+ * own fainter background fill. The full-strength `text` color alone
+ * was too heavy/high-contrast for a border once every strip switched
+ * from a dashed outline to a solid one (2026-09-15 browser-feedback
+ * round); this keeps the correct per-subject hue (still clearly blue
+ * for Science, pink/red for Social Science, etc.) while toning it down
+ * — a stronger mix than the 8% wash (a border needs more presence than
+ * a background fill) but well short of the fully saturated `text`
+ * value.
+ */
+export function getTimetableSubjectBorder(subjectId) {
+  const color = getTimetableSubjectColor(subjectId);
+  return `color-mix(in srgb, ${color.text} 40%, var(--color-surface))`;
+}
