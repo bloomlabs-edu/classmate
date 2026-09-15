@@ -112,14 +112,14 @@ function createJourneyCard({ icon, category, title, description, buttonLabel, on
   if (categoryButtonColor) {
     button.style.backgroundColor = categoryButtonColor;
     button.style.borderColor = categoryButtonColor;
-    // White text was correct against the old, much darker #1565C0
-    // (5.49:1) and still is against Student's #ff9b65. #5ea5d9 is
-    // considerably lighter — computed contrast with white text is only
-    // ~2.67:1, well under the 4.5:1 WCAG AA floor for text this size.
-    // Dark ink text against #5ea5d9 computes to ~6.5:1, so Teacher's
-    // button gets dark text instead of silently shipping a contrast
-    // failure just to keep both buttons visually identical.
-    button.style.color = category === 'teacher' ? '#1a1a1a' : '#ffffff';
+    // Both portal buttons use white text, matching Student's #ff9b65
+    // pairing. Teacher's #5ea5d9 computes to ~2.67:1 contrast with white
+    // (below the 4.5:1 WCAG AA floor for normal text) — round 2 of
+    // browser feedback swapped this to dark ink to fix that, but round 3
+    // explicitly asked for white back for visual consistency with
+    // Student, accepting the contrast tradeoff. If this needs revisiting,
+    // darken the background rather than the text.
+    button.style.setProperty('color', '#ffffff', 'important');
   }
   button.addEventListener('click', onSelect);
 
