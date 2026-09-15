@@ -222,8 +222,30 @@ export async function saveExplicitly(classroom) {
  * Guarded by a Firestore transaction (services/workspaceService.js's
  * repository.claimMigration), not localStorage, so two devices signing
  * in around the same time can't both run this and duplicate the upload.
+ *
+ * De-duplicated per uid at this level too, not just inside
+ * claimMigration(): claimMigration() only protects its own transaction
+ * from running twice, but if this whole function ran twice concurrently
+ * for the same uid, both calls would still see the transaction resolve
+ * to the same "you claimed it" result and both would re-run the legacy
+ * import loop below, duplicating classroom writes. Two overlapping
+ * calls for one uid happen in production when the auth-state listener
+ * fires more than once for a single sign-in (see
+ * services/authService.js's own diagnostic logging) — the fix is to
+ * only ever run one migration per uid at a time and let a second,
+ * overlapping caller just await the first's outcome.
  */
-async function migrateToSharedClassroomsIfNeeded(uid, displayName) {
+const migrationsInFlight = new Map(); // uid -> in-flight Promise
+
+function migrateToSharedClassroomsIfNeeded(uid, displayName) {
+  if (migrationsInFlight.has(uid)) return migrationsInFlight.get(uid);
+
+  const migrationPromise = runMigration(uid, displayName).finally(() => migrationsInFlight.delete(uid));
+  migrationsInFlight.set(uid, migrationPromise);
+  return migrationPromise;
+}
+
+async function runMigration(uid, displayName) {
   const claimed = await repository.claimMigration(uid);
   if (!claimed) return; // already migrated (by this device or another)
 
@@ -367,20 +389,42 @@ export async function flushPendingSaves() {
 
 /**
  * Call once per sign-in, with the teacher's uid and display name (their
- * safe profile — see services/authService.js). Runs both migration
- * stages (each a no-op after the first time), then subscribes to their
- * classroomRefs, opening/closing one classroom listener per reference as
- * that list changes. `onChange` fires every time anything in the
- * in-memory classroom list changes — a ref appearing/disappearing, or
- * any classroom document updating, from this device or another — so the
- * caller can re-render without the user ever needing to refresh.
+ * safe profile — see services/authService.js). Subscribes to their
+ * classroomRefs immediately, opening/closing one classroom listener per
+ * reference as that list changes; `onChange` fires every time anything
+ * in the in-memory classroom list changes — a ref appearing/
+ * disappearing, or any classroom document updating, from this device or
+ * another — so the caller can re-render without the user ever needing
+ * to refresh.
+ *
+ * The one-time legacy-data migration (each stage a no-op after the
+ * first time) runs in the background rather than being awaited here —
+ * it used to block this function, and by extension the whole app shell
+ * (see main.js's `workspaceLoading` gate), on a rare, non-critical
+ * bootstrap step. A teacher who has nothing left to migrate (the
+ * overwhelming majority of sign-ins) paid no real cost for that, but it
+ * meant any hiccup in that one background operation — including a
+ * genuine Firestore SDK fault, not just a network error — could keep
+ * the whole app stuck on a loading screen or surface as an unhandled
+ * rejection. Migration failures are still logged loudly, never
+ * swallowed; they simply don't block classroomRefs from loading, and
+ * they self-heal next launch since claimMigration()'s transaction only
+ * marks an account migrated once it actually completes.
  */
 export async function initForUser(uid, displayName, onChange, onError) {
   logPersistenceEvent('workspaceService.initForUser() executing', { uid });
   stopListening();
   onChangeCallback = onChange;
 
-  await migrateToSharedClassroomsIfNeeded(uid, displayName);
+  migrateToSharedClassroomsIfNeeded(uid, displayName).catch((error) => {
+    console.error('[workspaceService] Legacy-data migration failed (will retry next launch):', error);
+    logPersistenceEvent('Legacy-data migration failed', {
+      uid,
+      errorName: error?.name,
+      errorCode: error?.code,
+      errorMessage: error?.message,
+    });
+  });
 
   unsubscribeRefs = repository.subscribeToClassroomRefs(
     uid,

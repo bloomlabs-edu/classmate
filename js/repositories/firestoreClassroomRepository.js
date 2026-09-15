@@ -98,6 +98,12 @@ class FirestoreClassroomRepository extends ClassroomRepository {
   constructor() {
     super();
     this.db = null;
+    // uid -> in-flight claimMigration() promise. See claimMigration() below
+    // for why this exists: without it, two overlapping calls for the same
+    // uid (e.g. an auth-state listener firing twice in a row during
+    // startup) would open two concurrent runTransaction() calls against
+    // the exact same users/{uid} document.
+    this._migrationClaims = new Map();
   }
 
   _getDb() {
@@ -426,17 +432,35 @@ class FirestoreClassroomRepository extends ClassroomRepository {
     return snapshot.docs.map((docSnapshot) => docSnapshot.data());
   }
 
+  /**
+   * De-duplicated per uid: Firestore's own transaction retry machinery
+   * has been observed (production, Android Chrome, 2026-09) to throw
+   * "FIRESTORE INTERNAL ASSERTION FAILED: Unexpected state" out of
+   * TransactionRunner when two runTransaction() calls race against the
+   * same document — exactly what happens if this is invoked twice
+   * concurrently for one uid (see services/authService.js's own
+   * diagnostic logging, which had already caught onAuthStateChanged
+   * firing more than once for a single sign-in). Rather than trying to
+   * make the SDK tolerate that race, this just never creates it: a
+   * second call for a uid already in flight gets the same promise
+   * instead of starting a second transaction.
+   */
   async claimMigration(uid) {
+    if (this._migrationClaims.has(uid)) return this._migrationClaims.get(uid);
+
     const db = this._getDb();
     const userDocRef = this._userDoc(uid);
-    return runTransaction(db, async (transaction) => {
+    const claimPromise = runTransaction(db, async (transaction) => {
       const snapshot = await transaction.get(userDocRef);
       if (snapshot.exists() && snapshot.data().sharedClassroomsMigrated) {
         return false;
       }
       transaction.set(userDocRef, { sharedClassroomsMigrated: true }, { merge: true });
       return true;
-    });
+    }).finally(() => this._migrationClaims.delete(uid));
+
+    this._migrationClaims.set(uid, claimPromise);
+    return claimPromise;
   }
 
   async getLegacyClassroomsOnce(uid) {
