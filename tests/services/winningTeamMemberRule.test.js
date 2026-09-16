@@ -237,6 +237,81 @@ test('Case 10 — the rule only ever sees a cycle\'s FINAL frozen totals; an ext
   assert.equal(awards[0].standing, 12);
 });
 
+// -----------------------------------------------------------------
+// No-op cycle guard — production incident (classroom "Bloom Force 19",
+// 2026-08-17): 9 Reset Scoreboard clicks with zero scoring activity in
+// between produced 9 phantom cycles, each with every real team's total
+// at exactly 0. Under the tie/zero-standing rules alone, that ties
+// every real team as a "winner" and qualifies every student (standing
+// 0) — inflating levels by 9 for every student in the classroom the
+// moment backfill ran. These tests lock in the fix: a cycle only
+// counts as a no-op when EVERY real team is at exactly 0; an
+// individual student's own 0 standing (Case 9 above) is untouched.
+// -----------------------------------------------------------------
+test('a cycle where every real team is at exactly 0 produces no winners and no awards at all', () => {
+  const cycle = {
+    id: 'phantom-1',
+    teams: [
+      team('A', 'Alpha', 0, [student('s1', 'Ann', 0)]),
+      team('B', 'Bravo', 0, [student('s2', 'Ben', 0)]),
+      team('C', 'Charlie', 0, [student('s3', 'Cas', 0)]),
+    ],
+  };
+  const { winningTeams, awards } = evaluateWinningTeamMember(cycle);
+  assert.deepEqual(winningTeams, []);
+  assert.deepEqual(awards, []);
+});
+
+test('a genuine cycle where every real team happens to tie at a NON-zero total still awards normally (the guard is exact-zero only, not "all tied")', () => {
+  const cycle = {
+    id: 'real-tie-nonzero',
+    teams: [
+      team('A', 'Alpha', 5, [student('s1', 'Ann', 5)]),
+      team('B', 'Bravo', 5, [student('s2', 'Ben', 5)]),
+    ],
+  };
+  const { winningTeams, awards } = evaluateWinningTeamMember(cycle);
+  assert.deepEqual(winningTeams.map((t) => t.id).sort(), ['A', 'B']);
+  assert.deepEqual(awards.map((a) => a.studentId).sort(), ['s1', 's2']);
+});
+
+test('a cycle where only SOME real teams are at 0 (real differentiation exists) is not treated as a no-op', () => {
+  const cycle = {
+    id: 'partial-zero',
+    teams: [
+      team('A', 'Alpha', 0, [student('s1', 'Ann', 0)]),
+      team('B', 'Bravo', 7, [student('s2', 'Ben', 7)]),
+    ],
+  };
+  const { winningTeams, awards } = evaluateWinningTeamMember(cycle);
+  assert.deepEqual(winningTeams.map((t) => t.id), ['B']);
+  assert.deepEqual(awards.map((a) => a.studentId), ['s2']);
+});
+
+test('backfill-style processing of the real incident shape: 9 no-op archives sandwiched between 2 genuine ones yields LV 2, not LV 11', () => {
+  const genuineBefore = archive(1, [
+    team('A', 'Alpha', 19, [student('nav', 'Naveena', 2)]),
+    team('B', 'Bravo', 6, [student('other', 'Other', 6)]),
+  ]);
+  const noOpArchives = Array.from({ length: 9 }, (_, i) =>
+    archive(i + 2, [
+      team('A', 'Alpha', 0, [student('nav', 'Naveena', 0)]),
+      team('B', 'Bravo', 0, [student('other', 'Other', 0)]),
+    ])
+  );
+  const genuineAfter = archive(11, [
+    team('A', 'Alpha', 5, [student('nav', 'Naveena', 5)]),
+    team('B', 'Bravo', -6, [student('other', 'Other', -6)]),
+  ]);
+
+  const allEvents = [genuineBefore, ...noOpArchives, genuineAfter].flatMap((a) => buildEventsForCycle(a, { source: 'backfill' }));
+  const naveenaEvents = allEvents.filter((e) => e.studentId === 'nav');
+  const summaries = summarizeStudentBadges(naveenaEvents);
+
+  assert.equal(naveenaEvents.length, 2, 'only the 2 genuine cycles should have produced an event for Naveena, not all 11');
+  assert.equal(summaries[0].level, 2);
+});
+
 test('getTeamAchievementHistory: counts a cycle as a team win even if every member was individually ineligible', () => {
   const archives = [
     archive(1, [team('A', 'Team A', 10, [student('s1', 'Ann', -5)])]), // A wins the cycle, but its only member is ineligible

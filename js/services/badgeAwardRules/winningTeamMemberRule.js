@@ -58,6 +58,27 @@
  *      cycle is >= 0. A standing of exactly 0 qualifies; any negative
  *      standing does not, regardless of team.
  *
+ * NO-OP CYCLE GUARD (added 2026-09, production incident) — a cycle
+ * where every real team's total is exactly 0 produces NO awards at
+ * all, regardless of the tie/zero-qualifies rules above. This is
+ * deliberately narrower than "reject any zero standing": an
+ * individual student's own standing of 0 still qualifies exactly as
+ * before (rule 2 is untouched); this only blocks the specific case
+ * where every real team, collectively, has nothing to show for the
+ * whole cycle. A genuine Standing Cycle always starts every student
+ * at 0 (services/scoreboardArchiveService.js's buildResetTeams()) — so
+ * "every real team ends at exactly 0 too" means nothing happened
+ * between one reset and the next, not a genuine, closely-fought
+ * scoreless week. This exact signature was found in production
+ * (classroom Bloom Force 19, 2026-08-17): 9 Reset Scoreboard clicks
+ * in a 2h38m window with zero scoring activity between them —
+ * evidently the feature being tested/debugged directly against a real
+ * classroom — which a first-time backfill run then correctly-per-the-
+ * letter-of-this-rule (but wrongly-per-its-actual-intent) turned into
+ * a Winning Team Member award for every real student, 9 times over.
+ * Without this guard, re-running backfill for that same classroom
+ * would deterministically recreate the exact same over-awards.
+ *
  * Returns `{ winningTeams, awards }` — `winningTeams` is provided
  * mainly for the Team Profile's own achievement history (so a team's
  * "how many cycles did we win" count doesn't require re-deriving this
@@ -69,6 +90,10 @@ export function evaluateWinningTeamMember(cycle) {
   const realTeams = (cycle.teams || []).filter((team) => !team.isUngrouped && team.name !== 'Ungrouped');
 
   if (realTeams.length === 0) {
+    return { winningTeams: [], awards: [] };
+  }
+
+  if (realTeams.every((team) => team.total === 0)) {
     return { winningTeams: [], awards: [] };
   }
 
