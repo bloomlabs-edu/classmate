@@ -39,6 +39,7 @@ import * as workspaceService from './workspaceService.js';
 import * as achievementService from './achievementService.js';
 import { generateId } from '../utils/idGenerator.js';
 import { getCurrentIsoDate } from '../utils/dateHelpers.js';
+import { createInFlightDeduper } from '../utils/dedupeInFlight.js';
 
 // THE ACTUAL DIAGNOSTIC MARKER requested — emitted the moment this
 // module is evaluated, completely independent of any user
@@ -90,6 +91,28 @@ function buildResetTeams(classroom) {
   }));
 }
 
+// Guards the one realistic duplicate-archive trigger an in-memory dedup
+// CAN actually close: two overlapping archiveAndReset() calls for the
+// same classroom within a single browser tab/session (e.g.
+// ui/components/ResetScoreboardModal.js's own confirm button somehow
+// firing twice, or a future caller that doesn't go through that
+// modal's own disabled-while-saving guard). A second call for a
+// classroom already mid-reset joins the first call's promise instead
+// of creating a second archive + a second, duplicate set of Achievement
+// Events for what was really one reset event.
+//
+// EXPLICIT LIMITATION — this is a same-tab guard only, not a
+// distributed lock: two different browser tabs/devices (e.g. two
+// teachers who both have this shared classroom open, or one teacher on
+// two devices) each get their own independent in-memory dedup, so this
+// cannot prevent a genuine cross-device race. Closing that fully would
+// require the write itself to become a Firestore transaction that reads
+// classroom state before deciding to archive — a materially bigger,
+// riskier change to this critical, already-atomic writeBatch (see this
+// file's own buildResetTeams()/repository.archiveScoreboardAndReset()),
+// not attempted here without first confirming it's actually needed.
+const dedupeReset = createInFlightDeduper();
+
 /**
  * THE ACTUAL FEATURE — archives the current scoreboard as an
  * immutable snapshot, then atomically resets every student's score to
@@ -98,7 +121,11 @@ function buildResetTeams(classroom) {
  * reflects the reset immediately without needing a separate refetch.
  * Returns the created archive.
  */
-export async function archiveAndReset(classroom) {
+export function archiveAndReset(classroom) {
+  return dedupeReset(classroom.id, () => runArchiveAndReset(classroom));
+}
+
+async function runArchiveAndReset(classroom) {
   console.log('[RESET] reset handler entered');
   try {
     console.log('[RESET] current scoreboard captured', {

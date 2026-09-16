@@ -246,7 +246,20 @@ function renderProfileHeader(classroom, student, team, rerender, onBack, onSelec
     ['Net Score', timelineService.getNetPoints(student), null],
     ['Positive', timelineService.getTotalPositivePoints(student), 'positive'],
     ['Negative', timelineService.getTotalNegativePoints(student), 'negative'],
-    ['Badges', (student.badges || []).length, 'badges'],
+    // Deliberately labeled "Behaviour Badges," never plain "Badges" —
+    // this counts student.badges (services/badgeService.js's manually
+    // teacher-awarded behaviour badges), a completely separate system
+    // from the Badge & Achievement Engine's own real, persisted
+    // recognition (services/achievementService.js), which this same
+    // header already shows in the recognition row directly above (see
+    // populateRecognitionRow()) and in the "Achievements" section
+    // below (see renderStudentBadgesSection()). A plain "Badges" label
+    // here previously read as a flat contradiction of a visibly
+    // earned Achievement-Engine badge (e.g. "Winning Team Member ·
+    // LV 10" right above a "Badges: 0" chip) — this is a genuinely
+    // different, real count, just of a different, real thing; only
+    // the label was ever wrong, never this number.
+    ['Behaviour Badges', (student.badges || []).length, 'badges'],
     ['Notes', (student.notes || []).length, null],
     ...(hasLearningActivities ? [['Learning Activities', submissionText, null]] : []),
     ...(hasNotebookActivity ? [['Notebooks', notebookText, null]] : []),

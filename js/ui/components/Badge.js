@@ -28,6 +28,18 @@
  * per level, and never unbounded complexity at high levels (Section
  * 15/16): every level from 20 to 20,000 renders the exact same Master
  * treatment, differing only in the printed number.
+ *
+ * APPROVED-ASSET INTEGRATION POINT — everything this file draws below
+ * (buildShield/buildStar) is a generated stand-in, not the final,
+ * designer-approved artwork; no such asset exists in this repo yet
+ * (config/badgeDefinitions.js's own `assetPath` is null for every
+ * current badge). The moment a real flat-vector SVG is added at
+ * `assets/badges/{family}/{recognitionType}.svg` and that definition's
+ * `assetPath` is set to point at it, createBadge() below renders that
+ * real file instead automatically — this file does not need to change
+ * again for that to happen. Never repurpose the generated shield as if
+ * it were the approved design; it exists solely so the badge system is
+ * visibly functional before that asset arrives.
  */
 
 import { createIcon } from './Icon.js';
@@ -166,13 +178,26 @@ export function createBadge({ family, recognitionType, level = 0, size = 64, sho
   emblem.style.height = `${size}px`;
   emblem.title = definition.title;
 
-  emblem.appendChild(buildShield(theme, stage?.id));
+  // Real, approved artwork wins the moment it exists — see this file's
+  // own header comment. Until then, definition.assetPath is null for
+  // every badge and this always falls through to the generated shield.
+  if (definition.assetPath) {
+    const img = document.createElement('img');
+    img.src = definition.assetPath;
+    img.alt = definition.title;
+    img.className = 'badge-emblem__asset';
+    img.style.width = `${size}px`;
+    img.style.height = `${size}px`;
+    emblem.appendChild(img);
+  } else {
+    emblem.appendChild(buildShield(theme, stage?.id));
 
-  const iconSize = Math.round(size * 0.36);
-  const icon = createIcon(definition.icon, { size: iconSize, strokeWidth: 2 });
-  icon.classList.add('badge-emblem__icon');
-  icon.style.color = theme.dark;
-  emblem.appendChild(icon);
+    const iconSize = Math.round(size * 0.36);
+    const icon = createIcon(definition.icon, { size: iconSize, strokeWidth: 2 });
+    icon.classList.add('badge-emblem__icon');
+    icon.style.color = theme.dark;
+    emblem.appendChild(icon);
+  }
 
   if (earned && size >= 32) {
     const starRow = document.createElement('div');

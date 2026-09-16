@@ -82,6 +82,21 @@ export const BADGE_THEMES = Object.freeze({
  * than embedding one directly into the component logic"), swapping
  * this string is the entire cost of changing a badge's icon later.
  */
+/**
+ * `assetPath` — the approved-artwork integration point (styleguide
+ * Section 4/23/29): a real, designer-produced flat-vector SVG for this
+ * badge, once one actually exists. `null` (every definition below,
+ * today) means no approved asset has been delivered yet — never a
+ * placeholder path, never a guess at a future filename, since nothing
+ * here should invent artwork or imply "approved" for something that
+ * isn't. ui/components/Badge.js checks this field first and only falls
+ * back to its own generated shield/icon/star rendering when it's null,
+ * so dropping a real file in and setting this one string is the entire
+ * integration cost — no component rewrite. Convention when a real
+ * asset does exist: `assets/badges/{family}/{recognitionType}.svg`,
+ * one flat-vector emblem per recognition type (not per level/stage —
+ * see Badge.js's own comment for why level/stage stay programmatic).
+ */
 export const BADGE_DEFINITIONS = Object.freeze([
   {
     family: BADGE_FAMILIES.WEEKLY_STANDING,
@@ -90,6 +105,7 @@ export const BADGE_DEFINITIONS = Object.freeze([
     description: 'Part of the highest-scoring team when a Standing Cycle closed, with a non-negative standing of their own.',
     icon: 'users',
     theme: 'amber',
+    assetPath: null,
   },
   {
     family: BADGE_FAMILIES.WEEKLY_STANDING,
@@ -98,6 +114,7 @@ export const BADGE_DEFINITIONS = Object.freeze([
     description: 'Highest individual standing within their own team for a Standing Cycle.',
     icon: 'award',
     theme: 'blue',
+    assetPath: null,
   },
   {
     family: BADGE_FAMILIES.WEEKLY_STANDING,
@@ -106,6 +123,7 @@ export const BADGE_DEFINITIONS = Object.freeze([
     description: 'Strongest improvement compared with the previous Standing Cycle.',
     icon: 'trending-up',
     theme: 'green',
+    assetPath: null,
   },
   {
     family: BADGE_FAMILIES.WEEKLY_STANDING,
@@ -114,6 +132,7 @@ export const BADGE_DEFINITIONS = Object.freeze([
     description: 'Meaningfully supported classmates.',
     icon: 'user-plus',
     theme: 'purple',
+    assetPath: null,
   },
 ]);
 
