@@ -127,3 +127,29 @@ test('RED never transitions directly to GREEN: redeeming clears to neutral even 
   const student = studentWithHistory([pointEntry(MON, -4)]); // in redemption, no good days yet
   assert.equal(getNameHighlightState(student, { isClimber: true, todayDateKey: MON }), 'redemption');
 });
+
+// Reset Scoreboard clears `score` but never touches `student.history`
+// (see services/scoreboardArchiveService.js) — periodStartedAt is what
+// makes this function reset-aware without deleting anything.
+test('a breach entirely before periodStartedAt no longer counts: reset clears a stale redemption pill', () => {
+  const student = studentWithHistory([
+    pointEntry(MON, -1), pointEntry(MON, -1), pointEntry(MON, -1), pointEntry(MON, -1), // 4 negatives -> would trip redemption on its own
+  ]);
+  assert.equal(isStudentInRedemption(student, THU), true); // unbounded: still in redemption
+  const resetAt = `${TUE}T00:00:00.000Z`; // reset happened Tuesday, after Monday's breach
+  assert.equal(isStudentInRedemption(student, THU, resetAt), false); // bounded to after the reset: breach no longer counts
+});
+
+test('a fresh breach AFTER periodStartedAt still trips redemption normally post-reset', () => {
+  const resetAt = `${MON}T00:00:00.000Z`;
+  const student = studentWithHistory([
+    pointEntry(TUE, -1), pointEntry(WED, -1), pointEntry(THU, -1), pointEntry(FRI, -1), // 4 negatives, all after the reset
+  ]);
+  assert.equal(isStudentInRedemption(student, FRI, resetAt), true);
+});
+
+test('getNameHighlightState forwards periodStartedAt through to isStudentInRedemption', () => {
+  const student = studentWithHistory([pointEntry(MON, -1), pointEntry(MON, -1), pointEntry(MON, -1), pointEntry(MON, -1)]);
+  const resetAt = `${TUE}T00:00:00.000Z`;
+  assert.equal(getNameHighlightState(student, { isClimber: false, todayDateKey: THU, periodStartedAt: resetAt }), null);
+});

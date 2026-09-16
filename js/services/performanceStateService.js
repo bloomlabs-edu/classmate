@@ -48,6 +48,20 @@
  * Completing redemption returns a student to the neutral state, never
  * straight to green — the "climbing" check above is entirely independent
  * and must separately be true for the green pill to reappear.
+ *
+ * `periodStartedAt` (optional, an ISO timestamp) bounds the whole walk to
+ * `classroom.currentScoringPeriodStartedAt` — the exact same field, same
+ * "no bound if null/never reset" convention, and same `>=` comparison
+ * services/timelineService.js's own getNetPointsInCurrentPeriod() already
+ * uses to make scores reset-aware. Without this, Reset Scoreboard (which
+ * deliberately never touches `student.history` — see
+ * services/scoreboardArchiveService.js's own header comment — only
+ * `score`) left the redemption pill permanently stuck on for anyone who
+ * had ever crossed NEGATIVE_THRESHOLD, since a fresh score of 0 says
+ * nothing about the *history* this function actually reads. Bounding the
+ * walk to the current scoring period is what actually clears it: history
+ * from before the last reset simply no longer counts toward "this week's"
+ * negative total once that boundary has passed.
  */
 
 import { getMondayStartOfWeek, shiftDateKey, getTodayDateKey } from '../utils/dateHelpers.js';
@@ -56,17 +70,10 @@ export const NEGATIVE_THRESHOLD = 3;
 export const REDEMPTION_DAILY_STAR_TARGET = 5;
 export const REDEMPTION_CONSECUTIVE_DAYS = 3;
 
-/**
- * Whether `student` is currently in the sticky red/redemption state, as of
- * `todayDateKey` (defaults to today; a parameter purely so this stays
- * testable without mocking the system clock). Walks every calendar day from
- * the student's very first history entry through today exactly once —
- * O(days elapsed), not O(weeks × history) — tracking the current week's
- * running negative total and, while in redemption, the current streak of
- * "at least REDEMPTION_DAILY_STAR_TARGET positive points" days.
- */
-export function isStudentInRedemption(student, todayDateKey = getTodayDateKey()) {
-  const pointEntries = (student.history || []).filter((entry) => entry.kind === 'points');
+export function isStudentInRedemption(student, todayDateKey = getTodayDateKey(), periodStartedAt = null) {
+  const pointEntries = (student.history || [])
+    .filter((entry) => entry.kind === 'points')
+    .filter((entry) => !periodStartedAt || entry.recordedAt >= periodStartedAt);
   if (pointEntries.length === 0) return false;
 
   const entriesByDay = new Map();
@@ -121,10 +128,12 @@ export function isStudentInRedemption(student, todayDateKey = getTodayDateKey())
  * student's name: 'redemption' (red, overrides everything else) |
  * 'climbing' (green) | null (neutral, no pill). `isClimber` is the caller's
  * own already-computed `movement === 'up'` value (see this file's own
- * header comment for why it is never recomputed here).
+ * header comment for why it is never recomputed here). `periodStartedAt`
+ * is forwarded straight to isStudentInRedemption() — see that function's
+ * own comment for why (Reset Scoreboard reset-awareness).
  */
-export function getNameHighlightState(student, { isClimber = false, todayDateKey = getTodayDateKey() } = {}) {
-  if (isStudentInRedemption(student, todayDateKey)) return 'redemption';
+export function getNameHighlightState(student, { isClimber = false, todayDateKey = getTodayDateKey(), periodStartedAt = null } = {}) {
+  if (isStudentInRedemption(student, todayDateKey, periodStartedAt)) return 'redemption';
   if (isClimber) return 'climbing';
   return null;
 }

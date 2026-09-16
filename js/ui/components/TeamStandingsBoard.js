@@ -96,14 +96,20 @@ export function createTeamStandingsBoardElement({ classroom, onTap, onSwipeLeft,
   // The name-highlight pill (see services/performanceStateService.js):
   // 'climbing' reuses this exact studentMovements['up'] value rather than
   // a second definition; redemption is independently derived from each
-  // student's own history. Computed once here, for every student in the
-  // classroom, exactly like studentMovements above — TeamCard.js and
-  // ClassModeStudentRow.js only ever render whichever state they're handed.
+  // student's own history, bounded to classroom.currentScoringPeriodStartedAt
+  // so a Reset Scoreboard clears a stale redemption pill exactly the way it
+  // already clears scores (see getNameHighlightState()'s own comment).
+  // Computed once here, for every student in the classroom, exactly like
+  // studentMovements above — TeamCard.js and ClassModeStudentRow.js only
+  // ever render whichever state they're handed.
   const nameHighlights = {};
   classroom.teams.forEach((team) => {
     team.students.forEach((student) => {
       const isClimber = studentMovements[student.id]?.movement === 'up';
-      nameHighlights[student.id] = getNameHighlightState(student, { isClimber });
+      nameHighlights[student.id] = getNameHighlightState(student, {
+        isClimber,
+        periodStartedAt: classroom.currentScoringPeriodStartedAt,
+      });
     });
   });
 
