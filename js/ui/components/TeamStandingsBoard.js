@@ -130,7 +130,6 @@ export function createTeamStandingsBoardElement({ classroom, onTap, onSwipeLeft,
         // non-interactive heading, exactly as before this feature existed.
         onTapTeam: onTapTeam && canOpenTeamProfile(team) ? () => onTapTeam(team.id) : undefined,
         movement: standing ? { movement: standing.movement, movementAmount: standing.movementAmount } : undefined,
-        studentMovements,
         nameHighlights,
         sortedStudents,
         displayScoreByStudentId,

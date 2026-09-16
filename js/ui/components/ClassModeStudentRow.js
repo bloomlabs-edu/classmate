@@ -15,23 +15,23 @@
  * surface: long-press is pointer-only, so keyboard and assistive-tech
  * users need an explicit, focusable way to reach Quick Actions too.
  *
- * `movement` — the optional, per-student `{ movement, movementAmount }`
- * shape already produced by
- * services/teamStatisticsService.js's own getTeamLeaderboardWithMovement()
- * (see ui/components/TeamStandingsBoard.js, which computes it once per
- * team and hands it down as plain data). This component renders it,
- * never recalculates it — the same pure-presentation split the
- * team-level movement badge already established.
- *
  * `nameHighlight` — the optional 'climbing' | 'redemption' | null state
  * from services/performanceStateService.js's own getNameHighlightState(),
- * computed once per student by ui/components/TeamStandingsBoard.js exactly
- * like `movement` above. Painted as a compact rounded pill behind the name
- * text only (see .student-row__name--climbing/--redemption in styles.css)
- * — deliberately never touching the bucket background, the score, the
- * stars, or the movement badge, so bucket (group), name pill (performance/
- * behaviour), and score+movement (underlying data) stay three clearly
- * separate layers rather than merging into one.
+ * computed once per student by ui/components/TeamStandingsBoard.js (using
+ * the same per-student `{ movement, movementAmount }` shape from
+ * services/teamStatisticsService.js's own getTeamLeaderboardWithMovement()
+ * for the 'climbing' half of that decision — this component never sees
+ * that raw movement data itself, only the already-resolved highlight).
+ * Painted as a compact rounded pill behind the name text only (see
+ * .student-row__name--climbing/--redemption in styles.css) — deliberately
+ * never touching the bucket background, the score, or the stars, so
+ * bucket (group), name pill (performance/behaviour), and score (underlying
+ * data) stay clearly separate layers rather than merging into one.
+ *
+ * There used to also be a per-student ranking badge here (▲/▼/→ + how
+ * many positions since the period started, e.g. "▼14") next to the star
+ * score — removed per explicit product decision (confusing, not needed);
+ * nothing replaces it.
  *
  * `onSwipeLeft`/`onLongPress` are both genuinely optional — see
  * ui/components/TeamStandingsBoard.js's own header comment for why:
@@ -51,7 +51,7 @@ const LONG_PRESS_MS = 500;
 const MOVE_CANCEL_THRESHOLD_PX = 10;
 const SWIPE_THRESHOLD_PX = 60;
 
-export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongPress, tapActionLabel = 'award a star', movement, displayScore, nameHighlight }) {
+export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongPress, tapActionLabel = 'award a star', displayScore, nameHighlight }) {
   const style = getBucketRowStyle(student.bucket);
 
   const item = document.createElement('li');
@@ -84,9 +84,6 @@ export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongP
   const trailing = document.createElement('span');
   trailing.className = 'student-row__trailing';
   trailing.appendChild(score);
-  if (movement) {
-    trailing.appendChild(createStudentMovementBadge(movement, student.name));
-  }
 
   surface.append(name, trailing);
 
@@ -217,44 +214,6 @@ export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongP
   });
 
   return item;
-}
-
-/**
- * The circular movement badge — a soft-background, thin-bordered pill
- * matching the score pill's own rounded aesthetic, per explicit
- * product decision that this read as a clean, modern indicator, not
- * a plain arrow. Purely presentational: renders whatever
- * `{ movement, movementAmount }` it's handed, never computing either
- * value itself.
- */
-/**
- * The ranking movement badge — how this student stands relative to
- * the whole class since the period started
- * (services/teamStatisticsService.js's own
- * getClassLeaderboardWithMovement(), unchanged). Deliberately kept
- * visually subtle — small, soft background, roughly the visual weight
- * of metadata rather than a second score — per explicit product
- * decision: a companion "session stars earned" badge was tried
- * alongside this one and removed as unnecessary clutter; this is now
- * the only trailing badge on the row. Purely presentational: renders
- * whatever { movement, movementAmount } it's handed, never computing
- * either value itself. Symbols (▲/▼/→) are distinct from the up/down
- * arrows used elsewhere in this app (e.g. the team-level indicator).
- */
-function createStudentMovementBadge(movement, studentName) {
-  const badge = document.createElement('span');
-  badge.className = `student-row__movement student-row__movement--${movement.movement}`;
-
-  const symbol = { up: '\u25b2', down: '\u25bc', same: '\u2192' }[movement.movement];
-  badge.textContent = `${symbol}${movement.movementAmount}`;
-  badge.setAttribute(
-    'aria-label',
-    movement.movement === 'same'
-      ? `${studentName} has not changed position since the period started`
-      : `${studentName} moved ${movement.movement} ${movement.movementAmount} position${movement.movementAmount === 1 ? '' : 's'} since the period started`
-  );
-
-  return badge;
 }
 
 /** Describes only the gestures genuinely available in this context — never claims an action (e.g. "swipe left to deduct a point") that isn't actually wired, since the Student Portal's own row has none of the teacher-only gestures at all. */

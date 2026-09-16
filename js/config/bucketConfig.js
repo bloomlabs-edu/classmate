@@ -54,7 +54,15 @@ export const BUCKET_DISPLAY_COLORS = Object.freeze({
 export const BUCKET_ROW_STYLES = Object.freeze({
   green: { background: '#EAF7EC', border: '#2e7d32', text: '#1a1a1a', nameColor: '#1b5e20' },
   yellow: { background: '#FFF8E1', border: '#EAB308', text: '#1a1a1a', nameColor: '#8a5a00' },
-  red: { background: '#FDECEA', border: '#c62828', text: '#1a1a1a', nameColor: '#7a1f1f' },
+  // background is the ORIGINAL pale pink (#FDECEA) — an earlier round
+  // muted/removed this background by mistake; the actual "too alarming"
+  // element that needed softening was the separate Red name-status pill
+  // (see .student-row__name--redemption in styles.css), not this row
+  // background, which is intentional and matches Green/Yellow's own
+  // still-tinted pastel treatment. border stays the softened dusty-rose
+  // (#C97B7B, down from the original bright #c62828) from that same
+  // earlier round — only the background was reported as wrongly changed.
+  red: { background: '#FDECEA', border: '#C97B7B', text: '#1a1a1a', nameColor: '#7a1f1f' },
   notAssigned: { background: '#F3F4F6', border: '#9AA5B1', text: '#1a1a1a', nameColor: 'var(--color-ink)' },
 });
 

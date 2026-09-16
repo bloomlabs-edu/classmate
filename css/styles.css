@@ -1922,7 +1922,14 @@ select:focus-visible,
   background-color: #2e7d32;
 }
 .student-row__name--redemption {
-  background-color: #c62828;
+  /* Softened per explicit product feedback (2026-09): the original
+     #c62828 read as too alarming/bright for a pill shown behind a
+     student's name. #B24C4C keeps the same white-text pairing (still
+     ~5.2:1 contrast, comfortably passing WCAG AA) while cutting
+     saturation roughly in half (66% -> 40%), reading as a calm
+     dusty-rose rather than an alert. Climbing's own green pill is
+     untouched. */
+  background-color: #b24c4c;
 }
 
 .student-row__points {
@@ -1937,41 +1944,6 @@ select:focus-visible,
   align-items: center;
   gap: 0.6rem;
   flex-shrink: 0;
-}
-
-/* Ranking movement badge — how this student stands relative to the
-   whole class since the period started. Deliberately kept small and
-   subtle, roughly the visual weight of metadata rather than another
-   score, per explicit product decision — a companion "session stars"
-   badge was tried alongside this one and removed as unnecessary
-   clutter (see ui/components/ClassModeStudentRow.js's own header
-   comment); this is now the row's only trailing badge. */
-.student-row__movement {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.9rem;
-  height: 1.4rem;
-  padding: 0 0.4rem;
-  border-radius: var(--radius-pill);
-  font-size: 0.72rem;
-  font-weight: var(--font-weight-bold);
-  border: 1px solid;
-}
-.student-row__movement--up {
-  background-color: rgba(46, 158, 91, 0.08);
-  border-color: rgba(46, 158, 91, 0.25);
-  color: #227a46;
-}
-.student-row__movement--down {
-  background-color: rgba(229, 57, 53, 0.08);
-  border-color: rgba(229, 57, 53, 0.25);
-  color: #c62828;
-}
-.student-row__movement--same {
-  background-color: rgba(0, 0, 0, 0.02);
-  border-color: rgba(0, 0, 0, 0.1);
-  color: var(--color-muted);
 }
 
 /* Empty state (no classroom imported yet / no teams in a classroom) */
