@@ -198,6 +198,24 @@ export function getLessonPlanStageCompletion(lessonPlan) {
 }
 
 /**
+ * The ONLY real structural requirement standing between a DRAFT/
+ * CHANGES_REQUESTED plan and Submit — at least one Activity must exist.
+ * Deliberately separate from getLessonPlanReadiness(), per explicit
+ * product direction: readiness is a QUALITY checklist a teacher can see
+ * and choose to submit past (Student Action, Pair Explanation, Final
+ * Question, Teacher Look-Fors are all warnings, never blockers) — this
+ * is the one true submission-ELIGIBILITY gate, with no maximum activity
+ * count and no further content requirement on top of it.
+ * ui/views/LessonPlanBuilderView.js's own renderReadinessPanel() is the
+ * only caller; lessonPlanReviewService.js's submitForReview() itself
+ * still only checks status (see that function's own doc comment) —
+ * this is a UI-layer gate on top, not a new state-machine rule.
+ */
+export function canSubmitLessonPlan(lessonPlan) {
+  return lessonPlan.activities.length > 0;
+}
+
+/**
  * Same 6-stage shape as getLessonPlanStageCompletion(), but each entry
  * also carries its OWN specific missing-item messages (empty once
  * complete) — added so a submission checklist can tell a teacher

@@ -34,8 +34,21 @@
  * ProgrammeSession's own save indicator — see that file's header
  * comment).
  *
- * Readiness (services/lessonPlanValidationService.js) is shown as a
- * standing, non-blocking checklist — informational only in Phase 2.
+ * Readiness (services/lessonPlanValidationService.js) is a standing,
+ * ALWAYS-VISIBLE checklist at the top of the canvas, right under the
+ * title/status — informational, never a submission gate (per explicit
+ * product direction, restoring this file's own original Phase 2 intent
+ * after an intervening phase had turned it into a hard block). The one
+ * real submission requirement is services/lessonPlanValidationService.js's
+ * canSubmitLessonPlan() — at least one Activity, no maximum, nothing
+ * else — everything else the checklist reports (Student Action, Pair
+ * Explanation, Final Question, Teacher Look-Fors) is a warning a
+ * teacher can see and choose to submit past via the "Submit without
+ * these?" confirmation (ui/components/SubmitLessonPlanWarningsModal.js).
+ * Every guided CONTENT stage now renders in full once Subject is
+ * chosen — no more one-at-a-time reveal gated on completion — so a
+ * checklist warning never points at a section the teacher can't
+ * actually see or edit.
  *
  * Phase 3 adds the teacher-facing half of the review lifecycle on top
  * of this same canvas, deliberately NOT a separate view: submitting is
@@ -76,7 +89,7 @@ import * as workspaceService from '../../services/workspaceService.js';
 import { getGradeLabelForClassroom } from '../../services/classroomService.js';
 import { getTodayDateKey } from '../../utils/dateHelpers.js';
 import { LESSON_PLAN_STATUS, LESSON_PLAN_SECTION_KEYS, LESSON_RESOURCE_TYPES } from '../../models/LessonPlan.js';
-import { getLessonPlanReadiness, getLessonPlanStageCompletion, getLessonPlanReadinessByStage, LESSON_PLAN_STAGES } from '../../services/lessonPlanValidationService.js';
+import { getLessonPlanReadiness, getLessonPlanStageCompletion, getLessonPlanReadinessByStage, canSubmitLessonPlan, LESSON_PLAN_STAGES } from '../../services/lessonPlanValidationService.js';
 import { getTimetableSubjectColor, getTimetableSubjectWash } from '../../config/timetableSubjectColors.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createIcon } from '../components/Icon.js';
@@ -84,6 +97,7 @@ import { createSaveIndicatorController } from '../components/ProgrammeSessionSav
 import { createCurriculumExplorerPanel } from '../components/CurriculumExplorerPanel.js';
 import { openTeachingIdeasPickerModal } from '../components/TeachingIdeasPickerModal.js';
 import { attachAutoGrowTextarea } from '../components/AutoGrowTextarea.js';
+import { openSubmitLessonPlanWarningsModal } from '../components/SubmitLessonPlanWarningsModal.js';
 
 const STATUS_LABELS = Object.freeze({
   [LESSON_PLAN_STATUS.DRAFT]: 'Draft',
@@ -904,6 +918,14 @@ function renderBuilder(container, state, handlers) {
     return;
   }
 
+  // Submission check / Submit — deliberately near the TOP, right under
+  // Subject, per explicit product direction: a teacher should never
+  // have to scroll through the whole guided canvas to discover whether
+  // (or how) they can submit. See renderReadinessPanel()'s own doc
+  // comment — this is advisory, never a gate past the one real
+  // eligibility requirement (canSubmitLessonPlan()).
+  grid.appendChild(withTileSize(renderReadinessPanel(plan, handlers), 'full'));
+
   // CONCEPT + SCHEDULE — composed as one Bento row, Concepts as the
   // larger "wide" (8/12) foundational tile with its own surface (see
   // withSurfaceTile()) since every other stage builds on it, Schedule
@@ -994,42 +1016,58 @@ function renderBuilder(container, state, handlers) {
     },
   ];
 
+  // Every guided CONTENT stage renders in full now, all at once — no
+  // more one-at-a-time reveal stopping at the current frontier stage.
+  // Per explicit product direction (paired with moving Submit to the
+  // top and making the checklist advisory): a checklist warning about a
+  // LATER stage (e.g. Helping) must always point at real, visible,
+  // editable content, never a section still hidden behind an earlier
+  // one being "incomplete." Each stage still individually collapses to
+  // a compact "✓ Title" summary once genuinely complete (see
+  // renderGuidedContentStage()'s own `isComplete` check, unchanged) —
+  // this only removes the loop's own early stop, not that per-stage
+  // collapse behavior.
   for (const config of freeTextStages) {
     grid.appendChild(renderGuidedContentStage({ ...config, plan, state: guidedState, handlers }));
-    if (config.stage === frontierStage) break; // stop right after the current stage — nothing beyond it yet
   }
 
   // Learning Resources — logically after the lesson content/activities
-  // and before the final workflow controls (Submit/readiness panel just
-  // below), per this feature's own explicit placement requirement.
-  // Deliberately shown only once every guided CONTENT stage is complete
-  // (`!frontierStage`), matching this view's own established
-  // progressive-disclosure rule that nothing renders past the current
-  // frontier stage — Resources are optional/supplementary, never part
-  // of stage completion itself (services/lessonPlanValidationService.js
-  // is untouched), but still a real piece of "lesson content," so it
-  // stays consistent with everything else on this canvas rather than
-  // being the one section that ignores the guided reveal order.
-  if (!frontierStage) {
-    grid.appendChild(withTileSize(withSurfaceTile(renderLearningResourcesSection(plan, state, handlers)), 'full'));
-  }
+  // and before the closing "Back to top" link. Always shown now (no
+  // longer gated on `!frontierStage`, for the same reason the guided
+  // stages above no longer are) — Resources were never part of stage
+  // completion itself (services/lessonPlanValidationService.js is
+  // untouched either way), but they used to inherit the old
+  // progressive-disclosure gate incidentally; that gate is gone.
+  grid.appendChild(withTileSize(withSurfaceTile(renderLearningResourcesSection(plan, state, handlers)), 'full'));
 
-  // Submit/readiness panel — ALWAYS rendered now (not gated on
-  // `!frontierStage`), per explicit product direction reversing a prior
-  // decision (see renderReadinessPanel()'s own doc comment): a teacher
-  // sitting on the current frontier stage has no way to know a LATER
-  // stage (e.g. Helping) is still incomplete too, since that stage
-  // hasn't rendered yet at all — a real, reported case of a teacher
-  // stuck on Draft with no visible path to Submit and no explanation.
-  grid.appendChild(withTileSize(renderReadinessPanel(plan, handlers), 'full'));
+  grid.appendChild(withTileSize(renderBackToTopLink(), 'full'));
 
   container.appendChild(wrapper);
+}
+
+/**
+ * A plain bottom-of-content "Back to top" action — the Builder canvas is
+ * long, and the checklist + Submit action now live at the top (see
+ * renderReadinessPanel()'s own doc comment), not a floating button
+ * (no existing pattern for one in this design system); scrollIntoView()
+ * on the title bar works regardless of which ancestor actually scrolls.
+ */
+function renderBackToTopLink() {
+  const link = document.createElement('button');
+  link.type = 'button';
+  link.className = 'btn btn--text lesson-plan-builder__back-to-top';
+  link.textContent = '↑ Back to top';
+  link.addEventListener('click', () => {
+    document.getElementById('lesson-plan-builder-top')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  return link;
 }
 
 function renderTitleBar(plan, stageCompletion, state, handlers) {
   const { saveIndicatorElement } = state;
   const titleBar = document.createElement('div');
   titleBar.className = 'lesson-plan-builder__title-bar';
+  titleBar.id = 'lesson-plan-builder-top';
 
   const topLine = document.createElement('div');
   topLine.className = 'lesson-plan-builder__title-line';
@@ -1703,22 +1741,27 @@ const STAGE_CHECKLIST_LABELS = Object.freeze({
 });
 
 /**
- * The "ready for review"/Submit action, and — per explicit product
- * direction reversing this function's own prior "no checklist" decision
- * (see git history: a past redesign removed an "Almost there — N things
- * left" list on the theory that the guided flow's own open frontier
- * stage was warning enough) — an explicit "what's still missing"
- * checklist when it isn't ready yet. That prior theory doesn't hold once
- * more than one stage is incomplete: a LATER stage (e.g. Helping) never
- * even renders while an EARLIER one (e.g. Experience) is still open, so
- * a teacher has no way to know it's still coming — confirmed against a
- * real reported case where a plan was missing content in both Experience
- * AND Helping, but only Experience was visible on screen at all.
- * Submission validation itself (services/lessonPlanValidationService.js's
- * getLessonPlanReadiness()/getLessonPlanReadinessByStage()) is completely
- * unchanged — same requirements, same gate on the Submit button — this
- * only exposes what was already being computed, so it can never disagree
- * with the guided flow's own frontier stage.
+ * The submission check — an ALWAYS-VISIBLE checklist plus the Submit/
+ * Resubmit action, per explicit product direction: the checklist is
+ * advisory, never a gate. The ONE real submission requirement is
+ * services/lessonPlanValidationService.js's own canSubmitLessonPlan()
+ * (at least one Activity, no maximum) — everything else the checklist
+ * reports (Student Action, Pair Explanation, Final Question, Teacher
+ * Look-Fors) is a warning a teacher can see and choose to submit past,
+ * via the "Submit without these?" confirmation
+ * (ui/components/SubmitLessonPlanWarningsModal.js) — never a silent
+ * lock and never a second, separate definition of "done" from
+ * getLessonPlanReadiness()/getLessonPlanReadinessByStage().
+ *
+ * Three states:
+ *   - Zero activities: the one real block. A clear reason, no Submit
+ *     action at all (nothing to confirm past — there's truly nothing
+ *     to submit yet).
+ *   - Activities exist, but some checklist items are incomplete:
+ *     checklist + Submit, which opens the confirmation modal first.
+ *   - Everything complete: "Ready for review." + Submit, submits
+ *     immediately — no confirmation manufactured just because the
+ *     checklist happens to be complete.
  */
 function renderReadinessPanel(plan, handlers) {
   // Not editable (SUBMITTED/APPROVED) — nothing actionable left to show
@@ -1726,26 +1769,50 @@ function renderReadinessPanel(plan, handlers) {
   // happening right now" for those two statuses.
   if (!handlers.editable) return document.createComment('lesson plan locked — no readiness action to show');
 
+  const panel = document.createElement('div');
+  panel.className = 'lesson-plan-builder__readiness';
+
+  const heading = document.createElement('p');
+  heading.className = 'lesson-plan-builder__readiness-heading';
+  heading.textContent = 'Submission check';
+  panel.appendChild(heading);
+
+  if (!canSubmitLessonPlan(plan)) {
+    panel.classList.add('lesson-plan-builder__readiness--blocked');
+    const warning = document.createElement('p');
+    warning.className = 'lesson-plan-builder__readiness-warning';
+    warning.textContent = 'Add at least one Learning Activity before submitting.';
+    panel.appendChild(warning);
+    return panel;
+  }
+
   const readiness = getLessonPlanReadiness(plan);
+  const byStage = getLessonPlanReadinessByStage(plan);
+  const incompleteStages = byStage.filter((entry) => !entry.complete);
 
-  if (!readiness.ready) {
-    const panel = document.createElement('div');
-    panel.className = 'lesson-plan-builder__readiness lesson-plan-builder__readiness--not-ready';
-
-    const heading = document.createElement('p');
-    heading.className = 'lesson-plan-builder__readiness-heading';
-    heading.textContent = 'Not ready to submit yet';
-    panel.appendChild(heading);
+  if (readiness.ready) {
+    panel.classList.add('lesson-plan-builder__readiness--ready');
+    heading.appendChild(createIcon('check-circle-2', { size: 16 }));
+    const note = document.createElement('p');
+    note.className = 'lesson-plan-builder__readiness-note';
+    note.textContent = plan.status === LESSON_PLAN_STATUS.CHANGES_REQUESTED ? 'Ready to resubmit.' : 'Ready for review.';
+    panel.appendChild(note);
+  } else {
+    panel.classList.add('lesson-plan-builder__readiness--warning');
+    const note = document.createElement('p');
+    note.className = 'lesson-plan-builder__readiness-note';
+    note.textContent = 'Some parts are still incomplete.';
+    panel.appendChild(note);
 
     const list = document.createElement('ul');
     list.className = 'lesson-plan-builder__readiness-checklist';
-    getLessonPlanReadinessByStage(plan).forEach(({ stage, complete, messages }) => {
+    byStage.forEach(({ stage, complete, messages }) => {
       const item = document.createElement('li');
       item.className = `lesson-plan-builder__readiness-checklist-item lesson-plan-builder__readiness-checklist-item--${complete ? 'complete' : 'incomplete'}`;
 
       const label = document.createElement('span');
       label.className = 'lesson-plan-builder__readiness-checklist-label';
-      label.textContent = `${complete ? '✓' : '✗'} ${STAGE_CHECKLIST_LABELS[stage]}`;
+      label.textContent = `${complete ? '✓' : '⚠'} ${STAGE_CHECKLIST_LABELS[stage]}`;
       item.appendChild(label);
 
       if (!complete) {
@@ -1762,23 +1829,24 @@ function renderReadinessPanel(plan, handlers) {
       list.appendChild(item);
     });
     panel.appendChild(list);
-
-    return panel;
   }
 
-  const panel = document.createElement('div');
-  panel.className = 'lesson-plan-builder__readiness lesson-plan-builder__readiness--ready';
-
-  panel.appendChild(createIcon('check-circle-2', { size: 16 }));
-  const text = document.createElement('span');
-  text.textContent = plan.status === LESSON_PLAN_STATUS.CHANGES_REQUESTED ? 'Ready to resubmit.' : 'Ready for review.';
-  panel.appendChild(text);
-
+  const isResubmit = plan.status === LESSON_PLAN_STATUS.CHANGES_REQUESTED;
   const submitButton = document.createElement('button');
   submitButton.type = 'button';
   submitButton.className = 'btn btn--primary lesson-plan-builder__submit-button';
-  submitButton.textContent = plan.status === LESSON_PLAN_STATUS.CHANGES_REQUESTED ? 'Resubmit for Review' : 'Submit for Review';
-  submitButton.addEventListener('click', handlers.onSubmitForReview);
+  submitButton.textContent = isResubmit ? 'Resubmit for Review' : 'Submit for Review';
+  submitButton.addEventListener('click', () => {
+    if (incompleteStages.length === 0) {
+      handlers.onSubmitForReview();
+      return;
+    }
+    openSubmitLessonPlanWarningsModal({
+      isResubmit,
+      warnings: incompleteStages.map(({ stage, messages }) => ({ label: STAGE_CHECKLIST_LABELS[stage], messages })),
+      onSubmitAnyway: handlers.onSubmitForReview,
+    });
+  });
   panel.appendChild(submitButton);
 
   return panel;
@@ -1833,18 +1901,25 @@ function renderGuidedContentStage({ stage, title, sectionKey, plan, state, handl
     return wrap;
   }
 
-  wrap.classList.add(isFrontier ? 'lesson-plan-builder__stage--primary' : 'lesson-plan-builder__stage--reopened');
+  // "Primary" (needs-attention emphasis) for ANY still-incomplete stage,
+  // never just the single old "frontier" — with every stage now always
+  // rendered (see renderBuilder()'s own comment), more than one can be
+  // incomplete at once, and every one of them deserves the same visual
+  // weight. "Reopened" is for a genuinely COMPLETE stage a teacher
+  // manually reopened to revisit — the one case that still needs the
+  // lighter treatment plus its own "Done" collapse button below.
+  wrap.classList.add(isComplete ? 'lesson-plan-builder__stage--reopened' : 'lesson-plan-builder__stage--primary');
 
   const headingRow = document.createElement('div');
   headingRow.className = 'lesson-plan-builder__stage-heading-row';
   const titleGroup = document.createElement('div');
   titleGroup.className = 'lesson-plan-builder__stage-title-group';
   const heading = document.createElement('h2');
-  heading.className = isFrontier ? 'lesson-plan-builder__stage-heading lesson-plan-builder__stage-heading--primary' : 'lesson-plan-builder__stage-heading';
+  heading.className = isComplete ? 'lesson-plan-builder__stage-heading' : 'lesson-plan-builder__stage-heading lesson-plan-builder__stage-heading--primary';
   heading.textContent = title;
   titleGroup.appendChild(heading);
   headingRow.appendChild(titleGroup);
-  if (isReopened && !isFrontier) {
+  if (isReopened && isComplete) {
     const doneButton = document.createElement('button');
     doneButton.type = 'button';
     doneButton.className = 'btn btn--text lesson-plan-builder__stage-collapse-button';

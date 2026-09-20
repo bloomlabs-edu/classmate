@@ -1494,6 +1494,31 @@ select:focus-visible,
   font-weight: var(--font-weight-bold);
 }
 
+.submit-warnings-modal__intro {
+  margin: 0 0 0.9rem;
+  font-size: 0.9rem;
+}
+.submit-warnings-modal__groups {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  margin-bottom: 1.25rem;
+}
+.submit-warnings-modal__group-label {
+  margin: 0 0 0.3rem;
+  font-weight: var(--font-weight-bold);
+  font-size: 0.85rem;
+}
+.submit-warnings-modal__list {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
 /* Scoreboard Archive */
 
 .scoreboard-archive__intro {
@@ -3331,37 +3356,50 @@ textarea.reading-editor__block-input {
   color: var(--color-muted);
 }
 
-/* The Submit action — same quiet green treatment as before; this is
-   a real call to action, not a planning stage. See renderReadinessPanel()'s
-   own doc comment for the "not ready yet" checklist sibling below —
-   restored at explicit product direction after a prior redesign had
-   removed it. */
-.lesson-plan-builder__readiness--ready {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
+/* The Submission check — an always-visible, ADVISORY panel now living
+   near the top of the canvas (see renderReadinessPanel()'s own doc
+   comment): warns, never blocks. Three tints for the three states —
+   ready (quiet green, same treatment as before), warning (a checklist
+   exists but Submit still works), blocked (the one real requirement —
+   zero Activities — genuinely missing). */
+.lesson-plan-builder__readiness {
   border-radius: 14px;
   padding: 0.85rem 1rem;
   margin-top: 1rem;
-  font-size: 0.9rem;
-  background-color: #EAF5E3;
-  color: var(--color-success, #4C9A2A);
 }
-.lesson-plan-builder__readiness--not-ready {
-  border-radius: 14px;
-  padding: 0.85rem 1rem;
-  margin-top: 1rem;
+.lesson-plan-builder__readiness--ready {
+  background-color: #EAF5E3;
+}
+.lesson-plan-builder__readiness--warning {
   background-color: #FBF6E9;
 }
+.lesson-plan-builder__readiness--blocked {
+  background-color: #FBEAEA;
+}
 .lesson-plan-builder__readiness-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   margin: 0 0 0.5rem;
   font-weight: var(--font-weight-bold);
   font-size: 0.9rem;
   color: var(--color-text);
 }
+.lesson-plan-builder__readiness-note {
+  margin: 0 0 0.6rem;
+  font-size: 0.85rem;
+}
+.lesson-plan-builder__readiness--ready .lesson-plan-builder__readiness-note {
+  color: var(--color-success, #4C9A2A);
+}
+.lesson-plan-builder__readiness-warning {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-danger, #C0392B);
+}
 .lesson-plan-builder__readiness-checklist {
   list-style: none;
-  margin: 0;
+  margin: 0 0 0.6rem;
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -3383,6 +3421,10 @@ textarea.reading-editor__block-input {
   padding: 0;
   font-size: 0.8rem;
   color: var(--color-muted);
+}
+.lesson-plan-builder__back-to-top {
+  display: block;
+  margin: 1rem auto 0;
 }
 
 /* The quiet visual progress indicator (see

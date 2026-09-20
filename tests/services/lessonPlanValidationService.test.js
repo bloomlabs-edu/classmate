@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createLessonPlan, LESSON_PLAN_SECTION_KEYS } from '../../js/models/LessonPlan.js';
 import * as lessonPlanService from '../../js/services/lessonPlanService.js';
-import { getLessonPlanReadiness, getLessonPlanStageCompletion, getLessonPlanReadinessByStage, LESSON_PLAN_STAGES } from '../../js/services/lessonPlanValidationService.js';
+import { getLessonPlanReadiness, getLessonPlanStageCompletion, getLessonPlanReadinessByStage, canSubmitLessonPlan, LESSON_PLAN_STAGES } from '../../js/services/lessonPlanValidationService.js';
 
 // ---------------------------------------------------------------------
 // Concept and WHY (Objectives/Big Question) moved to the separate
@@ -409,6 +409,91 @@ test('getLessonPlanReadinessByStage: a fully-ready plan reports every stage comp
   const byStage = getLessonPlanReadinessByStage(plan);
   assert.ok(byStage.every((entry) => entry.complete === true && entry.messages.length === 0));
   assert.equal(getLessonPlanReadiness(plan).ready, true);
+});
+
+// ---------------------------------------------------------------------
+// canSubmitLessonPlan — the ONE real submission-eligibility gate, per
+// explicit product direction separating it from getLessonPlanReadiness()
+// (a quality checklist, advisory only). At least one Activity, no
+// maximum, no further content requirement — Student Action and every
+// Helping field are warnings the checklist still reports, never
+// blockers here.
+// ---------------------------------------------------------------------
+
+test('canSubmitLessonPlan: zero activities cannot be submitted', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  assert.equal(canSubmitLessonPlan(plan), false);
+});
+
+test('canSubmitLessonPlan: one activity can be submitted, even with every other field blank', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.addActivity(plan); // title/teacherAction/studentAction all left blank
+  assert.equal(canSubmitLessonPlan(plan), true);
+});
+
+test('canSubmitLessonPlan: more than one activity can be submitted', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.addActivity(plan);
+  lessonPlanService.addActivity(plan);
+  lessonPlanService.addActivity(plan);
+  assert.equal(canSubmitLessonPlan(plan), true);
+});
+
+test('canSubmitLessonPlan: no maximum activity count is enforced — 20 activities is exactly as submittable as 1', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  for (let i = 0; i < 20; i += 1) lessonPlanService.addActivity(plan);
+  assert.equal(plan.activities.length, 20);
+  assert.equal(canSubmitLessonPlan(plan), true);
+});
+
+test('canSubmitLessonPlan: a missing Student Action on the only activity does NOT prevent submission', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const activity = lessonPlanService.addActivity(plan);
+  lessonPlanService.updateActivity(plan, activity.id, { title: 'Group Debate', teacherAction: 'Facilitate.' }); // studentAction left blank
+  assert.equal(canSubmitLessonPlan(plan), true);
+  // The checklist still correctly reports it as incomplete -- warning, not a block.
+  assert.equal(getLessonPlanReadiness(plan).ready, false);
+});
+
+test('canSubmitLessonPlan: multiple missing Student Actions across several activities do NOT prevent submission', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  for (let i = 0; i < 4; i += 1) {
+    const activity = lessonPlanService.addActivity(plan);
+    lessonPlanService.updateActivity(plan, activity.id, { title: `Activity ${i + 1}`, teacherAction: 'Teacher does something.' });
+  }
+  assert.equal(canSubmitLessonPlan(plan), true);
+  assert.equal(getLessonPlanReadinessByStage(plan).find((e) => e.stage === LESSON_PLAN_STAGES.EXPERIENCE).messages.length, 4);
+});
+
+test('canSubmitLessonPlan: a missing Pair Explanation does NOT prevent submission', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.addActivity(plan);
+  lessonPlanService.updateHelpingEachOtherLearn(plan, { finalQuestion: 'What next?', teacherLookFors: 'Correct sequencing.' });
+  assert.equal(canSubmitLessonPlan(plan), true);
+});
+
+test('canSubmitLessonPlan: a missing Final Question does NOT prevent submission', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.addActivity(plan);
+  lessonPlanService.updateHelpingEachOtherLearn(plan, { pairExplanation: 'Explain to a partner.', teacherLookFors: 'Correct sequencing.' });
+  assert.equal(canSubmitLessonPlan(plan), true);
+});
+
+test('canSubmitLessonPlan: a missing Teacher Look-Fors does NOT prevent submission', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.addActivity(plan);
+  lessonPlanService.updateHelpingEachOtherLearn(plan, { pairExplanation: 'Explain to a partner.', finalQuestion: 'What next?' });
+  assert.equal(canSubmitLessonPlan(plan), true);
+});
+
+test('canSubmitLessonPlan: a fully-complete plan can obviously still be submitted, and reports zero incomplete checklist stages', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const activity = lessonPlanService.addActivity(plan);
+  lessonPlanService.updateActivity(plan, activity.id, { title: 'Timeline', teacherAction: 'Circulate.', studentAction: 'Sequence.' });
+  lessonPlanService.updateHelpingEachOtherLearn(plan, { pairExplanation: 'Explain to a partner.', finalQuestion: 'What next?', teacherLookFors: 'Correct sequencing.' });
+  assert.equal(canSubmitLessonPlan(plan), true);
+  assert.equal(getLessonPlanReadiness(plan).ready, true);
+  assert.deepEqual(getLessonPlanReadinessByStage(plan).filter((e) => !e.complete), []);
 });
 
 test('Self/Others/India: all three filled never blocks either (was always fine, confirmed unaffected)', () => {
