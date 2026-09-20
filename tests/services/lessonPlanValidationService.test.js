@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createLessonPlan, LESSON_PLAN_SECTION_KEYS } from '../../js/models/LessonPlan.js';
 import * as lessonPlanService from '../../js/services/lessonPlanService.js';
-import { getLessonPlanReadiness, getLessonPlanStageCompletion, LESSON_PLAN_STAGES } from '../../js/services/lessonPlanValidationService.js';
+import { getLessonPlanReadiness, getLessonPlanStageCompletion, getLessonPlanReadinessByStage, LESSON_PLAN_STAGES } from '../../js/services/lessonPlanValidationService.js';
 
 // ---------------------------------------------------------------------
 // Concept and WHY (Objectives/Big Question) moved to the separate
@@ -325,6 +325,90 @@ test('Self/Others/India: only India filled never blocks', () => {
   assert.ok(!readiness.missing.some((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.SELF_OTHERS_INDIA));
   const stages = getLessonPlanStageCompletion(plan);
   assert.equal(stages.find((entry) => entry.stage === LESSON_PLAN_STAGES.CONNECTION).complete, true);
+});
+
+// ---------------------------------------------------------------------
+// getLessonPlanReadinessByStage — powers ui/views/LessonPlanBuilderView.js's
+// own submission checklist (restored at explicit product direction; see
+// that file's own renderReadinessPanel() doc comment for the real
+// production case this covers: a plan can be incomplete in MORE than one
+// stage at once, and the guided flow only ever shows the teacher the
+// CURRENT frontier stage — a later incomplete stage never even renders,
+// so a checklist is the only way to tell the teacher it's still coming).
+// ---------------------------------------------------------------------
+
+test('getLessonPlanReadinessByStage: matches getLessonPlanStageCompletion() exactly for `complete`, and never disagrees with getLessonPlanReadiness().ready', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const activity = lessonPlanService.addActivity(plan);
+  lessonPlanService.updateActivity(plan, activity.id, { title: 'Timeline', teacherAction: 'Circulate.', studentAction: 'Sequence.' });
+  // Helping deliberately left blank -- one stage complete, one not.
+
+  const byStage = getLessonPlanReadinessByStage(plan);
+  const stageCompletion = getLessonPlanStageCompletion(plan);
+  assert.deepEqual(
+    byStage.map((entry) => ({ stage: entry.stage, complete: entry.complete })),
+    stageCompletion
+  );
+  assert.equal(getLessonPlanReadiness(plan).ready, false);
+});
+
+test('getLessonPlanReadinessByStage: a complete stage carries an empty messages[] — never leftover text once fixed', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const activity = lessonPlanService.addActivity(plan);
+  lessonPlanService.updateActivity(plan, activity.id, { title: 'Timeline', teacherAction: 'Circulate.', studentAction: 'Sequence.' });
+
+  const experience = getLessonPlanReadinessByStage(plan).find((entry) => entry.stage === LESSON_PLAN_STAGES.EXPERIENCE);
+  assert.equal(experience.complete, true);
+  assert.deepEqual(experience.messages, []);
+});
+
+test('getLessonPlanReadinessByStage: an incomplete stage carries its own specific, friendly missing-item messages — the exact same text getLessonPlanReadiness().missing already reports, never a second, drifted copy', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const activity = lessonPlanService.addActivity(plan);
+  lessonPlanService.updateActivity(plan, activity.id, { title: 'Group Debate', teacherAction: 'Facilitate.' }); // studentAction left blank
+
+  const experience = getLessonPlanReadinessByStage(plan).find((entry) => entry.stage === LESSON_PLAN_STAGES.EXPERIENCE);
+  assert.equal(experience.complete, false);
+  const readiness = getLessonPlanReadiness(plan);
+  const expectedMessage = readiness.missing.find((item) => /student action/i.test(item.message)).message;
+  assert.deepEqual(experience.messages, [expectedMessage]);
+});
+
+test('getLessonPlanReadinessByStage: the real reported production case — multiple activities missing Student Action AND Helping entirely blank — reports BOTH Experience and Helping as incomplete simultaneously, each with its own messages, even though the guided Builder only ever shows Experience (the earlier of the two) on screen at a time', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  for (let i = 0; i < 4; i += 1) {
+    const activity = lessonPlanService.addActivity(plan);
+    lessonPlanService.updateActivity(plan, activity.id, { title: `Activity ${i + 1}`, teacherAction: 'Teacher does something.' }); // studentAction left blank, matching production
+  }
+  // pairExplanation/finalQuestion/teacherLookFors all deliberately left blank too.
+
+  const byStage = getLessonPlanReadinessByStage(plan);
+  const experience = byStage.find((entry) => entry.stage === LESSON_PLAN_STAGES.EXPERIENCE);
+  const helping = byStage.find((entry) => entry.stage === LESSON_PLAN_STAGES.HELPING);
+
+  assert.equal(experience.complete, false);
+  assert.equal(experience.messages.length, 4); // one Student Action message per activity
+  assert.equal(helping.complete, false);
+  assert.equal(helping.messages.length, 3); // Pair Explanation, Final Question, Teacher Look-Fors
+
+  // Every OTHER stage stays complete/empty, unaffected.
+  byStage
+    .filter((entry) => entry.stage !== LESSON_PLAN_STAGES.EXPERIENCE && entry.stage !== LESSON_PLAN_STAGES.HELPING)
+    .forEach((entry) => {
+      assert.equal(entry.complete, true);
+      assert.deepEqual(entry.messages, []);
+    });
+});
+
+test('getLessonPlanReadinessByStage: a fully-ready plan reports every stage complete with zero messages anywhere', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const activity = lessonPlanService.addActivity(plan);
+  lessonPlanService.updateActivity(plan, activity.id, { title: 'Timeline', teacherAction: 'Circulate.', studentAction: 'Sequence.' });
+  lessonPlanService.updateHelpingEachOtherLearn(plan, { pairExplanation: 'Explain to a partner.', finalQuestion: 'What next?', teacherLookFors: 'Correct sequencing.' });
+
+  const byStage = getLessonPlanReadinessByStage(plan);
+  assert.ok(byStage.every((entry) => entry.complete === true && entry.messages.length === 0));
+  assert.equal(getLessonPlanReadiness(plan).ready, true);
 });
 
 test('Self/Others/India: all three filled never blocks either (was always fine, confirmed unaffected)', () => {

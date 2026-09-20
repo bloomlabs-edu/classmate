@@ -196,3 +196,23 @@ export function getLessonPlanStageCompletion(lessonPlan) {
   const incompleteStages = new Set(missing.map(stageForMissingItem).filter(Boolean));
   return Object.values(LESSON_PLAN_STAGES).map((stage) => ({ stage, complete: !incompleteStages.has(stage) }));
 }
+
+/**
+ * Same 6-stage shape as getLessonPlanStageCompletion(), but each entry
+ * also carries its OWN specific missing-item messages (empty once
+ * complete) — added so a submission checklist can tell a teacher
+ * exactly what's left, stage by stage, without maintaining a second,
+ * separate idea of "what's missing" that could drift out of sync with
+ * getLessonPlanReadiness()'s own missing[] (the same reasoning
+ * getLessonPlanStageCompletion()'s own doc comment already gives for
+ * never inventing a second source of truth). Requirements themselves
+ * are completely unchanged — this only exposes the same information in
+ * a shape a checklist UI can render directly.
+ */
+export function getLessonPlanReadinessByStage(lessonPlan) {
+  const { missing } = getLessonPlanReadiness(lessonPlan);
+  return Object.values(LESSON_PLAN_STAGES).map((stage) => {
+    const messages = missing.filter((item) => stageForMissingItem(item) === stage).map((item) => item.message);
+    return { stage, complete: messages.length === 0, messages };
+  });
+}

@@ -3332,10 +3332,10 @@ textarea.reading-editor__block-input {
 }
 
 /* The Submit action — same quiet green treatment as before; this is
-   the ONE panel that still renders as a distinct surface, since it's
-   a real call to action, not a planning stage. The "not ready yet"
-   checklist/warning that used to live here is gone entirely — see
-   renderReadinessPanel()'s own doc comment. */
+   a real call to action, not a planning stage. See renderReadinessPanel()'s
+   own doc comment for the "not ready yet" checklist sibling below —
+   restored at explicit product direction after a prior redesign had
+   removed it. */
 .lesson-plan-builder__readiness--ready {
   display: flex;
   align-items: center;
@@ -3346,6 +3346,43 @@ textarea.reading-editor__block-input {
   font-size: 0.9rem;
   background-color: #EAF5E3;
   color: var(--color-success, #4C9A2A);
+}
+.lesson-plan-builder__readiness--not-ready {
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  margin-top: 1rem;
+  background-color: #FBF6E9;
+}
+.lesson-plan-builder__readiness-heading {
+  margin: 0 0 0.5rem;
+  font-weight: var(--font-weight-bold);
+  font-size: 0.9rem;
+  color: var(--color-text);
+}
+.lesson-plan-builder__readiness-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.lesson-plan-builder__readiness-checklist-label {
+  font-size: 0.85rem;
+}
+.lesson-plan-builder__readiness-checklist-item--complete > .lesson-plan-builder__readiness-checklist-label {
+  color: var(--color-success, #4C9A2A);
+}
+.lesson-plan-builder__readiness-checklist-item--incomplete > .lesson-plan-builder__readiness-checklist-label {
+  color: var(--color-text);
+  font-weight: var(--font-weight-bold);
+}
+.lesson-plan-builder__readiness-checklist-sublist {
+  list-style: disc;
+  margin: 0.3rem 0 0.2rem 1.4rem;
+  padding: 0;
+  font-size: 0.8rem;
+  color: var(--color-muted);
 }
 
 /* The quiet visual progress indicator (see

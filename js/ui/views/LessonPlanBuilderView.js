@@ -76,7 +76,7 @@ import * as workspaceService from '../../services/workspaceService.js';
 import { getGradeLabelForClassroom } from '../../services/classroomService.js';
 import { getTodayDateKey } from '../../utils/dateHelpers.js';
 import { LESSON_PLAN_STATUS, LESSON_PLAN_SECTION_KEYS, LESSON_RESOURCE_TYPES } from '../../models/LessonPlan.js';
-import { getLessonPlanReadiness, getLessonPlanStageCompletion, LESSON_PLAN_STAGES } from '../../services/lessonPlanValidationService.js';
+import { getLessonPlanReadiness, getLessonPlanStageCompletion, getLessonPlanReadinessByStage, LESSON_PLAN_STAGES } from '../../services/lessonPlanValidationService.js';
 import { getTimetableSubjectColor, getTimetableSubjectWash } from '../../config/timetableSubjectColors.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createIcon } from '../components/Icon.js';
@@ -1014,9 +1014,14 @@ function renderBuilder(container, state, handlers) {
     grid.appendChild(withTileSize(withSurfaceTile(renderLearningResourcesSection(plan, state, handlers)), 'full'));
   }
 
-  if (!frontierStage) {
-    grid.appendChild(withTileSize(renderReadinessPanel(plan, handlers), 'full'));
-  }
+  // Submit/readiness panel — ALWAYS rendered now (not gated on
+  // `!frontierStage`), per explicit product direction reversing a prior
+  // decision (see renderReadinessPanel()'s own doc comment): a teacher
+  // sitting on the current frontier stage has no way to know a LATER
+  // stage (e.g. Helping) is still incomplete too, since that stage
+  // hasn't rendered yet at all — a real, reported case of a teacher
+  // stuck on Draft with no visible path to Submit and no explanation.
+  grid.appendChild(withTileSize(renderReadinessPanel(plan, handlers), 'full'));
 
   container.appendChild(wrapper);
 }
@@ -1682,20 +1687,38 @@ function renderConceptsField(plan, classroom, state, handlers) {
  * offer here — renderTitleBar's own status message covers that case.
  */
 /**
- * The "ready for review"/Submit action — per this feature's own
- * product direction, submitting is the readiness checklist's own
- * final step, never a separate screen or a button bolted on
- * somewhere else. Deliberately renders NOTHING at all when not ready
- * (no "Almost there — N things left" list anymore — see this file's
- * own header comment on why): the guided flow itself is what surfaces
- * what's still incomplete (the frontier stage is sitting there,
- * uncollapsed, asking for attention), so a second, separate warning
- * panel repeating the same information would just be the "still have
- * chores" anxiety this whole redesign explicitly set out to remove.
+ * Friendly, compact labels for the submission checklist below — the SAME
+ * six services/lessonPlanValidationService.js LESSON_PLAN_STAGES values,
+ * just shorter than the full guided-section question headings (those stay
+ * exactly as they are on their own sections; this is a summary list, not
+ * a second copy of each heading).
+ */
+const STAGE_CHECKLIST_LABELS = Object.freeze({
+  [LESSON_PLAN_STAGES.CONCEPT]: 'Concepts',
+  [LESSON_PLAN_STAGES.PURPOSE]: 'Why students are learning this',
+  [LESSON_PLAN_STAGES.CONNECTION]: 'Self, Others, India',
+  [LESSON_PLAN_STAGES.SHOWCASE]: 'Showcasing learning',
+  [LESSON_PLAN_STAGES.EXPERIENCE]: 'Learning Activities',
+  [LESSON_PLAN_STAGES.HELPING]: 'Helping each other learn',
+});
+
+/**
+ * The "ready for review"/Submit action, and — per explicit product
+ * direction reversing this function's own prior "no checklist" decision
+ * (see git history: a past redesign removed an "Almost there — N things
+ * left" list on the theory that the guided flow's own open frontier
+ * stage was warning enough) — an explicit "what's still missing"
+ * checklist when it isn't ready yet. That prior theory doesn't hold once
+ * more than one stage is incomplete: a LATER stage (e.g. Helping) never
+ * even renders while an EARLIER one (e.g. Experience) is still open, so
+ * a teacher has no way to know it's still coming — confirmed against a
+ * real reported case where a plan was missing content in both Experience
+ * AND Helping, but only Experience was visible on screen at all.
  * Submission validation itself (services/lessonPlanValidationService.js's
- * getLessonPlanReadiness()) is completely unchanged — same
- * requirements, same gate on the Submit button — only the missing-item
- * checklist UI is gone.
+ * getLessonPlanReadiness()/getLessonPlanReadinessByStage()) is completely
+ * unchanged — same requirements, same gate on the Submit button — this
+ * only exposes what was already being computed, so it can never disagree
+ * with the guided flow's own frontier stage.
  */
 function renderReadinessPanel(plan, handlers) {
   // Not editable (SUBMITTED/APPROVED) — nothing actionable left to show
@@ -1704,7 +1727,44 @@ function renderReadinessPanel(plan, handlers) {
   if (!handlers.editable) return document.createComment('lesson plan locked — no readiness action to show');
 
   const readiness = getLessonPlanReadiness(plan);
-  if (!readiness.ready) return document.createComment('not yet ready — the guided flow itself surfaces what is still incomplete');
+
+  if (!readiness.ready) {
+    const panel = document.createElement('div');
+    panel.className = 'lesson-plan-builder__readiness lesson-plan-builder__readiness--not-ready';
+
+    const heading = document.createElement('p');
+    heading.className = 'lesson-plan-builder__readiness-heading';
+    heading.textContent = 'Not ready to submit yet';
+    panel.appendChild(heading);
+
+    const list = document.createElement('ul');
+    list.className = 'lesson-plan-builder__readiness-checklist';
+    getLessonPlanReadinessByStage(plan).forEach(({ stage, complete, messages }) => {
+      const item = document.createElement('li');
+      item.className = `lesson-plan-builder__readiness-checklist-item lesson-plan-builder__readiness-checklist-item--${complete ? 'complete' : 'incomplete'}`;
+
+      const label = document.createElement('span');
+      label.className = 'lesson-plan-builder__readiness-checklist-label';
+      label.textContent = `${complete ? '✓' : '✗'} ${STAGE_CHECKLIST_LABELS[stage]}`;
+      item.appendChild(label);
+
+      if (!complete) {
+        const sub = document.createElement('ul');
+        sub.className = 'lesson-plan-builder__readiness-checklist-sublist';
+        messages.forEach((message) => {
+          const subItem = document.createElement('li');
+          subItem.textContent = message;
+          sub.appendChild(subItem);
+        });
+        item.appendChild(sub);
+      }
+
+      list.appendChild(item);
+    });
+    panel.appendChild(list);
+
+    return panel;
+  }
 
   const panel = document.createElement('div');
   panel.className = 'lesson-plan-builder__readiness lesson-plan-builder__readiness--ready';
