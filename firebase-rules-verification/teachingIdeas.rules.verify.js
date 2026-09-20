@@ -63,12 +63,20 @@ function seedSourcePlanData({ status = 'approved' } = {}) {
 }
 
 function validProjection(overrides = {}) {
+  // `swbatObjectives` is deliberately excluded here even though it's
+  // part of SOURCE_PLAN_CONTENT above — a real LessonPlan document has
+  // it, but services/teachingIdeasService.js's own buildTeachingIdeaProjection()
+  // never copies it into a projection (see that function's own doc
+  // comment). A fixture that included it on both sides masked a real
+  // bug: the rule used to compare it anyway, which throws (not just
+  // fails) when the field is genuinely absent from a real create.
+  const { swbatObjectives, ...projectedContent } = SOURCE_PLAN_CONTENT;
   return {
     sourceLessonPlanId: 'plan-1',
     sourceClassroomId: 'classroom-1',
     teacherDisplayName: 'Anu',
     publishedAt: '2026-09-04T00:00:00.000Z',
-    ...SOURCE_PLAN_CONTENT,
+    ...projectedContent,
     ...overrides,
   };
 }

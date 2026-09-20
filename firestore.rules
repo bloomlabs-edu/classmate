@@ -904,7 +904,14 @@ service cloud.firestore {
           request.resource.data.topic == sourcePlan.topic &&
           request.resource.data.lessonObjective == sourcePlan.lessonObjective &&
           request.resource.data.bigQuestion == sourcePlan.bigQuestion &&
-          request.resource.data.swbatObjectives == sourcePlan.swbatObjectives &&
+          // `swbatObjectives` deliberately NOT checked here — see
+          // services/teachingIdeasService.js's own buildTeachingIdeaProjection()
+          // doc comment: that field is intentionally never copied into a
+          // projection at all (legacy, superseded by objectives[] via
+          // lessonObjective above), so `request.resource.data.swbatObjectives`
+          // is undefined on every real create — comparing it against
+          // `sourcePlan.swbatObjectives` (a real array) throws a rules
+          // evaluation error, not just `false`, blocking every publish.
           request.resource.data.selfOthersIndia == sourcePlan.selfOthersIndia &&
           request.resource.data.assessments == sourcePlan.assessments &&
           request.resource.data.spark == sourcePlan.spark &&
