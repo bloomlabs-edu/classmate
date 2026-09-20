@@ -3398,29 +3398,14 @@ textarea.reading-editor__block-input {
   color: var(--color-danger, #C0392B);
 }
 .lesson-plan-builder__readiness-checklist {
-  list-style: none;
-  margin: 0 0 0.6rem;
-  padding: 0;
+  list-style: disc;
+  margin: 0;
+  padding-left: 1.25rem;
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
-}
-.lesson-plan-builder__readiness-checklist-label {
-  font-size: 0.85rem;
-}
-.lesson-plan-builder__readiness-checklist-item--complete > .lesson-plan-builder__readiness-checklist-label {
-  color: var(--color-success, #4C9A2A);
-}
-.lesson-plan-builder__readiness-checklist-item--incomplete > .lesson-plan-builder__readiness-checklist-label {
+  gap: 0.3rem;
+  font-size: 0.82rem;
   color: var(--color-text);
-  font-weight: var(--font-weight-bold);
-}
-.lesson-plan-builder__readiness-checklist-sublist {
-  list-style: disc;
-  margin: 0.3rem 0 0.2rem 1.4rem;
-  padding: 0;
-  font-size: 0.8rem;
-  color: var(--color-muted);
 }
 .lesson-plan-builder__back-to-top {
   display: block;

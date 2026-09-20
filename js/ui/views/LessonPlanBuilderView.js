@@ -250,7 +250,14 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
   // Learning Resources — local UI state only (which add/edit form, if
   // any, is currently open); the resources themselves live on
   // `plan.resources`, persisted the same way every other section is.
-  let addingResource = false;
+  // `addingResourceSlot` is `null` (no form open), `'common'` (the
+  // Common Learning Resources section's own "+ Add Resource"), or a
+  // real Activity id (that Activity's own "+ Add Resource") — the SAME
+  // underlying addLearningResource()/resources[] this always was, only
+  // the section dropdown's own default differs by which slot opened it,
+  // so a resource created from Activity 2's own card starts pre-scoped
+  // to Activity 2 without the teacher having to find it in the dropdown.
+  let addingResourceSlot = null;
   let editingResourceId = null;
 
   // Publish status — `null` until checked (or plan.status isn't
@@ -362,7 +369,7 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
   function rerender() {
     const editable = plan ? lessonPlanReviewService.isLessonPlanEditable(plan) : false;
     lastRenderedFrontierStage = computeFrontierStage();
-    renderBuilder(container, { plan, loadError, collapsedActivityIds, saveIndicatorElement: saveIndicator.element, editable, classroom, isConceptPickerOpen, expandedConceptUnitId, isSchedulePickerOpen, pendingScheduleDate, reopenedStageKey, isSparkOpen, addingResource, editingResourceId, isPublished, isRetryingPublish, publishRetryError }, {
+    renderBuilder(container, { plan, loadError, collapsedActivityIds, saveIndicatorElement: saveIndicator.element, editable, classroom, isConceptPickerOpen, expandedConceptUnitId, isSchedulePickerOpen, pendingScheduleDate, reopenedStageKey, isSparkOpen, addingResourceSlot, editingResourceId, isPublished, isRetryingPublish, publishRetryError }, {
       onBack,
       editable,
       onSubmitForReview: submitForReview,
@@ -701,24 +708,24 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
       },
 
       // ---- Learning Resources ----
-      onStartAddResource: () => {
-        addingResource = true;
+      onStartAddResource: (slot = 'common') => {
+        addingResourceSlot = slot;
         editingResourceId = null;
         rerender(); // purely local UI state — nothing to persist
       },
       onCancelAddResource: () => {
-        addingResource = false;
+        addingResourceSlot = null;
         rerender();
       },
       onSaveNewResource: ({ title, type, url, description, sectionKey }) => {
         if (!title.trim() || !url.trim()) return; // Title and a real URL are the two required fields — see renderLearningResourcesSection()'s own form
         lessonPlanService.addLearningResource(plan, { title: title.trim(), type, url: url.trim(), description: description.trim(), sectionKey });
-        addingResource = false;
+        addingResourceSlot = null;
         persistAndRerender();
       },
       onStartEditResource: (resourceId) => {
         editingResourceId = resourceId;
-        addingResource = false;
+        addingResourceSlot = null;
         rerender();
       },
       onCancelEditResource: () => {
@@ -887,21 +894,26 @@ function renderBuilder(container, state, handlers) {
     // Q5 Helping each other learn), the same order the guided flow
     // below uses — never two different orderings for the same content.
     grid.appendChild(withTileSize(renderSubjectStage(plan, classroom, guidedState, handlers), 'full'));
+    grid.appendChild(withTileSize(renderLessonOverviewLabel(), 'full'));
     grid.appendChild(withTileSize(withSurfaceTile(renderConceptsField(plan, classroom, guidedState, handlers)), 'wide'));
     grid.appendChild(withTileSize(renderScheduleSection(plan, classroom, guidedState, handlers), 'narrow'));
     grid.appendChild(withTileSize(withSurfaceTile(renderWhySection(plan, handlers)), 'full'));
-    grid.appendChild(withTileSize(renderSelfOthersIndiaSection(plan, handlers), 'half'));
-    grid.appendChild(withTileSize(renderAssessmentSection(plan, handlers), 'half'));
+    grid.appendChild(withTileSize(withSurfaceTile(renderSelfOthersIndiaSection(plan, handlers)), 'half'));
+    grid.appendChild(withTileSize(withSurfaceTile(renderAssessmentSection(plan, handlers)), 'half'));
+    grid.appendChild(withTileSize(withSurfaceTile(renderCommonLearningResources(plan, state, handlers)), 'full'));
     const experience = document.createElement('div');
     experience.className = 'lesson-plan-builder__experience';
-    experience.appendChild(renderActivitiesSection(plan, state.collapsedActivityIds, handlers));
     experience.appendChild(renderSparkSection(plan, handlers));
+    experience.appendChild(renderActivitiesSection(plan, state.collapsedActivityIds, handlers, state));
     grid.appendChild(withTileSize(withSurfaceTile(experience), 'full'));
     const helping = document.createElement('div');
+    const helpingHeading = document.createElement('h2');
+    helpingHeading.className = 'lesson-plan-builder__stage-heading';
+    helpingHeading.textContent = 'Are students helping me and others learn?';
+    helping.appendChild(helpingHeading);
     helping.appendChild(renderPairExplanationField(plan, handlers));
     helping.appendChild(renderFinalQuestionAndLookForsFields(plan, handlers));
     grid.appendChild(withTileSize(helping, 'full'));
-    grid.appendChild(withTileSize(withSurfaceTile(renderLearningResourcesSection(plan, state, handlers)), 'full'));
     container.appendChild(wrapper);
     return;
   }
@@ -926,16 +938,19 @@ function renderBuilder(container, state, handlers) {
   // eligibility requirement (canSubmitLessonPlan()).
   grid.appendChild(withTileSize(renderReadinessPanel(plan, handlers), 'full'));
 
-  // CONCEPT + SCHEDULE — composed as one Bento row, Concepts as the
-  // larger "wide" (8/12) foundational tile with its own surface (see
-  // withSurfaceTile()) since every other stage builds on it, Schedule
-  // as the smaller "narrow" (4/12) supporting context tile with no
-  // surface of its own — purely a grid-placement + surface choice made
-  // here in the orchestrator; neither section's own render function
-  // changes. Either tile expands to the FULL row width on its own (see
-  // the CSS `--stage--primary`/`--stage--reopened` override) whenever a
-  // teacher is actively editing it, so an open picker never gets
-  // squeezed into a half column.
+  // LESSON OVERVIEW — Concepts + Schedule, composed as one Bento row,
+  // Concepts as the larger "wide" (8/12) foundational tile with its own
+  // surface (see withSurfaceTile()) since every other stage builds on
+  // it, Schedule as the smaller "narrow" (4/12) supporting context tile
+  // with no surface of its own — purely a grid-placement + surface
+  // choice made here in the orchestrator; neither section's own render
+  // function changes. Either tile expands to the FULL row width on its
+  // own (see the CSS `--stage--primary`/`--stage--reopened` override)
+  // whenever a teacher is actively editing it, so an open picker never
+  // gets squeezed into a half column. A plain label above (not another
+  // card) is enough to read the two as one related group rather than
+  // floating text — see renderLessonOverviewLabel()'s own doc comment.
+  grid.appendChild(withTileSize(renderLessonOverviewLabel(), 'full'));
   grid.appendChild(withTileSize(withSurfaceTile(renderConceptsField(plan, classroom, guidedState, handlers)), 'wide'));
   grid.appendChild(withTileSize(renderScheduleSection(plan, classroom, guidedState, handlers), 'narrow'));
 
@@ -947,10 +962,12 @@ function renderBuilder(container, state, handlers) {
   // Q1-Q5 — the real "5 Questions" lesson-planning framework itself
   // (models/LessonPlan.js's own header comment), in the framework's own
   // order, each stage's title the actual question a teacher is
-  // answering — never a generic "Section 4" label. Reveals up to and
-  // including the current frontier stage, then stops — the next one
-  // doesn't exist on screen yet.
-  const freeTextStages = [
+  // answering — never a generic "Section 4" label. Split into two
+  // groups (rather than one flat array) so Common Learning Resources
+  // can render between Showcase and Experience — "before the activity
+  // sequence," per explicit product direction — without needing a
+  // second, parallel stage-loop mechanism.
+  const earlyStages = [
     {
       stage: LESSON_PLAN_STAGES.PURPOSE,
       title: 'Why are students learning what they are learning today?',
@@ -967,6 +984,7 @@ function renderBuilder(container, state, handlers) {
       renderFull: () => renderSelfOthersIndiaSection(plan, handlers),
       getPreview: () => plan.selfOthersIndia.self || plan.selfOthersIndia.others || plan.selfOthersIndia.india || '',
       tileSize: 'half',
+      surface: true,
     },
     {
       stage: LESSON_PLAN_STAGES.SHOWCASE,
@@ -975,7 +993,11 @@ function renderBuilder(container, state, handlers) {
       renderFull: () => renderAssessmentSection(plan, handlers),
       getPreview: () => plan.assessments.find((item) => item.description)?.description || '',
       tileSize: 'half',
+      surface: true,
     },
+  ];
+
+  const lateStages = [
     {
       stage: LESSON_PLAN_STAGES.EXPERIENCE,
       title: 'Is it fun, fast, effective?',
@@ -987,13 +1009,17 @@ function renderBuilder(container, state, handlers) {
         intro.className = 'lesson-plan-builder__experience-intro';
         intro.textContent = 'Design how the lesson actually unfolds — the activities that carry it, with room for a Spark if you want one.';
         wrap.appendChild(intro);
-        wrap.appendChild(renderActivitiesSection(plan, state.collapsedActivityIds, handlers));
+        // Spark is the lesson's own OPENING experience, so it renders
+        // BEFORE Activity 1 — a teacher reading top-to-bottom follows
+        // the lesson in the order it will actually happen.
         wrap.appendChild(renderSparkSection(plan, handlers, state));
+        wrap.appendChild(renderActivitiesSection(plan, state.collapsedActivityIds, handlers, state));
         return wrap;
       },
       getPreview: () => plan.spark.title || (plan.activities.length > 0 ? `${plan.activities.length} activit${plan.activities.length === 1 ? 'y' : 'ies'}` : ''),
       tileSize: 'full',
       surface: true,
+      alwaysExpanded: true,
     },
     {
       stage: LESSON_PLAN_STAGES.HELPING,
@@ -1013,6 +1039,7 @@ function renderBuilder(container, state, handlers) {
       },
       getPreview: () => plan.pairExplanation || plan.finalQuestion || '',
       tileSize: 'full',
+      alwaysExpanded: true,
     },
   ];
 
@@ -1027,18 +1054,23 @@ function renderBuilder(container, state, handlers) {
   // renderGuidedContentStage()'s own `isComplete` check, unchanged) —
   // this only removes the loop's own early stop, not that per-stage
   // collapse behavior.
-  for (const config of freeTextStages) {
+  for (const config of earlyStages) {
     grid.appendChild(renderGuidedContentStage({ ...config, plan, state: guidedState, handlers }));
   }
 
-  // Learning Resources — logically after the lesson content/activities
-  // and before the closing "Back to top" link. Always shown now (no
-  // longer gated on `!frontierStage`, for the same reason the guided
-  // stages above no longer are) — Resources were never part of stage
-  // completion itself (services/lessonPlanValidationService.js is
-  // untouched either way), but they used to inherit the old
-  // progressive-disclosure gate incidentally; that gate is gone.
-  grid.appendChild(withTileSize(withSurfaceTile(renderLearningResourcesSection(plan, state, handlers)), 'full'));
+  // Common Learning Resources — shared across the lesson / across
+  // multiple Activities (Whole Lesson/General, Spark, Pair Explanation)
+  // — deliberately BEFORE the activity sequence itself, per explicit
+  // product direction: a teacher sees what they need to gather before
+  // planning/executing the activities, not after. Activity-SPECIFIC
+  // resources render inside each Activity's own card instead (see
+  // renderActivityCard()) — same underlying resources[]/sectionKey
+  // model either way, just rendered where each one is actually needed.
+  grid.appendChild(withTileSize(withSurfaceTile(renderCommonLearningResources(plan, state, handlers)), 'full'));
+
+  for (const config of lateStages) {
+    grid.appendChild(renderGuidedContentStage({ ...config, plan, state: guidedState, handlers }));
+  }
 
   grid.appendChild(withTileSize(renderBackToTopLink(), 'full'));
 
@@ -1798,34 +1830,28 @@ function renderReadinessPanel(plan, handlers) {
     note.textContent = plan.status === LESSON_PLAN_STATUS.CHANGES_REQUESTED ? 'Ready to resubmit.' : 'Ready for review.';
     panel.appendChild(note);
   } else {
+    // Compact by design, per explicit product direction: completed
+    // stages consumed significant vertical space for very little real
+    // information ("✓ Concepts / ✓ Purpose / ✓ Connection / ✓ Showcase"
+    // never changes and never needs re-confirming). Only what still
+    // needs attention is listed — the same underlying messages the
+    // "Submit without these?" modal below also uses (see
+    // getLessonPlanReadinessByStage()'s own doc comment), just flat
+    // rather than grouped, since a short count-and-list reads faster
+    // than a 6-row checklist for this purpose.
     panel.classList.add('lesson-plan-builder__readiness--warning');
+    const allMessages = incompleteStages.flatMap((entry) => entry.messages);
     const note = document.createElement('p');
     note.className = 'lesson-plan-builder__readiness-note';
-    note.textContent = 'Some parts are still incomplete.';
+    note.textContent = `⚠ ${allMessages.length} item${allMessages.length === 1 ? '' : 's'} to consider`;
     panel.appendChild(note);
 
     const list = document.createElement('ul');
     list.className = 'lesson-plan-builder__readiness-checklist';
-    byStage.forEach(({ stage, complete, messages }) => {
+    allMessages.forEach((message) => {
       const item = document.createElement('li');
-      item.className = `lesson-plan-builder__readiness-checklist-item lesson-plan-builder__readiness-checklist-item--${complete ? 'complete' : 'incomplete'}`;
-
-      const label = document.createElement('span');
-      label.className = 'lesson-plan-builder__readiness-checklist-label';
-      label.textContent = `${complete ? '✓' : '⚠'} ${STAGE_CHECKLIST_LABELS[stage]}`;
-      item.appendChild(label);
-
-      if (!complete) {
-        const sub = document.createElement('ul');
-        sub.className = 'lesson-plan-builder__readiness-checklist-sublist';
-        messages.forEach((message) => {
-          const subItem = document.createElement('li');
-          subItem.textContent = message;
-          sub.appendChild(subItem);
-        });
-        item.appendChild(sub);
-      }
-
+      item.className = 'lesson-plan-builder__readiness-checklist-item';
+      item.textContent = message;
       list.appendChild(item);
     });
     panel.appendChild(list);
@@ -1866,7 +1892,7 @@ function renderReadinessPanel(plan, handlers) {
  * .lesson-plan-builder__stage* rules) so the guided trail reads as one
  * consistent system regardless of which stage produced it.
  */
-function renderGuidedContentStage({ stage, title, sectionKey, plan, state, handlers, renderFull, getPreview, tileSize = 'full', surface = false }) {
+function renderGuidedContentStage({ stage, title, sectionKey, plan, state, handlers, renderFull, getPreview, tileSize = 'full', surface = false, alwaysExpanded = false }) {
   const isComplete = Boolean(state.stageCompletionByKey[stage]);
   const isFrontier = state.frontierStage === stage;
   const isReopened = state.reopenedStageKey === stage;
@@ -1875,7 +1901,15 @@ function renderGuidedContentStage({ stage, title, sectionKey, plan, state, handl
   wrap.className = `lesson-plan-builder__stage lesson-plan-builder__tile--${tileSize}`;
   if (surface) wrap.classList.add('lesson-plan-builder__stage--surface-tile');
 
-  if (isComplete && !isFrontier && !isReopened) {
+  // Experience/Helping (`alwaysExpanded: true`) never collapse to a
+  // one-line summary, even once complete — unlike Purpose/Connection/
+  // Showcase, these carry the actual TEACHING CONTENT (Spark, every
+  // Activity, Activity Resources, the Helping fields) this whole
+  // restructure exists to keep visible and followable top-to-bottom;
+  // collapsing a "done" activity sequence to "✓ Is it fun, fast,
+  // effective? — Mystery Box" would hide exactly the content a teacher
+  // most needs right before actually teaching the lesson.
+  if (isComplete && !isFrontier && !isReopened && !alwaysExpanded) {
     wrap.classList.add('lesson-plan-builder__stage--compact');
     const summary = document.createElement('button');
     summary.type = 'button';
@@ -2109,23 +2143,53 @@ function resolveResourceSectionLabel(plan, sectionKey) {
   return 'Whole Lesson / General';
 }
 
-function renderLearningResourcesSection(plan, state, handlers) {
+/** A plain section label above Concepts + Schedule — enough to read the two as one related "Lesson Overview" group without wrapping them in yet another bordered card of their own (each already has/doesn't have its own surface, unchanged). */
+function renderLessonOverviewLabel() {
+  const heading = document.createElement('p');
+  heading.className = 'lesson-plan-builder__primary-section-heading';
+  heading.textContent = 'Lesson Overview';
+  return heading;
+}
+
+/** The Common Learning Resources scope — see renderLearningResourcesSection()'s own doc comment for the common-vs-activity-specific split. Filters to every resource NOT addressed to a specific Activity (Whole Lesson/General, Spark, Pair Explanation). */
+function renderCommonLearningResources(plan, state, handlers) {
+  return renderLearningResourcesSection(plan, state, handlers, {
+    slot: 'common',
+    filter: (resource) => !lessonPlanReviewService.getActivityIdFromSectionKey(resource.sectionKey),
+    heading: 'Common Learning Resources',
+    emptyText: 'Attach a Graphic Organizer, Anchor Chart, video, or reference document shared across the lesson.',
+  });
+}
+
+/**
+ * Renders ONE scope's worth of Learning Resources — either the shared
+ * "Common Learning Resources" (everything NOT addressed to a specific
+ * Activity: Whole Lesson/General, Spark, Pair Explanation) shown before
+ * the activity sequence, or one Activity's own resources, shown inside
+ * that Activity's own card. Same underlying `plan.resources[]`/
+ * sectionKey model either way (see models/LessonPlan.js's own
+ * createLessonPlanResource() doc comment) — this only changes WHERE a
+ * given resource renders, never what a resource IS. `slot` identifies
+ * which "+ Add Resource" form (if any) is currently open — `'common'`
+ * or a real Activity id — so exactly one add form is ever open across
+ * the whole canvas, always in the right place.
+ */
+function renderLearningResourcesSection(plan, state, handlers, { slot, filter, heading: headingText, emptyText, defaultSectionKey = null }) {
   const wrap = document.createElement('div');
   wrap.className = 'lesson-plan-builder__resources';
 
   const heading = document.createElement('p');
   heading.className = 'lesson-plan-builder__primary-section-heading';
-  heading.textContent = 'Learning Resources';
+  heading.textContent = headingText;
   wrap.appendChild(heading);
 
-  const resources = plan.resources || [];
+  const resources = (plan.resources || []).filter(filter);
+  const isAddingHere = state.addingResourceSlot === slot;
 
-  if (resources.length === 0 && !state.addingResource) {
+  if (resources.length === 0 && !isAddingHere) {
     const empty = document.createElement('p');
     empty.className = 'lesson-plan-builder__resources-empty';
-    empty.textContent = handlers.editable
-      ? 'Attach a Graphic Organizer, Anchor Chart, video, or reference document to support this lesson.'
-      : 'No resources attached to this lesson yet.';
+    empty.textContent = handlers.editable ? emptyText : 'No resources attached here yet.';
     wrap.appendChild(empty);
   } else {
     const list = document.createElement('div');
@@ -2148,17 +2212,18 @@ function renderLearningResourcesSection(plan, state, handlers) {
   }
 
   if (handlers.editable) {
-    if (state.addingResource) {
+    if (isAddingHere) {
       wrap.appendChild(
         renderResourceForm(plan, {
           resource: null,
           onSave: handlers.onSaveNewResource,
           onCancel: handlers.onCancelAddResource,
           submitLabel: 'Add Resource',
+          defaultSectionKey,
         })
       );
     } else {
-      wrap.appendChild(createAddRowButton('+ Add Resource', handlers.onStartAddResource));
+      wrap.appendChild(createAddRowButton('+ Add Resource', () => handlers.onStartAddResource(slot)));
     }
   }
 
@@ -2228,8 +2293,8 @@ function renderResourceCard(plan, resource, handlers) {
   return card;
 }
 
-/** The Add/Edit form — same fields either way; `resource` is null for a fresh Add, or the existing resource being edited (pre-filling every field). */
-function renderResourceForm(plan, { resource, onSave, onCancel, submitLabel }) {
+/** The Add/Edit form — same fields either way; `resource` is null for a fresh Add, or the existing resource being edited (pre-filling every field). `defaultSectionKey` only applies to a fresh Add (e.g. an Activity's own "+ Add Resource" pre-scopes to that Activity) — ignored once editing a real resource, which always starts from its own current sectionKey. */
+function renderResourceForm(plan, { resource, onSave, onCancel, submitLabel, defaultSectionKey = null }) {
   const form = document.createElement('div');
   form.className = 'lesson-plan-builder__resource-form';
 
@@ -2278,7 +2343,7 @@ function renderResourceForm(plan, { resource, onSave, onCancel, submitLabel }) {
     option.textContent = label;
     sectionSelect.appendChild(option);
   });
-  sectionSelect.value = resource?.sectionKey || '';
+  sectionSelect.value = resource ? resource.sectionKey || '' : defaultSectionKey || '';
   form.appendChild(sectionSelect);
 
   const actions = document.createElement('div');
@@ -2497,7 +2562,7 @@ function renderSparkSection(plan, handlers, state = null) {
 
 // ---- 4. FUN, FAST, EFFECTIVE — Activities ----------------------------
 
-function renderActivitiesSection(plan, collapsedActivityIds, handlers) {
+function renderActivitiesSection(plan, collapsedActivityIds, handlers, state = null) {
   const wrap = document.createElement('div');
   wrap.className = 'lesson-plan-builder__activities';
 
@@ -2515,7 +2580,7 @@ function renderActivitiesSection(plan, collapsedActivityIds, handlers) {
 
   plan.activities.forEach((activity, index) => {
     wrap.appendChild(
-      renderActivityCard(plan, activity, index, plan.activities.length, collapsedActivityIds.has(activity.id), handlers)
+      renderActivityCard(plan, activity, index, plan.activities.length, collapsedActivityIds.has(activity.id), handlers, state)
     );
   });
 
@@ -2545,7 +2610,7 @@ function renderActivitiesSection(plan, collapsedActivityIds, handlers) {
   return wrap;
 }
 
-function renderActivityCard(plan, activity, index, total, isCollapsed, handlers) {
+function renderActivityCard(plan, activity, index, total, isCollapsed, handlers, state = null) {
   const card = document.createElement('div');
   card.className = 'lesson-plan-builder__activity-card';
 
@@ -2688,6 +2753,25 @@ function renderActivityCard(plan, activity, index, total, isCollapsed, handlers)
 
     grid.appendChild(studentColumn);
     body.appendChild(grid);
+
+    // Activity-specific Learning Resources — right where the teacher
+    // needs them to actually teach this Activity, never in a separate
+    // section they'd have to scroll away to find. Same underlying
+    // resources[]/sectionKey model as Common Learning Resources above
+    // (see renderLearningResourcesSection()'s own doc comment) — this
+    // Activity's OWN id is simply this scope's filter/add-slot/default.
+    if (state) {
+      const activitySectionKey = lessonPlanReviewService.buildActivitySectionKey(activity.id);
+      body.appendChild(
+        renderLearningResourcesSection(plan, state, handlers, {
+          slot: activity.id,
+          filter: (resource) => resource.sectionKey === activitySectionKey,
+          heading: 'Learning Resources',
+          emptyText: 'Attach a resource this Activity specifically needs.',
+          defaultSectionKey: activitySectionKey,
+        })
+      );
+    }
 
     card.appendChild(body);
   }

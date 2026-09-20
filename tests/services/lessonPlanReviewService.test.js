@@ -192,6 +192,12 @@ test('getActivityIdFromSectionKey: recovers the activityId from a whole-activity
   assert.equal(lessonPlanReviewService.getActivityIdFromSectionKey('why'), null);
 });
 
+test('getActivityIdFromSectionKey: null (Whole Lesson/General), "spark", and "pairExplanation" all resolve to null — the exact distinction ui/views/LessonPlanBuilderView.js\'s own Common vs Activity-specific Learning Resources split relies on to route a resource to the right place', () => {
+  assert.equal(lessonPlanReviewService.getActivityIdFromSectionKey(null), null);
+  assert.equal(lessonPlanReviewService.getActivityIdFromSectionKey('spark'), null);
+  assert.equal(lessonPlanReviewService.getActivityIdFromSectionKey('pairExplanation'), null);
+});
+
 // ---------------------------------------------------------------------
 // Editability + submission-vs-resubmission labeling
 // ---------------------------------------------------------------------
