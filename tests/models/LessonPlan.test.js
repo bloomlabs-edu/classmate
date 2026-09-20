@@ -14,6 +14,7 @@ test('createLessonPlan: defaults every dynamic list to empty, status to draft, n
   assert.deepEqual(plan.reviewHistory, []);
   assert.deepEqual(plan.activeComments, []);
   assert.deepEqual(plan.sourceElementRefs, []);
+  assert.deepEqual(plan.resources, []);
   assert.equal(plan.status, LESSON_PLAN_STATUS.DRAFT);
   assert.equal(plan.reviewerUid, null);
   assert.notEqual(plan.updatedAt, undefined);
@@ -546,4 +547,142 @@ test('migrateLegacyObjectives: prefers swbatObjectives over lessonObjective when
   lessonPlanService.migrateLegacyObjectives(plan);
 
   assert.deepEqual(plan.objectives.map((o) => o.text), ['From swbatObjectives']);
+});
+
+// ---------------------------------------------------------------------
+// Learning Resources — addLearningResource/updateLearningResource/
+// removeLearningResource, and getLearningResourceSectionOptions()'s own
+// dynamic (never hardcoded) activity-list resolution.
+// ---------------------------------------------------------------------
+
+test('addLearningResource: appends a new resource with the given fields, defaults, and a real id/createdAt, and bumps updatedAt', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const before = plan.updatedAt;
+
+  const resource = lessonPlanService.addLearningResource(plan, {
+    title: 'Water Cycle Diagram',
+    type: 'graphic_organizer',
+    url: 'https://example.com/diagram.pdf',
+    description: 'Fill-in-the-blank diagram',
+    sectionKey: null,
+  });
+
+  assert.equal(plan.resources.length, 1);
+  assert.equal(plan.resources[0], resource);
+  assert.ok(resource.id);
+  assert.equal(resource.title, 'Water Cycle Diagram');
+  assert.equal(resource.type, 'graphic_organizer');
+  assert.equal(resource.url, 'https://example.com/diagram.pdf');
+  assert.equal(resource.description, 'Fill-in-the-blank diagram');
+  assert.equal(resource.sectionKey, null);
+  assert.ok(resource.createdAt);
+  assert.notEqual(plan.updatedAt, before);
+});
+
+test('addLearningResource: a plan created before this field existed (resources undefined) self-heals to an array rather than throwing', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  delete plan.resources; // simulates a real legacy document loaded from Firestore before this field existed
+  const resource = lessonPlanService.addLearningResource(plan, { title: 'Legacy-safe', type: 'other', url: 'https://example.com' });
+  assert.deepEqual(plan.resources, [resource]);
+});
+
+test('addLearningResource: can be associated with Spark, Pair Explanation, or a specific Activity via the exact same sectionKey scheme reviewer comments already use', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const activity = lessonPlanService.addActivity(plan);
+  const sparkResource = lessonPlanService.addLearningResource(plan, { title: 'Spark video', type: 'video', url: 'https://example.com/v', sectionKey: 'spark' });
+  const activityResource = lessonPlanService.addLearningResource(plan, { title: 'Activity handout', type: 'reference_document', url: 'https://example.com/h', sectionKey: buildActivitySectionKey(activity.id) });
+  const pairResource = lessonPlanService.addLearningResource(plan, { title: 'Pair guide', type: 'other', url: 'https://example.com/p', sectionKey: 'pairExplanation' });
+
+  assert.equal(sparkResource.sectionKey, 'spark');
+  assert.equal(activityResource.sectionKey, `activity:${activity.id}`);
+  assert.equal(pairResource.sectionKey, 'pairExplanation');
+});
+
+test('updateLearningResource: only changes the fields actually passed, leaving everything else — including id — untouched', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const resource = lessonPlanService.addLearningResource(plan, { title: 'Original', type: 'video', url: 'https://example.com/orig', description: 'Original description', sectionKey: null });
+  const originalId = resource.id;
+  const originalCreatedAt = resource.createdAt;
+
+  lessonPlanService.updateLearningResource(plan, resource.id, { title: 'Renamed' });
+
+  assert.equal(resource.id, originalId);
+  assert.equal(resource.title, 'Renamed');
+  assert.equal(resource.type, 'video', 'untouched fields must survive a partial update');
+  assert.equal(resource.url, 'https://example.com/orig');
+  assert.equal(resource.description, 'Original description');
+  assert.equal(resource.createdAt, originalCreatedAt, 'createdAt must never change on update');
+});
+
+test('updateLearningResource: an unknown resourceId is a safe no-op, never throws, never mutates any existing resource', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.addLearningResource(plan, { title: 'Real one', type: 'other', url: 'https://example.com' });
+  const before = JSON.stringify(plan.resources);
+
+  lessonPlanService.updateLearningResource(plan, 'not-a-real-id', { title: 'Should not apply' });
+
+  assert.equal(JSON.stringify(plan.resources), before);
+});
+
+test('removeLearningResource: removes exactly the named resource, leaving siblings untouched', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const keep = lessonPlanService.addLearningResource(plan, { title: 'Keep me', type: 'other', url: 'https://example.com/keep' });
+  const remove = lessonPlanService.addLearningResource(plan, { title: 'Remove me', type: 'other', url: 'https://example.com/remove' });
+
+  lessonPlanService.removeLearningResource(plan, remove.id);
+
+  assert.deepEqual(plan.resources.map((r) => r.id), [keep.id]);
+});
+
+test('removeLearningResource: an unknown resourceId is a safe no-op', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const resource = lessonPlanService.addLearningResource(plan, { title: 'Untouched', type: 'other', url: 'https://example.com' });
+  lessonPlanService.removeLearningResource(plan, 'not-a-real-id');
+  assert.equal(plan.resources.length, 1);
+  assert.equal(plan.resources[0].id, resource.id);
+});
+
+test('getLearningResourceSectionOptions: always includes Whole Lesson/General, Spark, and Pair Explanation, plus exactly one entry per CURRENT activity — never a fixed count of four', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const withZeroActivities = lessonPlanService.getLearningResourceSectionOptions(plan);
+  assert.deepEqual(withZeroActivities.map((o) => o.label), ['Whole Lesson / General', 'Spark', 'Pair Explanation']);
+
+  const a1 = lessonPlanService.addActivity(plan);
+  lessonPlanService.updateActivity(plan, a1.id, { title: 'Build a model' });
+  const a2 = lessonPlanService.addActivity(plan);
+  lessonPlanService.updateActivity(plan, a2.id, { title: 'Group discussion' });
+  const a3 = lessonPlanService.addActivity(plan);
+  lessonPlanService.updateActivity(plan, a3.id, { title: 'Exit ticket' });
+
+  const withThreeActivities = lessonPlanService.getLearningResourceSectionOptions(plan);
+  assert.deepEqual(withThreeActivities.map((o) => o.label), [
+    'Whole Lesson / General',
+    'Spark',
+    'Build a model',
+    'Group discussion',
+    'Exit ticket',
+    'Pair Explanation',
+  ]);
+  assert.deepEqual(withThreeActivities.map((o) => o.key), [null, 'spark', buildActivitySectionKey(a1.id), buildActivitySectionKey(a2.id), buildActivitySectionKey(a3.id), 'pairExplanation']);
+
+  // A 5th, 6th, ... activity is picked up automatically — never hardcoded to 4.
+  const a4 = lessonPlanService.addActivity(plan);
+  lessonPlanService.updateActivity(plan, a4.id, { title: 'Fourth activity' });
+  const a5 = lessonPlanService.addActivity(plan);
+  lessonPlanService.updateActivity(plan, a5.id, { title: 'Fifth activity' });
+  const withFiveActivities = lessonPlanService.getLearningResourceSectionOptions(plan);
+  assert.equal(withFiveActivities.filter((o) => o.key && o.key.startsWith('activity:')).length, 5);
+
+  // Deleting an activity removes its own section option immediately.
+  lessonPlanService.deleteActivity(plan, a2.id);
+  const afterDelete = lessonPlanService.getLearningResourceSectionOptions(plan);
+  assert.ok(!afterDelete.some((o) => o.key === buildActivitySectionKey(a2.id)));
+});
+
+test('getLearningResourceSectionOptions: an untitled activity gets a real, non-blank fallback label, matching services/teachingIdeasService.js\'s own "Untitled Activity" convention', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.addActivity(plan); // never given a title
+  const options = lessonPlanService.getLearningResourceSectionOptions(plan);
+  const activityOption = options.find((o) => o.key && o.key.startsWith('activity:'));
+  assert.ok(activityOption.label.startsWith('Untitled Activity'));
 });

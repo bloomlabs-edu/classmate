@@ -63,6 +63,8 @@
 import * as lessonPlanRepository from '../../services/lessonPlanRepository.js';
 import * as lessonPlanService from '../../services/lessonPlanService.js';
 import * as lessonPlanReviewService from '../../services/lessonPlanReviewService.js';
+import * as teachingIdeasRepository from '../../repositories/teachingIdeasRepository.js';
+import * as teachingIdeasService from '../../services/teachingIdeasService.js';
 import * as weeklyPlanReviewIndexRepository from '../../repositories/weeklyPlanReviewIndexRepository.js';
 import * as weeklyPlanReviewIndexService from '../../services/weeklyPlanReviewIndexService.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
@@ -73,7 +75,7 @@ import * as personalHubService from '../../services/personalHubService.js';
 import * as workspaceService from '../../services/workspaceService.js';
 import { getGradeLabelForClassroom } from '../../services/classroomService.js';
 import { getTodayDateKey } from '../../utils/dateHelpers.js';
-import { LESSON_PLAN_STATUS, LESSON_PLAN_SECTION_KEYS } from '../../models/LessonPlan.js';
+import { LESSON_PLAN_STATUS, LESSON_PLAN_SECTION_KEYS, LESSON_RESOURCE_TYPES } from '../../models/LessonPlan.js';
 import { getLessonPlanReadiness, getLessonPlanStageCompletion, LESSON_PLAN_STAGES } from '../../services/lessonPlanValidationService.js';
 import { getTimetableSubjectColor, getTimetableSubjectWash } from '../../config/timetableSubjectColors.js';
 import { createBackButton } from '../components/BackButton.js';
@@ -89,6 +91,21 @@ const STATUS_LABELS = Object.freeze({
   [LESSON_PLAN_STATUS.CHANGES_REQUESTED]: 'Changes requested',
   [LESSON_PLAN_STATUS.APPROVED]: 'Approved',
 });
+
+/**
+ * The status badge's own displayed text — DRAFT/SUBMITTED/
+ * CHANGES_REQUESTED/APPROVED render exactly as before; an APPROVED plan
+ * CONFIRMED published (see this file's own isPublished state, checked
+ * against the real teachingIdeas/{id} document, never assumed) shows
+ * "Published" instead. `isPublished` is `null` while that check hasn't
+ * resolved yet — deliberately still shows "Approved" in that window
+ * rather than a third, temporary label, since "Approved" was already
+ * true and remains true regardless of the publish check's outcome.
+ */
+function getStatusBadgeLabel(plan, isPublished) {
+  if (plan.status === LESSON_PLAN_STATUS.APPROVED && isPublished === true) return 'Published';
+  return STATUS_LABELS[plan.status] || plan.status;
+}
 
 /**
  * `plan.subjectId` (and the tappable Subject blocks' own onClick
@@ -130,14 +147,27 @@ function getRelevantScheduleSlots(classroom, plan, dateKey) {
   return allSlots.filter((slot) => slot.subjectId === canonicalSubjectId);
 }
 
-/** One friendly status line under the badge — never "Submission rejected"/"Form incomplete", per this feature's own explicit product direction on tone. */
-function getStatusMessage(plan) {
+/**
+ * One friendly status line under the badge — never "Submission
+ * rejected"/"Form incomplete", per this feature's own explicit product
+ * direction on tone. `isPublished` is `null` (unknown/still checking),
+ * `true`, or `false` — only ever meaningful when `plan.status ===
+ * APPROVED`; ignored otherwise. `false` is the one real, actionable
+ * state this adds: approval already ran its own automatic publish step
+ * (see ui/views/LessonPlanReviewView.js's onApprove), and if that step
+ * failed, this is the plan's own honest "not actually published yet"
+ * signal, not a second/different meaning of "approved".
+ */
+function getStatusMessage(plan, isPublished) {
   switch (plan.status) {
     case LESSON_PLAN_STATUS.SUBMITTED:
       return 'Submitted — needs a co-teacher’s review before it’s ready to teach.';
     case LESSON_PLAN_STATUS.CHANGES_REQUESTED:
       return 'Changes requested — see reviewer feedback below, then resubmit.';
     case LESSON_PLAN_STATUS.APPROVED:
+      if (isPublished === false) {
+        return 'Approved — this lesson plan is locked in, but publishing it as a Teaching Idea didn’t complete. Try publishing again below.';
+      }
       return 'Approved — this lesson plan is locked in.';
     default:
       return 'Draft — only you can see this until you submit it.';
@@ -202,6 +232,44 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
   // The guided stage that was the "current focus" as of the last real
   // render — see persistOnly() below for exactly why this is tracked.
   let lastRenderedFrontierStage = undefined;
+
+  // Learning Resources — local UI state only (which add/edit form, if
+  // any, is currently open); the resources themselves live on
+  // `plan.resources`, persisted the same way every other section is.
+  let addingResource = false;
+  let editingResourceId = null;
+
+  // Publish status — `null` until checked (or plan.status isn't
+  // APPROVED at all, where it's simply never relevant), then `true`/
+  // `false` once a real teachingIdeas/{id} lookup resolves (see
+  // checkPublishStatus() below). Never assumed true just because
+  // status is 'approved' — approval and publication are two separate
+  // facts that happen to normally occur together (see
+  // models/LessonPlan.js's own LESSON_PLAN_STATUS doc comment).
+  let isPublished = null;
+  let isRetryingPublish = false;
+  let publishRetryError = null;
+
+  /**
+   * Checks the real source of truth for "is this plan actually
+   * published" — a teachingIdeas/{plan.id} document existing — rather
+   * than assuming APPROVED implies it. Only ever called for an APPROVED
+   * plan. A failed check (network error) leaves `isPublished` at
+   * whatever it already was rather than guessing; it will be retried
+   * the next time this runs (e.g. after a manual publish retry).
+   */
+  function checkPublishStatus() {
+    if (!plan || plan.status !== LESSON_PLAN_STATUS.APPROVED) return;
+    teachingIdeasRepository
+      .getTeachingIdeaById(plan.id)
+      .then((idea) => {
+        isPublished = Boolean(idea);
+        rerender();
+      })
+      .catch((error) => {
+        console.error('[LessonPlanBuilderView] Failed to check Teaching Ideas publish status:', error);
+      });
+  }
 
   function computeFrontierStage() {
     if (!plan) return null;
@@ -280,7 +348,7 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
   function rerender() {
     const editable = plan ? lessonPlanReviewService.isLessonPlanEditable(plan) : false;
     lastRenderedFrontierStage = computeFrontierStage();
-    renderBuilder(container, { plan, loadError, collapsedActivityIds, saveIndicatorElement: saveIndicator.element, editable, classroom, isConceptPickerOpen, expandedConceptUnitId, isSchedulePickerOpen, pendingScheduleDate, reopenedStageKey, isSparkOpen }, {
+    renderBuilder(container, { plan, loadError, collapsedActivityIds, saveIndicatorElement: saveIndicator.element, editable, classroom, isConceptPickerOpen, expandedConceptUnitId, isSchedulePickerOpen, pendingScheduleDate, reopenedStageKey, isSparkOpen, addingResource, editingResourceId, isPublished, isRetryingPublish, publishRetryError }, {
       onBack,
       editable,
       onSubmitForReview: submitForReview,
@@ -617,6 +685,60 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
           },
         });
       },
+
+      // ---- Learning Resources ----
+      onStartAddResource: () => {
+        addingResource = true;
+        editingResourceId = null;
+        rerender(); // purely local UI state — nothing to persist
+      },
+      onCancelAddResource: () => {
+        addingResource = false;
+        rerender();
+      },
+      onSaveNewResource: ({ title, type, url, description, sectionKey }) => {
+        if (!title.trim() || !url.trim()) return; // Title and a real URL are the two required fields — see renderLearningResourcesSection()'s own form
+        lessonPlanService.addLearningResource(plan, { title: title.trim(), type, url: url.trim(), description: description.trim(), sectionKey });
+        addingResource = false;
+        persistAndRerender();
+      },
+      onStartEditResource: (resourceId) => {
+        editingResourceId = resourceId;
+        addingResource = false;
+        rerender();
+      },
+      onCancelEditResource: () => {
+        editingResourceId = null;
+        rerender();
+      },
+      onSaveResourceEdit: (resourceId, { title, type, url, description, sectionKey }) => {
+        if (!title.trim() || !url.trim()) return;
+        lessonPlanService.updateLearningResource(plan, resourceId, { title: title.trim(), type, url: url.trim(), description: description.trim(), sectionKey });
+        editingResourceId = null;
+        persistAndRerender();
+      },
+      onRemoveResource: (resourceId, resourceTitle) => {
+        if (!window.confirm(`Remove "${resourceTitle || 'this resource'}"?`)) return;
+        lessonPlanService.removeLearningResource(plan, resourceId);
+        persistAndRerender();
+      },
+
+      // ---- Publish (retry only — approval already publishes automatically) ----
+      onRetryPublish: async () => {
+        isRetryingPublish = true;
+        publishRetryError = null;
+        rerender();
+        try {
+          const projection = teachingIdeasService.buildTeachingIdeaProjection(classroom, plan);
+          await teachingIdeasRepository.publishTeachingIdea(projection);
+          isPublished = true;
+        } catch (error) {
+          console.error('[LessonPlanBuilderView] Failed to publish:', error);
+          publishRetryError = "Couldn't publish this yet — check your connection and try again.";
+        }
+        isRetryingPublish = false;
+        rerender();
+      },
     });
   }
 
@@ -637,6 +759,7 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
       } else {
         plan = fetched;
         const isEditable = lessonPlanReviewService.isLessonPlanEditable(plan);
+        checkPublishStatus();
 
         // Grade comes from classroom context, never typed by hand (see
         // this file's own renderTitleBar() and classroomService.js's
@@ -764,6 +887,7 @@ function renderBuilder(container, state, handlers) {
     helping.appendChild(renderPairExplanationField(plan, handlers));
     helping.appendChild(renderFinalQuestionAndLookForsFields(plan, handlers));
     grid.appendChild(withTileSize(helping, 'full'));
+    grid.appendChild(withTileSize(withSurfaceTile(renderLearningResourcesSection(plan, state, handlers)), 'full'));
     container.appendChild(wrapper);
     return;
   }
@@ -875,6 +999,21 @@ function renderBuilder(container, state, handlers) {
     if (config.stage === frontierStage) break; // stop right after the current stage — nothing beyond it yet
   }
 
+  // Learning Resources — logically after the lesson content/activities
+  // and before the final workflow controls (Submit/readiness panel just
+  // below), per this feature's own explicit placement requirement.
+  // Deliberately shown only once every guided CONTENT stage is complete
+  // (`!frontierStage`), matching this view's own established
+  // progressive-disclosure rule that nothing renders past the current
+  // frontier stage — Resources are optional/supplementary, never part
+  // of stage completion itself (services/lessonPlanValidationService.js
+  // is untouched), but still a real piece of "lesson content," so it
+  // stays consistent with everything else on this canvas rather than
+  // being the one section that ignores the guided reveal order.
+  if (!frontierStage) {
+    grid.appendChild(withTileSize(withSurfaceTile(renderLearningResourcesSection(plan, state, handlers)), 'full'));
+  }
+
   if (!frontierStage) {
     grid.appendChild(withTileSize(renderReadinessPanel(plan, handlers), 'full'));
   }
@@ -901,15 +1040,53 @@ function renderTitleBar(plan, stageCompletion, state, handlers) {
 
   const statusBadge = document.createElement('span');
   statusBadge.className = `lesson-plan-builder__status-badge lesson-plan-builder__status-badge--${plan.status}`;
-  statusBadge.textContent = STATUS_LABELS[plan.status] || plan.status;
+  if (plan.status === LESSON_PLAN_STATUS.APPROVED && state.isPublished === true) {
+    statusBadge.classList.add('lesson-plan-builder__status-badge--published');
+  }
+  statusBadge.textContent = getStatusBadgeLabel(plan, state.isPublished);
   topLine.appendChild(statusBadge);
 
   titleBar.appendChild(topLine);
 
   const statusMessage = document.createElement('p');
   statusMessage.className = 'lesson-plan-builder__status-message';
-  statusMessage.textContent = getStatusMessage(plan);
+  statusMessage.textContent = getStatusMessage(plan, state.isPublished);
   titleBar.appendChild(statusMessage);
+
+  // Publish is normally fully automatic (approving a plan immediately
+  // publishes it — see ui/views/LessonPlanReviewView.js's onApprove).
+  // This button ONLY appears in the one case that's genuinely a real,
+  // separate step in this architecture: that automatic publish failed
+  // (a transient error) and this plan is confirmed APPROVED but NOT YET
+  // actually published. It reuses the exact same
+  // teachingIdeasService.buildTeachingIdeaProjection()/
+  // teachingIdeasRepository.publishTeachingIdea() pair, never a second
+  // publish mechanism. Firestore's own `allow update: if false` on
+  // teachingIdeas (see firestore.rules) already prevents this from ever
+  // creating a duplicate/conflicting entry — this button additionally
+  // never renders at all once state.isPublished becomes true, so
+  // "duplicate/inappropriate publishing" is prevented at both layers.
+  if (plan.status === LESSON_PLAN_STATUS.APPROVED && state.isPublished === false) {
+    const publishRow = document.createElement('div');
+    publishRow.className = 'lesson-plan-builder__publish-row';
+
+    const publishButton = document.createElement('button');
+    publishButton.type = 'button';
+    publishButton.className = 'btn btn--primary';
+    publishButton.textContent = state.isRetryingPublish ? 'Publishing…' : 'Publish';
+    publishButton.disabled = state.isRetryingPublish;
+    publishButton.addEventListener('click', handlers.onRetryPublish);
+    publishRow.appendChild(publishButton);
+
+    if (state.publishRetryError) {
+      const error = document.createElement('p');
+      error.className = 'lesson-plan-builder__publish-error';
+      error.textContent = state.publishRetryError;
+      publishRow.appendChild(error);
+    }
+
+    titleBar.appendChild(publishRow);
+  }
 
   const metaLine = document.createElement('div');
   metaLine.className = 'lesson-plan-builder__meta-line';
@@ -1759,6 +1936,244 @@ function renderAssessmentSection(plan, handlers) {
   }
 
   return wrap;
+}
+
+// ---------------------------------------------------------------------
+// Learning Resources — Graphic Organizers, Anchor Charts, Videos,
+// Reference Documents, or anything else supporting this lesson.
+// Entirely optional, never part of submission readiness. Shown as
+// clean cards (Title, Type, Associated section, Open/Edit/Remove);
+// Add/Edit/Remove only ever render when `handlers.editable` — the SAME
+// gate every other content section on this canvas already uses, per
+// "follow the existing Lesson Plan editing permissions."
+// ---------------------------------------------------------------------
+
+const LESSON_RESOURCE_TYPE_LABELS = Object.freeze({
+  [LESSON_RESOURCE_TYPES.GRAPHIC_ORGANIZER]: 'Graphic Organizer',
+  [LESSON_RESOURCE_TYPES.ANCHOR_CHART]: 'Anchor Chart',
+  [LESSON_RESOURCE_TYPES.VIDEO]: 'Video',
+  [LESSON_RESOURCE_TYPES.REFERENCE_DOCUMENT]: 'Reference Document',
+  [LESSON_RESOURCE_TYPES.OTHER]: 'Other',
+});
+
+/**
+ * The human label for a resource's own `sectionKey` — resolved against
+ * the plan's CURRENT `getLearningResourceSectionOptions()` list (never
+ * a hardcoded "Activity 1..4"), so renaming an Activity immediately
+ * updates every resource pointing at it. If the referenced Activity no
+ * longer exists (deleted after the resource was attached to it), this
+ * falls back to a plain, honest label rather than silently deleting the
+ * teacher's own resource or throwing — the resource itself is never
+ * removed as a side effect of an unrelated Activity's deletion.
+ */
+function resolveResourceSectionLabel(plan, sectionKey) {
+  const options = lessonPlanService.getLearningResourceSectionOptions(plan);
+  const match = options.find((option) => option.key === sectionKey);
+  if (match) return match.label;
+  if (sectionKey && sectionKey.startsWith('activity:')) return 'Activity removed';
+  return 'Whole Lesson / General';
+}
+
+function renderLearningResourcesSection(plan, state, handlers) {
+  const wrap = document.createElement('div');
+  wrap.className = 'lesson-plan-builder__resources';
+
+  const heading = document.createElement('p');
+  heading.className = 'lesson-plan-builder__primary-section-heading';
+  heading.textContent = 'Learning Resources';
+  wrap.appendChild(heading);
+
+  const resources = plan.resources || [];
+
+  if (resources.length === 0 && !state.addingResource) {
+    const empty = document.createElement('p');
+    empty.className = 'lesson-plan-builder__resources-empty';
+    empty.textContent = handlers.editable
+      ? 'Attach a Graphic Organizer, Anchor Chart, video, or reference document to support this lesson.'
+      : 'No resources attached to this lesson yet.';
+    wrap.appendChild(empty);
+  } else {
+    const list = document.createElement('div');
+    list.className = 'lesson-plan-builder__resources-list';
+    resources.forEach((resource) => {
+      if (handlers.editable && state.editingResourceId === resource.id) {
+        list.appendChild(
+          renderResourceForm(plan, {
+            resource,
+            onSave: (values) => handlers.onSaveResourceEdit(resource.id, values),
+            onCancel: handlers.onCancelEditResource,
+            submitLabel: 'Save',
+          })
+        );
+      } else {
+        list.appendChild(renderResourceCard(plan, resource, handlers));
+      }
+    });
+    wrap.appendChild(list);
+  }
+
+  if (handlers.editable) {
+    if (state.addingResource) {
+      wrap.appendChild(
+        renderResourceForm(plan, {
+          resource: null,
+          onSave: handlers.onSaveNewResource,
+          onCancel: handlers.onCancelAddResource,
+          submitLabel: 'Add Resource',
+        })
+      );
+    } else {
+      wrap.appendChild(createAddRowButton('+ Add Resource', handlers.onStartAddResource));
+    }
+  }
+
+  return wrap;
+}
+
+function renderResourceCard(plan, resource, handlers) {
+  const card = document.createElement('div');
+  card.className = 'lesson-plan-builder__resource-card';
+
+  const top = document.createElement('div');
+  top.className = 'lesson-plan-builder__resource-card-top';
+
+  const title = document.createElement('span');
+  title.className = 'lesson-plan-builder__resource-card-title';
+  title.textContent = resource.title;
+  top.appendChild(title);
+
+  const typeBadge = document.createElement('span');
+  typeBadge.className = 'lesson-plan-builder__resource-card-type';
+  typeBadge.textContent = LESSON_RESOURCE_TYPE_LABELS[resource.type] || resource.type;
+  top.appendChild(typeBadge);
+
+  card.appendChild(top);
+
+  const section = document.createElement('span');
+  section.className = 'lesson-plan-builder__resource-card-section';
+  section.textContent = resolveResourceSectionLabel(plan, resource.sectionKey);
+  card.appendChild(section);
+
+  if (resource.description) {
+    const description = document.createElement('p');
+    description.className = 'lesson-plan-builder__resource-card-description';
+    description.textContent = resource.description;
+    card.appendChild(description);
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'lesson-plan-builder__resource-card-actions';
+
+  const openLink = document.createElement('a');
+  openLink.className = 'btn btn--text';
+  openLink.href = resource.url;
+  openLink.target = '_blank';
+  openLink.rel = 'noopener noreferrer';
+  openLink.textContent = 'Open ↗';
+  actions.appendChild(openLink);
+
+  if (handlers.editable) {
+    const editButton = document.createElement('button');
+    editButton.type = 'button';
+    editButton.className = 'btn btn--text';
+    editButton.textContent = 'Edit';
+    editButton.addEventListener('click', () => handlers.onStartEditResource(resource.id));
+    actions.appendChild(editButton);
+
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'btn btn--text lesson-plan-builder__resource-card-remove';
+    removeButton.textContent = 'Remove';
+    removeButton.addEventListener('click', () => handlers.onRemoveResource(resource.id, resource.title));
+    actions.appendChild(removeButton);
+  }
+
+  card.appendChild(actions);
+
+  return card;
+}
+
+/** The Add/Edit form — same fields either way; `resource` is null for a fresh Add, or the existing resource being edited (pre-filling every field). */
+function renderResourceForm(plan, { resource, onSave, onCancel, submitLabel }) {
+  const form = document.createElement('div');
+  form.className = 'lesson-plan-builder__resource-form';
+
+  const titleInput = document.createElement('input');
+  titleInput.type = 'text';
+  titleInput.className = 'lesson-plan-builder__resource-form-input';
+  titleInput.placeholder = 'Title (e.g. Water Cycle Anchor Chart)';
+  titleInput.value = resource?.title || '';
+  form.appendChild(titleInput);
+
+  const typeSelect = document.createElement('select');
+  typeSelect.className = 'lesson-plan-builder__resource-form-input';
+  Object.entries(LESSON_RESOURCE_TYPE_LABELS).forEach(([value, label]) => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    typeSelect.appendChild(option);
+  });
+  typeSelect.value = resource?.type || LESSON_RESOURCE_TYPES.OTHER;
+  form.appendChild(typeSelect);
+
+  const urlInput = document.createElement('input');
+  urlInput.type = 'url';
+  urlInput.className = 'lesson-plan-builder__resource-form-input';
+  urlInput.placeholder = 'https://… (link to the file, video, or document)';
+  urlInput.value = resource?.url || '';
+  form.appendChild(urlInput);
+
+  const descriptionInput = document.createElement('textarea');
+  descriptionInput.className = 'lesson-plan-builder__resource-form-input';
+  descriptionInput.placeholder = 'Description (optional)';
+  descriptionInput.value = resource?.description || '';
+  attachAutoGrowTextarea(descriptionInput);
+  form.appendChild(descriptionInput);
+
+  // Section options are resolved fresh from the plan's CURRENT
+  // activities every time this form renders — never a fixed list of
+  // "Activity 1..4" (see lessonPlanService.getLearningResourceSectionOptions()'s
+  // own doc comment).
+  const sectionSelect = document.createElement('select');
+  sectionSelect.className = 'lesson-plan-builder__resource-form-input';
+  const sectionOptions = lessonPlanService.getLearningResourceSectionOptions(plan);
+  sectionOptions.forEach(({ key, label }) => {
+    const option = document.createElement('option');
+    option.value = key === null ? '' : key;
+    option.textContent = label;
+    sectionSelect.appendChild(option);
+  });
+  sectionSelect.value = resource?.sectionKey || '';
+  form.appendChild(sectionSelect);
+
+  const actions = document.createElement('div');
+  actions.className = 'lesson-plan-builder__resource-form-actions';
+
+  const cancelButton = document.createElement('button');
+  cancelButton.type = 'button';
+  cancelButton.className = 'btn btn--ghost';
+  cancelButton.textContent = 'Cancel';
+  cancelButton.addEventListener('click', onCancel);
+  actions.appendChild(cancelButton);
+
+  const saveButton = document.createElement('button');
+  saveButton.type = 'button';
+  saveButton.className = 'btn btn--primary';
+  saveButton.textContent = submitLabel;
+  saveButton.addEventListener('click', () => {
+    onSave({
+      title: titleInput.value,
+      type: typeSelect.value,
+      url: urlInput.value,
+      description: descriptionInput.value,
+      sectionKey: sectionSelect.value || null,
+    });
+  });
+  actions.appendChild(saveButton);
+
+  form.appendChild(actions);
+
+  return form;
 }
 
 // ---- Shared: a dynamic list row / add-row button ---------------------

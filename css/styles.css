@@ -3700,6 +3700,104 @@ textarea.reading-editor__block-input {
   margin: 0;
 }
 
+/* Learning Resources — same card list treatment as .lesson-plan-builder__comment-card's
+   own quiet, contained surface, just neutral rather than reviewer-blue
+   (nothing here is feedback). */
+.lesson-plan-builder__resources-empty {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+.lesson-plan-builder__resources-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+.lesson-plan-builder__resource-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+}
+.lesson-plan-builder__resource-card-top {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.lesson-plan-builder__resource-card-title {
+  font-weight: var(--font-weight-bold);
+  font-size: 0.9rem;
+}
+.lesson-plan-builder__resource-card-type {
+  font-size: 0.7rem;
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-primary);
+  background-color: #EAF2FB;
+  border-radius: var(--radius-pill);
+  padding: 0.15rem 0.5rem;
+}
+.lesson-plan-builder__resource-card-section {
+  font-size: 0.78rem;
+  color: var(--color-muted);
+}
+.lesson-plan-builder__resource-card-description {
+  font-size: 0.85rem;
+  margin: 0.2rem 0 0;
+}
+.lesson-plan-builder__resource-card-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.2rem;
+}
+.lesson-plan-builder__resource-card-remove {
+  color: var(--color-danger, #C0392B);
+}
+.lesson-plan-builder__resource-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.7rem 0.8rem;
+  margin-bottom: 0.6rem;
+}
+.lesson-plan-builder__resource-form-input {
+  width: 100%;
+}
+.lesson-plan-builder__resource-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+/* Published — the derived, confirmed-published state (see
+   ui/views/LessonPlanBuilderView.js's own isPublished check against the
+   real teachingIdeas/{id} document, never assumed from status alone).
+   A slightly stronger tint than plain Approved, so a teacher can tell
+   the two apart at a glance without reading the status message. */
+.lesson-plan-builder__status-badge--published {
+  background-color: #DCEEDB;
+  color: var(--color-success, #4C9A2A);
+}
+.lesson-plan-builder__publish-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+.lesson-plan-builder__publish-error {
+  color: var(--color-danger, #C0392B);
+  font-size: 0.82rem;
+  margin: 0;
+}
+
 /* Narrow screens — the context row and hero/concepts tiles lose their
    desktop-only padding and column layout so nothing overflows and
    every control stays full-width and easy to tap; everything else on
@@ -3935,6 +4033,44 @@ textarea.reading-editor__block-input {
   border-radius: 14px;
   padding: 0.9rem 1rem;
   margin-bottom: 0.9rem;
+}
+.lesson-plan-review__resources-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.lesson-plan-review__resource-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  background-color: #FAFBFC;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+}
+.lesson-plan-review__resource-card-top {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.lesson-plan-review__resource-card-title {
+  font-weight: var(--font-weight-bold);
+  font-size: 0.9rem;
+}
+.lesson-plan-review__resource-card-type {
+  font-size: 0.7rem;
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-primary);
+  background-color: #EAF2FB;
+  border-radius: var(--radius-pill);
+  padding: 0.15rem 0.5rem;
+}
+.lesson-plan-review__resource-card-section {
+  font-size: 0.78rem;
+  color: var(--color-muted);
 }
 .lesson-plan-review__activity-header {
   display: flex;

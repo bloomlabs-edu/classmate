@@ -39,10 +39,12 @@ import {
   createLessonPlanAssessmentItem,
   createLessonPlanObjective,
   createLessonPlanSourceRef,
+  createLessonPlanResource,
   getLessonPlanActivityIndex,
   findLessonPlanActivity,
   getLessonPlanObjectiveIndex,
   findLessonPlanObjective,
+  findLessonPlanResource,
 } from '../models/LessonPlan.js';
 import { getCurrentIsoDate } from '../utils/dateHelpers.js';
 import { buildActivitySectionKey } from './lessonPlanReviewService.js';
@@ -495,4 +497,68 @@ export function applyDifferentiationBucketFromTeachingIdea(lessonPlan, activityI
   activity.differentiation[bucket] = text;
   recordSourceElement(lessonPlan, { sourceLessonPlanId, sourceActivityId, elementType: 'differentiation' });
   touch(lessonPlan);
+}
+
+// ---------------------------------------------------------------------
+// Learning Resources — supplementary materials (Graphic Organizers,
+// Anchor Charts, Videos, Reference Documents, ...) attached to this
+// plan, optionally associated with a specific section (Spark, an
+// Activity, Pair Explanation) or left "Whole Lesson / General"
+// (sectionKey: null). Same mutate-then-caller-saves convention as every
+// other section above; same id-based find/filter shape as
+// activities[]/objectives[].
+// ---------------------------------------------------------------------
+
+/** Appends one new Learning Resource. Returns it so the caller (the builder UI) can immediately show/focus it. */
+export function addLearningResource(lessonPlan, { title = '', type, url = '', description = '', sectionKey = null } = {}) {
+  if (!lessonPlan.resources) lessonPlan.resources = [];
+  const resource = createLessonPlanResource({ title, type, url, description, sectionKey });
+  lessonPlan.resources.push(resource);
+  touch(lessonPlan);
+  return resource;
+}
+
+/** Updates only the fields actually passed — a caller editing just the title never has to know or re-supply the others. */
+export function updateLearningResource(lessonPlan, resourceId, { title, type, url, description, sectionKey } = {}) {
+  const resource = findLessonPlanResource(lessonPlan, resourceId);
+  if (!resource) return;
+  if (title !== undefined) resource.title = title;
+  if (type !== undefined) resource.type = type;
+  if (url !== undefined) resource.url = url;
+  if (description !== undefined) resource.description = description;
+  if (sectionKey !== undefined) resource.sectionKey = sectionKey;
+  resource.updatedAt = getCurrentIsoDate();
+  touch(lessonPlan);
+}
+
+/** Removes one Learning Resource entirely — a teacher's own explicit "Remove" action. */
+export function removeLearningResource(lessonPlan, resourceId) {
+  if (!lessonPlan.resources) return;
+  const before = lessonPlan.resources.length;
+  lessonPlan.resources = lessonPlan.resources.filter((resource) => resource.id !== resourceId);
+  if (lessonPlan.resources.length === before) return;
+  touch(lessonPlan);
+}
+
+/**
+ * The real, current list of section options a Learning Resource can be
+ * associated with — "Whole Lesson / General" (sectionKey: null), Spark,
+ * one entry per CURRENT Activity in this plan (never a fixed count —
+ * per explicit product direction, built fresh from `plan.activities`
+ * every time this is called, so adding/removing/renaming an Activity is
+ * immediately reflected with no separate list to keep in sync), and
+ * Pair Explanation. Labels an untitled Activity "Untitled Activity",
+ * matching services/teachingIdeasService.js's own identical fallback
+ * for the same case.
+ */
+export function getLearningResourceSectionOptions(lessonPlan) {
+  return [
+    { key: null, label: 'Whole Lesson / General' },
+    { key: 'spark', label: 'Spark' },
+    ...lessonPlan.activities.map((activity, index) => ({
+      key: buildActivitySectionKey(activity.id),
+      label: activity.title || `Untitled Activity ${index + 1}`,
+    })),
+    { key: 'pairExplanation', label: 'Pair Explanation' },
+  ];
 }

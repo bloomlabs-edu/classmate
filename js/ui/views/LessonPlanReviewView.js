@@ -43,7 +43,7 @@ import * as teachingIdeasService from '../../services/teachingIdeasService.js';
 import * as teachingIdeasRepository from '../../repositories/teachingIdeasRepository.js';
 import * as weeklyPlanReviewIndexRepository from '../../repositories/weeklyPlanReviewIndexRepository.js';
 import * as weeklyPlanReviewIndexService from '../../services/weeklyPlanReviewIndexService.js';
-import { LESSON_PLAN_STATUS, LESSON_PLAN_SECTION_KEYS } from '../../models/LessonPlan.js';
+import { LESSON_PLAN_STATUS, LESSON_PLAN_SECTION_KEYS, LESSON_RESOURCE_TYPES } from '../../models/LessonPlan.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createIcon } from '../components/Icon.js';
 
@@ -249,6 +249,8 @@ function renderReview(container, state, handlers) {
     renderSection('4. Lesson Flow', [renderSparkSection(plan), renderActivitiesSection(plan, state, handlers)], plan, LESSON_PLAN_SECTION_KEYS.SPARK, state, handlers)
   );
   wrapper.appendChild(renderHelpingEachOtherLearnSection(plan, state, handlers));
+
+  wrapper.appendChild(renderReviewLearningResourcesSection(plan));
 
   wrapper.appendChild(renderReviewHistory(classroom, plan));
 
@@ -566,6 +568,88 @@ function renderHelpingEachOtherLearnSection(plan, state, handlers) {
 
   section.appendChild(renderReadOnlyField('Teacher Look-Fors', plan.teacherLookFors));
   section.appendChild(renderCommentAffordance(LESSON_PLAN_SECTION_KEYS.TEACHER_LOOK_FORS, plan, state, handlers));
+
+  return section;
+}
+
+// ---- Learning Resources — read-only for a reviewer; no Edit/Remove/Add
+// here at all (this is ui/views/LessonPlanBuilderView.js's own job, per
+// "follow the existing Lesson Plan editing permissions" — a reviewer
+// only ever gets to see what's attached, matching this whole view's own
+// "reading a lesson, not auditing a form" philosophy). No comment
+// affordance either — Resources aren't part of the reviewable 5
+// Questions content this feature's comment system addresses. -------
+
+const REVIEW_LESSON_RESOURCE_TYPE_LABELS = Object.freeze({
+  [LESSON_RESOURCE_TYPES.GRAPHIC_ORGANIZER]: 'Graphic Organizer',
+  [LESSON_RESOURCE_TYPES.ANCHOR_CHART]: 'Anchor Chart',
+  [LESSON_RESOURCE_TYPES.VIDEO]: 'Video',
+  [LESSON_RESOURCE_TYPES.REFERENCE_DOCUMENT]: 'Reference Document',
+  [LESSON_RESOURCE_TYPES.OTHER]: 'Other',
+});
+
+function renderReviewLearningResourcesSection(plan) {
+  const section = document.createElement('section');
+  section.className = 'lesson-plan-review__section';
+
+  const heading = document.createElement('h2');
+  heading.className = 'lesson-plan-review__section-heading';
+  heading.textContent = 'Learning Resources';
+  section.appendChild(heading);
+
+  const resources = plan.resources || [];
+  if (resources.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'lesson-plan-review__field-value lesson-plan-review__field-value--empty';
+    empty.textContent = 'No resources attached to this lesson.';
+    section.appendChild(empty);
+    return section;
+  }
+
+  // Section labels resolved the same way ui/views/LessonPlanBuilderView.js's
+  // own resolveResourceSectionLabel() does — fresh against this plan's
+  // CURRENT activities, never a fixed list.
+  const sectionOptions = lessonPlanService.getLearningResourceSectionOptions(plan);
+  const resolveSectionLabel = (sectionKey) => {
+    const match = sectionOptions.find((option) => option.key === sectionKey);
+    if (match) return match.label;
+    return sectionKey && sectionKey.startsWith('activity:') ? 'Activity removed' : 'Whole Lesson / General';
+  };
+
+  const list = document.createElement('div');
+  list.className = 'lesson-plan-review__resources-list';
+  resources.forEach((resource) => {
+    const card = document.createElement('div');
+    card.className = 'lesson-plan-review__resource-card';
+
+    const top = document.createElement('div');
+    top.className = 'lesson-plan-review__resource-card-top';
+    const title = document.createElement('span');
+    title.className = 'lesson-plan-review__resource-card-title';
+    title.textContent = resource.title;
+    top.appendChild(title);
+    const typeBadge = document.createElement('span');
+    typeBadge.className = 'lesson-plan-review__resource-card-type';
+    typeBadge.textContent = REVIEW_LESSON_RESOURCE_TYPE_LABELS[resource.type] || resource.type;
+    top.appendChild(typeBadge);
+    card.appendChild(top);
+
+    const section2 = document.createElement('span');
+    section2.className = 'lesson-plan-review__resource-card-section';
+    section2.textContent = resolveSectionLabel(resource.sectionKey);
+    card.appendChild(section2);
+
+    const openLink = document.createElement('a');
+    openLink.className = 'btn btn--text';
+    openLink.href = resource.url;
+    openLink.target = '_blank';
+    openLink.rel = 'noopener noreferrer';
+    openLink.textContent = 'Open ↗';
+    card.appendChild(openLink);
+
+    list.appendChild(card);
+  });
+  section.appendChild(list);
 
   return section;
 }

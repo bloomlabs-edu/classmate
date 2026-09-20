@@ -62,13 +62,92 @@
 import { generateId } from '../utils/idGenerator.js';
 import { getCurrentIsoDate } from '../utils/dateHelpers.js';
 
-/** 'draft' -> 'submitted' -> 'approved', or 'submitted' -> 'changes_requested' -> 'draft' (revising) -> 'submitted' again. See services/lessonPlanReviewService.js for the one place these transitions are ever made. */
+/**
+ * 'draft' -> 'submitted' -> 'approved', or 'submitted' ->
+ * 'changes_requested' -> 'draft' (revising) -> 'submitted' again. See
+ * services/lessonPlanReviewService.js for the one place these
+ * transitions are ever made.
+ *
+ * There is deliberately NO separate 'published' value here — publishing
+ * (see services/teachingIdeasService.js/repositories/teachingIdeasRepository.js)
+ * already happens automatically the moment a plan is approved (see
+ * ui/views/LessonPlanReviewView.js's own onApprove handler), so "is this
+ * plan published" is a DERIVED fact (status === APPROVED and a
+ * `teachingIdeas/{id}` document actually exists for it), never a second,
+ * independently-settable status a client could set out of step with
+ * reality. Adding a stored 'published' status here would let the two
+ * disagree; checking the real teachingIdeas document never can.
+ */
 export const LESSON_PLAN_STATUS = Object.freeze({
   DRAFT: 'draft',
   SUBMITTED: 'submitted',
   CHANGES_REQUESTED: 'changes_requested',
   APPROVED: 'approved',
 });
+
+/**
+ * A supplementary Learning Resource attached to a LessonPlan — a
+ * Graphic Organizer, Anchor Chart, Video, Reference Document, or
+ * anything else a teacher wants alongside the plan itself. Deliberately
+ * its own small model, not a reuse of models/Resource.js: that model is
+ * a completely different domain (a reusable, cross-Concept Learning Hub
+ * asset library, with its own editor per type and its own Firestore
+ * subcollection) — a LessonPlanResource is a lightweight, single-lesson-
+ * scoped attachment with no lifecycle of its own beyond the plan it
+ * belongs to, the same "don't force a mismatched model just because a
+ * similarly-named one exists" judgment this app already applies
+ * elsewhere (see models/LearningSubject.js's own header comment on why
+ * it's distinct from NotebookSubject).
+ *
+ * `sectionKey` reuses the EXACT SAME addressing scheme reviewer comments
+ * already use (see LESSON_PLAN_SECTION_KEYS and
+ * services/lessonPlanReviewService.js's own buildActivitySectionKey()) —
+ * `null` for "Whole Lesson / General", `'spark'` for Spark,
+ * `'pairExplanation'` for Pair Explanation, or `activity:{activityId}`
+ * for a specific Activity, resolved dynamically against `plan.activities`
+ * at render time, never a hardcoded list of "Activity 1..4". This is
+ * deliberately the SAME field shape a comment's own `sectionKey` uses,
+ * not a second, parallel addressing scheme.
+ *
+ * `url` covers both "an external URL" and, honestly, the entire
+ * "uploaded file" case too, for now: this repository has no Firebase
+ * Storage (or any other binary file storage) integration to reuse (
+ * confirmed by inspection before implementing), and building one is a
+ * genuine, separate infrastructure decision, not something to invent
+ * silently as a side effect of this feature. A resource created today
+ * always has a real URL a teacher supplies; true file upload is a
+ * documented, intentionally-unbuilt gap, not a hidden shortcut.
+ */
+export const LESSON_RESOURCE_TYPES = Object.freeze({
+  GRAPHIC_ORGANIZER: 'graphic_organizer',
+  ANCHOR_CHART: 'anchor_chart',
+  VIDEO: 'video',
+  REFERENCE_DOCUMENT: 'reference_document',
+  OTHER: 'other',
+});
+
+export function createLessonPlanResource({
+  id,
+  title = '',
+  type = LESSON_RESOURCE_TYPES.OTHER,
+  url = '',
+  description = '',
+  sectionKey = null,
+  createdAt,
+  updatedAt,
+} = {}) {
+  const timestamp = createdAt || getCurrentIsoDate();
+  return {
+    id: id || generateId(),
+    title,
+    type,
+    url,
+    description,
+    sectionKey,
+    createdAt: timestamp,
+    updatedAt: updatedAt || timestamp,
+  };
+}
 
 /**
  * Every meaningful section a reviewer comment (see
@@ -282,6 +361,12 @@ export function createLessonPlan({
   finalQuestion = '',
   teacherLookFors = '',
 
+  // Learning Resources — optional, supplementary materials attached to
+  // this plan (see createLessonPlanResource() above). Entirely separate
+  // from the 5-Questions readiness/submission logic — never required to
+  // submit or approve a plan.
+  resources = [],
+
   // Lifecycle
   status = LESSON_PLAN_STATUS.DRAFT,
   reviewerUid = null,
@@ -323,6 +408,8 @@ export function createLessonPlan({
     finalQuestion,
     teacherLookFors,
 
+    resources,
+
     status,
     reviewerUid,
     reviewHistory,
@@ -349,4 +436,14 @@ export function getLessonPlanObjectiveIndex(lessonPlan, objectiveId) {
 /** One LessonPlanObjective by id, or null. */
 export function findLessonPlanObjective(lessonPlan, objectiveId) {
   return lessonPlan.objectives.find((objective) => objective.id === objectiveId) || null;
+}
+
+/** Same shape as getLessonPlanActivityIndex() above, for Learning Resources — the one place every resources-array mutation in lessonPlanService.js looks this up. */
+export function getLessonPlanResourceIndex(lessonPlan, resourceId) {
+  return (lessonPlan.resources || []).findIndex((resource) => resource.id === resourceId);
+}
+
+/** One LessonPlanResource by id, or null. */
+export function findLessonPlanResource(lessonPlan, resourceId) {
+  return (lessonPlan.resources || []).find((resource) => resource.id === resourceId) || null;
 }
