@@ -4501,7 +4501,7 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       addButton.className = 'btn btn--primary';
       addButton.textContent = '+ Mark a date';
       addButton.addEventListener('click', () => {
-        exceptionDraft = { date: getTodayDateKey(), type: CALENDAR_EXCEPTION_TYPES.HOLIDAY, reason: '', customize: false, customPeriods: [] };
+        exceptionDraft = { id: undefined, startDate: getTodayDateKey(), endDate: getTodayDateKey(), type: CALENDAR_EXCEPTION_TYPES.HOLIDAY, reason: '', customize: false, customPeriods: [] };
         renderBox();
       });
       wrap.appendChild(addButton);
@@ -4518,11 +4518,16 @@ export async function renderTimetableView(container, { classroom, currentUser, p
         const row = document.createElement('div');
         row.className = 'school-calendar__row';
 
+        const isRange = exception.startDate !== exception.endDate;
+        const dateDisplayLabel = isRange
+          ? `${formatDateKey(exception.startDate)} – ${formatDateKey(exception.endDate)}`
+          : formatDateKeyWithWeekday(exception.date);
+
         const info = document.createElement('div');
         info.className = 'school-calendar__row-info';
         const dateLabel = document.createElement('span');
         dateLabel.className = 'school-calendar__row-date';
-        dateLabel.textContent = formatDateKeyWithWeekday(exception.date);
+        dateLabel.textContent = dateDisplayLabel;
         const typeBadge = document.createElement('span');
         typeBadge.className = `school-calendar__badge school-calendar__badge--${exception.type === CALENDAR_EXCEPTION_TYPES.HOLIDAY ? 'holiday' : 'working-day'}`;
         typeBadge.textContent = exception.type === CALENDAR_EXCEPTION_TYPES.HOLIDAY ? 'Holiday' : 'Working Day';
@@ -4544,7 +4549,9 @@ export async function renderTimetableView(container, { classroom, currentUser, p
         editButton.textContent = 'Edit';
         editButton.addEventListener('click', () => {
           exceptionDraft = {
-            date: exception.date,
+            id: exception.id,
+            startDate: exception.startDate,
+            endDate: exception.endDate,
             type: exception.type,
             reason: exception.reason,
             customize: Boolean(exception.customPeriods),
@@ -4559,10 +4566,10 @@ export async function renderTimetableView(container, { classroom, currentUser, p
         removeButton.className = 'btn btn--text btn--danger-text';
         removeButton.textContent = 'Remove';
         removeButton.addEventListener('click', async () => {
-          const confirmed = window.confirm(`Clear the ${exception.type === CALENDAR_EXCEPTION_TYPES.HOLIDAY ? 'Holiday' : 'Working Day'} mark on ${formatDateKeyWithWeekday(exception.date)}? It will go back to its normal weekly schedule.`);
+          const confirmed = window.confirm(`Clear the ${exception.type === CALENDAR_EXCEPTION_TYPES.HOLIDAY ? 'Holiday' : 'Working Day'} mark on ${dateDisplayLabel}? It will go back to its normal weekly schedule.`);
           if (!confirmed) return;
           await runAction(async () => {
-            schoolCalendarService.clearException(classroom, exception.date);
+            schoolCalendarService.clearExceptionById(classroom, exception.id);
             await workspaceService.saveExplicitly(classroom);
             await loadAndRender();
             renderBox();
@@ -4582,14 +4589,35 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       const form = document.createElement('div');
       form.className = 'exam-form';
 
-      const dateInput = document.createElement('input');
-      dateInput.type = 'date';
-      dateInput.value = exceptionDraft.date;
-      dateInput.addEventListener('change', () => { exceptionDraft.date = dateInput.value; });
-      const dateField = document.createElement('label');
-      dateField.className = 'manage-timetable__field';
-      dateField.append('Date', dateInput);
-      form.appendChild(dateField);
+      const dateRangeWrap = document.createElement('div');
+      dateRangeWrap.className = 'school-calendar__date-range';
+
+      const startDateInput = document.createElement('input');
+      startDateInput.type = 'date';
+      startDateInput.value = exceptionDraft.startDate;
+      startDateInput.addEventListener('change', () => {
+        exceptionDraft.startDate = startDateInput.value;
+        // A single-day exception (the common case) should keep "From"
+        // and "To" moving together unless the teacher has deliberately
+        // set a "To" date — never leave "To" stranded before "From".
+        if (exceptionDraft.endDate < exceptionDraft.startDate) exceptionDraft.endDate = exceptionDraft.startDate;
+        renderBox();
+      });
+      const startDateField = document.createElement('label');
+      startDateField.className = 'manage-timetable__field';
+      startDateField.append('From', startDateInput);
+      dateRangeWrap.appendChild(startDateField);
+
+      const endDateInput = document.createElement('input');
+      endDateInput.type = 'date';
+      endDateInput.value = exceptionDraft.endDate;
+      endDateInput.addEventListener('change', () => { exceptionDraft.endDate = endDateInput.value; });
+      const endDateField = document.createElement('label');
+      endDateField.className = 'manage-timetable__field';
+      endDateField.append('To', endDateInput);
+      dateRangeWrap.appendChild(endDateField);
+
+      form.appendChild(dateRangeWrap);
 
       const typeFieldset = document.createElement('div');
       typeFieldset.className = 'school-calendar__type-choice';
@@ -4623,12 +4651,15 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       form.appendChild(reasonField);
 
       if (exceptionDraft.type === CALENDAR_EXCEPTION_TYPES.WORKING_DAY) {
-        const weekday = timetableService.weekdayOfDateKey(exceptionDraft.date);
+        const isRange = exceptionDraft.startDate !== exceptionDraft.endDate;
+        const weekday = timetableService.weekdayOfDateKey(exceptionDraft.startDate);
         const hasOwnRecurringPattern = timetableService.getSlotsForWeekday(classroom, weekday).length > 0;
 
         const note = document.createElement('p');
         note.className = 'manage-timetable-overlay__hint';
-        note.textContent = hasOwnRecurringPattern
+        note.textContent = isRange
+          ? 'Each date in this range will use its own weekday’s recurring timetable unless you customize the periods below, in which case every date in the range gets the same custom periods.'
+          : hasOwnRecurringPattern
           ? `${WEEKDAY_LABELS[weekday]} already has its own recurring timetable — that will be used unless you customize this date's own periods below.`
           : `${WEEKDAY_LABELS[weekday]} has no recurring timetable of its own yet — customize this date's own periods below, or it will have no periods at all.`;
         form.appendChild(note);
@@ -4685,22 +4716,31 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       saveButton.className = 'btn btn--primary';
       saveButton.textContent = 'Save';
       saveButton.addEventListener('click', async () => {
-        if (!exceptionDraft.date) {
-          exceptionDraft.validationError = 'Choose a date.';
+        if (!exceptionDraft.startDate || !exceptionDraft.endDate) {
+          exceptionDraft.validationError = 'Choose both a start and end date.';
+          renderBox();
+          return;
+        }
+
+        const validation = schoolCalendarService.validateExceptionRange(classroom, exceptionDraft.startDate, exceptionDraft.endDate, { excludeExceptionId: exceptionDraft.id });
+        if (!validation.valid) {
+          exceptionDraft.validationError = validation.error;
           renderBox();
           return;
         }
         exceptionDraft.validationError = null;
 
         await runAction(async () => {
+          const range = { startDate: exceptionDraft.startDate, endDate: exceptionDraft.endDate };
           if (exceptionDraft.type === CALENDAR_EXCEPTION_TYPES.HOLIDAY) {
-            schoolCalendarService.setHolidayException(classroom, exceptionDraft.date, exceptionDraft.reason);
+            schoolCalendarService.setHolidayException(classroom, range, exceptionDraft.reason, { id: exceptionDraft.id });
           } else {
             schoolCalendarService.setWorkingDayException(
               classroom,
-              exceptionDraft.date,
+              range,
               exceptionDraft.reason,
-              exceptionDraft.customize && exceptionDraft.customPeriods.length > 0 ? exceptionDraft.customPeriods : null
+              exceptionDraft.customize && exceptionDraft.customPeriods.length > 0 ? exceptionDraft.customPeriods : null,
+              { id: exceptionDraft.id }
             );
           }
           await workspaceService.saveExplicitly(classroom);

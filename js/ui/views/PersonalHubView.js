@@ -72,9 +72,43 @@ import {
 } from '../../services/classroomService.js';
 import * as memberService from '../../services/memberService.js';
 import * as personalHubService from '../../services/personalHubService.js';
+import * as scheduledEventRepository from '../../services/scheduledEventRepository.js';
 import { getGroupColorHex } from '../../config/groupColorConfig.js';
 import { getTimetableSubjectColor } from '../../config/timetableSubjectColors.js';
-import { formatDateKey, getTodayDateKey } from '../../utils/dateHelpers.js';
+import { formatDateKey, getTodayDateKey, getWeekRange, shiftDateKey } from '../../utils/dateHelpers.js';
+
+/**
+ * BUG FIX (date-specific overrides ignored by Today strip / My Week):
+ * both sections below now fetch real Scheduled Events (exams) before
+ * resolving what to show — see services/personalHubService.js's own
+ * header comment for the full "why." Each section renders a lightweight
+ * loading placeholder synchronously first, then replaces it with the
+ * real, event-aware content once the fetch resolves, mirroring
+ * ui/components/TodaysScheduleWidget.js's own established
+ * "sync skeleton, async fill" pattern rather than making this whole
+ * view's export itself async (every other section here — profile,
+ * classroom cards, schools, programmes, management — has nothing to do
+ * with events and stays exactly as synchronous as before).
+ *
+ * A Firestore failure fetching events for one classroom degrades that
+ * classroom to "no events" rather than breaking the whole page — same
+ * try/catch-and-continue convention TodaysScheduleWidget.js already
+ * uses for its own event fetch.
+ */
+async function fetchEventsByClassroomId(classroomList, startDateKey, endDateKey) {
+  const entries = await Promise.all(
+    classroomList.map(async (classroom) => {
+      try {
+        const events = await scheduledEventRepository.getScheduledEventsForDateRange(classroom.id, startDateKey, endDateKey);
+        return [classroom.id, events];
+      } catch (error) {
+        console.error('[PersonalHubView] Failed to load scheduled events for classroom', classroom.id, error);
+        return [classroom.id, []];
+      }
+    })
+  );
+  return Object.fromEntries(entries);
+}
 
 const WEEKDAY_LABELS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const FACILITATOR_HEX = getGroupColorHex('purple');
@@ -283,9 +317,37 @@ export function renderPersonalHubView(
 
   // --- Today strip -------------------------------------------------------
 
+  /**
+   * Returns a section with a lightweight loading placeholder, and
+   * immediately (fire-and-forget) fetches real Scheduled Events for
+   * today through the same horizon getNextScheduledDay() itself scans
+   * (14 days — see personalHubService.js), then replaces the
+   * placeholder with the real, event-aware content in place. See this
+   * file's own top-of-file comment for why this section self-refines
+   * async rather than the whole view being async.
+   */
   function renderTodaySection() {
     const section = document.createElement('section');
     section.className = 'hub-section hub-today';
+    // A real loading indicator, not ui/components/EmptyState.js's "empty
+    // list" message (that component is documented for a legitimately
+    // empty list, which this isn't yet) — matches
+    // ui/components/TodaysScheduleWidget.js's own identical convention.
+    const loading = document.createElement('p');
+    loading.className = 'hub-today-loading';
+    loading.textContent = 'Loading today’s schedule…';
+    section.appendChild(loading);
+
+    const todayKey = getTodayDateKey();
+    fetchEventsByClassroomId(classrooms, todayKey, shiftDateKey(todayKey, 14))
+      .then((eventsByClassroomId) => populateTodaySection(section, eventsByClassroomId))
+      .catch((error) => console.error('[PersonalHubView] Failed to load Today strip events:', error));
+
+    return section;
+  }
+
+  function populateTodaySection(section, eventsByClassroomId) {
+    section.innerHTML = '';
 
     const header = document.createElement('div');
     header.className = 'hub-section__header';
@@ -298,8 +360,10 @@ export function renderPersonalHubView(
     // working day with genuinely nothing on it, otherwise the next
     // real scheduled day — never a blank "Today" on a non-working day,
     // and never a second/invented definition of "working day" (reuses
-    // the classrooms' own already-configured Timetable pattern).
-    const result = personalHubService.resolveTodayStripSchedule(classrooms, uid, todayKey);
+    // the classrooms' own already-configured Timetable pattern, PLUS
+    // any date-specific calendar exception/Scheduled Event — see
+    // personalHubService.js's own header comment for this fix).
+    const result = personalHubService.resolveTodayStripSchedule(classrooms, uid, todayKey, eventsByClassroomId);
     const { dateKey, entries, isToday } = result;
     const dateLabel = new Date(`${dateKey}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
 
@@ -347,7 +411,7 @@ export function renderPersonalHubView(
 
     if (entries.length === 0) {
       section.appendChild(createEmptyStateElement({ message: 'No periods scheduled today.' }));
-      return section;
+      return;
     }
 
     // "Now"/"Next" highlighting only ever applies to Today's own real
@@ -405,13 +469,19 @@ export function renderPersonalHubView(
         top.appendChild(badge);
       }
 
+      if (entry.kind === 'event') card.classList.add('hub-today-card--event');
+
       const subject = document.createElement('span');
       subject.className = 'hub-today-card__subject';
-      subject.textContent = entry.subjectTitle;
+      subject.textContent = entry.kind === 'event' ? entry.eventTitle || entry.eventTypeLabel : entry.subjectTitle;
 
       const meta = document.createElement('span');
       meta.className = 'hub-today-card__meta';
-      meta.textContent = `P${entry.periodNumber} · ${entry.classroomName}`;
+      // An event (e.g. an exam) has no periodNumber of its own — see
+      // services/personalHubService.js's own buildScheduleEntries()
+      // doc comment — so its meta line reads its own type instead
+      // ("Exam · Grade 8A") rather than a nonsensical "Pnull".
+      meta.textContent = entry.kind === 'event' ? `${entry.eventTypeLabel} · ${entry.classroomName}` : `P${entry.periodNumber} · ${entry.classroomName}`;
 
       const school = document.createElement('span');
       school.className = 'hub-today-card__school';
@@ -444,8 +514,6 @@ export function renderPersonalHubView(
     helper.className = 'hub-today-helper';
     helper.textContent = 'Tap any period to open the classroom';
     section.appendChild(helper);
-
-    return section;
   }
 
   // --- My Classrooms / Other Classrooms ----------------------------------
@@ -656,6 +724,23 @@ export function renderPersonalHubView(
 
   // --- My Week (full grid) ------------------------------------------
 
+  /**
+   * Header/nav chrome is built synchronously (no event data needed);
+   * the grid body itself is a loading placeholder until real Scheduled
+   * Events for the CURRENTLY-anchored week are fetched, then populated
+   * in place — see this file's own top-of-file comment. Called fresh
+   * on every Prev/This Week/Next click (each with its own independent
+   * fetch for that click's own range — no shared cache with the Today
+   * strip's own separate fetch, matching the existing codebase
+   * convention of ui/views/TimetableView.js and
+   * ui/components/TodaysScheduleWidget.js each fetching their own
+   * events independently).
+   *
+   * `requestedAnchor` guards against a rapid Prev/Next double-click
+   * resolving out of order — if `weekAnchor` has already moved on to a
+   * NEWER navigation by the time this fetch resolves, this stale
+   * result is discarded rather than overwriting the newer one.
+   */
   function renderWeekSection(section) {
     section.innerHTML = '';
 
@@ -706,7 +791,30 @@ export function renderPersonalHubView(
     header.appendChild(nav);
     section.appendChild(header);
 
-    const { range, days, rows } = personalHubService.getWeekGrid(classrooms, uid, weekAnchor);
+    const bodyContainer = document.createElement('div');
+    bodyContainer.className = 'hub-week__body';
+    // Same real-loading-indicator convention as renderTodaySection()
+    // above — not ui/components/EmptyState.js.
+    const loading = document.createElement('p');
+    loading.className = 'hub-week-loading';
+    loading.textContent = 'Loading this week’s schedule…';
+    bodyContainer.appendChild(loading);
+    section.appendChild(bodyContainer);
+
+    const requestedAnchor = weekAnchor;
+    const { start, end } = getWeekRange(weekAnchor);
+    fetchEventsByClassroomId(classrooms, start, end)
+      .then((eventsByClassroomId) => {
+        if (weekAnchor !== requestedAnchor) return; // a newer navigation has already superseded this fetch
+        populateWeekSectionBody(bodyContainer, requestedAnchor, eventsByClassroomId);
+      })
+      .catch((error) => console.error('[PersonalHubView] Failed to load My Week events:', error));
+  }
+
+  function populateWeekSectionBody(bodyContainer, weekAnchorForThisRender, eventsByClassroomId) {
+    bodyContainer.innerHTML = '';
+
+    const { range, days, rows } = personalHubService.getWeekGrid(classrooms, uid, weekAnchorForThisRender, eventsByClassroomId);
     const todayKey = getTodayDateKey();
 
     const subheader = document.createElement('div');
@@ -728,12 +836,12 @@ export function renderPersonalHubView(
       legend.appendChild(item);
     });
     subheader.appendChild(legend);
-    section.appendChild(subheader);
+    bodyContainer.appendChild(subheader);
 
     if (rows.length === 0) {
-      section.appendChild(createEmptyStateElement({ message: 'No periods scheduled this week yet.' }));
+      bodyContainer.appendChild(createEmptyStateElement({ message: 'No periods scheduled this week yet.' }));
     } else {
-      section.appendChild(renderWeekTable(days, rows, todayKey));
+      bodyContainer.appendChild(renderWeekTable(days, rows, todayKey));
     }
 
     const footer = document.createElement('div');
@@ -748,7 +856,7 @@ export function renderPersonalHubView(
       if (classroomId) onOpenTimetable(classroomId);
     });
     footer.appendChild(viewFullButton);
-    section.appendChild(footer);
+    bodyContainer.appendChild(footer);
   }
 
   function renderWeekTable(days, rows, todayKey) {
@@ -794,17 +902,20 @@ export function renderPersonalHubView(
           dayEntries.forEach((entry) => {
             const entryEl = document.createElement('button');
             entryEl.type = 'button';
-            entryEl.className = 'hub-week-entry';
+            entryEl.className = 'hub-week-entry' + (entry.kind === 'event' ? ' hub-week-entry--event' : '');
             tint(entryEl, colorFor(entry.classroomId).hex, { bg: 14, text: 70 });
             entryEl.addEventListener('click', () => onOpenTimetable(entry.classroomId));
 
             const subject = document.createElement('span');
             subject.className = 'hub-week-entry__subject';
-            subject.textContent = entry.subjectTitle;
+            subject.textContent = entry.kind === 'event' ? entry.eventTitle || entry.eventTypeLabel : entry.subjectTitle;
 
             const context = document.createElement('span');
             context.className = 'hub-week-entry__context';
-            context.textContent = `P${entry.periodNumber} · ${entry.classroomName}`;
+            // An event (e.g. an exam) has no periodNumber — see
+            // services/personalHubService.js's own buildScheduleEntries()
+            // doc comment — so its own type label stands in for it.
+            context.textContent = entry.kind === 'event' ? `${entry.eventTypeLabel} · ${entry.classroomName}` : `P${entry.periodNumber} · ${entry.classroomName}`;
 
             entryEl.append(subject, context);
             cell.appendChild(entryEl);

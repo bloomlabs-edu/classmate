@@ -16,15 +16,30 @@
  * established (see that model's own header comment): a real school
  * year has, realistically, a few dozen holidays/special days, never the
  * unbounded per-date growth Lessons/ScheduledEvents have, so this never
- * needs its own subcollection.
+ * needs its own subcollection. This was never a "one Firestore document
+ * per day" concern to begin with — there is no per-day Firestore write
+ * anywhere in this model or its service — so a multi-day range (below)
+ * is naturally still just ONE array entry, exactly like a single day is.
+ *
+ * DATE RANGES: an exception covers an inclusive `startDate`..`endDate`
+ * span (a single day is simply `startDate === endDate`) — this is NOT a
+ * second calendar system, just this same one exception object covering
+ * more than one date. `date` is kept as a legacy alias (always equal to
+ * `startDate`) so any older code path that still reads `.date` directly
+ * keeps working unchanged, and so an exception object persisted before
+ * this range extension existed (which only ever had `.date`, no
+ * `.startDate`/`.endDate`) still round-trips correctly with no migration
+ * needed — see services/schoolCalendarService.js's own getExceptionForDate()
+ * and validateExceptionRange(), which both fall back to `.date` when
+ * `.startDate`/`.endDate` are absent.
  *
  * `type` — exactly two kinds, per explicit product scope (a third kind
  * would be "this date behaves like some OTHER weekday's pattern," which
  * isn't part of this phase):
- *   - HOLIDAY: no normal periods on this date at all, regardless of
- *     what its own weekday would normally have.
+ *   - HOLIDAY: no normal periods for any date in this range, regardless
+ *     of what each date's own weekday would normally have.
  *   - WORKING_DAY: a normally non-working weekday (typically Saturday/
- *     Sunday) becomes a real teaching day this once.
+ *     Sunday) becomes a real teaching day for every date in this range.
  *
  * `customPeriods` — ONLY meaningful for WORKING_DAY, and only when the
  * teacher explicitly chose "Customize this day's periods" (see
@@ -58,10 +73,21 @@ export function createCustomPeriod({ periodNumber, startTime, endTime, subjectId
   return { periodNumber, startTime, endTime, subjectId, teacherUid };
 }
 
-export function createCalendarException({ id, date, type, reason = '', customPeriods = null } = {}) {
+/**
+ * `date` (legacy, single-day callers) OR `startDate`/`endDate` (a range —
+ * pass the same value for both for a single day) may be given; whichever
+ * form is provided, all three fields below are always populated so every
+ * reader can rely on `startDate`/`endDate` existing, while `.date` stays
+ * available for any code that never needed to know about ranges.
+ */
+export function createCalendarException({ id, date, startDate, endDate, type, reason = '', customPeriods = null } = {}) {
+  const resolvedStart = startDate || date;
+  const resolvedEnd = endDate || startDate || date;
   return {
     id: id || generateId(),
-    date, // "YYYY-MM-DD"
+    date: resolvedStart, // legacy field, kept for any code reading .date directly — always equals startDate
+    startDate: resolvedStart, // "YYYY-MM-DD"
+    endDate: resolvedEnd, // "YYYY-MM-DD" — equals startDate for a single-day exception
     type, // CALENDAR_EXCEPTION_TYPES value
     reason,
     customPeriods, // null | CustomPeriod[]

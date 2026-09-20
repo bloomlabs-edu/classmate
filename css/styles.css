@@ -870,6 +870,23 @@ select:focus-visible,
   font-size: 0.82rem;
   margin: 0;
 }
+/* A date-specific Scheduled Event (e.g. an exam) occupying this slot
+   instead of a recurring period — same dashed-left-border accent
+   ui/components/TodaysScheduleWidget.js's own
+   .todays-schedule-widget__row--event already uses for the identical
+   idea, reused here rather than inventing a second visual vocabulary
+   for "this is an override, not the recurring timetable." */
+.hub-today-card--event {
+  border-left: 3px dashed var(--color-muted);
+}
+.hub-today-loading,
+.hub-week-loading {
+  text-align: center;
+  color: var(--color-muted);
+  font-size: 0.85rem;
+  padding: var(--space-4) 0;
+  margin: 0;
+}
 /* The "TODAY"/"NEXT" context label sitting above the real date
    heading (see PersonalHubView.js's own renderTodaySection()) — same
    small/bold/letter-spaced/muted treatment
@@ -1018,6 +1035,10 @@ select:focus-visible,
 .hub-week-entry__context {
   font-size: 0.66rem;
   opacity: 0.85;
+}
+/* Same dashed-left-border override accent as .hub-today-card--event above. */
+.hub-week-entry--event {
+  border-left: 3px dashed var(--color-muted);
 }
 
 /* My Schools & Programs */
@@ -17658,6 +17679,23 @@ button.recognition-bento__hero-winner-name {
   margin: var(--space-3) 0;
 }
 
+/* Stack label + select + button vertically, same pattern as the sibling
+   .period-detail-panel__concept-picker-wrapper above (label/control/action
+   stacked with a consistent gap). align-items: flex-start keeps the button
+   at its natural compact width instead of flex's default stretch, matching
+   this panel's existing convention of compact (not full-width) action
+   buttons. */
+.period-detail-panel__attach {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.period-detail-panel__attach select {
+  width: 100%;
+}
+
 .period-detail-panel__attach-label {
   margin: var(--space-3) 0 var(--space-1);
   font-size: 0.75rem;
@@ -18408,6 +18446,15 @@ button.recognition-bento__hero-winner-name {
   gap: var(--space-4);
   font-size: 0.85rem;
   margin-bottom: var(--space-3);
+}
+
+.school-calendar__date-range {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.school-calendar__date-range .manage-timetable__field {
+  flex: 1;
 }
 
 .school-calendar__list {

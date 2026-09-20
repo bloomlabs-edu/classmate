@@ -2,8 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createClassroom } from '../../js/models/Classroom.js';
 import { createLearningProgramme } from '../../js/models/LearningProgramme.js';
+import { createScheduledEvent } from '../../js/models/ScheduledEvent.js';
 import * as memberService from '../../js/services/memberService.js';
 import * as timetableService from '../../js/services/timetableService.js';
+import * as schoolCalendarService from '../../js/services/schoolCalendarService.js';
 import { MEMBER_ROLES } from '../../js/config/memberRoles.js';
 import * as personalHubService from '../../js/services/personalHubService.js';
 import { getWeekRange } from '../../js/utils/dateHelpers.js';
@@ -433,4 +435,153 @@ test('resolveCurrentPeriodIndex/resolveNextUpcomingPeriodIndex: correctly identi
   const afterAll = atTime(12, 0);
   assert.equal(personalHubService.resolveCurrentPeriodIndex(entries, dateKey, afterAll), -1);
   assert.equal(personalHubService.resolveNextUpcomingPeriodIndex(entries, dateKey, afterAll), -1);
+});
+
+// ---------------------------------------------------------------------
+// BUG FIX: Today strip / My Week must respect date-specific overrides
+// (Scheduled Events) exactly like the real Timetable view does — see
+// this file's own header comment. Reproduces the exact reported
+// scenario: Grade 8A, Monday 21 Sep 2026, a Mathematics Quarterly
+// Examination 09:45-12:30 spanning what would otherwise be several
+// separate recurring periods (Science P2, Science P3, etc.).
+// 2026-09-21 is a real Monday (weekday=1) — confirmed, not assumed.
+// ---------------------------------------------------------------------
+
+const EXAM_MONDAY = '2026-09-21';
+
+function grade8AWithMondayPeriodsAndExam() {
+  const classroom = ownedClassroom({ id: 'grade-8a', gradeSection: 'Grade 8A' });
+  timetableService.setPeriods(classroom, [
+    { periodNumber: 1, startTime: '08:30', endTime: '09:15' },
+    { periodNumber: 2, startTime: '09:45', endTime: '10:30' },
+    { periodNumber: 3, startTime: '10:30', endTime: '11:15' },
+    { periodNumber: 4, startTime: '11:15', endTime: '12:00' },
+    // Starts exactly when the 09:45-12:30 exam ends — half-open, so
+    // this genuinely does NOT overlap it (schoolCalendarService.js's
+    // own doTimeRangesOverlap() convention: back-to-back is not a
+    // conflict). 12:00-12:30 WOULD overlap, which is why this isn't
+    // P5's own real start time in this fixture.
+    { periodNumber: 5, startTime: '12:30', endTime: '13:15' },
+  ]);
+  // Recurring Monday pattern: Science P2/P3, unrelated subjects P1/P4/P5.
+  timetableService.upsertSlot(classroom, { weekday: 1, periodNumber: 1, subjectId: 'english' });
+  timetableService.upsertSlot(classroom, { weekday: 1, periodNumber: 2, subjectId: 'science' });
+  timetableService.upsertSlot(classroom, { weekday: 1, periodNumber: 3, subjectId: 'science' });
+  timetableService.upsertSlot(classroom, { weekday: 1, periodNumber: 4, subjectId: 'hindi' });
+  timetableService.upsertSlot(classroom, { weekday: 1, periodNumber: 5, subjectId: 'art' });
+
+  const exam = createScheduledEvent({
+    id: 'exam-1',
+    classroomId: classroom.id,
+    date: EXAM_MONDAY,
+    startTime: '09:45',
+    endTime: '12:30',
+    title: 'Mathematics Quarterly Examination',
+    subjectId: 'mathematics',
+  });
+
+  return { classroom, exam };
+}
+
+test('getTodaySchedule: an exam spanning several recurring periods REPLACES them for that date — the exam appears, the overridden periods (Science P2/P3, Hindi P4) do not', () => {
+  const { classroom, exam } = grade8AWithMondayPeriodsAndExam();
+  const entries = personalHubService.getTodaySchedule([classroom], OWNER_UID, EXAM_MONDAY, { [classroom.id]: [exam] });
+
+  // P1 (08:30-09:15, English) and P5 (12:00-12:45, Art) don't overlap
+  // the 09:45-12:30 exam at all — untouched, still shown normally.
+  const periodEntries = entries.filter((e) => e.kind === 'period');
+  assert.deepEqual(periodEntries.map((e) => e.subjectTitle).sort(), ['Art', 'English']);
+
+  // The exam itself appears exactly once, as its own entry — not
+  // duplicated per overlapped period.
+  const eventEntries = entries.filter((e) => e.kind === 'event');
+  assert.equal(eventEntries.length, 1);
+  assert.equal(eventEntries[0].subjectTitle, 'Mathematics');
+  assert.equal(eventEntries[0].eventTypeLabel, 'Exam');
+  assert.equal(eventEntries[0].startTime, '09:45');
+  assert.equal(eventEntries[0].endTime, '12:30');
+  assert.equal(eventEntries[0].periodNumber, null);
+});
+
+test('getTodaySchedule: with NO events passed in, behavior is unchanged from before this fix — every recurring period shows normally (backward compatibility)', () => {
+  const { classroom } = grade8AWithMondayPeriodsAndExam();
+  const entries = personalHubService.getTodaySchedule([classroom], OWNER_UID, EXAM_MONDAY);
+  assert.equal(entries.length, 5);
+  assert.ok(entries.every((e) => e.kind === 'period'));
+});
+
+test('getTodaySchedule: an exam on a DIFFERENT classroom never suppresses this classroom\'s own periods (per-classroom eventsByClassroomId keying)', () => {
+  const { classroom, exam } = grade8AWithMondayPeriodsAndExam();
+  const entries = personalHubService.getTodaySchedule([classroom], OWNER_UID, EXAM_MONDAY, { 'some-other-classroom': [exam] });
+  assert.equal(entries.length, 5);
+  assert.ok(entries.every((e) => e.kind === 'period'));
+});
+
+test('getTodaySchedule: an exam on a DIFFERENT date never suppresses today\'s own periods', () => {
+  const { classroom, exam } = grade8AWithMondayPeriodsAndExam();
+  const nextMonday = '2026-09-28';
+  const entries = personalHubService.getTodaySchedule([classroom], OWNER_UID, nextMonday, { [classroom.id]: [exam] });
+  assert.equal(entries.length, 5);
+  assert.ok(entries.every((e) => e.kind === 'period'));
+});
+
+test('getWeekSchedule/getWeekGrid: the same override applies to My Week, not just Today — the exam appears in its own cell, overridden periods do not', () => {
+  const { classroom, exam } = grade8AWithMondayPeriodsAndExam();
+  const { entries } = personalHubService.getWeekSchedule([classroom], OWNER_UID, EXAM_MONDAY, { [classroom.id]: [exam] });
+
+  const mondayEntries = entries.filter((e) => e.date === EXAM_MONDAY);
+  assert.deepEqual(mondayEntries.filter((e) => e.kind === 'period').map((e) => e.subjectTitle).sort(), ['Art', 'English']);
+  assert.equal(mondayEntries.filter((e) => e.kind === 'event').length, 1);
+
+  const { rows } = personalHubService.getWeekGrid([classroom], OWNER_UID, EXAM_MONDAY, { [classroom.id]: [exam] });
+  const mondayExamRow = rows.find((row) => row.startTime === '09:45');
+  const examCell = mondayExamRow.cellsByDate.get(EXAM_MONDAY);
+  assert.equal(examCell.length, 1);
+  assert.equal(examCell[0].kind, 'event');
+  assert.equal(examCell[0].subjectTitle, 'Mathematics');
+});
+
+test('countPeriodsThisWeek: an exam-suppressed period is not double-counted as both a period and an event — only real, non-suppressed periods count', () => {
+  const { classroom, exam } = grade8AWithMondayPeriodsAndExam();
+  // Without the exam: 5 real periods this week (Monday only, in this fixture).
+  assert.equal(personalHubService.countPeriodsThisWeek([classroom], OWNER_UID, EXAM_MONDAY), 5);
+  // With the exam suppressing P2/P3/P4: only P1 (English) + P5 (Art) remain real periods.
+  assert.equal(personalHubService.countPeriodsThisWeek([classroom], OWNER_UID, EXAM_MONDAY, { [classroom.id]: [exam] }), 2);
+});
+
+test('resolveTodayStripSchedule: an exam that suppresses every one of today\'s periods still stays "Today" (isWorkingDay is unaffected by events) rather than skipping to the next day', () => {
+  const classroom = ownedClassroom({ id: 'grade-8a-full-exam' });
+  timetableService.setPeriods(classroom, [{ periodNumber: 1, startTime: '09:00', endTime: '10:00' }]);
+  timetableService.upsertSlot(classroom, { weekday: 1, periodNumber: 1, subjectId: 'science' });
+  const exam = createScheduledEvent({ id: 'e1', classroomId: classroom.id, date: EXAM_MONDAY, startTime: '09:00', endTime: '10:00', subjectId: 'mathematics' });
+
+  const result = personalHubService.resolveTodayStripSchedule([classroom], OWNER_UID, EXAM_MONDAY, { [classroom.id]: [exam] });
+  assert.equal(result.isToday, true);
+  assert.equal(result.dateKey, EXAM_MONDAY);
+  assert.equal(result.entries.length, 1);
+  assert.equal(result.entries[0].kind, 'event');
+});
+
+test('isWorkingDay: a calendar Holiday exception (services/schoolCalendarService.js) is now correctly respected, not just the raw recurring weekday pattern — the staleness this fix also corrected', () => {
+  const classroom = ownedClassroom({ id: 'c1' });
+  timetableService.setPeriods(classroom, [{ periodNumber: 1, startTime: '09:00', endTime: '09:40' }]);
+  timetableService.upsertSlot(classroom, { weekday: 1, periodNumber: 1, subjectId: 'science' }); // Monday is normally a working day
+
+  assert.equal(personalHubService.isWorkingDay([classroom], EXAM_MONDAY), true);
+  schoolCalendarService.setHolidayException(classroom, EXAM_MONDAY, 'School Holiday');
+  assert.equal(personalHubService.isWorkingDay([classroom], EXAM_MONDAY), false);
+});
+
+test('resolvePeriodTimeRange (via resolveCurrentPeriodIndex): an event entry\'s own real endTime is honored, not just a period\'s duration', () => {
+  const entries = [
+    { kind: 'event', startTime: '09:45', endTime: '12:30' },
+  ];
+  const dateKey = EXAM_MONDAY;
+  function atTime(hour, minute = 0) {
+    const d = new Date(`${dateKey}T00:00:00`);
+    d.setHours(hour, minute, 0, 0);
+    return d;
+  }
+  assert.equal(personalHubService.resolveCurrentPeriodIndex(entries, dateKey, atTime(11, 0)), 0); // mid-exam -> in progress
+  assert.equal(personalHubService.resolveCurrentPeriodIndex(entries, dateKey, atTime(13, 0)), -1); // after the exam ends
 });

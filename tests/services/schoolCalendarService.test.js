@@ -32,6 +32,9 @@ function classroomWithWeekdayPattern() {
 // Mon 2026-09-14, Tue 2026-09-15, Sat 2026-09-19, Sun 2026-09-20, Mon 2026-09-21 (a second Monday, used for the consecutive-holiday case).
 const MONDAY = '2026-09-14';
 const TUESDAY = '2026-09-15';
+const WEDNESDAY = '2026-09-16';
+const THURSDAY = '2026-09-17';
+const FRIDAY = '2026-09-18';
 const SATURDAY = '2026-09-19';
 const SUNDAY = '2026-09-20';
 const NEXT_MONDAY = '2026-09-21';
@@ -260,4 +263,216 @@ test('getEffectiveScheduleForDate: back-to-back periods and events (touching exa
   const schedule = schoolCalendarService.getEffectiveScheduleForDate(classroom, MONDAY, [exam]);
   // Period 2 ends exactly at 10:30 (exam starts then) and Period 3 starts exactly at 10:45 (exam ends then) — neither is a real overlap.
   assert.ok(schedule.periods.every((period) => period.suppressedByEventId === null));
+});
+
+// ---------------------------------------------------------------------
+// Date RANGES — Holiday/Working Day exceptions spanning multiple days
+// (getExceptionForDate's own inclusive startDate..endDate containment
+// check is the only range-aware-ification this feature needed; every
+// test below exercises that through the same public functions the
+// single-day tests above already use).
+// ---------------------------------------------------------------------
+
+test('range: a single-day holiday (startDate === endDate) resolves exactly like the legacy single-date case', () => {
+  const classroom = classroomWithWeekdayPattern();
+  schoolCalendarService.setHolidayException(classroom, { startDate: MONDAY, endDate: MONDAY }, 'Local school holiday');
+  const status = schoolCalendarService.getWorkingDayStatus(classroom, MONDAY);
+  assert.equal(status.isWorkingDay, false);
+  assert.equal(status.exceptionType, 'holiday');
+  assert.equal(status.reason, 'Local school holiday');
+  const exception = schoolCalendarService.getExceptionForDate(classroom, MONDAY);
+  assert.equal(exception.startDate, MONDAY);
+  assert.equal(exception.endDate, MONDAY);
+  assert.equal(exception.date, MONDAY);
+});
+
+test('range: a multi-day holiday (Wed-Fri) makes every date in between a non-working day', () => {
+  const classroom = classroomWithWeekdayPattern();
+  schoolCalendarService.setHolidayException(classroom, { startDate: WEDNESDAY, endDate: FRIDAY }, 'Mid-term break');
+  [WEDNESDAY, THURSDAY, FRIDAY].forEach((dateKey) => {
+    const status = schoolCalendarService.getWorkingDayStatus(classroom, dateKey);
+    assert.equal(status.isWorkingDay, false, `${dateKey} should be non-working`);
+    assert.equal(status.exceptionType, 'holiday');
+  });
+});
+
+test('range: the first day of a holiday range is affected', () => {
+  const classroom = classroomWithWeekdayPattern();
+  schoolCalendarService.setHolidayException(classroom, { startDate: WEDNESDAY, endDate: FRIDAY }, 'Mid-term break');
+  assert.equal(schoolCalendarService.getWorkingDayStatus(classroom, WEDNESDAY).isWorkingDay, false);
+});
+
+test('range: the last day of a holiday range is affected', () => {
+  const classroom = classroomWithWeekdayPattern();
+  schoolCalendarService.setHolidayException(classroom, { startDate: WEDNESDAY, endDate: FRIDAY }, 'Mid-term break');
+  assert.equal(schoolCalendarService.getWorkingDayStatus(classroom, FRIDAY).isWorkingDay, false);
+});
+
+test('range: the day immediately before a holiday range is unaffected (normal recurring schedule)', () => {
+  const classroom = classroomWithWeekdayPattern();
+  schoolCalendarService.setHolidayException(classroom, { startDate: WEDNESDAY, endDate: FRIDAY }, 'Mid-term break');
+  const status = schoolCalendarService.getWorkingDayStatus(classroom, TUESDAY);
+  assert.equal(status.isWorkingDay, true);
+  assert.equal(status.exceptionType, null);
+});
+
+test('range: the day immediately after a holiday range is unaffected — no leak past endDate', () => {
+  const classroom = classroomWithWeekdayPattern();
+  schoolCalendarService.setHolidayException(classroom, { startDate: WEDNESDAY, endDate: FRIDAY }, 'Mid-term break');
+  // Saturday right after the range is non-working, but for its own natural weekend reason, not a leaked exception.
+  const saturdayStatus = schoolCalendarService.getWorkingDayStatus(classroom, SATURDAY);
+  assert.equal(saturdayStatus.isWorkingDay, false);
+  assert.equal(saturdayStatus.exceptionType, null);
+  // The next real working day (the following Monday) is fully restored to normal.
+  const mondayStatus = schoolCalendarService.getWorkingDayStatus(classroom, NEXT_MONDAY);
+  assert.equal(mondayStatus.isWorkingDay, true);
+  assert.equal(mondayStatus.exceptionType, null);
+});
+
+test('range: a single-day special working day still works via From === To', () => {
+  const classroom = classroomWithWeekdayPattern();
+  schoolCalendarService.setWorkingDayException(classroom, { startDate: SATURDAY, endDate: SATURDAY }, 'Special working day');
+  const status = schoolCalendarService.getWorkingDayStatus(classroom, SATURDAY);
+  assert.equal(status.isWorkingDay, true);
+  assert.equal(status.exceptionType, 'workingDay');
+});
+
+test('range: a multi-day special working day (Sat-Sun) makes every date in the range a working day, each using its own weekday pattern when not customized', () => {
+  const classroom = classroomWithWeekdayPattern();
+  timetableService.upsertSlot(classroom, { weekday: 6, periodNumber: 1, subjectId: 'mathematics' }); // Saturday's own recurring period
+  // Sunday (weekday 0) has no recurring slots configured in the fixture at all.
+  schoolCalendarService.setWorkingDayException(classroom, { startDate: SATURDAY, endDate: SUNDAY }, 'Special working weekend');
+
+  const saturdayStatus = schoolCalendarService.getWorkingDayStatus(classroom, SATURDAY);
+  const sundayStatus = schoolCalendarService.getWorkingDayStatus(classroom, SUNDAY);
+  assert.equal(saturdayStatus.isWorkingDay, true);
+  assert.equal(sundayStatus.isWorkingDay, true);
+
+  const saturdayPeriods = schoolCalendarService.getEffectivePeriodsForDate(classroom, SATURDAY);
+  const sundayPeriods = schoolCalendarService.getEffectivePeriodsForDate(classroom, SUNDAY);
+  assert.equal(saturdayPeriods.length, 1);
+  assert.equal(saturdayPeriods[0].subjectId, 'mathematics'); // Saturday's own recurring pattern, since no customPeriods was given
+  assert.deepEqual(sundayPeriods, []); // Sunday has no recurring pattern of its own
+});
+
+test('range: a multi-day special working day WITH customPeriods gives every date in the range the identical custom periods', () => {
+  const classroom = classroomWithWeekdayPattern();
+  const customPeriods = [{ periodNumber: 1, startTime: '10:00', endTime: '11:00', subjectId: 'science', teacherUid: null }];
+  schoolCalendarService.setWorkingDayException(classroom, { startDate: SATURDAY, endDate: SUNDAY }, 'Special working weekend', customPeriods);
+  assert.deepEqual(schoolCalendarService.getEffectivePeriodsForDate(classroom, SATURDAY), customPeriods);
+  assert.deepEqual(schoolCalendarService.getEffectivePeriodsForDate(classroom, SUNDAY), customPeriods);
+});
+
+test('validateExceptionRange: an invalid range (endDate before startDate) is rejected', () => {
+  const classroom = classroomWithWeekdayPattern();
+  const result = schoolCalendarService.validateExceptionRange(classroom, FRIDAY, WEDNESDAY);
+  assert.equal(result.valid, false);
+  assert.ok(result.error);
+});
+
+test('getExceptionForDate: a legacy exception object with only .date (no startDate/endDate, simulating pre-migration Firestore data) still resolves correctly', () => {
+  const classroom = classroomWithWeekdayPattern();
+  // Simulates data written before this range extension existed — never
+  // goes through createCalendarException()'s own defaulting.
+  classroom.schoolCalendar = { exceptions: [{ id: 'legacy-1', date: MONDAY, type: 'holiday', reason: 'Old data', customPeriods: null }] };
+
+  const exception = schoolCalendarService.getExceptionForDate(classroom, MONDAY);
+  assert.ok(exception);
+  assert.equal(exception.reason, 'Old data');
+
+  const status = schoolCalendarService.getWorkingDayStatus(classroom, MONDAY);
+  assert.equal(status.isWorkingDay, false);
+  assert.equal(status.exceptionType, 'holiday');
+
+  // A neighboring date is correctly NOT covered by this legacy single-date record.
+  assert.equal(schoolCalendarService.getExceptionForDate(classroom, TUESDAY), null);
+});
+
+test('range: editing a range (by id) changes which dates are affected — old dates outside the new range are no longer affected', () => {
+  const classroom = classroomWithWeekdayPattern();
+  schoolCalendarService.setHolidayException(classroom, { startDate: WEDNESDAY, endDate: FRIDAY }, 'Mid-term break');
+  const original = schoolCalendarService.getExceptionForDate(classroom, WEDNESDAY);
+
+  // Edit: move the range to NEXT_MONDAY..NEXT_TUESDAY, passing the original id.
+  schoolCalendarService.setHolidayException(classroom, { startDate: NEXT_MONDAY, endDate: NEXT_TUESDAY }, 'Rescheduled break', { id: original.id });
+
+  // Old dates are back to normal.
+  assert.equal(schoolCalendarService.getWorkingDayStatus(classroom, WEDNESDAY).isWorkingDay, true);
+  assert.equal(schoolCalendarService.getWorkingDayStatus(classroom, THURSDAY).isWorkingDay, true);
+  assert.equal(schoolCalendarService.getWorkingDayStatus(classroom, FRIDAY).isWorkingDay, true);
+
+  // New dates are now affected.
+  assert.equal(schoolCalendarService.getWorkingDayStatus(classroom, NEXT_MONDAY).isWorkingDay, false);
+  assert.equal(schoolCalendarService.getWorkingDayStatus(classroom, NEXT_TUESDAY).isWorkingDay, false);
+
+  // Still only one exception overall — an edit, not an additional create.
+  assert.equal(schoolCalendarService.getCalendarExceptions(classroom).length, 1);
+});
+
+test('range: deleting a range (clearExceptionById) restores normal recurring resolution for every date that was in it', () => {
+  const classroom = classroomWithWeekdayPattern();
+  schoolCalendarService.setHolidayException(classroom, { startDate: WEDNESDAY, endDate: FRIDAY }, 'Mid-term break');
+  const exception = schoolCalendarService.getExceptionForDate(classroom, WEDNESDAY);
+
+  schoolCalendarService.clearExceptionById(classroom, exception.id);
+
+  [WEDNESDAY, THURSDAY, FRIDAY].forEach((dateKey) => {
+    const status = schoolCalendarService.getWorkingDayStatus(classroom, dateKey);
+    assert.equal(status.isWorkingDay, true, `${dateKey} should be back to normal`);
+    assert.equal(status.exceptionType, null);
+  });
+  assert.equal(schoolCalendarService.getCalendarExceptions(classroom).length, 0);
+});
+
+test('validateExceptionRange: an overlapping range is rejected with a clear error (existing 20-29 Sep Holiday; attempted 25-27 Sep Special Working Day)', () => {
+  const classroom = classroomWithWeekdayPattern();
+  schoolCalendarService.setHolidayException(classroom, { startDate: '2026-09-20', endDate: '2026-09-29' }, 'Term break');
+
+  const result = schoolCalendarService.validateExceptionRange(classroom, '2026-09-25', '2026-09-27');
+  assert.equal(result.valid, false);
+  assert.match(result.error, /overlaps an existing Holiday exception/);
+});
+
+test('validateExceptionRange: excludeExceptionId lets a range be re-saved against itself without falsely colliding', () => {
+  const classroom = classroomWithWeekdayPattern();
+  schoolCalendarService.setHolidayException(classroom, { startDate: WEDNESDAY, endDate: FRIDAY }, 'Mid-term break');
+  const exception = schoolCalendarService.getExceptionForDate(classroom, WEDNESDAY);
+
+  const resultWithoutExclude = schoolCalendarService.validateExceptionRange(classroom, WEDNESDAY, FRIDAY);
+  assert.equal(resultWithoutExclude.valid, false);
+
+  const resultWithExclude = schoolCalendarService.validateExceptionRange(classroom, WEDNESDAY, FRIDAY, { excludeExceptionId: exception.id });
+  assert.equal(resultWithExclude.valid, true);
+});
+
+test('range: a holiday range correctly overrides the normal recurring timetable for every date in it (range equivalent of the single-day case)', () => {
+  const classroom = classroomWithWeekdayPattern();
+  const beforeSlots = JSON.stringify(timetableService.getSlotsForWeekday(classroom, 3)); // Wednesday's own recurring pattern
+  schoolCalendarService.setHolidayException(classroom, { startDate: WEDNESDAY, endDate: FRIDAY }, 'Mid-term break');
+  const afterSlots = JSON.stringify(timetableService.getSlotsForWeekday(classroom, 3));
+  assert.equal(afterSlots, beforeSlots); // the recurring pattern itself is untouched
+  assert.deepEqual(schoolCalendarService.getEffectivePeriodsForDate(classroom, WEDNESDAY), []);
+});
+
+test('getEffectiveScheduleForDate: an exam on a date inside a holiday range still appears in schedule.events, but there are no periods for it to overlap/suppress — the Holiday empties periods entirely first', () => {
+  const classroom = classroomWithWeekdayPattern();
+  schoolCalendarService.setHolidayException(classroom, { startDate: WEDNESDAY, endDate: FRIDAY }, 'Mid-term break');
+  const exam = createScheduledEvent({ classroomId: 'c1', date: THURSDAY, startTime: '09:00', endTime: '10:30', eventType: 'exam', title: 'Exam scheduled on a holiday', subjectId: 'science' });
+
+  const schedule = schoolCalendarService.getEffectiveScheduleForDate(classroom, THURSDAY, [exam]);
+
+  assert.equal(schedule.isWorkingDay, false);
+  assert.equal(schedule.exceptionType, 'holiday');
+  // getEffectivePeriodsForDate() already returns [] for a non-working day
+  // (its own early return), before getEffectiveScheduleForDate() ever
+  // gets to the overlap/suppression step — so there is structurally
+  // nothing for the exam to suppress.
+  assert.deepEqual(schedule.periods, []);
+  // The event itself is NOT filtered out by the Holiday — this function
+  // never removes events, it only ever suppresses PERIODS. Any UI
+  // surface showing schedule.events on a Holiday date would still see
+  // this exam; that is the current, unchanged behavior, documented here
+  // rather than assumed.
+  assert.equal(schedule.events.length, 1);
+  assert.equal(schedule.events[0].id, exam.id);
 });

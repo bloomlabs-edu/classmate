@@ -4,8 +4,9 @@
  * The one place "recurring weekly Timetable + calendar exceptions +
  * date-specific Scheduled Events -> effective schedule for a real date"
  * actually happens — every consumer (the Dashboard's Today's Schedule,
- * ui/views/TimetableView.js's Week/Day/Calendar views) derives from
- * these same functions rather than each re-implementing its own
+ * ui/views/TimetableView.js's Week/Day/Calendar views, and
+ * services/personalHubService.js's Today strip / My Week grid) derives
+ * from these same functions rather than each re-implementing its own
  * holiday/exam logic. Pure and dependency-free (no Firestore import),
  * matching services/timetableService.js's own established convention —
  * `classroom.schoolCalendar` is mutated in place here exactly like
@@ -26,7 +27,7 @@
 
 import { createCalendarException, CALENDAR_EXCEPTION_TYPES } from '../models/CalendarException.js';
 import * as timetableService from './timetableService.js';
-import { toDateKey, shiftDateKey } from '../utils/dateHelpers.js';
+import { toDateKey, shiftDateKey, formatDateKey } from '../utils/dateHelpers.js';
 
 function ensureSchoolCalendar(classroom) {
   if (!classroom.schoolCalendar) classroom.schoolCalendar = { exceptions: [] };
@@ -39,14 +40,61 @@ export function getCalendarExceptions(classroom) {
   return [...ensureSchoolCalendar(classroom).exceptions].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }
 
-/** The one exception (if any) for a specific date — a date can have at most one, enforced by setHolidayException()/setWorkingDayException() below always replacing rather than appending. */
+/**
+ * The one exception (if any) covering a specific date — an inclusive
+ * `startDate`..`endDate` containment check, so a single-day exception
+ * (`startDate === endDate`) and a multi-day range both resolve the same
+ * way. Falls back to `.date` (via `exception.startDate || exception.date`)
+ * for any exception object that predates this range extension and only
+ * ever had `.date` — no migration needed, it still matches correctly.
+ * A date can be covered by at most one exception, enforced by
+ * setHolidayException()/setWorkingDayException() below always
+ * replacing an exact-range match, and by validateExceptionRange()
+ * rejecting overlapping ranges before either is ever called with one.
+ *
+ * This is the ONLY function that needed to become range-aware — every
+ * other resolution function in this file (getWorkingDayStatus,
+ * getEffectivePeriodsForDate, getEffectiveScheduleForDate,
+ * getNextWorkingDate, resolveDashboardScheduleDate) calls this one,
+ * directly or transitively, and each already resolves one real date at
+ * a time, so a range "just works" for all of them for free.
+ */
 export function getExceptionForDate(classroom, dateKey) {
-  return ensureSchoolCalendar(classroom).exceptions.find((exception) => exception.date === dateKey) || null;
+  return (
+    ensureSchoolCalendar(classroom).exceptions.find((exception) => {
+      const start = exception.startDate || exception.date;
+      const end = exception.endDate || exception.startDate || exception.date;
+      return dateKey >= start && dateKey <= end;
+    }) || null
+  );
 }
 
+/** Accepts either a plain "YYYY-MM-DD" dateKey (the original, single-day calling convention every pre-existing call site — including this file's own tests — already uses) or an explicit `{ startDate, endDate }` range, and always returns `{ startDate, endDate }`. Kept so setHolidayException()/setWorkingDayException() below never needed their many existing single-date call sites rewritten. */
+function resolveRange(dateOrRange) {
+  if (typeof dateOrRange === 'string') return { startDate: dateOrRange, endDate: dateOrRange };
+  const { startDate, endDate } = dateOrRange || {};
+  return { startDate, endDate: endDate || startDate };
+}
+
+/**
+ * Inserts/replaces one exception. Matches an existing entry by `id`
+ * first (an explicit edit — the caller passed the id of the exception
+ * being changed, see the `{ id }` option on setHolidayException()/
+ * setWorkingDayException()), then falls back to matching by an exact
+ * `startDate`+`endDate` pair (a fresh create call that happens to name
+ * the exact same date/range as an existing exception — the same
+ * "setting a second one just replaces the first" behavior this file's
+ * exact-date matching already had before ranges existed). Two exceptions
+ * with genuinely different, non-identical ranges are never merged here —
+ * preventing ambiguous OVERLAPPING (but not identical) ranges is
+ * validateExceptionRange()'s job, called by the UI before either public
+ * write function below.
+ */
 function upsertException(classroom, exception) {
   const schoolCalendar = ensureSchoolCalendar(classroom);
-  const index = schoolCalendar.exceptions.findIndex((existing) => existing.date === exception.date);
+  const index = schoolCalendar.exceptions.findIndex(
+    (existing) => existing.id === exception.id || (existing.startDate === exception.startDate && existing.endDate === exception.endDate)
+  );
   if (index === -1) {
     schoolCalendar.exceptions.push(exception);
   } else {
@@ -55,20 +103,65 @@ function upsertException(classroom, exception) {
   return exception;
 }
 
-/** Marks `dateKey` as a Holiday/non-working day — no normal periods that date, regardless of what its own weekday would normally have. Replaces any existing exception for this date (a date is Holiday, Working Day, or Normal — never two at once). */
-export function setHolidayException(classroom, dateKey, reason = '') {
-  return upsertException(classroom, createCalendarException({ date: dateKey, type: CALENDAR_EXCEPTION_TYPES.HOLIDAY, reason, customPeriods: null }));
+/** Marks `dateOrRange` (a single dateKey, or `{ startDate, endDate }`) as a Holiday/non-working span — no normal periods on any date within it, regardless of what each date's own weekday would normally have. Pass `{ id }` (the existing exception's own id) when editing rather than creating. */
+export function setHolidayException(classroom, dateOrRange, reason = '', { id } = {}) {
+  const { startDate, endDate } = resolveRange(dateOrRange);
+  return upsertException(classroom, createCalendarException({ id, startDate, endDate, type: CALENDAR_EXCEPTION_TYPES.HOLIDAY, reason, customPeriods: null }));
 }
 
-/** Marks `dateKey` as a temporary/special Working Day. `customPeriods` (see models/CalendarException.js) is null unless the teacher explicitly customized this date's own periods — omitting it means "use this weekday's own recurring pattern, if any." */
-export function setWorkingDayException(classroom, dateKey, reason = '', customPeriods = null) {
-  return upsertException(classroom, createCalendarException({ date: dateKey, type: CALENDAR_EXCEPTION_TYPES.WORKING_DAY, reason, customPeriods }));
+/** Marks `dateOrRange` (a single dateKey, or `{ startDate, endDate }`) as a temporary/special Working span. `customPeriods` (see models/CalendarException.js) is null unless the teacher explicitly customized these dates' own periods — omitting it means "each date still uses its own weekday's recurring pattern, if any" (computed per-date by getEffectivePeriodsForDate(), so a range spanning several different weekdays still resolves each day correctly). Pass `{ id }` when editing rather than creating. */
+export function setWorkingDayException(classroom, dateOrRange, reason = '', customPeriods = null, { id } = {}) {
+  const { startDate, endDate } = resolveRange(dateOrRange);
+  return upsertException(classroom, createCalendarException({ id, startDate, endDate, type: CALENDAR_EXCEPTION_TYPES.WORKING_DAY, reason, customPeriods }));
 }
 
-/** Removes any exception for `dateKey`, returning it to Normal (whatever its own weekday's recurring pattern says). */
+/**
+ * Whether a proposed `startDate`..`endDate` span is safe to save: the
+ * end must be on/after the start, and it must not overlap any OTHER
+ * existing exception (`excludeExceptionId` excludes the one currently
+ * being edited from that check, so re-saving a range without changing
+ * its dates never collides with itself). There is no existing explicit
+ * precedence model for two exceptions covering the same date — before
+ * this feature, getExceptionForDate()'s plain `.find()` meant
+ * "whichever happens to be array-order-first," an accidental rule, not
+ * a designed one — so overlaps are rejected outright here rather than
+ * inventing a new precedence rule. All comparisons are plain
+ * "YYYY-MM-DD" string comparisons (never `new Date()`), matching this
+ * file's own existing convention (see getExceptionForDate() above) —
+ * timezone-safe and correct since date keys sort lexicographically.
+ */
+export function validateExceptionRange(classroom, startDate, endDate, { excludeExceptionId } = {}) {
+  if (!startDate || !endDate) return { valid: false, error: 'Choose both a start and end date.' };
+  if (endDate < startDate) return { valid: false, error: 'The end date must be on or after the start date.' };
+
+  const overlapping = ensureSchoolCalendar(classroom).exceptions.find((exception) => {
+    if (excludeExceptionId && exception.id === excludeExceptionId) return false;
+    const existingStart = exception.startDate || exception.date;
+    const existingEnd = exception.endDate || exception.startDate || exception.date;
+    return startDate <= existingEnd && existingStart <= endDate;
+  });
+
+  if (overlapping) {
+    const existingStart = overlapping.startDate || overlapping.date;
+    const existingEnd = overlapping.endDate || overlapping.startDate || overlapping.date;
+    const label = existingStart === existingEnd ? formatDateKey(existingStart) : `${formatDateKey(existingStart)} – ${formatDateKey(existingEnd)}`;
+    const typeLabel = overlapping.type === CALENDAR_EXCEPTION_TYPES.HOLIDAY ? 'Holiday' : 'Working Day';
+    return { valid: false, error: `This overlaps an existing ${typeLabel} exception (${label}). Remove or edit that one first.` };
+  }
+
+  return { valid: true };
+}
+
+/** Removes any exception for `dateKey`, returning it to Normal (whatever its own weekday's recurring pattern says). Exact-`.date`-match only — well-defined for a single-day exception, but not meaningful for a range (removing "the exception that starts on this exact date" is ambiguous once a range could also merely CONTAIN this date) — see clearExceptionById() below, which the UI uses for both single-day and range exceptions since it has no such ambiguity. */
 export function clearException(classroom, dateKey) {
   const schoolCalendar = ensureSchoolCalendar(classroom);
   schoolCalendar.exceptions = schoolCalendar.exceptions.filter((exception) => exception.date !== dateKey);
+}
+
+/** Removes one exception by its own id — unambiguous for both a single-day exception and a multi-day range alike, unlike date-based removal above. */
+export function clearExceptionById(classroom, exceptionId) {
+  const schoolCalendar = ensureSchoolCalendar(classroom);
+  schoolCalendar.exceptions = schoolCalendar.exceptions.filter((exception) => exception.id !== exceptionId);
 }
 
 /** Whether this weekday (0=Sun..6=Sat) has ANY recurring periods configured at all — the baseline "is this normally a working day" fact, before any calendar exception is considered. Reuses services/timetableService.js's own getSlotsForWeekday() — never a second definition of "working weekday" (mirrors services/personalHubService.js's own isWorkingDay(), scoped to one classroom instead of "any of several"). */

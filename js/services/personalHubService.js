@@ -15,11 +15,44 @@
  * view over that existing data, not a new collection. This module
  * intentionally never touches Firestore or mutates a classroom — it
  * only reads.
+ *
+ * BUG FIX (Today strip / My Week ignoring date-specific overrides):
+ * every schedule-resolving function here (getTodaySchedule,
+ * getWeekSchedule, getWeekGrid, resolveTodayStripSchedule,
+ * getNextScheduledDay, isWorkingDay) now derives its periods through
+ * services/schoolCalendarService.js's own getEffectiveScheduleForDate()/
+ * getWorkingDayStatus() — the SAME composition ui/views/TimetableView.js
+ * and ui/components/TodaysScheduleWidget.js already use — instead of
+ * reading services/timetableService.js's raw recurring pattern
+ * directly. Previously this file bypassed schoolCalendarService
+ * entirely, so a date-specific Scheduled Event (an exam) or a calendar
+ * exception (a holiday / temporary working day) never took effect
+ * here, even though the real Timetable view already respected both.
+ * The recurring Timetable itself is never modified by any of this —
+ * schoolCalendarService only ever overlays an exception/event on top
+ * of a fresh read of it (see that file's own header comment) — so once
+ * an override's date/time passes, these functions resume showing the
+ * recurring pattern automatically, with no separate "revert" step.
+ *
+ * Scheduled Events are Firestore-backed (services/scheduledEventRepository.js)
+ * and this module still never touches Firestore itself — every
+ * schedule-resolving function below takes an optional
+ * `eventsByClassroomId` map (`{ [classroomId]: ScheduledEvent[] }`) that
+ * the caller (ui/views/PersonalHubView.js) is responsible for fetching
+ * up front, mirroring how TodaysScheduleWidget.js fetches its own
+ * events before calling schoolCalendarService. Omitting it (every
+ * existing caller/test that hasn't been updated yet) is equivalent to
+ * "no events for anyone" — schoolCalendarService's own
+ * getEffectiveScheduleForDate() degrades to exactly the prior
+ * periods-only behavior when handed an empty events list, so this is a
+ * strictly additive, backward-compatible change.
  */
 
 import * as memberService from './memberService.js';
 import { MEMBER_ROLES } from '../config/memberRoles.js';
 import * as timetableService from './timetableService.js';
+import * as schoolCalendarService from './schoolCalendarService.js';
+import * as scheduledEventService from './scheduledEventService.js';
 import { resolveSubjectTitle } from './timetableDisplayService.js';
 import { getDisplayName } from './classroomService.js';
 import { DEFAULT_GROUP_COLORS } from '../config/groupColorConfig.js';
@@ -217,25 +250,79 @@ function classroomHasAnyTeacherAssignment(classroom) {
   return timetableService.getTimetable(classroom).slots.some((slot) => slot.teacherUid != null);
 }
 
-function buildScheduleEntries(classrooms, startDateKey, endDateKey, uid) {
+/**
+ * Every effective schedule entry (real recurring periods, minus any a
+ * Scheduled Event has overridden for that date, PLUS the events
+ * themselves) across `classrooms`, for [startDateKey, endDateKey] —
+ * the shared engine behind getTodaySchedule()/getWeekSchedule() below.
+ * Walks day-by-day through schoolCalendarService.getEffectiveScheduleForDate()
+ * exactly like ui/views/TimetableView.js's own render loop does, rather
+ * than deriving raw TeachingSlots directly — see this file's own header
+ * comment for why.
+ *
+ * `kind: 'period' | 'event'` on every entry lets a renderer (or a
+ * future caller) tell the two apart without inspecting other fields —
+ * an event entry has `periodNumber: null` and carries `eventType`/
+ * `eventTypeLabel`/`eventTitle` instead. Events are never filtered by
+ * the per-teacher "Taught by" rule below: an exam belongs to the whole
+ * classroom, not to whichever teacher happens to be assigned that
+ * period's own recurring slot (mirrors TodaysScheduleWidget.js's own
+ * unfiltered event rows).
+ */
+function buildScheduleEntries(classrooms, startDateKey, endDateKey, uid, eventsByClassroomId = {}) {
   const entries = [];
   for (const classroom of classrooms) {
-    const periodsByNumber = new Map(timetableService.getPeriods(classroom).map((period) => [period.periodNumber, period]));
-    const slots = timetableService.getConcreteSlotsForDateRange(classroom, startDateKey, endDateKey);
     const filterToThisTeacher = classroomHasAnyTeacherAssignment(classroom);
-    for (const slot of slots) {
-      if (filterToThisTeacher && slot.teacherUid !== uid) continue;
-      entries.push({
-        ...slot,
-        classroomId: classroom.id,
-        classroomName: getDisplayName(classroom),
-        schoolName: classroom.schoolName,
-        subjectTitle: resolveSubjectTitle(classroom, slot.subjectId),
-        startTime: periodsByNumber.get(slot.periodNumber)?.startTime || null,
+    const classroomEvents = eventsByClassroomId[classroom.id] || [];
+
+    for (let dateKey = startDateKey; dateKey <= endDateKey; dateKey = shiftDateKey(dateKey, 1)) {
+      const eventsForDate = scheduledEventService.getEventsForDate(classroomEvents, dateKey);
+      const schedule = schoolCalendarService.getEffectiveScheduleForDate(classroom, dateKey, eventsForDate);
+
+      schedule.periods.forEach((period) => {
+        // A date-specific event overlapping this period REPLACES it for
+        // this one date — the override this whole fix exists for (see
+        // schoolCalendarService.getEffectiveScheduleForDate()'s own
+        // suppressedByEventId doc comment).
+        if (period.suppressedByEventId) return;
+        if (filterToThisTeacher && period.teacherUid !== uid) return;
+        entries.push({
+          kind: 'period',
+          date: dateKey,
+          periodNumber: period.periodNumber,
+          startTime: period.startTime,
+          endTime: period.endTime,
+          subjectId: period.subjectId,
+          teacherUid: period.teacherUid,
+          classroomId: classroom.id,
+          classroomName: getDisplayName(classroom),
+          schoolName: classroom.schoolName,
+          subjectTitle: resolveSubjectTitle(classroom, period.subjectId),
+        });
+      });
+
+      schedule.events.forEach((event) => {
+        const eventTypeLabel = scheduledEventService.getEventTypeLabel(event.eventType);
+        entries.push({
+          kind: 'event',
+          date: dateKey,
+          periodNumber: null,
+          startTime: event.startTime,
+          endTime: event.endTime,
+          subjectId: event.subjectId ?? null,
+          teacherUid: null,
+          classroomId: classroom.id,
+          classroomName: getDisplayName(classroom),
+          schoolName: classroom.schoolName,
+          subjectTitle: scheduledEventService.resolveEventSubjectTitle(classroom, event) || eventTypeLabel,
+          eventType: event.eventType,
+          eventTypeLabel,
+          eventTitle: event.title || '',
+        });
       });
     }
   }
-  entries.sort((a, b) => (a.date === b.date ? a.periodNumber - b.periodNumber : a.date < b.date ? -1 : 1));
+  entries.sort((a, b) => (a.date === b.date ? (a.startTime < b.startTime ? -1 : a.startTime > b.startTime ? 1 : 0) : a.date < b.date ? -1 : 1));
   return entries;
 }
 
@@ -249,34 +336,34 @@ function buildScheduleEntries(classrooms, startDateKey, endDateKey, uid) {
  * "Taught by" at all — see classroomHasAnyTeacherAssignment() above
  * for the exact fallback rule and why.
  */
-export function getTodaySchedule(classrooms, uid, dateKey = getTodayDateKey()) {
-  return buildScheduleEntries(classrooms, dateKey, dateKey, uid);
+export function getTodaySchedule(classrooms, uid, dateKey = getTodayDateKey(), eventsByClassroomId = {}) {
+  return buildScheduleEntries(classrooms, dateKey, dateKey, uid, eventsByClassroomId);
 }
 
 /**
- * Whether `dateKey`'s own weekday is a real "working day" at all —
- * i.e. at least one of these classrooms' own recurring Timetable
- * pattern (services/timetableService.js) has ANY slot configured for
- * that weekday, for anyone (never filtered to this one uid, unlike
+ * Whether `dateKey`'s own weekday is a real "working day" at all — for
+ * ANY of these classrooms (never filtered to this one uid, unlike
  * getTodaySchedule() above). This is the one distinction between "a
  * genuinely non-scheduled day" (a classroom's own configured week
  * simply never has periods on this weekday — e.g. Saturday, or
- * whatever this school's own real pattern happens to be) and "a
- * working weekday where this particular uid just has nothing
- * personally assigned today" — deliberately NOT the same signal as
- * `getTodaySchedule(...).length === 0`, which conflates both.
+ * whatever this school's own real pattern happens to be, OR today is a
+ * calendar Holiday) and "a working weekday where this particular uid
+ * just has nothing personally assigned today" — deliberately NOT the
+ * same signal as `getTodaySchedule(...).length === 0`, which conflates
+ * both.
  *
- * Sourced entirely from the classrooms' own already-configured
- * Timetable data — never a hardcoded Saturday/Sunday assumption, and
- * never a second/invented "working day" concept: this app has no
- * classroom-level holiday/school-calendar entity to reuse (see this
- * file's own header comment on what already exists), so "did this
- * school ever put periods on this weekday" is the most faithful
- * definition available without inventing new data.
+ * Delegates to services/schoolCalendarService.js's own
+ * getWorkingDayStatus() — the same "recurring pattern + calendar
+ * exceptions" resolution the real Timetable view uses — rather than
+ * reading services/timetableService.js's raw recurring pattern
+ * directly. (Previously this function's own doc comment claimed "this
+ * app has no classroom-level holiday/school-calendar entity to reuse,"
+ * which was true when first written but went stale once
+ * schoolCalendarService.js was built for the real Timetable view; this
+ * is that staleness corrected, not a new capability invented here.)
  */
 export function isWorkingDay(classrooms, dateKey) {
-  const weekday = timetableService.weekdayOfDateKey(dateKey);
-  return classrooms.some((classroom) => timetableService.getSlotsForWeekday(classroom, weekday).length > 0);
+  return classrooms.some((classroom) => schoolCalendarService.getWorkingDayStatus(classroom, dateKey).isWorkingDay);
 }
 
 /**
@@ -291,10 +378,10 @@ export function isWorkingDay(classrooms, dateKey) {
  * classroom set with genuinely no upcoming periods at all is a real
  * state this must represent, not scan forever for.
  */
-export function getNextScheduledDay(classrooms, uid, { afterDateKey = getTodayDateKey(), horizonDays = 14 } = {}) {
+export function getNextScheduledDay(classrooms, uid, { afterDateKey = getTodayDateKey(), horizonDays = 14, eventsByClassroomId = {} } = {}) {
   for (let offset = 1; offset <= horizonDays; offset += 1) {
     const dateKey = shiftDateKey(afterDateKey, offset);
-    const entries = buildScheduleEntries(classrooms, dateKey, dateKey, uid);
+    const entries = buildScheduleEntries(classrooms, dateKey, dateKey, uid, eventsByClassroomId);
     if (entries.length > 0) return { dateKey, entries };
   }
   return null;
@@ -323,12 +410,12 @@ export function getNextScheduledDay(classrooms, uid, { afterDateKey = getTodayDa
  * period"/"Now" highlighting on — a future day's periods are never
  * "in progress" no matter the current time.
  */
-export function resolveTodayStripSchedule(classrooms, uid, todayDateKey = getTodayDateKey()) {
-  const todayEntries = getTodaySchedule(classrooms, uid, todayDateKey);
+export function resolveTodayStripSchedule(classrooms, uid, todayDateKey = getTodayDateKey(), eventsByClassroomId = {}) {
+  const todayEntries = getTodaySchedule(classrooms, uid, todayDateKey, eventsByClassroomId);
   if (todayEntries.length > 0 || isWorkingDay(classrooms, todayDateKey)) {
     return { dateKey: todayDateKey, entries: todayEntries, isToday: true };
   }
-  const next = getNextScheduledDay(classrooms, uid, { afterDateKey: todayDateKey });
+  const next = getNextScheduledDay(classrooms, uid, { afterDateKey: todayDateKey, eventsByClassroomId });
   if (next) {
     return { dateKey: next.dateKey, entries: next.entries, isToday: false };
   }
@@ -336,21 +423,33 @@ export function resolveTodayStripSchedule(classrooms, uid, todayDateKey = getTod
 }
 
 /**
- * One period's own [start, end) as real Date objects on `dateKey` —
- * `entry.duration` (minutes, see models/TeachingSlot.js) is the only
- * place a period's real length lives once resolved to a concrete slot,
- * so end time is always derived from start + duration, never a second
- * stored value that could drift from it. Entries with no resolvable
- * start time (a period whose own TimetablePeriod definition went
- * missing) return null — callers skip those rather than guessing.
+ * One entry's own [start, end) as real Date objects on `dateKey`.
+ * Supports two shapes: a real `endTime` ("HH:mm", what every entry
+ * buildScheduleEntries() produces now carries — both periods and
+ * events) is used directly when present; the older `duration` (minutes
+ * from start, see models/TeachingSlot.js) is still supported as a
+ * fallback so a caller handing in bare `{startTime, duration}` fixtures
+ * (see tests/services/personalHubService.test.js's own
+ * resolveCurrentPeriodIndex/resolveNextUpcomingPeriodIndex cases) keeps
+ * working unchanged. Entries with neither, or no resolvable start time,
+ * return null — callers skip those rather than guessing.
  */
 function resolvePeriodTimeRange(entry, dateKey) {
-  if (!entry.startTime || typeof entry.duration !== 'number') return null;
+  if (!entry.startTime) return null;
   const [hour, minute] = entry.startTime.split(':').map(Number);
   const start = new Date(`${dateKey}T00:00:00`);
   start.setHours(hour, minute, 0, 0);
-  const end = new Date(start.getTime() + entry.duration * 60000);
-  return { start, end };
+
+  if (typeof entry.duration === 'number') {
+    return { start, end: new Date(start.getTime() + entry.duration * 60000) };
+  }
+  if (entry.endTime) {
+    const [endHour, endMinute] = entry.endTime.split(':').map(Number);
+    const end = new Date(`${dateKey}T00:00:00`);
+    end.setHours(endHour, endMinute, 0, 0);
+    return { start, end };
+  }
+  return null;
 }
 
 /**
@@ -392,9 +491,9 @@ export function resolveNextUpcomingPeriodIndex(entries, dateKey, now = new Date(
  * context and real start time. Same per-classroom "Taught by" filter
  * as getTodaySchedule() above.
  */
-export function getWeekSchedule(classrooms, uid, dateKey = getTodayDateKey()) {
+export function getWeekSchedule(classrooms, uid, dateKey = getTodayDateKey(), eventsByClassroomId = {}) {
   const range = getWeekRange(dateKey);
-  return { range, entries: buildScheduleEntries(classrooms, range.start, range.end, uid) };
+  return { range, entries: buildScheduleEntries(classrooms, range.start, range.end, uid, eventsByClassroomId) };
 }
 
 /**
@@ -407,8 +506,8 @@ export function getWeekSchedule(classrooms, uid, dateKey = getTodayDateKey()) {
  * rather than a generic "Period 1/2/3" axis that would only be
  * accurate for a single classroom's own numbering.
  */
-export function getWeekGrid(classrooms, uid, dateKey = getTodayDateKey()) {
-  const { range, entries } = getWeekSchedule(classrooms, uid, dateKey);
+export function getWeekGrid(classrooms, uid, dateKey = getTodayDateKey(), eventsByClassroomId = {}) {
+  const { range, entries } = getWeekSchedule(classrooms, uid, dateKey, eventsByClassroomId);
 
   const days = [];
   for (let d = range.start; d <= range.end; d = shiftDateKey(d, 1)) days.push(d);
@@ -439,7 +538,14 @@ export function getNextWeekAnchor(dateKey) {
   return shiftDateKey(getWeekRange(dateKey).start, 7);
 }
 
-/** Total periods (TeachingSlots) across every classroom this uid belongs to, for the week containing `dateKey`. Same per-classroom "Taught by" filter as getWeekSchedule() — this count matches exactly what My Week's own grid shows. */
-export function countPeriodsThisWeek(classrooms, uid, dateKey = getTodayDateKey()) {
-  return getWeekSchedule(classrooms, uid, dateKey).entries.length;
+/**
+ * Total real class periods (never Scheduled Events — an exam isn't a
+ * "period" for this count's own purpose) across every classroom this
+ * uid belongs to, for the week containing `dateKey`. Same per-
+ * classroom "Taught by" filter as getWeekSchedule() — this count
+ * matches exactly what My Week's own grid shows once a period
+ * suppressed by an event is excluded from both.
+ */
+export function countPeriodsThisWeek(classrooms, uid, dateKey = getTodayDateKey(), eventsByClassroomId = {}) {
+  return getWeekSchedule(classrooms, uid, dateKey, eventsByClassroomId).entries.filter((entry) => entry.kind === 'period').length;
 }
