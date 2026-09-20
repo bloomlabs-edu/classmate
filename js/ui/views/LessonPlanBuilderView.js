@@ -2517,28 +2517,38 @@ function renderActivityCard(plan, activity, index, total, isCollapsed, handlers)
     const studentColumn = document.createElement('div');
     studentColumn.className = 'lesson-plan-builder__activity-grid-student';
 
+    // Student Action always renders, regardless of Differentiation — a
+    // 2026-09 refactor (e861bc3, the two-column layout) accidentally
+    // made Differentiation REPLACE this field instead of supplementing
+    // it, which made `activity.studentAction` permanently unreadable/
+    // uneditable (and therefore permanently blank-if-blank) for any
+    // activity with differentiation already added, silently blocking
+    // getLessonPlanReadiness()'s own studentAction requirement forever
+    // — the real cause of a real, reported "Submit never appears" case.
+    // Differentiation is genuinely additional planning detail, not a
+    // replacement for what students do, so both coexist here exactly
+    // like they did before that refactor.
+    studentColumn.appendChild(
+      createLabeledTextarea({
+        label: 'Student Action',
+        placeholder: 'What do students do?',
+        value: activity.studentAction,
+        onChange: (value) => handlers.onActivityChange(activity.id, 'studentAction', value),
+        disabled: !handlers.editable,
+        plan,
+        sectionKey: lessonPlanReviewService.buildActivitySectionKey(activity.id, 'studentAction'),
+      })
+    );
+
     if (activity.differentiation) {
       studentColumn.appendChild(renderDifferentiationFields(plan, activity, handlers));
-    } else {
-      studentColumn.appendChild(
-        createLabeledTextarea({
-          label: 'Student Action',
-          placeholder: 'What do students do?',
-          value: activity.studentAction,
-          onChange: (value) => handlers.onActivityChange(activity.id, 'studentAction', value),
-          disabled: !handlers.editable,
-          plan,
-          sectionKey: lessonPlanReviewService.buildActivitySectionKey(activity.id, 'studentAction'),
-        })
-      );
-      if (handlers.editable) {
-        const addDiffButton = document.createElement('button');
-        addDiffButton.type = 'button';
-        addDiffButton.className = 'btn btn--ghost lesson-plan-builder__add-differentiation-button';
-        addDiffButton.textContent = '+ Add differentiation';
-        addDiffButton.addEventListener('click', () => handlers.onAddActivityDifferentiation(activity.id));
-        studentColumn.appendChild(addDiffButton);
-      }
+    } else if (handlers.editable) {
+      const addDiffButton = document.createElement('button');
+      addDiffButton.type = 'button';
+      addDiffButton.className = 'btn btn--ghost lesson-plan-builder__add-differentiation-button';
+      addDiffButton.textContent = '+ Add differentiation';
+      addDiffButton.addEventListener('click', () => handlers.onAddActivityDifferentiation(activity.id));
+      studentColumn.appendChild(addDiffButton);
     }
 
     grid.appendChild(studentColumn);

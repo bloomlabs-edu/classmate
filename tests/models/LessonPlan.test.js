@@ -557,7 +557,11 @@ test('migrateLegacyObjectives: prefers swbatObjectives over lessonObjective when
 
 test('addLearningResource: appends a new resource with the given fields, defaults, and a real id/createdAt, and bumps updatedAt', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
-  const before = plan.updatedAt;
+  // An old fixed baseline, not "whatever the clock said a moment ago" —
+  // two synchronous calls can land in the same millisecond, which would
+  // make a real-clock comparison here flaky rather than wrong (see
+  // updateActivity's own identical baseline just above in this file).
+  plan.updatedAt = '2020-01-01T00:00:00.000Z';
 
   const resource = lessonPlanService.addLearningResource(plan, {
     title: 'Water Cycle Diagram',
@@ -576,7 +580,7 @@ test('addLearningResource: appends a new resource with the given fields, default
   assert.equal(resource.description, 'Fill-in-the-blank diagram');
   assert.equal(resource.sectionKey, null);
   assert.ok(resource.createdAt);
-  assert.notEqual(plan.updatedAt, before);
+  assert.notEqual(plan.updatedAt, '2020-01-01T00:00:00.000Z');
 });
 
 test('addLearningResource: a plan created before this field existed (resources undefined) self-heals to an array rather than throwing', () => {
