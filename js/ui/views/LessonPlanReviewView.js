@@ -46,6 +46,7 @@ import * as weeklyPlanReviewIndexService from '../../services/weeklyPlanReviewIn
 import { LESSON_PLAN_STATUS, LESSON_PLAN_SECTION_KEYS, LESSON_RESOURCE_TYPES } from '../../models/LessonPlan.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createIcon } from '../components/Icon.js';
+import { formatRelativeTimestamp } from '../../utils/dateHelpers.js';
 
 const STATUS_LABELS = Object.freeze({
   [LESSON_PLAN_STATUS.DRAFT]: 'Draft',
@@ -65,11 +66,12 @@ export function renderLessonPlanReviewView(container, { classroom, currentUser, 
   let isSubmittingAction = false;
   const pendingComments = []; // [{ sectionKey, text }] — accumulated locally, not yet saved
   let openCommentFormKey = null; // which section/activity's "+ Add comment" form is currently open
+  const collapsedCommentSectionKeys = new Set(); // which sectionKeys' comment panels are collapsed to just "N comments" — purely local UI state
 
   function rerender() {
     renderReview(
       container,
-      { classroom, plan, loadError, actionError, isSubmittingAction, pendingComments, openCommentFormKey },
+      { classroom, plan, loadError, actionError, isSubmittingAction, pendingComments, openCommentFormKey, collapsedCommentSectionKeys },
       {
         onBack,
         currentUser,
@@ -78,10 +80,16 @@ export function renderLessonPlanReviewView(container, { classroom, currentUser, 
 
         onOpenCommentForm: (sectionKey) => {
           openCommentFormKey = sectionKey;
+          collapsedCommentSectionKeys.delete(sectionKey); // opening the form always reveals the panel, even if it was collapsed
           rerender();
         },
         onCancelCommentForm: () => {
           openCommentFormKey = null;
+          rerender();
+        },
+        onToggleCommentPanel: (sectionKey) => {
+          if (collapsedCommentSectionKeys.has(sectionKey)) collapsedCommentSectionKeys.delete(sectionKey);
+          else collapsedCommentSectionKeys.add(sectionKey);
           rerender();
         },
         onAddPendingComment: (sectionKey, text) => {
@@ -290,11 +298,11 @@ function renderSection(heading, children, plan, sectionKey, state, handlers) {
   const headingEl = document.createElement('h2');
   headingEl.className = 'lesson-plan-review__section-heading';
   headingEl.textContent = heading;
-  section.appendChild(headingEl);
 
-  children.forEach((child) => section.appendChild(child));
+  const content = document.createElement('div');
+  children.forEach((child) => content.appendChild(child));
 
-  section.appendChild(renderCommentAffordance(sectionKey, plan, state, handlers));
+  section.appendChild(renderCommentableSegment({ headingEl, content, sectionKey, plan, state, handlers }));
 
   return section;
 }
@@ -317,83 +325,228 @@ function renderReadOnlyField(label, value) {
   return field;
 }
 
-// ---- Comment affordance — shared by every section/activity/sub-field ----
-
-function renderCommentAffordance(sectionKey, plan, state, handlers) {
+/**
+ * A single READ-ONLY field that ALSO carries its own individual comment
+ * attachment point (Teacher Action, Student Action, a Differentiation
+ * bucket, Pair Explanation, Exit Ticket) — as opposed to plain
+ * renderReadOnlyField() above, used for fields whose comments (if any)
+ * are only ever addressed to the WHOLE containing section (Why,
+ * Connection, Showcase, Spark), never to that one field specifically.
+ */
+function renderFieldSegment(label, value, sectionKey, plan, state, handlers) {
   const wrap = document.createElement('div');
-  wrap.className = 'lesson-plan-review__comments';
+  wrap.className = 'lesson-plan-review__field-segment';
 
+  const labelEl = document.createElement('p');
+  labelEl.className = 'lesson-plan-review__field-label';
+  labelEl.textContent = label;
+
+  const content = document.createElement('div');
+  const valueEl = document.createElement('p');
+  valueEl.className = 'lesson-plan-review__field-value';
+  valueEl.textContent = value && value.trim() ? value : '—';
+  if (!value || !value.trim()) valueEl.classList.add('lesson-plan-review__field-value--empty');
+  content.appendChild(valueEl);
+
+  wrap.appendChild(renderCommentableSegment({ headingEl: labelEl, content, sectionKey, plan, state, handlers, compact: true }));
+  return wrap;
+}
+
+// ---- Comment panels — shared by every section/activity/sub-field ----
+// (see this file's own header comment: comments stay attached to
+// whichever section/activity/sub-field they're about; this restructure
+// only changes WHERE that attachment renders — beside the content it's
+// about, never floating text below it.)
+
+/**
+ * The shared "heading row + two-column body" shell every commentable
+ * unit on this page uses, from a whole named section (Why, Connection)
+ * down to one Activity sub-field (Teacher Action) — same comment data,
+ * same sectionKey addressing (services/lessonPlanReviewService.js's own
+ * buildActivitySectionKey()), only ever a difference in how prominent
+ * the heading reads. Returns a DocumentFragment; the caller supplies
+ * its own outer card/border (a whole section's `.lesson-plan-review__section`,
+ * an Activity's `.lesson-plan-review__activity-card`, a field's
+ * `.lesson-plan-review__field-segment`) since each already has its own
+ * established container style this restructure isn't meant to change.
+ */
+function renderCommentableSegment({ headingEl, content, sectionKey, plan, state, handlers }) {
+  const headingRow = document.createElement('div');
+  headingRow.className = 'lesson-plan-review__segment-heading-row';
+  headingRow.appendChild(headingEl);
+
+  const trigger = renderCommentTrigger(sectionKey, state, handlers);
+  if (trigger) headingRow.appendChild(trigger);
+
+  const panel = renderCommentPanel(sectionKey, plan, state, handlers);
+
+  const body = document.createElement('div');
+  body.className = panel
+    ? 'lesson-plan-review__segment-body lesson-plan-review__segment-body--with-comments'
+    : 'lesson-plan-review__segment-body';
+
+  const contentCol = document.createElement('div');
+  contentCol.className = 'lesson-plan-review__segment-content';
+  contentCol.appendChild(content);
+  body.appendChild(contentCol);
+
+  if (panel) body.appendChild(panel);
+
+  const frag = document.createDocumentFragment();
+  frag.appendChild(headingRow);
+  frag.appendChild(body);
+  return frag;
+}
+
+/**
+ * The top-right "+ Add comment" trigger — always visible next to the
+ * heading it's about (never at the bottom), regardless of whether
+ * comments already exist there. Returns `null` (renders nothing) for a
+ * reviewer without permission, or while THIS section's own form is
+ * already open (its Cancel button, inside the panel itself, is the way
+ * back out — a second trigger button right next to an open form would
+ * be redundant).
+ */
+function renderCommentTrigger(sectionKey, state, handlers) {
+  if (!handlers.canReview) return null;
+  if (state.openCommentFormKey === sectionKey) return null;
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn btn--ghost lesson-plan-review__add-comment-button';
+  button.appendChild(createIcon('plus', { size: 14 }));
+  button.append(' Add comment');
+  button.addEventListener('click', () => handlers.onOpenCommentForm(sectionKey));
+  return button;
+}
+
+/**
+ * The right-hand comment panel itself — a real, saved comment count +
+ * collapse/expand, the comments (existing then pending, oldest first),
+ * and the open "add comment" form if this is the active section.
+ * Returns `null` when there's truly nothing to show (zero existing,
+ * zero pending, form closed) — per explicit product direction, an
+ * empty panel is never rendered just to reserve the layout.
+ */
+function renderCommentPanel(sectionKey, plan, state, handlers) {
   const existing = plan.activeComments.filter((comment) => comment.sectionKey === sectionKey);
-  existing.forEach((comment) => {
-    const card = document.createElement('div');
-    card.className = 'lesson-plan-review__comment-card';
-    const text = document.createElement('p');
-    text.className = 'lesson-plan-review__comment-text';
-    text.textContent = comment.text;
-    card.appendChild(text);
-    wrap.appendChild(card);
-  });
+  const pending = state.pendingComments
+    .map((comment, index) => ({ ...comment, index }))
+    .filter((comment) => comment.sectionKey === sectionKey);
+  const formOpen = state.openCommentFormKey === sectionKey;
 
-  state.pendingComments.forEach((comment, index) => {
-    if (comment.sectionKey !== sectionKey) return;
-    const card = document.createElement('div');
-    card.className = 'lesson-plan-review__comment-card lesson-plan-review__comment-card--pending';
+  if (existing.length === 0 && pending.length === 0 && !formOpen) return null;
+
+  const panel = document.createElement('div');
+  panel.className = 'lesson-plan-review__comment-panel';
+
+  const totalCount = existing.length + pending.length;
+  const isCollapsed = state.collapsedCommentSectionKeys.has(sectionKey) && !formOpen;
+
+  if (totalCount > 0) {
+    const panelHeader = document.createElement('button');
+    panelHeader.type = 'button';
+    panelHeader.className = 'lesson-plan-review__comment-panel-header';
+    panelHeader.appendChild(createIcon('bell', { size: 14 })); // no dedicated "comment/speech-bubble" icon in this app's set yet — bell is the closest existing "something needs your attention" glyph
+    const countLabel = document.createElement('span');
+    countLabel.textContent = `${totalCount} comment${totalCount === 1 ? '' : 's'}`;
+    panelHeader.appendChild(countLabel);
+    panelHeader.appendChild(createIcon('arrow-right', { size: 12, className: `lesson-plan-review__comment-panel-chevron${isCollapsed ? '' : ' lesson-plan-review__comment-panel-chevron--expanded'}` }));
+    panelHeader.addEventListener('click', () => handlers.onToggleCommentPanel(sectionKey));
+    panel.appendChild(panelHeader);
+  }
+
+  if (!isCollapsed) {
+    if (totalCount > 0) {
+      const list = document.createElement('div');
+      list.className = 'lesson-plan-review__comment-panel-list';
+
+      existing.forEach((comment) => {
+        list.appendChild(renderCommentEntry({ comment, plan, state }));
+      });
+      pending.forEach((comment) => {
+        list.appendChild(renderCommentEntry({ comment, plan, state, isPending: true, handlers }));
+      });
+
+      panel.appendChild(list);
+    }
+
+    if (formOpen) {
+      panel.appendChild(renderCommentForm(sectionKey, handlers));
+    }
+  }
+
+  return panel;
+}
+
+/** One comment's own row inside the panel — a thin divider between entries (see CSS), never a separate card per comment. */
+function renderCommentEntry({ comment, plan, state, isPending = false, handlers }) {
+  const entry = document.createElement('div');
+  entry.className = 'lesson-plan-review__comment-entry';
+
+  const meta = document.createElement('div');
+  meta.className = 'lesson-plan-review__comment-entry-meta';
+  const nameEl = document.createElement('span');
+  nameEl.className = 'lesson-plan-review__comment-entry-name';
+  nameEl.textContent = isPending ? 'You' : getDisplayName(state.classroom, comment.byUid);
+  meta.appendChild(nameEl);
+  if (!isPending && comment.createdAt) {
+    const dateEl = document.createElement('span');
+    dateEl.className = 'lesson-plan-review__comment-entry-date';
+    dateEl.textContent = formatRelativeTimestamp(comment.createdAt);
+    meta.appendChild(dateEl);
+  }
+  if (isPending) {
     const tag = document.createElement('span');
     tag.className = 'lesson-plan-review__comment-pending-tag';
     tag.textContent = 'Not sent yet';
-    card.appendChild(tag);
-    const text = document.createElement('p');
-    text.className = 'lesson-plan-review__comment-text';
-    text.textContent = comment.text;
-    card.appendChild(text);
+    meta.appendChild(tag);
+  }
+  entry.appendChild(meta);
+
+  const text = document.createElement('p');
+  text.className = 'lesson-plan-review__comment-text';
+  text.textContent = comment.text;
+  entry.appendChild(text);
+
+  if (isPending) {
     const removeButton = document.createElement('button');
     removeButton.type = 'button';
-    removeButton.className = 'btn btn--text btn--danger-text';
+    removeButton.className = 'btn btn--text btn--danger-text lesson-plan-review__comment-entry-remove';
     removeButton.textContent = 'Remove';
-    removeButton.addEventListener('click', () => handlers.onRemovePendingComment(index));
-    card.appendChild(removeButton);
-    wrap.appendChild(card);
-  });
-
-  if (!handlers.canReview) return wrap;
-
-  if (state.openCommentFormKey === sectionKey) {
-    const form = document.createElement('div');
-    form.className = 'lesson-plan-review__comment-form';
-    const textarea = document.createElement('textarea');
-    textarea.className = 'lesson-plan-review__comment-input';
-    textarea.placeholder = 'e.g. Make the Student Action more observable.';
-    form.appendChild(textarea);
-
-    const actionsRow = document.createElement('div');
-    actionsRow.className = 'lesson-plan-review__comment-form-actions';
-    const addButton = document.createElement('button');
-    addButton.type = 'button';
-    addButton.className = 'btn btn--primary';
-    addButton.textContent = 'Add Comment';
-    addButton.addEventListener('click', () => handlers.onAddPendingComment(sectionKey, textarea.value));
-    actionsRow.appendChild(addButton);
-
-    const cancelButton = document.createElement('button');
-    cancelButton.type = 'button';
-    cancelButton.className = 'btn btn--text';
-    cancelButton.textContent = 'Cancel';
-    cancelButton.addEventListener('click', handlers.onCancelCommentForm);
-    actionsRow.appendChild(cancelButton);
-
-    form.appendChild(actionsRow);
-    wrap.appendChild(form);
-  } else {
-    const addCommentButton = document.createElement('button');
-    addCommentButton.type = 'button';
-    addCommentButton.className = 'btn btn--ghost lesson-plan-review__add-comment-button';
-    addCommentButton.appendChild(createIcon('plus', { size: 14 }));
-    addCommentButton.append(' Add comment');
-    addCommentButton.addEventListener('click', () => handlers.onOpenCommentForm(sectionKey));
-    wrap.appendChild(addCommentButton);
+    removeButton.addEventListener('click', () => handlers.onRemovePendingComment(comment.index));
+    entry.appendChild(removeButton);
   }
 
-  return wrap;
+  return entry;
+}
+
+function renderCommentForm(sectionKey, handlers) {
+  const form = document.createElement('div');
+  form.className = 'lesson-plan-review__comment-form';
+  const textarea = document.createElement('textarea');
+  textarea.className = 'lesson-plan-review__comment-input';
+  textarea.placeholder = 'e.g. Make the Student Action more observable.';
+  form.appendChild(textarea);
+
+  const actionsRow = document.createElement('div');
+  actionsRow.className = 'lesson-plan-review__comment-form-actions';
+  const addButton = document.createElement('button');
+  addButton.type = 'button';
+  addButton.className = 'btn btn--primary';
+  addButton.textContent = 'Add Comment';
+  addButton.addEventListener('click', () => handlers.onAddPendingComment(sectionKey, textarea.value));
+  actionsRow.appendChild(addButton);
+
+  const cancelButton = document.createElement('button');
+  cancelButton.type = 'button';
+  cancelButton.className = 'btn btn--text';
+  cancelButton.textContent = 'Cancel';
+  cancelButton.addEventListener('click', handlers.onCancelCommentForm);
+  actionsRow.appendChild(cancelButton);
+
+  form.appendChild(actionsRow);
+  return form;
 }
 
 // ---- 1. WHY ----------------------------------------------------------
@@ -508,24 +661,21 @@ function renderActivityCard(activity, index, plan, state, handlers) {
   const card = document.createElement('div');
   card.className = 'lesson-plan-review__activity-card';
 
-  const cardHeader = document.createElement('div');
-  cardHeader.className = 'lesson-plan-review__activity-header';
+  const titleGroup = document.createElement('div');
+  titleGroup.className = 'lesson-plan-review__activity-title-group';
   const label = document.createElement('span');
   label.className = 'lesson-plan-review__activity-label';
   label.textContent = `Activity ${index + 1}`;
-  cardHeader.appendChild(label);
+  titleGroup.appendChild(label);
   const titleEl = document.createElement('span');
   titleEl.className = 'lesson-plan-review__activity-title';
   titleEl.textContent = activity.title || 'Untitled activity';
-  cardHeader.appendChild(titleEl);
-  card.appendChild(cardHeader);
+  titleGroup.appendChild(titleEl);
 
   const body = document.createElement('div');
   body.className = 'lesson-plan-review__activity-body';
-  body.appendChild(renderReadOnlyField('Teacher Action', activity.teacherAction));
-  body.appendChild(renderCommentAffordance(lessonPlanReviewService.buildActivitySectionKey(activity.id, 'teacherAction'), plan, state, handlers));
-  body.appendChild(renderReadOnlyField('Student Action', activity.studentAction));
-  body.appendChild(renderCommentAffordance(lessonPlanReviewService.buildActivitySectionKey(activity.id, 'studentAction'), plan, state, handlers));
+  body.appendChild(renderFieldSegment('Teacher Action', activity.teacherAction, lessonPlanReviewService.buildActivitySectionKey(activity.id, 'teacherAction'), plan, state, handlers));
+  body.appendChild(renderFieldSegment('Student Action', activity.studentAction, lessonPlanReviewService.buildActivitySectionKey(activity.id, 'studentAction'), plan, state, handlers));
 
   if (activity.differentiation) {
     const diffWrap = document.createElement('div');
@@ -535,16 +685,29 @@ function renderActivityCard(activity, index, plan, state, handlers) {
       { field: 'greenBucket', label: 'Green Bucket' },
       { field: 'others', label: 'Others' },
     ].forEach(({ field, label: fieldLabel }) => {
-      diffWrap.appendChild(renderReadOnlyField(fieldLabel, activity.differentiation[field]));
-      diffWrap.appendChild(renderCommentAffordance(lessonPlanReviewService.buildActivitySectionKey(activity.id, `differentiation.${field}`), plan, state, handlers));
+      diffWrap.appendChild(
+        renderFieldSegment(fieldLabel, activity.differentiation[field], lessonPlanReviewService.buildActivitySectionKey(activity.id, `differentiation.${field}`), plan, state, handlers)
+      );
     });
     body.appendChild(diffWrap);
   }
 
-  card.appendChild(body);
-
-  // A whole-activity comment ("Activity 2" generally, not one specific field).
-  card.appendChild(renderCommentAffordance(lessonPlanReviewService.buildActivitySectionKey(activity.id), plan, state, handlers));
+  // A whole-activity comment ("Activity 2" generally, not one specific
+  // field) — its own trigger sits in the CARD's own header row
+  // (alongside the Activity label/title), its own panel spans the
+  // whole card body (every per-field segment above is that panel's
+  // "left content"), matching the same heading-row/two-column pattern
+  // every other commentable unit on this page uses.
+  card.appendChild(
+    renderCommentableSegment({
+      headingEl: titleGroup,
+      content: body,
+      sectionKey: lessonPlanReviewService.buildActivitySectionKey(activity.id),
+      plan,
+      state,
+      handlers,
+    })
+  );
 
   return card;
 }
@@ -560,11 +723,8 @@ function renderHelpingEachOtherLearnSection(plan, state, handlers) {
   heading.textContent = '5. Are students helping me and each other learn?';
   section.appendChild(heading);
 
-  section.appendChild(renderReadOnlyField('Pair Explanation', plan.pairExplanation));
-  section.appendChild(renderCommentAffordance(LESSON_PLAN_SECTION_KEYS.PAIR_EXPLANATION, plan, state, handlers));
-
-  section.appendChild(renderReadOnlyField('Exit Ticket', plan.finalQuestion));
-  section.appendChild(renderCommentAffordance(LESSON_PLAN_SECTION_KEYS.FINAL_QUESTION, plan, state, handlers));
+  section.appendChild(renderFieldSegment('Pair Explanation', plan.pairExplanation, LESSON_PLAN_SECTION_KEYS.PAIR_EXPLANATION, plan, state, handlers));
+  section.appendChild(renderFieldSegment('Exit Ticket', plan.finalQuestion, LESSON_PLAN_SECTION_KEYS.FINAL_QUESTION, plan, state, handlers));
 
   // Teacher Look-Fors deliberately not shown here — removed from the
   // Lesson Plan Builder entirely (see LessonPlanBuilderView.js's own

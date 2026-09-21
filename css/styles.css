@@ -4087,7 +4087,7 @@ textarea.reading-editor__block-input {
 .lesson-plan-review__section-heading {
   font-size: 1.05rem;
   font-weight: var(--font-weight-black);
-  margin: 0 0 1rem;
+  margin: 0;
 }
 .lesson-plan-review__subheading {
   font-size: 0.95rem;
@@ -4162,11 +4162,12 @@ textarea.reading-editor__block-input {
   font-size: 0.78rem;
   color: var(--color-muted);
 }
-.lesson-plan-review__activity-header {
+.lesson-plan-review__activity-title-group {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  margin-bottom: 0.6rem;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 .lesson-plan-review__activity-label {
   font-size: 0.75rem;
@@ -4188,45 +4189,129 @@ textarea.reading-editor__block-input {
   margin-top: 0.5rem;
 }
 
-/* ---- Comment affordance — shared by every section/activity/sub-field ---- */
+/* ---- Comment panels — attached beside the content they're about, never
+   floating text underneath it. Every commentable unit on this page (a
+   whole named section, one Activity, one Activity sub-field) shares this
+   same heading-row + two-column shell — see
+   ui/views/LessonPlanReviewView.js's own renderCommentableSegment() doc
+   comment. Content is always the dominant column; the comment column is
+   capped, never a fixed percentage, so it never crowds short content. ---- */
 
-.lesson-plan-review__comments {
+.lesson-plan-review__segment-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+.lesson-plan-review__segment-body {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+.lesson-plan-review__segment-body--with-comments {
+  grid-template-columns: minmax(0, 1fr) minmax(200px, 300px);
+}
+.lesson-plan-review__segment-content {
+  min-width: 0;
+}
+
+.lesson-plan-review__field-segment {
+  margin-bottom: 0.9rem;
+}
+/* A field-level heading row (e.g. "Teacher Action") is much smaller than
+   a whole-section one — same shell, lighter visual weight. */
+.lesson-plan-review__field-segment .lesson-plan-review__segment-heading-row {
+  margin-bottom: 0.2rem;
+}
+
+.lesson-plan-review__add-comment-button {
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.lesson-plan-review__comment-panel {
+  background-color: #EAF2FB;
+  border-radius: 12px;
+  padding: 0.7rem 0.85rem;
+  min-width: 0;
+}
+.lesson-plan-review__comment-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary);
+  cursor: pointer;
+  text-align: left;
+}
+.lesson-plan-review__comment-panel-chevron {
+  margin-left: auto;
+  transition: transform var(--duration-fast, 0.15s) var(--ease-standard, ease);
+}
+.lesson-plan-review__comment-panel-chevron--expanded {
+  transform: rotate(90deg);
+}
+.lesson-plan-review__comment-panel-list {
   display: flex;
   flex-direction: column;
+  margin-top: 0.6rem;
+}
+.lesson-plan-review__comment-entry {
+  padding: 0.55rem 0;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+}
+.lesson-plan-review__comment-entry:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+.lesson-plan-review__comment-entry-meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
   gap: 0.4rem;
-  margin: 0.4rem 0 1rem;
+  margin-bottom: 0.2rem;
 }
-.lesson-plan-review__comment-card {
-  background-color: #EAF2FB;
-  border-left: 3px solid var(--color-primary);
-  border-radius: 8px;
-  padding: 0.5rem 0.7rem;
+.lesson-plan-review__comment-entry-name {
+  font-size: 0.78rem;
+  font-weight: var(--font-weight-bold);
 }
-.lesson-plan-review__comment-card--pending {
-  background-color: #FBF0D9;
-  border-left-color: #BF5F1A;
+.lesson-plan-review__comment-entry-date {
+  font-size: 0.72rem;
+  color: var(--color-muted);
 }
 .lesson-plan-review__comment-pending-tag {
-  display: block;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: var(--font-weight-bold);
   color: #8a6a1e;
+  background-color: #FBF0D9;
+  border-radius: var(--radius-pill);
+  padding: 0.05rem 0.45rem;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  margin-bottom: 0.2rem;
 }
 .lesson-plan-review__comment-text {
   font-size: 0.85rem;
-  margin: 0 0 0.3rem;
+  margin: 0;
+  white-space: pre-wrap;
 }
-.lesson-plan-review__add-comment-button {
-  font-size: 0.8rem;
+.lesson-plan-review__comment-entry-remove {
+  font-size: 0.75rem;
+  margin-top: 0.2rem;
 }
 .lesson-plan-review__comment-form {
-  background-color: var(--color-bg);
+  background-color: #ffffff;
   border-radius: 10px;
   padding: 0.6rem;
-  margin-top: 0.3rem;
+  margin-top: 0.6rem;
 }
 .lesson-plan-review__comment-input {
   width: 100%;
@@ -4244,6 +4329,12 @@ textarea.reading-editor__block-input {
   align-items: center;
   gap: 0.5rem;
   margin-top: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .lesson-plan-review__segment-body--with-comments {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ---- Review history + actions ---- */
