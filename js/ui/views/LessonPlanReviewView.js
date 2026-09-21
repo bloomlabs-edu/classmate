@@ -563,11 +563,13 @@ function renderHelpingEachOtherLearnSection(plan, state, handlers) {
   section.appendChild(renderReadOnlyField('Pair Explanation', plan.pairExplanation));
   section.appendChild(renderCommentAffordance(LESSON_PLAN_SECTION_KEYS.PAIR_EXPLANATION, plan, state, handlers));
 
-  section.appendChild(renderReadOnlyField('Final Question', plan.finalQuestion));
+  section.appendChild(renderReadOnlyField('Exit Ticket', plan.finalQuestion));
   section.appendChild(renderCommentAffordance(LESSON_PLAN_SECTION_KEYS.FINAL_QUESTION, plan, state, handlers));
 
-  section.appendChild(renderReadOnlyField('Teacher Look-Fors', plan.teacherLookFors));
-  section.appendChild(renderCommentAffordance(LESSON_PLAN_SECTION_KEYS.TEACHER_LOOK_FORS, plan, state, handlers));
+  // Teacher Look-Fors deliberately not shown here — removed from the
+  // Lesson Plan Builder entirely (see LessonPlanBuilderView.js's own
+  // renderExitTicketField() doc comment); a reviewer can no longer
+  // comment on a field the author can't see or edit anymore either.
 
   return section;
 }

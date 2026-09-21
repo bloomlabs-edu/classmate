@@ -21,6 +21,17 @@ test('getLessonPlanReadiness: a brand-new, empty plan is not ready (Activities/H
   assert.ok(readiness.missing.every((item) => !/error|field \d+/i.test(item.message)));
 });
 
+test('getLessonPlanReadiness: Teacher Look-Fors is NEVER reported as missing, blank or filled — removed entirely from the Lesson Plan Builder per explicit product decision, no longer a checklist/warning/submission item of any kind', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const activity = lessonPlanService.addActivity(plan);
+  lessonPlanService.updateActivity(plan, activity.id, { title: 'Timeline', teacherAction: 'Circulate.', studentAction: 'Sequence.' });
+  lessonPlanService.updateHelpingEachOtherLearn(plan, { pairExplanation: 'Explain to a partner.', finalQuestion: 'What next?' }); // teacherLookFors deliberately left untouched/blank
+
+  const readiness = getLessonPlanReadiness(plan);
+  assert.ok(!readiness.missing.some((item) => /look.?for/i.test(item.message)));
+  assert.equal(readiness.ready, true); // fully ready without ever touching teacherLookFors
+});
+
 test('getLessonPlanReadiness: zero concepts and blank Objectives/Big Question are NOT reported — that moved to the Weekly Plan tier', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
   const readiness = getLessonPlanReadiness(plan);
@@ -269,17 +280,28 @@ test('Assessment: an item that exists but is blank text is still tolerated (neve
   assert.ok(!readiness.missing.some((item) => item.sectionKey === LESSON_PLAN_SECTION_KEYS.ASSESSMENT));
 });
 
-test('getLessonPlanStageCompletion: Helping (Q5) stays incomplete unless Pair Explanation, Final Question, AND Teacher Look-Fors are all filled', () => {
+test('getLessonPlanStageCompletion: Helping (Q5) stays incomplete unless Pair Explanation AND Exit Ticket (finalQuestion) are both filled — Teacher Look-Fors is no longer part of this check at all, per explicit product removal', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
-  lessonPlanService.updateHelpingEachOtherLearn(plan, { pairExplanation: 'Explain to a partner.', finalQuestion: '', teacherLookFors: '' });
+  lessonPlanService.updateHelpingEachOtherLearn(plan, { pairExplanation: 'Explain to a partner.', finalQuestion: '' });
 
   let stages = getLessonPlanStageCompletion(plan);
   let helping = stages.find((entry) => entry.stage === LESSON_PLAN_STAGES.HELPING);
   assert.equal(helping.complete, false);
 
-  lessonPlanService.updateHelpingEachOtherLearn(plan, { finalQuestion: 'What next?', teacherLookFors: 'Correct sequencing.' });
+  lessonPlanService.updateHelpingEachOtherLearn(plan, { finalQuestion: 'What next?' });
   stages = getLessonPlanStageCompletion(plan);
   helping = stages.find((entry) => entry.stage === LESSON_PLAN_STAGES.HELPING);
+  assert.equal(helping.complete, true);
+});
+
+test('getLessonPlanStageCompletion: Helping (Q5) completion is completely unaffected by teacherLookFors, whether blank or filled — it is no longer checked', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  lessonPlanService.updateHelpingEachOtherLearn(plan, { pairExplanation: 'Explain to a partner.', finalQuestion: 'What next?', teacherLookFors: '' });
+  let helping = getLessonPlanStageCompletion(plan).find((entry) => entry.stage === LESSON_PLAN_STAGES.HELPING);
+  assert.equal(helping.complete, true);
+
+  lessonPlanService.updateHelpingEachOtherLearn(plan, { teacherLookFors: 'Correct sequencing.' });
+  helping = getLessonPlanStageCompletion(plan).find((entry) => entry.stage === LESSON_PLAN_STAGES.HELPING);
   assert.equal(helping.complete, true);
 });
 
@@ -380,7 +402,11 @@ test('getLessonPlanReadinessByStage: the real reported production case — multi
     const activity = lessonPlanService.addActivity(plan);
     lessonPlanService.updateActivity(plan, activity.id, { title: `Activity ${i + 1}`, teacherAction: 'Teacher does something.' }); // studentAction left blank, matching production
   }
-  // pairExplanation/finalQuestion/teacherLookFors all deliberately left blank too.
+  // pairExplanation/finalQuestion deliberately left blank too (Teacher
+  // Look-Fors no longer exists as a requirement at all — removed
+  // entirely per explicit product decision, see
+  // ui/views/LessonPlanBuilderView.js's own renderExitTicketField()
+  // doc comment).
 
   const byStage = getLessonPlanReadinessByStage(plan);
   const experience = byStage.find((entry) => entry.stage === LESSON_PLAN_STAGES.EXPERIENCE);
@@ -389,7 +415,7 @@ test('getLessonPlanReadinessByStage: the real reported production case — multi
   assert.equal(experience.complete, false);
   assert.equal(experience.messages.length, 4); // one Student Action message per activity
   assert.equal(helping.complete, false);
-  assert.equal(helping.messages.length, 3); // Pair Explanation, Final Question, Teacher Look-Fors
+  assert.equal(helping.messages.length, 2); // Pair Explanation, Exit Ticket -- Teacher Look-Fors removed
 
   // Every OTHER stage stays complete/empty, unaffected.
   byStage
@@ -472,7 +498,7 @@ test('canSubmitLessonPlan: a missing Pair Explanation does NOT prevent submissio
   assert.equal(canSubmitLessonPlan(plan), true);
 });
 
-test('canSubmitLessonPlan: a missing Final Question does NOT prevent submission', () => {
+test('canSubmitLessonPlan: a missing Exit Ticket (finalQuestion) does NOT prevent submission', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
   lessonPlanService.addActivity(plan);
   lessonPlanService.updateHelpingEachOtherLearn(plan, { pairExplanation: 'Explain to a partner.', teacherLookFors: 'Correct sequencing.' });

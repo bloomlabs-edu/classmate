@@ -16,7 +16,7 @@
  * services/weeklyPlanValidationService.js's own getWeeklyPlanReadiness(),
  * which gates a Lesson, not a LessonPlan). This function only ever
  * gates what's genuinely specific to the DETAILED plan: Activities and
- * Helping (Pair Explanation/Final Question/Teacher Look-Fors) are
+ * Helping (Pair Explanation/Exit Ticket) are
  * required; Connection, Showcase, and Spark are optional enrichment.
  *
  * Messaging is deliberately specific and encouraging, per explicit
@@ -103,15 +103,19 @@ export function getLessonPlanReadiness(lessonPlan) {
     if (isBlank(activity.studentAction)) missing.push({ sectionKey, message: `Add a Student Action to ${label}.` });
   });
 
-  // 5. HELPING EACH OTHER LEARN
+  // 5. HELPING EACH OTHER LEARN — Pair Explanation + Exit Ticket (the
+  // field formerly labeled "Final Question," see
+  // ui/views/LessonPlanBuilderView.js's own renderExitTicketField() doc
+  // comment). Teacher Look-Fors is deliberately NOT checked here at
+  // all, per explicit product decision removing it from the Lesson Plan
+  // Builder entirely — never a missing-item, regardless of
+  // `lessonPlan.teacherLookFors`'s own stored value (untouched on
+  // existing plans, simply no longer part of this gate).
   if (isBlank(lessonPlan.pairExplanation)) {
     missing.push({ sectionKey: LESSON_PLAN_SECTION_KEYS.PAIR_EXPLANATION, message: 'Add how students will explain to a pair.' });
   }
   if (isBlank(lessonPlan.finalQuestion)) {
-    missing.push({ sectionKey: LESSON_PLAN_SECTION_KEYS.FINAL_QUESTION, message: 'Add a final question.' });
-  }
-  if (isBlank(lessonPlan.teacherLookFors)) {
-    missing.push({ sectionKey: LESSON_PLAN_SECTION_KEYS.TEACHER_LOOK_FORS, message: 'Add what you’ll look for as the teacher.' });
+    missing.push({ sectionKey: LESSON_PLAN_SECTION_KEYS.FINAL_QUESTION, message: 'Add an Exit Ticket.' });
   }
 
   return { ready: missing.length === 0, missing };
@@ -153,7 +157,7 @@ export const LESSON_PLAN_STAGES = Object.freeze({
  * Showcase is Assessment alone (Q3); Experience is every Activity
  * alone now (Q4, "is it fun/fast/effective" — Spark no longer gates
  * anything, same treatment as Self/Others/India/Assessment); Helping
- * bundles Pair Explanation + Final Question + Teacher Look-Fors (Q5's
+ * bundles Pair Explanation + Exit Ticket (Q5's
  * own three fields, unchanged, just co-located under their real
  * question rather than split across two other stages). The CONTEXT/WHY
  * branches below are unreachable in practice (getLessonPlanReadiness()
@@ -171,11 +175,7 @@ function stageForMissingItem({ sectionKey }) {
   if (sectionKey === LESSON_PLAN_SECTION_KEYS.SPARK || getActivityIdFromSectionKey(sectionKey)) {
     return LESSON_PLAN_STAGES.EXPERIENCE;
   }
-  if (
-    sectionKey === LESSON_PLAN_SECTION_KEYS.PAIR_EXPLANATION ||
-    sectionKey === LESSON_PLAN_SECTION_KEYS.FINAL_QUESTION ||
-    sectionKey === LESSON_PLAN_SECTION_KEYS.TEACHER_LOOK_FORS
-  ) {
+  if (sectionKey === LESSON_PLAN_SECTION_KEYS.PAIR_EXPLANATION || sectionKey === LESSON_PLAN_SECTION_KEYS.FINAL_QUESTION) {
     return LESSON_PLAN_STAGES.HELPING;
   }
   return null; // never crash on an unrecognized key — just doesn't count toward any stage's completion
@@ -203,7 +203,7 @@ export function getLessonPlanStageCompletion(lessonPlan) {
  * Deliberately separate from getLessonPlanReadiness(), per explicit
  * product direction: readiness is a QUALITY checklist a teacher can see
  * and choose to submit past (Student Action, Pair Explanation, Final
- * Question, Teacher Look-Fors are all warnings, never blockers) — this
+ * Exit Ticket are all warnings, never blockers) — this
  * is the one true submission-ELIGIBILITY gate, with no maximum activity
  * count and no further content requirement on top of it.
  * ui/views/LessonPlanBuilderView.js's own renderReadinessPanel() is the

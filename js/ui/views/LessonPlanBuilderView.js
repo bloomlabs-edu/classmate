@@ -42,9 +42,11 @@
  * real submission requirement is services/lessonPlanValidationService.js's
  * canSubmitLessonPlan() — at least one Activity, no maximum, nothing
  * else — everything else the checklist reports (Student Action, Pair
- * Explanation, Final Question, Teacher Look-Fors) is a warning a
- * teacher can see and choose to submit past via the "Submit without
- * these?" confirmation (ui/components/SubmitLessonPlanWarningsModal.js).
+ * Explanation, Exit Ticket) is a warning a teacher can see and choose
+ * to submit past via the "Submit without these?" confirmation
+ * (ui/components/SubmitLessonPlanWarningsModal.js). Teacher Look-Fors
+ * has been removed entirely (no field, section, or warning) — see
+ * renderExitTicketField()'s own doc comment.
  * Every guided CONTENT stage now renders in full once Subject is
  * chosen — no more one-at-a-time reveal gated on completion — so a
  * checklist warning never points at a section the teacher can't
@@ -898,8 +900,8 @@ function renderBuilder(container, state, handlers) {
     grid.appendChild(withTileSize(withSurfaceTile(renderConceptsField(plan, classroom, guidedState, handlers)), 'wide'));
     grid.appendChild(withTileSize(renderScheduleSection(plan, classroom, guidedState, handlers), 'narrow'));
     grid.appendChild(withTileSize(withSurfaceTile(renderWhySection(plan, handlers)), 'full'));
-    grid.appendChild(withTileSize(withSurfaceTile(renderSelfOthersIndiaSection(plan, handlers)), 'half'));
-    grid.appendChild(withTileSize(withSurfaceTile(renderAssessmentSection(plan, handlers)), 'half'));
+    grid.appendChild(withTileSize(renderSelfOthersIndiaSection(plan, handlers), 'half'));
+    grid.appendChild(withTileSize(renderAssessmentSection(plan, handlers), 'half'));
     grid.appendChild(withTileSize(withSurfaceTile(renderCommonLearningResources(plan, state, handlers)), 'full'));
     const experience = document.createElement('div');
     experience.className = 'lesson-plan-builder__experience';
@@ -912,7 +914,7 @@ function renderBuilder(container, state, handlers) {
     helpingHeading.textContent = 'Are students helping me and others learn?';
     helping.appendChild(helpingHeading);
     helping.appendChild(renderPairExplanationField(plan, handlers));
-    helping.appendChild(renderFinalQuestionAndLookForsFields(plan, handlers));
+    helping.appendChild(renderExitTicketField(plan, handlers));
     grid.appendChild(withTileSize(helping, 'full'));
     container.appendChild(wrapper);
     return;
@@ -984,7 +986,13 @@ function renderBuilder(container, state, handlers) {
       renderFull: () => renderSelfOthersIndiaSection(plan, handlers),
       getPreview: () => plan.selfOthersIndia.self || plan.selfOthersIndia.others || plan.selfOthersIndia.india || '',
       tileSize: 'half',
-      surface: true,
+      // Deliberately NOT `surface: true` — a full elevated white card
+      // around 2-3 short lines read as MORE disconnected, not less (an
+      // isolated island the same visual weight as a genuinely separate
+      // section like Common Learning Resources). A bold heading + the
+      // shared stage-heading-row divider (see css/styles.css) is enough
+      // to read this as one of several related Lesson Overview items
+      // without the extra card chrome.
     },
     {
       stage: LESSON_PLAN_STAGES.SHOWCASE,
@@ -993,7 +1001,6 @@ function renderBuilder(container, state, handlers) {
       renderFull: () => renderAssessmentSection(plan, handlers),
       getPreview: () => plan.assessments.find((item) => item.description)?.description || '',
       tileSize: 'half',
-      surface: true,
     },
   ];
 
@@ -1025,16 +1032,18 @@ function renderBuilder(container, state, handlers) {
       stage: LESSON_PLAN_STAGES.HELPING,
       title: 'Are students helping me and others learn?',
       // No single sectionKey for this stage's own outer comment list —
-      // Pair Explanation / Final Question / Teacher Look-Fors each
-      // already render their OWN comments inline (see
-      // renderPairExplanationField()/renderFinalQuestionAndLookForsFields()),
-      // so a second, stage-level list here would just duplicate them.
+      // Pair Explanation and Exit Ticket each already render their OWN
+      // comments inline (see
+      // renderPairExplanationField()/renderExitTicketField()), so a
+      // second, stage-level list here would just duplicate them.
+      // Teacher Look-Fors has been removed entirely — see
+      // renderExitTicketField()'s own doc comment.
       sectionKey: null,
       renderFull: () => {
         const wrap = document.createElement('div');
         wrap.className = 'lesson-plan-builder__helping';
         wrap.appendChild(renderPairExplanationField(plan, handlers));
-        wrap.appendChild(renderFinalQuestionAndLookForsFields(plan, handlers));
+        wrap.appendChild(renderExitTicketField(plan, handlers));
         return wrap;
       },
       getPreview: () => plan.pairExplanation || plan.finalQuestion || '',
@@ -1778,9 +1787,9 @@ const STAGE_CHECKLIST_LABELS = Object.freeze({
  * advisory, never a gate. The ONE real submission requirement is
  * services/lessonPlanValidationService.js's own canSubmitLessonPlan()
  * (at least one Activity, no maximum) — everything else the checklist
- * reports (Student Action, Pair Explanation, Final Question, Teacher
- * Look-Fors) is a warning a teacher can see and choose to submit past,
- * via the "Submit without these?" confirmation
+ * reports (Student Action, Pair Explanation, Exit Ticket) is a warning
+ * a teacher can see and choose to submit past, via the "Submit without
+ * these?" confirmation
  * (ui/components/SubmitLessonPlanWarningsModal.js) — never a silent
  * lock and never a second, separate definition of "done" from
  * getLessonPlanReadiness()/getLessonPlanReadinessByStage().
@@ -2449,13 +2458,13 @@ function createAddRowButton(label, onClick) {
   return button;
 }
 
-/** Phase 4 — the "+ From Teaching Ideas" affordance, same visual weight as createAddRowButton() above, used everywhere a teacher can browse/copy in reusable content instead of writing it by hand. */
+/** Phase 4 — the "Browse Ideas" affordance (product-language rename from "+ From Teaching Ideas"; the underlying Teaching Ideas feature/service is unchanged), same visual weight as createAddRowButton() above, used everywhere a teacher can browse/copy in reusable content instead of writing it by hand. */
 function createFromTeachingIdeasButton(onClick) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'btn btn--text lesson-plan-builder__from-teaching-ideas-button';
   button.appendChild(createIcon('search', { size: 12 }));
-  button.append(' From Teaching Ideas');
+  button.append(' Browse Ideas');
   button.addEventListener('click', onClick);
   return button;
 }
@@ -2600,7 +2609,7 @@ function renderActivitiesSection(plan, collapsedActivityIds, handlers, state = n
     fromTeachingIdeasButton.type = 'button';
     fromTeachingIdeasButton.className = 'btn btn--secondary lesson-plan-builder__add-activity-button';
     fromTeachingIdeasButton.appendChild(createIcon('search', { size: 14 }));
-    fromTeachingIdeasButton.append(' From Teaching Ideas');
+    fromTeachingIdeasButton.append(' Browse Ideas');
     fromTeachingIdeasButton.addEventListener('click', handlers.onOpenActivityPicker);
     addButtonRow.appendChild(fromTeachingIdeasButton);
 
@@ -2639,6 +2648,37 @@ function renderActivityCard(plan, activity, index, total, isCollapsed, handlers,
   titleInput.disabled = !handlers.editable;
   titleInput.addEventListener('change', () => handlers.onActivityChange(activity.id, 'title', titleInput.value));
   cardHeader.appendChild(titleInput);
+
+  // Resource indicator — discoverable from the header itself, without
+  // making the teacher open/scan the Activity's full content first (a
+  // real reported gap). Same underlying resources[]/sectionKey this
+  // Activity's own Learning Resources sub-section already reads from
+  // (see renderActivityCard()'s own resources block below) — never a
+  // second relationship, just a header-level shortcut into it.
+  if (state) {
+    const activitySectionKey = lessonPlanReviewService.buildActivitySectionKey(activity.id);
+    const resourceCount = (plan.resources || []).filter((resource) => resource.sectionKey === activitySectionKey).length;
+    if (resourceCount > 0 || handlers.editable) {
+      const resourceBadge = document.createElement('button');
+      resourceBadge.type = 'button';
+      resourceBadge.className = 'lesson-plan-builder__activity-resource-badge';
+      if (resourceCount > 0) {
+        resourceBadge.textContent = `${resourceCount} Resource${resourceCount === 1 ? '' : 's'}`;
+      } else {
+        resourceBadge.classList.add('lesson-plan-builder__activity-resource-badge--empty');
+        resourceBadge.textContent = '+ Resource';
+      }
+      resourceBadge.addEventListener('click', () => {
+        const wasCollapsed = isCollapsed;
+        if (resourceCount === 0 && handlers.editable) handlers.onStartAddResource(activity.id);
+        if (wasCollapsed) handlers.onToggleActivityCollapse(activity.id);
+        requestAnimationFrame(() => {
+          document.getElementById(`lesson-plan-builder-activity-resources-${activity.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+      });
+      cardHeader.appendChild(resourceBadge);
+    }
+  }
 
   const actions = document.createElement('div');
   actions.className = 'lesson-plan-builder__activity-actions';
@@ -2762,15 +2802,15 @@ function renderActivityCard(plan, activity, index, total, isCollapsed, handlers,
     // Activity's OWN id is simply this scope's filter/add-slot/default.
     if (state) {
       const activitySectionKey = lessonPlanReviewService.buildActivitySectionKey(activity.id);
-      body.appendChild(
-        renderLearningResourcesSection(plan, state, handlers, {
-          slot: activity.id,
-          filter: (resource) => resource.sectionKey === activitySectionKey,
-          heading: 'Learning Resources',
-          emptyText: 'Attach a resource this Activity specifically needs.',
-          defaultSectionKey: activitySectionKey,
-        })
-      );
+      const resourcesSection = renderLearningResourcesSection(plan, state, handlers, {
+        slot: activity.id,
+        filter: (resource) => resource.sectionKey === activitySectionKey,
+        heading: 'Learning Resources',
+        emptyText: 'Attach a resource this Activity specifically needs.',
+        defaultSectionKey: activitySectionKey,
+      });
+      resourcesSection.id = `lesson-plan-builder-activity-resources-${activity.id}`; // scroll target for this card's own header resource badge, see above
+      body.appendChild(resourcesSection);
     }
 
     card.appendChild(body);
@@ -2835,16 +2875,18 @@ function renderDifferentiationFields(plan, activity, handlers) {
 // ---- 5. HELPING EACH OTHER LEARN -------------------------------------
 
 /**
- * Pair Explanation — one of the three fields of Question 5, "Are
- * students helping me and others learn?" (models/LessonPlan.js's own
- * 5th question; see services/lessonPlanValidationService.js's own
- * LESSON_PLAN_STAGES.HELPING). The field itself, its label, its
- * placeholder, its mutation (lessonPlanService.updateHelpingEachOtherLearn()),
- * and its own sectionKey (LESSON_PLAN_SECTION_KEYS.PAIR_EXPLANATION)
- * are unchanged — this and renderFinalQuestionAndLookForsFields() below
- * are kept as two separate functions (rather than merged into one)
- * purely because they predate the guided redesign; both are always
- * rendered together under the same Question 5 stage now (see
+ * Pair Explanation — one of the two remaining fields of Question 5,
+ * "Are students helping me and others learn?" (models/LessonPlan.js's
+ * own 5th question; see services/lessonPlanValidationService.js's own
+ * LESSON_PLAN_STAGES.HELPING — now just Pair Explanation + Exit Ticket,
+ * since Teacher Look-Fors was removed entirely). The field itself, its
+ * label, its placeholder, its mutation
+ * (lessonPlanService.updateHelpingEachOtherLearn()), and its own
+ * sectionKey (LESSON_PLAN_SECTION_KEYS.PAIR_EXPLANATION) are unchanged
+ * — this and renderExitTicketField() below are kept as two separate
+ * functions (rather than merged into one) purely because they predate
+ * the guided redesign; both are always rendered together under the
+ * same Question 5 stage now (see
  * renderBuilder()'s own freeTextStages array).
  */
 function renderPairExplanationField(plan, handlers) {
@@ -2860,16 +2902,31 @@ function renderPairExplanationField(plan, handlers) {
 }
 
 /**
- * Final Question + Teacher Look-Fors — the other two fields of
- * Question 5 (see renderPairExplanationField()'s own doc comment
- * above). Unchanged fields/labels/mutation/sectionKeys.
+ * Exit Ticket — product-language rename of "Final Question" (Q5's
+ * second field, see renderPairExplanationField()'s own doc comment
+ * above). Deliberately still reads/writes `plan.finalQuestion` /
+ * `LESSON_PLAN_SECTION_KEYS.FINAL_QUESTION` — a UI label change, not a
+ * data migration, so existing stored content keeps rendering correctly
+ * under its new name with zero risk to existing lesson plans.
+ *
+ * Teacher Look-Fors has been REMOVED entirely, per explicit product
+ * decision — no longer a field, section, checklist item, or submission
+ * warning anywhere in this view (see
+ * services/lessonPlanValidationService.js's own getLessonPlanReadiness(),
+ * which no longer checks it either). `plan.teacherLookFors` itself is
+ * intentionally left alone in the data model — existing stored values on
+ * older plans are neither edited nor deleted, simply no longer
+ * displayed or required; see models/LessonPlan.js's own header comment
+ * for this app's established "never silently discard legacy data"
+ * convention (already applied once before, to lessonObjective/
+ * swbatObjectives).
  */
-function renderFinalQuestionAndLookForsFields(plan, handlers) {
+function renderExitTicketField(plan, handlers) {
   const wrap = document.createElement('div');
   wrap.className = 'lesson-plan-builder__helping-extra';
 
-  const finalQuestionField = createLabeledTextarea({
-    label: 'Final Question',
+  const exitTicketField = createLabeledTextarea({
+    label: 'Exit Ticket',
     placeholder: 'One closing question to check understanding',
     value: plan.finalQuestion,
     onChange: (value) => handlers.onHelpingEachOtherLearnChange('finalQuestion', value),
@@ -2877,20 +2934,8 @@ function renderFinalQuestionAndLookForsFields(plan, handlers) {
     plan,
     sectionKey: LESSON_PLAN_SECTION_KEYS.FINAL_QUESTION,
   });
-  if (handlers.editable) finalQuestionField.appendChild(createFromTeachingIdeasButton(handlers.onOpenFinalQuestionPicker));
-  wrap.appendChild(finalQuestionField);
-
-  wrap.appendChild(
-    createLabeledTextarea({
-      label: "Teacher Look-Fors",
-      placeholder: 'What will you look/listen for as students work?',
-      value: plan.teacherLookFors,
-      onChange: (value) => handlers.onHelpingEachOtherLearnChange('teacherLookFors', value),
-      disabled: !handlers.editable,
-      plan,
-      sectionKey: LESSON_PLAN_SECTION_KEYS.TEACHER_LOOK_FORS,
-    })
-  );
+  if (handlers.editable) exitTicketField.appendChild(createFromTeachingIdeasButton(handlers.onOpenFinalQuestionPicker));
+  wrap.appendChild(exitTicketField);
 
   return wrap;
 }

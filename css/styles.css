@@ -3074,7 +3074,7 @@ textarea.reading-editor__block-input {
 .lesson-plan-builder__grid {
   display: grid;
   grid-template-columns: repeat(12, 1fr);
-  gap: 1.75rem;
+  gap: 1.25rem;
   align-items: start;
 }
 /* A `1fr` track's default min size is its content's min-content width,
@@ -3146,6 +3146,16 @@ textarea.reading-editor__block-input {
   justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 1rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--color-border);
+}
+/* A surface-tile stage already has its own card border on all sides —
+   an extra divider line just under the heading, inside that same
+   border, would read as a stray leftover rule rather than intentional
+   structure. */
+.lesson-plan-builder__stage--surface-tile .lesson-plan-builder__stage-heading-row {
+  border-bottom: none;
+  padding-bottom: 0;
 }
 .lesson-plan-builder__stage-title-group {
   display: flex;
@@ -3620,6 +3630,22 @@ textarea.reading-editor__block-input {
   padding: 0.25rem 0.6rem;
   white-space: nowrap;
   flex-shrink: 0;
+}
+.lesson-plan-builder__activity-resource-badge {
+  font-size: 0.72rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-muted);
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: 0.2rem 0.55rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.lesson-plan-builder__activity-resource-badge--empty {
+  color: var(--color-primary);
+  border-style: dashed;
 }
 .lesson-plan-builder__activity-title-input {
   flex: 1;

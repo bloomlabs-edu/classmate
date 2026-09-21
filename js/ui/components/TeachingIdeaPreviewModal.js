@@ -153,8 +153,12 @@ export function openTeachingIdeaLessonPreview({ teachingIdea, onCancel }) {
   teachingIdea.activities.forEach((activity) => body.appendChild(renderReadOnlyActivityCard(activity)));
 
   body.appendChild(renderReadOnlyField('Pair Explanation', teachingIdea.pairExplanation));
-  body.appendChild(renderReadOnlyField('Final Question', teachingIdea.finalQuestion));
-  body.appendChild(renderReadOnlyField('Teacher Look-Fors', teachingIdea.teacherLookFors));
+  body.appendChild(renderReadOnlyField('Exit Ticket', teachingIdea.finalQuestion));
+  // Teacher Look-Fors deliberately not displayed here — removed from the
+  // Lesson Plan Builder entirely (see LessonPlanBuilderView.js's own
+  // renderExitTicketField() doc comment); a Teaching Idea published
+  // before that removal may still carry a real teacherLookFors value,
+  // left untouched in storage, simply no longer shown.
 
   modal.appendChild(body);
 
