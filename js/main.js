@@ -24,6 +24,7 @@ import * as accentColorService from './services/accentColorService.js';
 import * as classSessionService from './services/classSessionService.js';
 import * as accentColorPreferenceService from './services/accentColorPreferenceService.js';
 import * as pushNotificationService from './services/pushNotificationService.js';
+import * as slackIntegrationService from './services/slackIntegrationService.js';
 import * as notificationService from './services/notificationService.js';
 import * as feedService from './services/feedService.js';
 import { showToast } from './ui/components/Toast.js';
@@ -57,11 +58,14 @@ import { renderPersonalHubView } from './ui/views/PersonalHubView.js';
 import { renderCurriculumManagementView } from './ui/views/CurriculumManagementView.js';
 import { renderLearningManagementView } from './ui/views/LearningManagementView.js';
 import { renderLessonPlansListView } from './ui/views/LessonPlansListView.js';
-import { renderProgramManagerWeeklyPlansView } from './ui/views/ProgramManagerWeeklyPlansView.js';
+import { renderProgramManagerObservationsView } from './ui/views/ProgramManagerObservationsView.js';
+import { renderProgramManagerWeeklyPlanQueueView } from './ui/views/ProgramManagerWeeklyPlanQueueView.js';
+import { renderWeeklyPlanReviewView } from './ui/views/WeeklyPlanReviewView.js';
 import { renderLessonPlanBuilderView } from './ui/views/LessonPlanBuilderView.js';
 import { renderLessonPlanReviewQueueView } from './ui/views/LessonPlanReviewQueueView.js';
 import { renderLessonPlanReviewView } from './ui/views/LessonPlanReviewView.js';
 import { renderAssessmentManagementView } from './ui/views/AssessmentManagementView.js';
+import { renderScorecardView } from './ui/views/ScorecardView.js';
 import { renderGoalManagementView } from './ui/views/GoalManagementView.js';
 import { renderGoalDashboardView } from './ui/views/GoalDashboardView.js';
 import * as goalService from './services/goalService.js';
@@ -75,6 +79,7 @@ import { renderSetupWizardView } from './ui/views/SetupWizardView.js';
 import { renderStudentProfileView } from './ui/views/StudentProfileView.js';
 import { renderTeamProfileView } from './ui/views/TeamProfileView.js';
 import { CLASSROOM_ROUTE_NAMES } from './config/classroomRouteNames.js';
+import { MEMBER_ROLES } from './config/memberRoles.js';
 import { renderStudentAccessView } from './ui/views/StudentAccessView.js';
 import { renderVisitorAccessView } from './ui/views/VisitorAccessView.js';
 import { renderActivitiesListView, renderActivityRosterView } from './ui/views/ActivitiesView.js';
@@ -117,6 +122,17 @@ let currentAccentColorId = 'ocean';
 // handleDisableNotifications() below, after the browser's own native
 // permission prompt has actually been answered.
 let notificationPermissionState = pushNotificationService.getPermissionState();
+
+// Whether the current teacher has an active Slack link (see
+// services/slackIntegrationService.js) — read once at sign-in
+// (getConnectionStatus is a Firestore read, unlike
+// notificationPermissionState's synchronous browser property above),
+// refreshed after Connect/Disconnect. `handledSlackRedirectParam`
+// guards handleSlackRedirectIfPresent() below against running twice —
+// see authService.js's own onAuthStateChange() comment on this app's
+// known "callback fires more than once per session" behavior.
+let slackConnected = false;
+let handledSlackRedirectParam = false;
 
 // In-app notifications — classroom-scoped, unlike
 // notificationPermissionState above (a per-device browser setting), so
@@ -175,6 +191,9 @@ function refreshUserBar() {
     notificationPermissionState,
     onEnableNotifications: handleEnableNotifications,
     onDisableNotifications: handleDisableNotifications,
+    slackConnected,
+    onConnectSlack: handleConnectSlack,
+    onDisconnectSlack: handleDisconnectSlack,
     notificationUnreadCount,
     notifications,
     hasClassroomContext: !!notificationsClassroomId,
@@ -227,6 +246,58 @@ async function handleDisableNotifications() {
   const result = await pushNotificationService.disableForCurrentUser(currentUser?.uid);
   notificationPermissionState = pushNotificationService.getPermissionState();
   showToast(result.success ? 'Notifications turned off' : 'Something went wrong turning off notifications.');
+  refreshUserBar();
+}
+
+/**
+ * Only ever called from a direct "Connect Slack" click (see
+ * ui/components/UserBar.js's own createSlackIntegrationControl()) --
+ * on success this navigates the whole page away to Slack's own
+ * consent screen (see services/slackIntegrationService.js's own
+ * beginConnect()), so there is nothing left to do here afterward; this
+ * function only ever needs to handle the FAILURE case.
+ */
+async function handleConnectSlack() {
+  const idToken = await authService.getIdToken();
+  const result = await slackIntegrationService.beginConnect(idToken);
+  if (!result.success) {
+    showToast('Something went wrong connecting Slack.');
+  }
+}
+
+/** Reverses a Slack link for this teacher -- see repositories/firestoreSlackIntegrationRepository.js's own disconnectSlack(). */
+async function handleDisconnectSlack() {
+  const result = await slackIntegrationService.disconnect(currentUser?.uid);
+  slackConnected = false;
+  showToast(result.success ? 'Slack disconnected' : 'Something went wrong disconnecting Slack.');
+  refreshUserBar();
+}
+
+/**
+ * Handles the ONE-TIME return trip from Slack's own consent screen
+ * (see functions/src/slack/oauthCallback.js's own buildRedirectUrl(),
+ * which always lands here as `#/teacher?slack=connected` or
+ * `#/teacher?slack=error`). Guarded by handledSlackRedirectParam so a
+ * second onAuthStateChange callback firing for the same session (see
+ * this file's own module-level comment on that) never shows the toast
+ * twice. Always cleans the query param off the URL afterward via
+ * router.navigate('/teacher') -- same destination
+ * onGoToOverview already uses -- so refreshing the page never re-shows
+ * this toast.
+ */
+function handleSlackRedirectIfPresent() {
+  if (handledSlackRedirectParam) return;
+  const slackParam = router.getCurrentRoute().query?.slack;
+  if (slackParam !== 'connected' && slackParam !== 'error') return;
+
+  handledSlackRedirectParam = true;
+  if (slackParam === 'connected') {
+    slackConnected = true;
+    showToast('Slack connected');
+  } else {
+    showToast('Something went wrong connecting Slack. Please try again.');
+  }
+  router.navigate('/teacher');
   refreshUserBar();
 }
 
@@ -813,13 +884,55 @@ function renderRoute(route, reason = 'unspecified') {
   }
 
   if (route.name === 'programManagerWeeklyPlans') {
-    renderProgramManagerWeeklyPlansView(appContainer, {
+    renderProgramManagerWeeklyPlanQueueView(appContainer, {
+      classrooms: workspaceService.getState().classrooms,
+      currentUser,
+      onBack: () => router.navigate('/teacher'),
+      onOpenWeeklyPlanReview: (classroomId, teacherUid, weekStartDate) =>
+        router.navigate(
+          `/program-manager/weekly-plans/review?classroomId=${encodeURIComponent(classroomId)}&teacherUid=${encodeURIComponent(teacherUid)}&week=${encodeURIComponent(weekStartDate)}`
+        ),
+    });
+    return;
+  }
+
+  if (route.name === 'programManagerWeeklyPlanReview') {
+    const { classroomId, teacherUid, week } = route.query || {};
+    const classroom = workspaceService.getClassroomById(classroomId);
+    if (!classroom) {
+      // Same in-flight-vs-genuinely-missing distinction as the
+      // CLASSROOM_ROUTE_NAMES guard below — a refresh landing directly
+      // on this query-param route can arrive before this specific
+      // classroom's own snapshot has loaded, even though a listener for
+      // it is already open.
+      if (workspaceService.hasClassroomSubscription(classroomId)) {
+        renderLoadingScreen(appContainer);
+        return;
+      }
+      router.navigate('/program-manager/weekly-plans');
+      return;
+    }
+    renderWeeklyPlanReviewView(appContainer, {
+      classroom,
+      teacherUid,
+      teacherDisplayName: classroom.members?.[teacherUid]?.displayName,
+      weekStartDate: week,
+      currentUser,
+      onBack: () => router.navigate('/program-manager/weekly-plans'),
+      onOpenTimetable: (classroomId) => router.navigate(`/classroom/${classroomId}/timetable`),
+      onOpenFullLessonPlan: (classroomId, lessonPlanId) => router.navigate(`/classroom/${classroomId}/lesson-plans/${lessonPlanId}`),
+    });
+    return;
+  }
+
+  if (route.name === 'programManagerObservations') {
+    renderProgramManagerObservationsView(appContainer, {
       classrooms: workspaceService.getState().classrooms,
       currentUser,
       onBack: () => router.navigate('/teacher'),
       onOpenPlanReview: (classroomId, lessonPlanId) =>
         router.navigate(
-          `/classroom/${classroomId}/lesson-plans/${lessonPlanId}/review?returnTo=${encodeURIComponent('/program-manager/weekly-plans')}`
+          `/classroom/${classroomId}/lesson-plans/${lessonPlanId}/review?returnTo=${encodeURIComponent('/program-manager/observations')}`
         ),
     });
     return;
@@ -833,6 +946,29 @@ function renderRoute(route, reason = 'unspecified') {
     // screen's whole reason for existing, not an error state. See
     // ui/views/TeacherDiagnosticsView.js's own header comment.
     if (!classroom && route.name !== 'diagnostics') {
+      // A refresh or a pasted deep link lands here with workspaceLoading
+      // already false (classroomRefs has arrived) but THIS classroom's
+      // own first document snapshot still in flight — subscribeToClassroom()
+      // opened a listener for it the instant classroomRefs arrived (see
+      // workspaceService.js's initForUser()), yet Firestore snapshots for
+      // individual classroom docs resolve independently and can easily
+      // still be pending. That in-flight state used to be indistinguishable
+      // here from "this classroom id genuinely doesn't exist / this
+      // teacher has no access to it" — both hit this same `!classroom`
+      // branch — so a plain refresh was silently bounced to /teacher
+      // before its own data had a chance to arrive, with no way back
+      // (`replace: true` overwrote the original URL). hasClassroomSubscription()
+      // tells these two cases apart: if a listener is open, wait for it —
+      // applyIncomingSnapshot() (see workspaceService.js) re-runs
+      // renderRoute() itself once the snapshot lands, so this loading
+      // screen resolves forward into the real page without ever having
+      // moved the URL. Only a classroom id with NO open listener at all
+      // (never one of this teacher's classroomRefs) is treated as
+      // genuinely not found and redirected away.
+      if (workspaceService.hasClassroomSubscription(route.classroomId)) {
+        renderLoadingScreen(appContainer);
+        return;
+      }
       // Phase 2 — this fires from renderRoute() itself, not a click:
       // hashchange, sign-in/out, and every single Firestore snapshot
       // update for this teacher's classrooms all call renderRoute(),
@@ -915,6 +1051,19 @@ function renderRoute(route, reason = 'unspecified') {
         classroom,
         currentUser,
         preserveState: reason === 'workspace-init-onchange',
+        // Read-only mode is derived from the EXISTING role mechanism
+        // (config/memberRoles.js), not a new authorization system: a
+        // Program Manager's own real classroom.members role is
+        // 'program_manager' — this is the same role every other PM
+        // capability (Weekly Plan / Observation review) already checks,
+        // never re-derived per route. A Fellow's own Timetable route is
+        // completely unaffected — their role is 'owner'/'teacher', so
+        // this is always `false` for them, exactly as before this
+        // change. Firestore rules remain the real write boundary
+        // regardless of this UI-only flag (see
+        // ui/views/TimetableView.js's own runAction()/isMutationAllowed()
+        // header comments).
+        readOnly: classroom.members?.[currentUser?.uid]?.role === MEMBER_ROLES.PROGRAM_MANAGER,
         onOpenLessonPlan: (lessonPlanId) => router.navigate(`/classroom/${classroom.id}/lesson-plans/${lessonPlanId}`),
         // The existing "Go to {subject} in Learning Management" gateway
         // passes just a subjectId; a clicked concept box (see
@@ -939,6 +1088,14 @@ function renderRoute(route, reason = 'unspecified') {
         initialAssessmentId: route.assessmentId || null,
         initialView: route.view || null,
         onNavigate: (path) => router.navigate(path),
+      });
+    } else if (route.name === 'assessmentsScorecard') {
+      renderScorecardView(appContainer, {
+        classroom,
+        cycleKey: route.cycleKey || null,
+        onBack: () => router.navigate(`/classroom/${classroom.id}/assessments`),
+        onNavigate: (path) => router.navigate(path),
+        onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
       });
     } else if (route.name === 'goalManagement') {
       // /goals now opens the Goal Dashboard directly once an active
@@ -1073,6 +1230,7 @@ function renderRoute(route, reason = 'unspecified') {
         programmeId: route.programmeId,
         sessionId: route.sessionId,
         onBack: () => router.navigate(`/classroom/${classroom.id}/learning-programmes/${route.programmeId}/session/${route.sessionId}`),
+        onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
       });
     } else if (route.name === 'programmeSessionGoals') {
       renderProgrammeGoalsReviewView(appContainer, {
@@ -1080,6 +1238,7 @@ function renderRoute(route, reason = 'unspecified') {
         programmeId: route.programmeId,
         sessionId: route.sessionId,
         onBack: () => router.navigate(`/classroom/${classroom.id}/learning-programmes/${route.programmeId}/session/${route.sessionId}`),
+        onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
       });
     } else if (route.name === 'programmeSessionObservations') {
       renderProgrammeObservationsView(appContainer, {
@@ -1087,6 +1246,7 @@ function renderRoute(route, reason = 'unspecified') {
         programmeId: route.programmeId,
         sessionId: route.sessionId,
         onBack: () => router.navigate(`/classroom/${classroom.id}/learning-programmes/${route.programmeId}/session/${route.sessionId}`),
+        onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
       });
     } else if (route.name === 'scoreboardArchive' || route.name === 'scoreboardArchiveDetail') {
       renderScoreboardArchiveView(appContainer, {
@@ -1107,6 +1267,7 @@ function renderRoute(route, reason = 'unspecified') {
           }
         },
         onSelectTeam: (teamId) => router.navigate(`/classroom/${classroom.id}/team/${teamId}`),
+        onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
       });
     } else if (route.name === 'reports') {
       renderReportsView(appContainer, {
@@ -1332,6 +1493,7 @@ function renderRoute(route, reason = 'unspecified') {
       onOpenCurriculumManagement: () => router.navigate('/curriculum-management'),
       onOpenTimetable: (classroomId) => router.navigate(`/classroom/${classroomId}/timetable`),
       onOpenWeeklyPlans: () => router.navigate('/program-manager/weekly-plans'),
+      onOpenObservations: () => router.navigate('/program-manager/observations'),
     });
   }
 }
@@ -1443,9 +1605,16 @@ function init() {
           workspaceService.stopListening();
           currentAccentColorId = 'ocean';
           accentColorService.applyAccentColor('ocean');
+          slackConnected = false;
           renderRoute(router.getCurrentRoute(), 'auth-callback-signed-out');
           return;
         }
+
+        slackIntegrationService.getConnectionStatus(user.uid).then(({ connected }) => {
+          slackConnected = connected;
+          refreshUserBar();
+        });
+        handleSlackRedirectIfPresent();
 
         accentColorPreferenceService.getPreferenceOnce(user.uid).then((storedValue) => {
           currentAccentColorId = storedValue;

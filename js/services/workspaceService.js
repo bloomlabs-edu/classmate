@@ -464,6 +464,23 @@ export function getClassroomById(id) {
 }
 
 /**
+ * True once this classroom id has an active Firestore listener open
+ * (see subscribeToClassroom() above) — set synchronously, for every
+ * ref this teacher has, the moment the classroomRefs list itself
+ * arrives, well before that classroom's own first document snapshot
+ * necessarily has. This is what lets a caller (see main.js's
+ * CLASSROOM_ROUTE_NAMES guard) tell "this classroom is real and just
+ * hasn't loaded into memory yet" (subscribed, getClassroomById() still
+ * null) apart from "this teacher has no ref to this classroom id at
+ * all" (never subscribed) — the exact distinction a refresh/deep-link
+ * landing directly on a classroom-scoped route needs, instead of
+ * treating both cases as "not found."
+ */
+export function hasClassroomSubscription(classroomId) {
+  return classroomSubscriptions.has(classroomId);
+}
+
+/**
  * A direct, one-time Firestore read by classroomId — distinct from
  * getClassroomById() above, which reads from the teacher-side
  * subscription cache (classroomService.listClassrooms()) that a
