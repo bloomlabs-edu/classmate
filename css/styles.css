@@ -19614,6 +19614,16 @@ button.recognition-bento__hero-winner-name {
   letter-spacing: 0.03em;
 }
 
+/* The examination WINDOW — "24–30 Sep 2026" — under the group's own
+   title heading. See scheduledEventService.js's own
+   formatGroupDateRangeLabel(). */
+.school-calendar__group-range {
+  margin: -6px 0 0;
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-ink);
+}
+
 .school-calendar__group-list {
   display: flex;
   flex-direction: column;

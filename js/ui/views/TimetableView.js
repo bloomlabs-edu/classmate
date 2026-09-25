@@ -59,6 +59,8 @@ import * as scheduledEventRepository from '../../services/scheduledEventReposito
 import { hydrateConceptRecordsForConcepts } from '../../services/conceptRecordHydrationService.js';
 import { getFeedbackEligibleConceptIds, resetLessonForUnitChange } from '../../models/Lesson.js';
 import { getWeeklyPlanReadiness } from '../../services/weeklyPlanValidationService.js';
+import * as weeklyPlanSubmissionService from '../../services/weeklyPlanSubmissionService.js';
+import * as weeklyPlanSubmissionRepository from '../../repositories/weeklyPlanSubmissionRepository.js';
 import { getGradeLabelForClassroom } from '../../services/classroomService.js';
 import { getTimetableSubjectColor, getTimetableSubjectWash, getTimetableSubjectBorder } from '../../config/timetableSubjectColors.js';
 import {
@@ -72,6 +74,7 @@ import {
   formatYearMonth,
   getDaysInYearMonth,
   formatDateKeyWithWeekday,
+  getMondayStartOfWeek,
 } from '../../utils/dateHelpers.js';
 import { createIcon } from '../components/Icon.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
@@ -114,7 +117,10 @@ function isNarrowViewport() {
  */
 let preservedState = null; // { classroomId, state } | null
 
-export async function renderTimetableView(container, { classroom, currentUser, preserveState = false, onOpenLessonPlan = () => {}, onOpenLearningManagement = () => {} }) {
+export async function renderTimetableView(
+  container,
+  { classroom, currentUser, preserveState = false, onOpenLessonPlan = () => {}, onOpenLearningManagement = () => {}, readOnly = false }
+) {
   const state =
     preserveState && preservedState && preservedState.classroomId === classroom.id
       ? preservedState.state
@@ -143,14 +149,44 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     render(timetableService.getConcreteSlotsForDateRange(classroom, range.start, range.end), range);
   }
 
-  /** Wraps a write action (attach lesson, mark executed, carry forward) so a Firestore failure shows a real message instead of silently doing nothing — an unhandled rejection in a click handler fails invisibly otherwise. */
+  /**
+   * Wraps a write action (attach lesson, mark executed, carry forward)
+   * so a Firestore failure shows a real message instead of silently
+   * doing nothing — an unhandled rejection in a click handler fails
+   * invisibly otherwise.
+   *
+   * READ-ONLY GUARD: every mutation in this file — every objective/Big
+   * Question/Plan/Assessment edit, unit/concept assignment, carry
+   * forward, Manage Timetable save, School Calendar exception, exam
+   * create/edit/delete, "mark covered," "share feedback," resource
+   * attach — flows through this one function (confirmed by inspection:
+   * there is no mutating Firestore write anywhere in this file that
+   * does not go through runAction()). Gating it HERE, centrally, means
+   * a `readOnly` render can never actually persist a change even if
+   * some future code path manages to invoke a handler this file's own
+   * render functions otherwise omit — this is the defense-in-depth
+   * half of the read-only guarantee; the other half is that
+   * `readOnly` also skips RENDERING the controls at all (see
+   * isMutationAllowed() below and every call site that checks it) so
+   * there is normally nothing to click in the first place. Firestore's
+   * own rules remain the real, load-bearing security boundary — this
+   * guard exists so the read-only UI mode is honest about what it
+   * lets happen, not because the UI is trusted as a security boundary
+   * on its own.
+   */
   async function runAction(action) {
+    if (readOnly) return;
     try {
       await action();
     } catch (error) {
       console.error('[TimetableView] Action failed:', error);
       window.alert('Something went wrong saving that change. Please try again.');
     }
+  }
+
+  /** True when a mutation control should render at all — the single check every "+Add", "Save", "Edit", "Remove", "Build", "Move", "Attach" control in this file gates on. Never used to gate a pure read/navigation action (tab switching, date navigation, view-mode switching, opening an already-built Detailed Lesson Plan) — those stay fully available in read-only mode. */
+  function isMutationAllowed() {
+    return !readOnly;
   }
 
   async function loadAndRender() {
@@ -359,7 +395,7 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     // skipped in Calendar mode rather than shown mislabeled/mismatched.
     if (state.viewMode !== 'calendar') {
       root.appendChild(renderLegend());
-      root.appendChild(renderSummaryRow(slots));
+      root.appendChild(renderSummaryRow(slots, range));
     }
 
     const selectedLesson = state.selectedTeachingSlotId ? state.lessonsByTeachingSlotId[state.selectedTeachingSlotId] : null;
@@ -389,8 +425,17 @@ export async function renderTimetableView(container, { classroom, currentUser, p
 
     const subtitle = document.createElement('p');
     subtitle.className = 'timetable-view__subtitle';
-    subtitle.textContent = 'Plan your teaching. Track what happens. Improve learning.';
+    subtitle.textContent = readOnly
+      ? 'Read-only — inspecting this Fellow’s timetable.'
+      : 'Plan your teaching. Track what happens. Improve learning.';
     titleBlock.appendChild(subtitle);
+
+    if (readOnly) {
+      const readOnlyBadge = document.createElement('span');
+      readOnlyBadge.className = 'timetable-view__readonly-badge';
+      readOnlyBadge.textContent = 'Read-only';
+      titleBlock.appendChild(readOnlyBadge);
+    }
 
     headerRow.appendChild(titleBlock);
 
@@ -401,26 +446,37 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     // non-dominant weight already used for Cancel/secondary actions
     // elsewhere in this file, per explicit product instruction that
     // this must never compete with the Timetable page's own primary content.
-    const manageButton = document.createElement('button');
-    manageButton.type = 'button';
-    manageButton.className = 'btn btn--ghost timetable-view__manage-button';
-    manageButton.textContent = 'Manage timetable';
-    manageButton.addEventListener('click', () => openManageTimetableFlow());
-    headerRow.appendChild(manageButton);
+    //
+    // READ-ONLY: both this button and "School calendar" below are
+    // entirely OMITTED, not merely disabled — each opens a flow whose
+    // sole purpose is a mutation (editing the recurring pattern, or
+    // adding/editing a calendar exception/exam), so omitting the entry
+    // point removes the only way to reach either flow at all. A PM
+    // still sees the resulting effective schedule (recurring pattern +
+    // exceptions + events already composed by schoolCalendarService) —
+    // they just cannot open the editors that produce it.
+    if (isMutationAllowed()) {
+      const manageButton = document.createElement('button');
+      manageButton.type = 'button';
+      manageButton.className = 'btn btn--ghost timetable-view__manage-button';
+      manageButton.textContent = 'Manage timetable';
+      manageButton.addEventListener('click', () => openManageTimetableFlow());
+      headerRow.appendChild(manageButton);
 
-    // School Calendar — holidays/special working days + exams/events.
-    // Deliberately a SEPARATE button/flow from "Manage timetable" above,
-    // never a tab bolted onto it: that flow edits the RECURRING weekly
-    // pattern itself; this one only ever adds DATED exceptions/events on
-    // top of it, per this feature's own central architectural
-    // principle ("the recurring Timetable is never modified by a
-    // calendar exception"). Same restrained .btn--ghost weight.
-    const calendarButton = document.createElement('button');
-    calendarButton.type = 'button';
-    calendarButton.className = 'btn btn--ghost timetable-view__manage-button';
-    calendarButton.textContent = 'School calendar';
-    calendarButton.addEventListener('click', () => openSchoolCalendarFlow());
-    headerRow.appendChild(calendarButton);
+      // School Calendar — holidays/special working days + exams/events.
+      // Deliberately a SEPARATE button/flow from "Manage timetable" above,
+      // never a tab bolted onto it: that flow edits the RECURRING weekly
+      // pattern itself; this one only ever adds DATED exceptions/events on
+      // top of it, per this feature's own central architectural
+      // principle ("the recurring Timetable is never modified by a
+      // calendar exception"). Same restrained .btn--ghost weight.
+      const calendarButton = document.createElement('button');
+      calendarButton.type = 'button';
+      calendarButton.className = 'btn btn--ghost timetable-view__manage-button';
+      calendarButton.textContent = 'School calendar';
+      calendarButton.addEventListener('click', () => openSchoolCalendarFlow());
+      headerRow.appendChild(calendarButton);
+    }
 
     header.appendChild(headerRow);
     return header;
@@ -967,7 +1023,14 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       })
     );
 
-    card.addEventListener('click', () => openExamFormOverlay({ existingEvent: event }));
+    // READ-ONLY: the card itself already shows subject/title/type/meta
+    // inline (rendered above) — that IS the inspection view. Opening
+    // this click leads only to the edit form, so the click is simply
+    // never wired up rather than opening a form a PM couldn't save
+    // from anyway.
+    if (isMutationAllowed()) {
+      card.addEventListener('click', () => openExamFormOverlay({ existingEvent: event }));
+    }
     return card;
   }
 
@@ -1597,10 +1660,16 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     return legend;
   }
 
-  function renderSummaryRow(slots) {
+  function renderSummaryRow(slots, range) {
     const row = document.createElement('div');
     row.className = 'timetable-view__summary-row';
     row.appendChild(renderWeeklyOverviewCard(slots));
+    // READ-ONLY: submitting a Weekly Plan is the FELLOW's own action on
+    // their OWN week — a PM inspecting it must never see (or be able
+    // to trigger) that control from inside the Timetable itself. The
+    // real Submit action lives only in ui/views/WeeklyPlanReviewView.js,
+    // gated to the actual author there.
+    if (state.viewMode === 'week' && isMutationAllowed()) row.appendChild(renderWeeklyPlanSubmitCard(range));
     return row;
   }
 
@@ -1624,6 +1693,43 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       <div><strong>${carried}</strong><span>Carried Forward</span></div>
     `;
     card.appendChild(stats);
+    return card;
+  }
+
+  /**
+   * The Weekly Plan's own submission action, at the WEEK level (not per
+   * period — see models/WeeklyPlanSubmission.js's own header comment on
+   * why this is a whole-week record). Submits the SIGNED-IN teacher's
+   * own week in THIS classroom — never on behalf of a co-teacher, since
+   * this is that teacher's own Timetable. Reuses the exact same
+   * services/weeklyPlanSubmissionService.js a Program Manager's review
+   * screen (ui/views/WeeklyPlanReviewView.js) already uses — no second
+   * submission code path.
+   */
+  function renderWeeklyPlanSubmitCard(range) {
+    const card = document.createElement('div');
+    card.className = 'timetable-summary-card timetable-summary-card--weekly-plan';
+    const title = document.createElement('h3');
+    title.textContent = 'Weekly Plan';
+    card.appendChild(title);
+
+    const teacherUid = currentUser?.uid;
+    const weekStartDate = getMondayStartOfWeek(range.start);
+
+    const submitButton = document.createElement('button');
+    submitButton.type = 'button';
+    submitButton.className = 'btn btn--primary';
+    submitButton.textContent = 'Submit Weekly Plan';
+    submitButton.disabled = !teacherUid;
+    submitButton.addEventListener('click', () =>
+      runAction(async () => {
+        const existing = await weeklyPlanSubmissionRepository.getSubmission(classroom.id, teacherUid, weekStartDate);
+        const next = weeklyPlanSubmissionService.submitWeeklyPlan(existing, { classroomId: classroom.id, teacherUid, weekStartDate, byUid: teacherUid });
+        await weeklyPlanSubmissionRepository.upsertSubmission(next);
+      })
+    );
+    card.appendChild(submitButton);
+
     return card;
   }
 
@@ -1657,7 +1763,18 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     panel.appendChild(lessonHeaderCard);
 
     if (!lesson) {
-      panel.appendChild(renderAttachLessonForm(slot));
+      // READ-ONLY: attaching a lesson (assigning a unit to start
+      // planning this period) is a mutation — the form that does it
+      // never renders; a PM simply sees that nothing has been planned
+      // for this period yet.
+      if (isMutationAllowed()) {
+        panel.appendChild(renderAttachLessonForm(slot));
+      } else {
+        const empty = document.createElement('p');
+        empty.className = 'period-detail-panel__attach-hint';
+        empty.textContent = 'No plan yet for this period.';
+        panel.appendChild(empty);
+      }
       return panel;
     }
 
@@ -1670,12 +1787,15 @@ export async function renderTimetableView(container, { classroom, currentUser, p
 
     // Unobtrusive — deliberately .btn--text (same subtle weight as
     // "+ Attach lesson"), never competing with the topic heading itself.
-    const editLessonButton = document.createElement('button');
-    editLessonButton.type = 'button';
-    editLessonButton.className = 'btn btn--text period-detail-panel__edit-lesson';
-    editLessonButton.textContent = 'Edit lesson';
-    editLessonButton.addEventListener('click', () => openEditLessonUnitFlow(slot, lesson));
-    topicRow.appendChild(editLessonButton);
+    // READ-ONLY: omitted — changing the assigned unit is a mutation.
+    if (isMutationAllowed()) {
+      const editLessonButton = document.createElement('button');
+      editLessonButton.type = 'button';
+      editLessonButton.className = 'btn btn--text period-detail-panel__edit-lesson';
+      editLessonButton.textContent = 'Edit lesson';
+      editLessonButton.addEventListener('click', () => openEditLessonUnitFlow(slot, lesson));
+      topicRow.appendChild(editLessonButton);
+    }
 
     lessonHeaderCard.appendChild(topicRow);
 
@@ -1811,6 +1931,10 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     const wrapper = document.createElement('div');
     wrapper.className = 'period-detail-panel__plan';
 
+    if (!isMutationAllowed()) {
+      return renderPlanTabReadOnly(wrapper, slot, lesson);
+    }
+
     const objectivesLabel = document.createElement('p');
     objectivesLabel.className = 'period-detail-panel__attach-label';
     objectivesLabel.textContent = 'Objectives';
@@ -1886,6 +2010,52 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     );
     wrapper.appendChild(saveBigQuestionButton);
 
+    const planSummaryLabel = document.createElement('p');
+    planSummaryLabel.className = 'period-detail-panel__attach-label';
+    planSummaryLabel.textContent = 'Plan';
+    wrapper.appendChild(planSummaryLabel);
+
+    const planSummaryTextarea = document.createElement('textarea');
+    planSummaryTextarea.className = 'period-detail-panel__plan-summary';
+    planSummaryTextarea.value = lesson.planSummary || '';
+    planSummaryTextarea.placeholder = 'Concisely, what will happen this period';
+    wrapper.appendChild(planSummaryTextarea);
+
+    const savePlanSummaryButton = document.createElement('button');
+    savePlanSummaryButton.type = 'button';
+    savePlanSummaryButton.className = 'btn btn--ghost';
+    savePlanSummaryButton.textContent = 'Save Plan';
+    savePlanSummaryButton.addEventListener('click', () =>
+      runAction(async () => {
+        await timetableLessonService.updateLessonPlanSummary(classroom, lesson, planSummaryTextarea.value);
+        await loadAndRender();
+      })
+    );
+    wrapper.appendChild(savePlanSummaryButton);
+
+    const assessmentNoteLabel = document.createElement('p');
+    assessmentNoteLabel.className = 'period-detail-panel__attach-label';
+    assessmentNoteLabel.textContent = 'Assessment';
+    wrapper.appendChild(assessmentNoteLabel);
+
+    const assessmentNoteTextarea = document.createElement('textarea');
+    assessmentNoteTextarea.className = 'period-detail-panel__assessment-note';
+    assessmentNoteTextarea.value = lesson.assessmentNote || '';
+    assessmentNoteTextarea.placeholder = 'Concisely, how will you check understanding';
+    wrapper.appendChild(assessmentNoteTextarea);
+
+    const saveAssessmentNoteButton = document.createElement('button');
+    saveAssessmentNoteButton.type = 'button';
+    saveAssessmentNoteButton.className = 'btn btn--ghost';
+    saveAssessmentNoteButton.textContent = 'Save Assessment';
+    saveAssessmentNoteButton.addEventListener('click', () =>
+      runAction(async () => {
+        await timetableLessonService.updateLessonAssessmentNote(classroom, lesson, assessmentNoteTextarea.value);
+        await loadAndRender();
+      })
+    );
+    wrapper.appendChild(saveAssessmentNoteButton);
+
     const readiness = getWeeklyPlanReadiness(lesson);
     const statusBanner = document.createElement('p');
     statusBanner.className = 'period-detail-panel__plan-status' + (readiness.ready ? ' period-detail-panel__plan-status--ready' : '');
@@ -1933,6 +2103,68 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       );
     }
     wrapper.appendChild(detailedSection);
+
+    return wrapper;
+  }
+
+  /**
+   * READ-ONLY variant of the Plan tab — same content (Objectives, Big
+   * Question, Plan, Assessment, Weekly Plan readiness, and, if one
+   * exists, a link to the real Detailed Lesson Plan), rendered as
+   * plain inspection text instead of inputs/textareas/save buttons.
+   * "Build Detailed Lesson Plan" is never shown here — creating a
+   * LessonPlan is a mutation, and it is the Fellow's own plan to
+   * create, not a PM's. "Open Detailed Lesson Plan" IS shown when one
+   * already exists — that is pure navigation into the real Observation
+   * review surface, not a mutation of the Timetable itself.
+   */
+  function renderPlanTabReadOnly(wrapper, slot, lesson) {
+    function renderField(label, value) {
+      const fieldLabel = document.createElement('p');
+      fieldLabel.className = 'period-detail-panel__attach-label';
+      fieldLabel.textContent = label;
+      wrapper.appendChild(fieldLabel);
+
+      const fieldValue = document.createElement('p');
+      fieldValue.className = 'period-detail-panel__plan-readonly-value';
+      fieldValue.textContent = value || '—';
+      wrapper.appendChild(fieldValue);
+    }
+
+    const objectivesLabel = document.createElement('p');
+    objectivesLabel.className = 'period-detail-panel__attach-label';
+    objectivesLabel.textContent = 'Objectives';
+    wrapper.appendChild(objectivesLabel);
+
+    const objectiveTexts = lesson.objectives.map((objective) => objective.text).filter(Boolean);
+    const objectivesValue = document.createElement('p');
+    objectivesValue.className = 'period-detail-panel__plan-readonly-value';
+    objectivesValue.textContent = objectiveTexts.length > 0 ? objectiveTexts.join('; ') : '—';
+    wrapper.appendChild(objectivesValue);
+
+    renderField('Big Question', lesson.bigQuestion);
+    renderField('Plan', lesson.planSummary);
+    renderField('Assessment', lesson.assessmentNote);
+
+    const readiness = getWeeklyPlanReadiness(lesson);
+    const statusBanner = document.createElement('p');
+    statusBanner.className = 'period-detail-panel__plan-status' + (readiness.ready ? ' period-detail-panel__plan-status--ready' : '');
+    statusBanner.textContent = readiness.ready ? 'Weekly Plan complete.' : `Weekly Plan incomplete — ${readiness.missing.map((item) => item.message).join(' ')}`;
+    wrapper.appendChild(statusBanner);
+
+    if (lesson.lessonPlanId) {
+      const openButton = document.createElement('button');
+      openButton.type = 'button';
+      openButton.className = 'btn btn--primary';
+      openButton.textContent = 'Open Detailed Lesson Plan';
+      openButton.addEventListener('click', () => onOpenLessonPlan(lesson.lessonPlanId));
+      wrapper.appendChild(openButton);
+    } else {
+      const note = document.createElement('p');
+      note.className = 'period-detail-panel__attach-hint';
+      note.textContent = 'No detailed lesson plan for this period.';
+      wrapper.appendChild(note);
+    }
 
     return wrapper;
   }
@@ -2022,7 +2254,10 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     textWrap.append(title, desc);
     callout.appendChild(textWrap);
 
-    if (pending.length === 1) {
+    // READ-ONLY: the callout's own informational text (how many
+    // concepts are pending) stays — only the "Move" mutation action is
+    // omitted.
+    if (pending.length === 1 && isMutationAllowed()) {
       const moveButton = document.createElement('button');
       moveButton.type = 'button';
       moveButton.className = 'btn btn--secondary period-detail-panel__carry-callout-action';
@@ -2034,7 +2269,7 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     return callout;
   }
 
-  /** "Share feedback with students" — becomes a confirmed, disabled state once lesson.feedbackSharedAt is set, per explicit instruction that the teacher must get clear confirmation and never re-trigger a duplicate share by accident. */
+  /** "Share feedback with students" — becomes a confirmed, disabled state once lesson.feedbackSharedAt is set, per explicit instruction that the teacher must get clear confirmation and never re-trigger a duplicate share by accident. READ-ONLY: the confirmed state (already shared) stays visible as pure inspection; the action itself never renders unshared. */
   function renderShareFeedbackSection(slot, lesson, topic) {
     const section = document.createElement('div');
     section.className = 'period-detail-panel__share';
@@ -2046,6 +2281,8 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       section.appendChild(confirmed);
       return section;
     }
+
+    if (!isMutationAllowed()) return section;
 
     const shareButton = document.createElement('button');
     shareButton.type = 'button';
@@ -2451,7 +2688,14 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     const concepts = timetableDisplayService.resolveLessonConcepts(classroom, lesson);
 
     if (concepts.length === 0) {
-      section.appendChild(renderNoConceptsEmptyState(slot, lesson));
+      if (isMutationAllowed()) {
+        section.appendChild(renderNoConceptsEmptyState(slot, lesson));
+      } else {
+        const empty = document.createElement('p');
+        empty.className = 'period-detail-panel__attach-hint';
+        empty.textContent = 'No concepts assigned yet.';
+        section.appendChild(empty);
+      }
       return section;
     }
 
@@ -2480,50 +2724,54 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       );
     });
 
-    const footerActions = document.createElement('div');
-    footerActions.className = 'period-detail-panel__concepts-footer-actions';
+    // READ-ONLY: the whole footer (Add concept / Mark all covered) is
+    // a mutation-only surface — omitted entirely rather than disabled.
+    if (isMutationAllowed()) {
+      const footerActions = document.createElement('div');
+      footerActions.className = 'period-detail-panel__concepts-footer-actions';
 
-    // Adding more reuses the exact same shared renderConceptPicker()
-    // the initial empty-state prompt uses, in a modal (see
-    // openAddConceptFlow()'s own header comment) since the attached-
-    // concepts list above needs to stay visible/in-context, not be
-    // replaced by the picker the way the empty state can afford to.
-    const addMoreButton = document.createElement('button');
-    addMoreButton.type = 'button';
-    addMoreButton.className = 'btn btn--text';
-    addMoreButton.textContent = '+ Add concept';
-    addMoreButton.addEventListener('click', () => openAddConceptFlow(slot, lesson));
-    footerActions.appendChild(addMoreButton);
+      // Adding more reuses the exact same shared renderConceptPicker()
+      // the initial empty-state prompt uses, in a modal (see
+      // openAddConceptFlow()'s own header comment) since the attached-
+      // concepts list above needs to stay visible/in-context, not be
+      // replaced by the picker the way the empty state can afford to.
+      const addMoreButton = document.createElement('button');
+      addMoreButton.type = 'button';
+      addMoreButton.className = 'btn btn--text';
+      addMoreButton.textContent = '+ Add concept';
+      addMoreButton.addEventListener('click', () => openAddConceptFlow(slot, lesson));
+      footerActions.appendChild(addMoreButton);
 
-    // A secondary, low-emphasis bulk action — replaces the old
-    // checkbox-selection + "Mark concepts as covered" button entirely
-    // (per explicit product direction that a teacher should never have
-    // to select concepts just to mark them covered). Only shown once
-    // there's genuinely more than one pending concept to act on; never
-    // touches an already-carried-forward concept (see below).
-    if (pendingCount > 1) {
-      const markAllButton = document.createElement('button');
-      markAllButton.type = 'button';
-      markAllButton.className = 'btn btn--text';
-      markAllButton.textContent = 'Mark all covered';
-      markAllButton.addEventListener('click', () =>
-        runAction(async () => {
-          // Every non-carried concept, not literally every concept —
-          // a carried-forward concept was deferred to a later period,
-          // never taught here, and must never be silently marked
-          // covered by a bulk action (matches this same exclusion the
-          // per-concept "Mark covered" button already applies one at a
-          // time).
-          const idsToMark = concepts.filter(({ id }) => !carriedSet.has(id)).map(({ id }) => id);
-          await timetableLessonService.markConceptsExecuted(classroom, lesson, idsToMark);
-          workspaceService.save(classroom);
-          rerenderCurrentRange();
-        })
-      );
-      footerActions.appendChild(markAllButton);
+      // A secondary, low-emphasis bulk action — replaces the old
+      // checkbox-selection + "Mark concepts as covered" button entirely
+      // (per explicit product direction that a teacher should never have
+      // to select concepts just to mark them covered). Only shown once
+      // there's genuinely more than one pending concept to act on; never
+      // touches an already-carried-forward concept (see below).
+      if (pendingCount > 1) {
+        const markAllButton = document.createElement('button');
+        markAllButton.type = 'button';
+        markAllButton.className = 'btn btn--text';
+        markAllButton.textContent = 'Mark all covered';
+        markAllButton.addEventListener('click', () =>
+          runAction(async () => {
+            // Every non-carried concept, not literally every concept —
+            // a carried-forward concept was deferred to a later period,
+            // never taught here, and must never be silently marked
+            // covered by a bulk action (matches this same exclusion the
+            // per-concept "Mark covered" button already applies one at a
+            // time).
+            const idsToMark = concepts.filter(({ id }) => !carriedSet.has(id)).map(({ id }) => id);
+            await timetableLessonService.markConceptsExecuted(classroom, lesson, idsToMark);
+            workspaceService.save(classroom);
+            rerenderCurrentRange();
+          })
+        );
+        footerActions.appendChild(markAllButton);
+      }
+
+      section.appendChild(footerActions);
     }
-
-    section.appendChild(footerActions);
 
     return section;
   }
@@ -2574,7 +2822,7 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     }
     card.appendChild(main);
 
-    if (!carried && !executed) {
+    if (!carried && !executed && isMutationAllowed()) {
       const actions = document.createElement('div');
       actions.className = 'period-detail-panel__concept-card-actions';
 
@@ -2957,19 +3205,24 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     desc.textContent = description;
     section.appendChild(desc);
 
-    const actionsRow = document.createElement('div');
-    actionsRow.className = 'period-detail-panel__resource-group-actions';
-    buttons.forEach(({ label, className, onClick, disabled, title: buttonTitle }) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = className;
-      button.textContent = label;
-      if (disabled) button.disabled = true;
-      if (buttonTitle) button.title = buttonTitle;
-      if (onClick) button.addEventListener('click', onClick);
-      actionsRow.appendChild(button);
-    });
-    section.appendChild(actionsRow);
+    // READ-ONLY: every button passed in here (+Add Resource, Share
+    // Lesson Plan, Upload Lesson Plan) either attaches or would attach
+    // a resource — a mutation — so none of them render at all.
+    if (isMutationAllowed()) {
+      const actionsRow = document.createElement('div');
+      actionsRow.className = 'period-detail-panel__resource-group-actions';
+      buttons.forEach(({ label, className, onClick, disabled, title: buttonTitle }) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = className;
+        button.textContent = label;
+        if (disabled) button.disabled = true;
+        if (buttonTitle) button.title = buttonTitle;
+        if (onClick) button.addEventListener('click', onClick);
+        actionsRow.appendChild(button);
+      });
+      section.appendChild(actionsRow);
+    }
 
     if (entries.length === 0 && activityEntries.length === 0) {
       section.appendChild(createEmptyStateElement({ message: emptyMessage }));
@@ -3019,21 +3272,23 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     }
     item.appendChild(textWrap);
 
-    const removeButton = document.createElement('button');
-    removeButton.type = 'button';
-    removeButton.className = 'btn btn--icon-only';
-    removeButton.setAttribute('aria-label', `Remove ${resource.title}`);
-    removeButton.appendChild(createIcon('trash-2', { size: 14 }));
-    removeButton.addEventListener('click', () =>
-      runAction(async () => {
-        const confirmed = window.confirm(`Remove "${resource.title}"? This cannot be undone.`);
-        if (!confirmed) return;
-        await resourceService.deleteResource(classroom.id, concept, resource.id);
-        workspaceService.save(classroom);
-        await reload();
-      })
-    );
-    item.appendChild(removeButton);
+    if (isMutationAllowed()) {
+      const removeButton = document.createElement('button');
+      removeButton.type = 'button';
+      removeButton.className = 'btn btn--icon-only';
+      removeButton.setAttribute('aria-label', `Remove ${resource.title}`);
+      removeButton.appendChild(createIcon('trash-2', { size: 14 }));
+      removeButton.addEventListener('click', () =>
+        runAction(async () => {
+          const confirmed = window.confirm(`Remove "${resource.title}"? This cannot be undone.`);
+          if (!confirmed) return;
+          await resourceService.deleteResource(classroom.id, concept, resource.id);
+          workspaceService.save(classroom);
+          await reload();
+        })
+      );
+      item.appendChild(removeButton);
+    }
 
     return item;
   }
@@ -3111,21 +3366,23 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     });
     actions.appendChild(openButton);
 
-    const removeButton = document.createElement('button');
-    removeButton.type = 'button';
-    removeButton.className = 'btn btn--icon-only';
-    removeButton.setAttribute('aria-label', `Remove ${activity.title}`);
-    removeButton.appendChild(createIcon('trash-2', { size: 14 }));
-    removeButton.addEventListener('click', () =>
-      runAction(async () => {
-        const confirmed = window.confirm(`Remove "${activity.title}"? This cannot be undone.`);
-        if (!confirmed) return;
-        if (assignment) learningIntegrationService.unassignActivity(classroom, assignment.id);
-        workspaceService.save(classroom);
-        onRemoved?.();
-      })
-    );
-    actions.appendChild(removeButton);
+    if (isMutationAllowed()) {
+      const removeButton = document.createElement('button');
+      removeButton.type = 'button';
+      removeButton.className = 'btn btn--icon-only';
+      removeButton.setAttribute('aria-label', `Remove ${activity.title}`);
+      removeButton.appendChild(createIcon('trash-2', { size: 14 }));
+      removeButton.addEventListener('click', () =>
+        runAction(async () => {
+          const confirmed = window.confirm(`Remove "${activity.title}"? This cannot be undone.`);
+          if (!confirmed) return;
+          if (assignment) learningIntegrationService.unassignActivity(classroom, assignment.id);
+          workspaceService.save(classroom);
+          onRemoved?.();
+        })
+      );
+      actions.appendChild(removeButton);
+    }
 
     item.appendChild(actions);
 
@@ -4071,10 +4328,18 @@ export async function renderTimetableView(container, { classroom, currentUser, p
   function openExamFormOverlay({ existingEvent = null, defaultDateKey = null, prefill = null, onChanged = null } = {}) {
     const isEditing = Boolean(existingEvent);
     const draft = existingEvent
-      ? { ...existingEvent }
+      ? {
+          ...existingEvent,
+          // Backward compatibility: an event saved before the DATE RANGE
+          // feature existed has no `endDate` key in Firestore at all —
+          // see models/ScheduledEvent.js's own header comment. Normalized
+          // here, once, rather than at every field below that reads it.
+          endDate: existingEvent.endDate || existingEvent.date,
+        }
       : createScheduledEvent({
           classroomId: classroom.id,
           date: prefill?.date || defaultDateKey || getTodayDateKey(),
+          endDate: prefill?.endDate || prefill?.date || defaultDateKey || getTodayDateKey(),
           startTime: prefill?.startTime || '09:00',
           endTime: prefill?.endTime || '10:00',
           title: prefill?.title || '',
@@ -4202,11 +4467,31 @@ export async function renderTimetableView(container, { classroom, currentUser, p
         form.appendChild(field('Custom exam name', customExamNameInput));
       }
 
-      const dateInput = document.createElement('input');
-      dateInput.type = 'date';
-      dateInput.value = draft.date;
-      dateInput.addEventListener('change', () => { draft.date = dateInput.value; });
-      form.appendChild(field('Date', dateInput));
+      // Date RANGE — Start Date/End Date, not a single Date field. An
+      // ordinary single-day exam is simply the case where both inputs
+      // hold the same value (see models/ScheduledEvent.js's own
+      // `endDate` header comment: date === endDate IS "single day," not
+      // a special case of it) — nothing else in this form treats a
+      // single day differently. This is the EXAMINATION WINDOW's own
+      // range (e.g. "Quarterly Examinations, 24–30 Sep"); an individual
+      // subject exam still gets its own single date the exact same way
+      // it always has, just by leaving both inputs equal.
+      const dateRangeRow = document.createElement('div');
+      dateRangeRow.className = 'manage-timetable__time-inputs';
+      const startDateInput = document.createElement('input');
+      startDateInput.type = 'date';
+      startDateInput.value = draft.date;
+      startDateInput.setAttribute('aria-label', 'Start date');
+      startDateInput.addEventListener('change', () => { draft.date = startDateInput.value; });
+      const dateRangeDash = document.createElement('span');
+      dateRangeDash.textContent = '→';
+      const endDateInput = document.createElement('input');
+      endDateInput.type = 'date';
+      endDateInput.value = draft.endDate;
+      endDateInput.setAttribute('aria-label', 'End date');
+      endDateInput.addEventListener('change', () => { draft.endDate = endDateInput.value; });
+      dateRangeRow.append(startDateInput, dateRangeDash, endDateInput);
+      form.appendChild(field('Date', dateRangeRow));
 
       const timeRow = document.createElement('div');
       timeRow.className = 'manage-timetable__time-inputs';
@@ -4354,8 +4639,13 @@ export async function renderTimetableView(container, { classroom, currentUser, p
       saveButton.className = 'btn btn--primary';
       saveButton.textContent = isEditing ? 'Save' : 'Add Exam';
       saveButton.addEventListener('click', async () => {
-        if (!draft.date || !draft.startTime || !draft.endTime) {
-          validationError = 'Date, start time, and end time are all required.';
+        if (!draft.date || !draft.endDate || !draft.startTime || !draft.endTime) {
+          validationError = 'Start date, end date, start time, and end time are all required.';
+          renderBox();
+          return;
+        }
+        if (draft.endDate < draft.date) {
+          validationError = 'End date must be on or after the start date.';
           renderBox();
           return;
         }
@@ -4894,6 +5184,19 @@ export async function renderTimetableView(container, { classroom, currentUser, p
         heading.textContent = group.title || scheduledEventService.getEventTypeLabel(group.events[0].eventType);
         groupSection.appendChild(heading);
 
+        // The EXAMINATION WINDOW — e.g. "24–30 Sep 2026" — the overall
+        // span across every event under this shared title, whether that
+        // span comes from an explicit no-subject placeholder event or
+        // is simply implied by the earliest/latest dated subject exam
+        // already in the group (see scheduledEventService.js's own
+        // getGroupDateRange()). A single-day group (one event, or every
+        // event on the same day) shows one plain date, never a
+        // same-day-to-same-day range.
+        const rangeLabel = document.createElement('p');
+        rangeLabel.className = 'school-calendar__group-range';
+        rangeLabel.textContent = scheduledEventService.formatGroupDateRangeLabel(group.events);
+        groupSection.appendChild(rangeLabel);
+
         const groupList = document.createElement('div');
         groupList.className = 'school-calendar__group-list';
 
@@ -4907,7 +5210,19 @@ export async function renderTimetableView(container, { classroom, currentUser, p
           const typeLabel = scheduledEventService.getEventTypeLabel(event.eventType);
           const subjectTitle = scheduledEventService.resolveEventSubjectTitle(classroom, event);
           const color = getTimetableSubjectColor(event.subjectId);
-          const metaLine = `${typeLabel} · ${formatDateKeyWithWeekday(event.date)} · ${event.startTime}–${event.endTime}`;
+          // A single-day event (still the overwhelming majority — every
+          // individual subject exam, e.g. "Science, 24 Sep") keeps the
+          // existing weekday-spelled-out date exactly as before this
+          // feature existed. Only an event that itself genuinely spans
+          // more than one day (the no-subject examination-window
+          // placeholder, if this classroom uses one) switches to the
+          // compact range form — see scheduledEventService.js's own
+          // getEventEndDate()/formatEventDateRangeLabel().
+          const dateLabel =
+            scheduledEventService.getEventEndDate(event) === event.date
+              ? formatDateKeyWithWeekday(event.date)
+              : scheduledEventService.formatEventDateRangeLabel(event);
+          const metaLine = `${typeLabel} · ${dateLabel} · ${event.startTime}–${event.endTime}`;
           info.appendChild(renderExamHierarchy({ subjectTitle, typeLabel, color, metaLine }));
 
           row.appendChild(info);
@@ -4959,6 +5274,19 @@ export async function renderTimetableView(container, { classroom, currentUser, p
     const title = document.createElement('h3');
     title.textContent = 'Teacher Reflection';
     section.appendChild(title);
+
+    // READ-ONLY: the reflection is already something a PM can read
+    // via the classroom's own Firestore rules (a real classroom
+    // member, same as every other Lesson field) — shown as plain text
+    // here rather than an editable textarea, with no Save control at
+    // all.
+    if (!isMutationAllowed()) {
+      const value = document.createElement('p');
+      value.className = 'period-detail-panel__plan-readonly-value';
+      value.textContent = lesson.teacherReflection || '—';
+      section.appendChild(value);
+      return section;
+    }
 
     const textarea = document.createElement('textarea');
     textarea.value = lesson.teacherReflection || '';

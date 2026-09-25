@@ -14,6 +14,7 @@
 
 import { createScheduledEvent, SCHEDULED_EVENT_TYPES } from '../models/ScheduledEvent.js';
 import { resolveSubjectTitle } from './timetableDisplayService.js';
+import { formatDateKeyRange } from '../utils/dateHelpers.js';
 
 /** Every event in `events` whose own `date` matches `dateKey` exactly, ordered by start time — what services/schoolCalendarService.js's own getEffectiveScheduleForDate() is handed as its own `eventsForDate` argument. */
 export function getEventsForDate(events, dateKey) {
@@ -58,6 +59,60 @@ export function resolveEventSubjectTitle(classroom, event) {
   return resolveSubjectTitle(classroom, event.subjectId);
 }
 
+/**
+ * This event's own end date — `event.endDate` when set, falling back
+ * to its start `date` otherwise. The one place that fallback is
+ * decided (see models/ScheduledEvent.js's own `endDate` header
+ * comment): a document saved before this field existed has no
+ * `endDate` key in Firestore at all, so every read site must go
+ * through this rather than reading `event.endDate` directly, or a
+ * pre-existing single-date exam would resolve to an `undefined` end.
+ */
+export function getEventEndDate(event) {
+  return event.endDate || event.date;
+}
+
+/**
+ * "24 Sep 2026" for an ordinary single-day event, "24–30 Sep 2026"
+ * once `endDate` is genuinely a later date than `date` — see
+ * utils/dateHelpers.js's own formatDateKeyRange(). This is the one
+ * function anything displaying "the examination period" itself should
+ * call; nowhere here decides an individual subject exam's own date
+ * differently — see services/assessmentTimetableLinkService.js's own
+ * getEventPeriodLabel() and ui/views/AssessmentManagementView.js's own
+ * resolveLiveScheduleDisplay(), neither of which call this and both of
+ * which keep reading `event.date` alone, exactly as before this
+ * feature existed.
+ */
+export function formatEventDateRangeLabel(event) {
+  return formatDateKeyRange(event.date, getEventEndDate(event));
+}
+
+/**
+ * The overall {start, end} span covered by every event in a
+ * groupEventsByTitle() group — the EXAMINATION WINDOW, e.g.
+ * "Quarterly Examinations, 24–30 Sep" spanning Science on the 24th
+ * through English on the 30th. Deliberately the min start / max end
+ * across ALL member events, not just an explicit window/placeholder
+ * entry (subjectId: null) some groups may or may not have — a group
+ * made up of nothing but dated subject exams (the only kind of exam
+ * that existed before this feature) still gets a correct, honest
+ * window this way, and a group that also has an explicit placeholder
+ * entry is covered by the exact same computation with no special case
+ * needed for it.
+ */
+export function getGroupDateRange(events) {
+  const starts = events.map((event) => event.date);
+  const ends = events.map((event) => getEventEndDate(event));
+  return { start: starts.reduce((a, b) => (a < b ? a : b)), end: ends.reduce((a, b) => (a > b ? a : b)) };
+}
+
+/** "24–30 Sep 2026" for a group's own overall window — see getGroupDateRange() above. */
+export function formatGroupDateRangeLabel(events) {
+  const { start, end } = getGroupDateRange(events);
+  return formatDateKeyRange(start, end);
+}
+
 /** A short, human display label for an event type — 'Exam' for 'exam', title-cased fallback for anything future (e.g. 'school_event' -> 'School Event') so a not-yet-specially-labeled future type still reads sensibly rather than showing a raw enum value. */
 export function getEventTypeLabel(eventType) {
   if (eventType === SCHEDULED_EVENT_TYPES.EXAM) return 'Exam';
@@ -90,6 +145,7 @@ export function getEventTypeLabel(eventType) {
 export function buildDuplicateExamFields(sourceEvent) {
   return {
     date: sourceEvent.date,
+    endDate: getEventEndDate(sourceEvent),
     startTime: sourceEvent.startTime,
     endTime: sourceEvent.endTime,
     title: sourceEvent.title,

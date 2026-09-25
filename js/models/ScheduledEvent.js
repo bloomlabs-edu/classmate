@@ -40,6 +40,28 @@
  * demand by services/schoolCalendarService.js's own
  * getEffectiveScheduleForDate(), never stored here.
  *
+ * `endDate` — the DATE RANGE feature: `date` is this event's own start
+ * date, `endDate` its own end date (inclusive), both "YYYY-MM-DD".
+ * Defaults to `date` itself when omitted, so a single-day event (every
+ * exam this app has ever stored before this field existed, and the
+ * overwhelming majority created after) needs no second date at all —
+ * `date === endDate` IS "single day," not a special case of it. This
+ * is deliberately NOT "create one ScheduledEvent per day in the
+ * range" — an examination WINDOW (e.g. "Quarterly Examinations,
+ * 24–30 Sep") is one record with a real range, distinct from each
+ * individual subject's own exam (e.g. "Science, 24 Sep"), which is
+ * its own separate ScheduledEvent and keeps a single authoritative
+ * date the same way it always has (see
+ * services/assessmentTimetableLinkService.js/assessmentService.js's
+ * own createAssessmentFromScheduledEvent(), both of which read `date`
+ * alone and are completely unaware `endDate` exists). Existing
+ * documents saved before this field existed simply don't have it in
+ * Firestore at all — there is no migration; every read site treats a
+ * missing/falsy `endDate` as "same as date" (see
+ * services/scheduledEventService.js's own getEventEndDate()), which is
+ * exactly the backward-compatible interpretation this feature's own
+ * product brief asked for.
+ *
  * `subjectId` is the same canonical subjectId every other Timetable
  * reference already uses (services/subjectIdentityService.js) —
  * optional, since not every future event type will have one (an
@@ -78,7 +100,8 @@ export const SCHEDULED_EVENT_TYPES = Object.freeze({
 export function createScheduledEvent({
   id,
   classroomId,
-  date, // "YYYY-MM-DD"
+  date, // "YYYY-MM-DD" — start date
+  endDate = null, // "YYYY-MM-DD" — end date (inclusive); null/omitted normalizes to `date` itself below
   startTime, // "HH:mm"
   endTime, // "HH:mm"
   eventType = SCHEDULED_EVENT_TYPES.EXAM,
@@ -96,6 +119,7 @@ export function createScheduledEvent({
     id: id || generateId(),
     classroomId,
     date,
+    endDate: endDate || date,
     startTime,
     endTime,
     eventType,

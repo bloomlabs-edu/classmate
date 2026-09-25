@@ -87,6 +87,7 @@ test('buildDuplicateExamFields: copies every real field a duplicate needs, and n
 
   assert.deepEqual(fields, {
     date: MONDAY,
+    endDate: MONDAY,
     startTime: '10:00',
     endTime: '12:30',
     title: 'Quarterly Examinations',
@@ -181,4 +182,81 @@ test('buildDuplicateExamFields + createScheduledEvent: the resulting duplicate i
   duplicate.subjectId = 'science';
   assert.equal(source.date, MONDAY);
   assert.equal(source.subjectId, 'tamil');
+});
+
+test('buildDuplicateExamFields: an explicit endDate (a genuine range) carries through to the duplicate', () => {
+  const source = createScheduledEvent({ classroomId: 'c1', date: MONDAY, endDate: TUESDAY, startTime: '09:00', endTime: '10:00', title: 'Quarterly Examinations' });
+  const fields = scheduledEventService.buildDuplicateExamFields(source);
+  assert.equal(fields.endDate, TUESDAY);
+});
+
+// ---- endDate / date range — the examination DATE RANGE feature -----------
+
+test('getEventEndDate: returns event.endDate when set', () => {
+  const exam = createScheduledEvent({ classroomId: 'c1', date: MONDAY, endDate: TUESDAY, startTime: '09:00', endTime: '10:00' });
+  assert.equal(scheduledEventService.getEventEndDate(exam), TUESDAY);
+});
+
+test('getEventEndDate: falls back to event.date when endDate is missing entirely — backward compatibility for a document saved before this field existed, with no migration', () => {
+  // A plain object literal, NOT createScheduledEvent() — this is
+  // exactly what a pre-existing Firestore document looks like once
+  // read back: no `endDate` key at all, not even `undefined` set
+  // explicitly.
+  const legacyExam = { id: 'e1', classroomId: 'c1', date: MONDAY, startTime: '09:00', endTime: '10:00', title: 'Unit Test', subjectId: 'science' };
+  assert.equal('endDate' in legacyExam, false);
+  assert.equal(scheduledEventService.getEventEndDate(legacyExam), MONDAY);
+});
+
+test('formatEventDateRangeLabel: a single-day event (the existing, pre-feature default) displays as one date, not a range', () => {
+  const exam = createScheduledEvent({ classroomId: 'c1', date: '2026-09-24', startTime: '09:00', endTime: '10:00' });
+  assert.equal(scheduledEventService.formatEventDateRangeLabel(exam), '24 Sep 2026');
+});
+
+test('formatEventDateRangeLabel: a genuine multi-day event displays as a compact range', () => {
+  const exam = createScheduledEvent({ classroomId: 'c1', date: '2026-09-24', endDate: '2026-09-30', startTime: '09:00', endTime: '10:00' });
+  assert.equal(scheduledEventService.formatEventDateRangeLabel(exam), '24–30 Sep 2026');
+});
+
+test('formatEventDateRangeLabel: a legacy event with no endDate key at all still displays as one date, never throws', () => {
+  const legacyExam = { date: '2026-09-24' };
+  assert.equal(scheduledEventService.formatEventDateRangeLabel(legacyExam), '24 Sep 2026');
+});
+
+// The worked example from this feature's own product brief: a
+// "Quarterly Examinations" window (24–30 Sep) containing individually
+// dated subject exams. The window is metadata describing the overall
+// period; each subject exam keeps its own real date — never seven
+// separate daily events, never the window's range overwriting a
+// subject's own date.
+test('getGroupDateRange / formatGroupDateRangeLabel: the window is the min/max span across dated subject exams, each of which keeps its own individual date', () => {
+  const science = createScheduledEvent({ classroomId: 'c1', date: '2026-09-24', startTime: '09:00', endTime: '10:30', title: 'Quarterly Examinations', subjectId: 'science' });
+  const maths = createScheduledEvent({ classroomId: 'c1', date: '2026-09-25', startTime: '09:00', endTime: '10:30', title: 'Quarterly Examinations', subjectId: 'maths' });
+  const socialScience = createScheduledEvent({ classroomId: 'c1', date: '2026-09-29', startTime: '09:00', endTime: '11:30', title: 'Quarterly Examinations', subjectId: 'social_science' });
+  const english = createScheduledEvent({ classroomId: 'c1', date: '2026-09-30', startTime: '09:00', endTime: '10:30', title: 'Quarterly Examinations', subjectId: 'english' });
+
+  const group = scheduledEventService.groupEventsByTitle([science, maths, socialScience, english])[0];
+
+  assert.deepEqual(scheduledEventService.getGroupDateRange(group.events), { start: '2026-09-24', end: '2026-09-30' });
+  assert.equal(scheduledEventService.formatGroupDateRangeLabel(group.events), '24–30 Sep 2026');
+
+  // No duplication: exactly the 4 subject exams, never 7 (one per day
+  // of the range), and each keeps its own real date untouched.
+  assert.equal(group.events.length, 4);
+  assert.equal(science.date, '2026-09-24');
+  assert.equal(maths.date, '2026-09-25');
+  assert.equal(socialScience.date, '2026-09-29');
+  assert.equal(english.date, '2026-09-30');
+});
+
+test('getGroupDateRange: an explicit no-subject window placeholder event participates in the same computation as the dated subject exams — no special-casing needed', () => {
+  const windowPlaceholder = createScheduledEvent({ classroomId: 'c1', date: '2026-09-24', endDate: '2026-09-30', startTime: '09:00', endTime: '10:00', title: 'Quarterly Examinations', subjectId: null });
+  const science = createScheduledEvent({ classroomId: 'c1', date: '2026-09-24', startTime: '09:00', endTime: '10:30', title: 'Quarterly Examinations', subjectId: 'science' });
+
+  const range = scheduledEventService.getGroupDateRange([windowPlaceholder, science]);
+  assert.deepEqual(range, { start: '2026-09-24', end: '2026-09-30' });
+});
+
+test('getGroupDateRange: a single-day group (one event, or every event on the same day) reduces to one plain date, never "X – X"', () => {
+  const exam = createScheduledEvent({ classroomId: 'c1', date: MONDAY, startTime: '09:00', endTime: '10:00', title: 'Unit Test' });
+  assert.equal(scheduledEventService.formatGroupDateRangeLabel([exam]), '14 Sep 2026');
 });

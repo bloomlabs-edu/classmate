@@ -8,7 +8,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getWeekLabel, getMondayStartOfWeek, shiftDateKey } from '../../js/utils/dateHelpers.js';
+import { getWeekLabel, getMondayStartOfWeek, shiftDateKey, formatDateKeyRange } from '../../js/utils/dateHelpers.js';
 
 const TODAY = '2026-09-10'; // Thursday
 const THIS_WEEK_MONDAY = getMondayStartOfWeek(TODAY); // 2026-09-07
@@ -39,4 +39,22 @@ test('two weeks back from today is neither "This Week" nor "Last Week"', () => {
   const label = getWeekLabel(twoWeeksAgoMonday, TODAY);
   assert.notEqual(label, 'This Week');
   assert.notEqual(label, 'Last Week');
+});
+
+// ---- formatDateKeyRange() — the examination DATE RANGE feature -----------
+
+test('formatDateKeyRange: a single-day range (start === end) shows one plain date, never "X – X"', () => {
+  assert.equal(formatDateKeyRange('2026-09-24', '2026-09-24'), '24 Sep 2026');
+});
+
+test('formatDateKeyRange: a multi-day range within one month/year shows a compact "24–30 Sep 2026" form', () => {
+  assert.equal(formatDateKeyRange('2026-09-24', '2026-09-30'), '24–30 Sep 2026');
+});
+
+test('formatDateKeyRange: a range crossing a month boundary within the same year spells out both months', () => {
+  assert.equal(formatDateKeyRange('2026-09-28', '2026-10-02'), '28 Sep – 2 Oct 2026');
+});
+
+test('formatDateKeyRange: a range crossing a year boundary spells out both full dates including year', () => {
+  assert.equal(formatDateKeyRange('2026-12-29', '2027-01-03'), '29 Dec 2026 – 3 Jan 2027');
 });

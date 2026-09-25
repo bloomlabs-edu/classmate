@@ -35,3 +35,22 @@ test('createScheduledEvent: a canonical subjectId with no customSubjectName leav
   assert.equal(event.subjectId, 'science');
   assert.equal(event.customSubjectName, null);
 });
+
+// ---- endDate — the examination DATE RANGE feature -------------------------
+
+test('createScheduledEvent: endDate defaults to date itself when omitted — a single-day event, not a special case of one', () => {
+  const event = createScheduledEvent({ classroomId: 'c1', date: '2026-09-24', startTime: '09:00', endTime: '10:00' });
+  assert.equal(event.endDate, '2026-09-24');
+  assert.equal(event.endDate, event.date);
+});
+
+test('createScheduledEvent: an explicit endDate later than date is kept as a genuine range', () => {
+  const event = createScheduledEvent({ classroomId: 'c1', date: '2026-09-24', endDate: '2026-09-30', startTime: '09:00', endTime: '10:00', title: 'Quarterly Examinations' });
+  assert.equal(event.date, '2026-09-24');
+  assert.equal(event.endDate, '2026-09-30');
+});
+
+test('createScheduledEvent: passing endDate as null explicitly still normalizes to date (not null/undefined)', () => {
+  const event = createScheduledEvent({ classroomId: 'c1', date: '2026-09-14', endDate: null, startTime: '09:00', endTime: '10:00' });
+  assert.equal(event.endDate, '2026-09-14');
+});

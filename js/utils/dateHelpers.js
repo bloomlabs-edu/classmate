@@ -254,6 +254,47 @@ export function formatWeekDateRange(weekStartDateKey) {
     : `${startMonthLabel} ${startDay} – ${endMonthLabel} ${endDay}`;
 }
 
+/**
+ * A concise display string for an inclusive {start, end} "YYYY-MM-DD"
+ * range — built for the examination DATE RANGE feature (see
+ * models/ScheduledEvent.js's own `endDate` header comment), but
+ * generic over any two dates, not tied to a fixed 5/7-day span the way
+ * formatWeekDateRange() above is.
+ *
+ *   same day            -> "24 Sep 2026"        (formatDateKey() as-is)
+ *   same month/year      -> "24–30 Sep 2026"
+ *   same year, diff month -> "24 Sep – 5 Oct 2026"
+ *   different year       -> "24 Sep 2026 – 3 Jan 2027"
+ *
+ * Never "24 Sep 2026 – 24 Sep 2026" for a single-day range — the
+ * equal-dates case always short-circuits to the plain single-date
+ * form, matching this feature's own explicit "single-day range must
+ * not look like a range" requirement.
+ */
+export function formatDateKeyRange(startKey, endKey) {
+  const [startYear] = startKey.split('-').map(Number);
+  const [endYear] = endKey.split('-').map(Number);
+  const startDay = Number(startKey.split('-')[2]);
+  const endDay = Number(endKey.split('-')[2]);
+  const startMonthLabel = formatShortMonth(startKey);
+  const endMonthLabel = formatShortMonth(endKey);
+
+  // Deliberately built from formatShortMonth() throughout (en-US) rather
+  // than delegating the single-day case to formatDateKey() (en-IN) —
+  // en-IN's own CLDR data abbreviates September as "Sept", not "Sep",
+  // which would make this one function show "Sept" for a single day but
+  // "Sep" for a range in the exact same month. One locale/convention for
+  // every branch here avoids that inconsistency.
+  if (startKey === endKey) return `${startDay} ${startMonthLabel} ${startYear}`;
+  if (startYear === endYear && startMonthLabel === endMonthLabel) {
+    return `${startDay}–${endDay} ${endMonthLabel} ${endYear}`;
+  }
+  if (startYear === endYear) {
+    return `${startDay} ${startMonthLabel} – ${endDay} ${endMonthLabel} ${endYear}`;
+  }
+  return `${startDay} ${startMonthLabel} ${startYear} – ${endDay} ${endMonthLabel} ${endYear}`;
+}
+
 function formatShortMonth(dateKey) {
   const [year, month, day] = dateKey.split('-').map(Number);
   return new Date(year, month - 1, day).toLocaleDateString('en-US', { month: 'short' });
