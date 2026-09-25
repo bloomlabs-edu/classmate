@@ -21,6 +21,67 @@ export function renameStudent(team, studentId, newName) {
   return student;
 }
 
+/**
+ * Validates a teacher-typed Roll Number before it's ever applied —
+ * required only in the sense that a blank/whitespace-only input is
+ * treated as "clear it back to null" (models/Student.js's own
+ * documented default), never an error; a non-blank value must be
+ * digits only (matching every existing Roll Number convention already
+ * in this codebase: services/assessmentImportService.js's own
+ * matching logic and this file's own getPassMarkForSubject-style
+ * "Sort by Roll Number" in AssessmentManagementView.js both treat it
+ * as a short numeric identifier, never free text), and must not
+ * already belong to a different student in the same classroom — Roll
+ * Numbers are a real-world uniqueness convention within one class,
+ * and assessmentImportService.js's own studentsByRollNumber lookup
+ * already silently assumes exactly one student per Roll Number.
+ *
+ * Deliberately kept as a STRING, never coerced to a Number: "01" must
+ * stay "01", not become "1" — Roll Number is an identifier, not a
+ * mathematical value (see models/Student.js's own header comment).
+ *
+ * `students` is every student already in the classroom (any team);
+ * `currentStudentId` is excluded from the duplicate check so re-saving
+ * a student's own unchanged Roll Number never flags itself.
+ */
+export function validateRollNumberInput(rawValue, students, currentStudentId) {
+  const trimmed = String(rawValue ?? '').trim();
+  if (trimmed === '') return { valid: true, value: null, error: null };
+
+  if (!/^\d+$/.test(trimmed)) {
+    return { valid: false, value: null, error: 'Roll number must contain digits only.' };
+  }
+
+  const duplicate = students.find((s) => s.id !== currentStudentId && s.rollNumber === trimmed);
+  if (duplicate) {
+    return { valid: false, value: null, error: `Roll number ${trimmed} is already assigned to another student.` };
+  }
+
+  return { valid: true, value: trimmed, error: null };
+}
+
+/**
+ * Sets a student's own Roll Number — the one place this field is ever
+ * written (see models/Student.js's own header comment: "currently
+ * only read, not written, anywhere in the UI" — this is that
+ * follow-up). Student-level, not Assessment-level: this is the same
+ * `student.rollNumber` every existing reader (Assessment Management's
+ * Gradebook, its own "Sort by Roll Number", assessmentImportService.js's
+ * own matching) already reads, so a change here is immediately visible
+ * everywhere that student appears — there is exactly one Roll Number
+ * per student, never a second, Assessment-scoped copy of it.
+ *
+ * Callers are expected to have already validated via
+ * validateRollNumberInput() above; this function only applies
+ * `value`, it does not re-validate.
+ */
+export function setStudentRollNumber(classroom, studentId, value) {
+  const found = findStudentInClassroom(classroom, studentId);
+  if (!found) return null;
+  found.student.rollNumber = value;
+  return found.student;
+}
+
 export function removeStudent(team, studentId) {
   const before = team.students.length;
   team.students = team.students.filter((student) => student.id !== studentId);

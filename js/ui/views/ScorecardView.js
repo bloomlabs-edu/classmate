@@ -24,10 +24,13 @@
 import { createBackButton } from '../components/BackButton.js';
 import { createStudentNameElement } from '../components/StudentNameElement.js';
 import { createNavigationRow } from '../components/NavigationRow.js';
+import { createRollNumberCell } from '../components/RollNumberCell.js';
 import * as scheduledEventRepository from '../../services/scheduledEventRepository.js';
 import { getEventsByType, SCHEDULED_EVENT_TYPES } from '../../services/scheduledEventService.js';
 import * as scorecardService from '../../services/scorecardService.js';
 import * as assessmentService from '../../services/assessmentService.js';
+import * as studentService from '../../services/studentService.js';
+import * as workspaceService from '../../services/workspaceService.js';
 import { getMarksColorClass, GREEN_THRESHOLD_PERCENT } from '../../config/assessmentMarksColorConfig.js';
 import { getTodayDateKey, shiftDateKey, formatDateKey } from '../../utils/dateHelpers.js';
 
@@ -267,6 +270,19 @@ export function renderScorecardView(container, { classroom, cycleKey, onBack, on
     return card;
   }
 
+  // Same models/Student.js's own `rollNumber` field
+  // AssessmentManagementView.js's own Gradebook edits (see that file's
+  // own applyStudentRollNumberSave()) — one source of truth, edited
+  // identically from either table via the shared RollNumberCell.js.
+  function applyScorecardRollNumberSave(student, rawValue) {
+    const allStudents = assessmentService.getClassroomStudents(classroom);
+    const result = studentService.validateRollNumberInput(rawValue, allStudents, student.id);
+    if (!result.valid) return result;
+    studentService.setStudentRollNumber(classroom, student.id, result.value);
+    workspaceService.save(classroom);
+    return result;
+  }
+
   function renderTable(scorecard) {
     const scrollWrapper = document.createElement('div');
     scrollWrapper.className = 'assessment-gradebook__scroll scorecard__scroll';
@@ -279,6 +295,11 @@ export function renderScorecardView(container, { classroom, cycleKey, onBack, on
     studentTh.className = 'assessment-gradebook__name-header';
     studentTh.textContent = 'Student';
     headerRow.appendChild(studentTh);
+
+    const rollTh = document.createElement('th');
+    rollTh.className = 'assessment-gradebook__roll-header';
+    rollTh.textContent = 'Roll No.';
+    headerRow.appendChild(rollTh);
 
     scorecard.subjects.forEach((subject) => {
       const th = document.createElement('th');
@@ -334,6 +355,13 @@ export function renderScorecardView(container, { classroom, cycleKey, onBack, on
       nameCell.className = 'assessment-gradebook__name-cell';
       nameCell.appendChild(createStudentNameElement({ student: row.student, onSelect: onSelectStudentAndNavigate, leadingMarker: 'none' }));
       tr.appendChild(nameCell);
+
+      const rollCell = createRollNumberCell({
+        student: row.student,
+        onSave: (rawValue) => applyScorecardRollNumberSave(row.student, rawValue),
+      });
+      rollCell.classList.add('assessment-gradebook__roll-cell');
+      tr.appendChild(rollCell);
 
       row.cells.forEach((cell, index) => {
         const subject = scorecard.subjects[index];

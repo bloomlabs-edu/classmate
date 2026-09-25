@@ -26,6 +26,8 @@
 import { createBackButton } from '../components/BackButton.js';
 import { createIcon } from '../components/Icon.js';
 import { createStudentNameElement } from '../components/StudentNameElement.js';
+import { createRollNumberCell } from '../components/RollNumberCell.js';
+import * as studentService from '../../services/studentService.js';
 import { ASSESSMENT_TYPES } from '../../config/assessmentTypesConfig.js';
 import { openCreateAssessmentModal } from '../components/CreateAssessmentModal.js';
 import { openAddSubjectToAssessmentModal } from '../components/AddSubjectToAssessmentModal.js';
@@ -363,9 +365,37 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
     rerender();
   }
 
+  /**
+   * Roll Number — STUDENT-level (models/Student.js's own `rollNumber`
+   * field, "currently only read, not written, anywhere in the UI"
+   * until this), never an Assessment-scoped copy: services/
+   * studentService.js's own setStudentRollNumber() writes directly
+   * onto the same Student object every other reader (this Gradebook's
+   * own "Sort by Roll Number", the Scorecard, assessmentImportService.js's
+   * own matching) already reads, so a change here is immediately
+   * visible everywhere that student appears, in this Assessment and
+   * every other one, without any extra plumbing. Validated via
+   * studentService.js's own validateRollNumberInput() — required to
+   * be digits-only if non-blank, and unique within this classroom —
+   * the exact same validator ui/views/ScorecardView.js's own Roll
+   * Number cell uses, so the two screens can never disagree about
+   * what a valid Roll Number is. Saved immediately (not debounced —
+   * this is an occasional edit, never rapid-fire typing the way a
+   * mark or Total Marks input can be).
+   */
+  function applyStudentRollNumberSave(student, rawValue) {
+    const allStudents = assessmentService.getClassroomStudents(classroom);
+    const result = studentService.validateRollNumberInput(rawValue, allStudents, student.id);
+    if (!result.valid) return result;
+    studentService.setStudentRollNumber(classroom, student.id, result.value);
+    workspaceService.save(classroom);
+    return result;
+  }
+
   const handlers = {
     onGradebookMarksEdit: applyGradebookMarksEdit,
     onGradebookMaximumMarksChange: applyGradebookMaximumMarksEdit,
+    onSaveStudentRollNumber: applyStudentRollNumberSave,
     onGradebookSubjectFilterChange: (value) => {
       gradebookSubjectFilter = value;
       rerender();
@@ -2023,9 +2053,11 @@ function renderGradebookStep(classroom, assessment, gradebookState, handlers) {
     nameCell.appendChild(createStudentNameElement({ student, onSelect: handlers.onSelectStudent, leadingMarker: 'none' }));
     row.appendChild(nameCell);
 
-    const rollCell = document.createElement('td');
-    rollCell.className = 'assessment-gradebook__roll-cell';
-    rollCell.textContent = student.rollNumber || '\u2014';
+    const rollCell = createRollNumberCell({
+      student,
+      onSave: (rawValue) => handlers.onSaveStudentRollNumber(student, rawValue),
+    });
+    rollCell.classList.add('assessment-gradebook__roll-cell');
     row.appendChild(rollCell);
 
     let totalMarks = 0;
