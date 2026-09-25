@@ -28,7 +28,7 @@ import * as scheduledEventRepository from '../../services/scheduledEventReposito
 import { getEventsByType, SCHEDULED_EVENT_TYPES } from '../../services/scheduledEventService.js';
 import * as scorecardService from '../../services/scorecardService.js';
 import * as assessmentService from '../../services/assessmentService.js';
-import { getMarksColorClass, getPassMarkForSubject, GREEN_THRESHOLD_PERCENT } from '../../config/assessmentMarksColorConfig.js';
+import { getMarksColorClass, GREEN_THRESHOLD_PERCENT } from '../../config/assessmentMarksColorConfig.js';
 import { getTodayDateKey, shiftDateKey, formatDateKey } from '../../utils/dateHelpers.js';
 
 export function renderScorecardView(container, { classroom, cycleKey, onBack, onNavigate, onSelectStudent }) {
@@ -296,11 +296,17 @@ export function renderScorecardView(container, { classroom, cycleKey, onBack, on
         th.appendChild(titleEl);
 
         if (subject.assessmentSubject) {
+          // Pass Mark shown as the plain percentage it actually is
+          // (see models/Assessment.js's own passMarkPercent header
+          // comment) — matches the individual Assessment Gradebook's
+          // own subject header exactly (see
+          // AssessmentManagementView.js's own renderGradebookStep()),
+          // rather than a second, absolute-marks phrasing of the same
+          // number.
           const passMarkPercent = assessmentService.getPassMarkPercent(subject.linkedAssessment);
-          const passMark = getPassMarkForSubject(subject.assessmentSubject.maximumMarks, passMarkPercent);
           const meta = document.createElement('span');
           meta.className = 'scorecard__subject-header-meta';
-          meta.textContent = `/${subject.assessmentSubject.maximumMarks} · Pass ${passMark}`;
+          meta.textContent = `/${assessmentService.getMaximumMarks(subject.assessmentSubject)} · Pass ${passMarkPercent}%`;
           th.appendChild(meta);
         }
       } else {

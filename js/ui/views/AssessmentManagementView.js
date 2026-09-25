@@ -38,7 +38,7 @@ import * as scheduledEventRepository from '../../services/scheduledEventReposito
 import { getEventsByType, SCHEDULED_EVENT_TYPES } from '../../services/scheduledEventService.js';
 import * as workspaceService from '../../services/workspaceService.js';
 import { getCurrentIsoDate, getTodayDateKey, shiftDateKey, formatDate, formatDateKey } from '../../utils/dateHelpers.js';
-import { getMarksColorClass, getMarksBucketKey, getPassMarkForSubject, GREEN_THRESHOLD_PERCENT } from '../../config/assessmentMarksColorConfig.js';
+import { getMarksColorClass, getMarksBucketKey, GREEN_THRESHOLD_PERCENT } from '../../config/assessmentMarksColorConfig.js';
 
 export function renderAssessmentManagementView(container, { classroom, onBack, initialAssessmentId = null, initialView = null, onNavigate = null }) {
   const initialAssessment = initialAssessmentId ? assessmentService.getAssessmentById(classroom, initialAssessmentId) : null;
@@ -72,6 +72,15 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
   let isEditingMarks = false;
   let marksDraft = null;
   let hasUnsavedMarksChanges = false;
+  let marksDraftMaximumMarksError = null;
+
+  // Same immediate-inline-edit error state for the Gradebook's own
+  // subject-header Total Marks field (renderGradebookStep()) — a
+  // wholly separate editing surface from the Subject Step's own
+  // document-editor draft above, so it needs its own error slot.
+  // `{ subjectId, message } | null`, cleared on any successful edit or
+  // filter change.
+  let gradebookMaxMarksError = null;
 
   // The same document-editor pattern applied to Assessment Details
   // (name, type, academic year, date) — see renderAssessmentStep()
@@ -164,6 +173,8 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
         sortBy,
         isEditingMarks: isCurrentlyEditingMarks(),
         marksDraft,
+        marksDraftMaximumMarksError,
+        gradebookMaxMarksError,
         isEditingAssessmentDetails,
         assessmentDetailsDraft,
         importReview,
@@ -193,7 +204,7 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
         remarks: existing ? existing.remarks : '',
       });
     });
-    return { maximumMarks: assessmentSubject.maximumMarks, resultsByStudentId };
+    return { maximumMarks: assessmentService.getMaximumMarks(assessmentSubject), resultsByStudentId };
   }
 
   function buildAssessmentDetailsDraftFrom(assessment) {
@@ -308,8 +319,37 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
     scheduleGradebookSave(assessmentSubject);
   }
 
+  /**
+   * Total Marks, edited directly from the Gradebook's own subject
+   * header (see renderGradebookStep()) — the same immediate-apply +
+   * debounced-Firestore-write pattern applyGradebookMarksEdit() above
+   * already uses for a single cell, since this is really just another
+   * field on the same AssessmentSubject. Validated first via
+   * services/assessmentService.js's own validateMaximumMarksInput() —
+   * an invalid value (non-numeric, <= 0, or lower than an
+   * already-entered mark) is rejected outright and surfaced inline;
+   * `assessmentSubject.maximumMarks` and the already-entered marks
+   * themselves are left completely untouched either way. Never
+   * rescales/clamps a stored mark — Total Marks only ever changes the
+   * denominator marks are interpreted against, per this feature's own
+   * explicit rule.
+   */
+  function applyGradebookMaximumMarksEdit(assessmentSubject, rawValue) {
+    const result = assessmentService.validateMaximumMarksInput(rawValue, assessmentSubject.studentResults);
+    if (!result.valid) {
+      gradebookMaxMarksError = { subjectId: assessmentSubject.id, message: result.error };
+      rerender();
+      return;
+    }
+    gradebookMaxMarksError = null;
+    assessmentService.setMaximumMarks(assessmentSubject, result.value);
+    scheduleGradebookSave(assessmentSubject);
+    rerender();
+  }
+
   const handlers = {
     onGradebookMarksEdit: applyGradebookMarksEdit,
+    onGradebookMaximumMarksChange: applyGradebookMaximumMarksEdit,
     onGradebookSubjectFilterChange: (value) => {
       gradebookSubjectFilter = value;
       rerender();
@@ -508,10 +548,18 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
       isEditingMarks = true;
       marksDraft = buildMarksDraftFrom(selectedAssessmentSubject);
       hasUnsavedMarksChanges = false;
+      marksDraftMaximumMarksError = null;
       rerender();
     },
-    onDraftMaximumMarksChange: (value) => {
-      marksDraft.maximumMarks = value;
+    onDraftMaximumMarksChange: (rawValue) => {
+      const result = assessmentService.validateMaximumMarksInput(rawValue, marksDraft.resultsByStudentId.values());
+      if (!result.valid) {
+        marksDraftMaximumMarksError = result.error;
+        rerender();
+        return;
+      }
+      marksDraftMaximumMarksError = null;
+      marksDraft.maximumMarks = result.value;
       hasUnsavedMarksChanges = true;
       rerender();
     },
@@ -521,10 +569,21 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
       rerender();
     },
     onSaveMarks: () => {
+      // Defensive re-check, not just relying on onDraftMaximumMarksChange
+      // above having already validated: a mark can be typed AFTER
+      // Maximum Marks was set, making a previously-valid draft newly
+      // invalid without ever touching the Maximum Marks field again.
+      const revalidation = assessmentService.validateMaximumMarksInput(marksDraft.maximumMarks, marksDraft.resultsByStudentId.values());
+      if (!revalidation.valid) {
+        marksDraftMaximumMarksError = revalidation.error;
+        rerender();
+        return;
+      }
       assessmentService.saveAssessmentSubjectDraft(selectedAssessmentSubject, marksDraft);
       workspaceService.save(classroom);
       isEditingMarks = false;
       hasUnsavedMarksChanges = false;
+      marksDraftMaximumMarksError = null;
       rerender();
     },
     onCancelEditMarks: () => {
@@ -537,6 +596,7 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
       marksDraft = buildMarksDraftFrom(selectedAssessmentSubject);
       isEditingMarks = false;
       hasUnsavedMarksChanges = false;
+      marksDraftMaximumMarksError = null;
       rerender();
     },
     onChangeSortBy: (newSortBy) => {
@@ -627,7 +687,16 @@ function renderView(container, mode, state, handlers) {
     wrapper.appendChild(renderGradebookStep(state.classroom, state.selectedAssessment, state, handlers));
   } else if (mode === 'subject') {
     wrapper.appendChild(
-      renderSubjectStep(state.classroom, state.selectedAssessment, state.selectedAssessmentSubject, state.sortBy, state.isEditingMarks, state.marksDraft, handlers)
+      renderSubjectStep(
+        state.classroom,
+        state.selectedAssessment,
+        state.selectedAssessmentSubject,
+        state.sortBy,
+        state.isEditingMarks,
+        state.marksDraft,
+        state.marksDraftMaximumMarksError,
+        handlers
+      )
     );
   } else if (mode === 'import-review') {
     wrapper.appendChild(renderImportReviewStep(state.selectedAssessment, state.importReview, state.importError, handlers));
@@ -1297,7 +1366,7 @@ function getVisibleGradebookStudents(allStudents, assessmentSubjects, subjectFil
       const assessmentSubject = assessmentSubjects.find((s) => s.id === subjectFilter);
       if (!assessmentSubject) return true;
       const result = assessmentService.getStudentResult(assessmentSubject, student.id);
-      const bucket = result ? getMarksBucketKey(result.marks, assessmentSubject.maximumMarks, passMarkPercent) : null;
+      const bucket = result ? getMarksBucketKey(result.marks, assessmentService.getMaximumMarks(assessmentSubject), passMarkPercent) : null;
       return bucket === bucketFilter;
     }
 
@@ -1308,7 +1377,7 @@ function getVisibleGradebookStudents(allStudents, assessmentSubjects, subjectFil
     // and is stated plainly here rather than silently assumed.
     return assessmentSubjects.some((assessmentSubject) => {
       const result = assessmentService.getStudentResult(assessmentSubject, student.id);
-      const bucket = result ? getMarksBucketKey(result.marks, assessmentSubject.maximumMarks, passMarkPercent) : null;
+      const bucket = result ? getMarksBucketKey(result.marks, assessmentService.getMaximumMarks(assessmentSubject), passMarkPercent) : null;
       return bucket === bucketFilter;
     });
   });
@@ -1327,7 +1396,7 @@ function getVisibleGradebookStudents(allStudents, assessmentSubjects, subjectFil
       const result = assessmentService.getStudentResult(assessmentSubject, student.id);
       if (result && result.marks !== null) {
         totalMarks += result.marks;
-        totalMaximum += assessmentSubject.maximumMarks;
+        totalMaximum += assessmentService.getMaximumMarks(assessmentSubject);
       }
     });
     return totalMaximum > 0 ? (totalMarks / totalMaximum) * 100 : null;
@@ -1727,11 +1796,43 @@ function renderGradebookStep(classroom, assessment, gradebookState, handlers) {
     const titleEl = document.createElement('span');
     titleEl.className = 'assessment-gradebook__subject-title';
     titleEl.textContent = title || '(Subject removed)';
+    th.appendChild(titleEl);
+
+    // Total Marks \u2014 editable right here, where a teacher actually
+    // looks at it, rather than only on the older single-subject
+    // Subject Step screen (see renderSubjectStep()'s own Maximum
+    // Marks field). Deliberately per-Subject, not a single
+    // Assessment-wide value: models/AssessmentSubject.js's own
+    // maximumMarks has always been per-Subject (a multi-subject
+    // Assessment can legitimately mix e.g. Science /100 and Maths
+    // /50), so this never flattens that. Pass Mark stays static text
+    // here \u2014 it's the one genuinely Assessment-wide number, already
+    // editable via "Edit Details".
     const maxEl = document.createElement('span');
     maxEl.className = 'assessment-gradebook__subject-max';
-    const passMark = getPassMarkForSubject(assessmentSubject.maximumMarks, assessmentService.getPassMarkPercent(assessment));
-    maxEl.textContent = passMark !== null ? `/${assessmentSubject.maximumMarks} \u00b7 Pass ${passMark}` : `/${assessmentSubject.maximumMarks}`;
-    th.append(titleEl, maxEl);
+    const passMarkPercent = assessmentService.getPassMarkPercent(assessment);
+    const maxMarksInput = document.createElement('input');
+    maxMarksInput.type = 'number';
+    maxMarksInput.className = 'assessment-gradebook__max-marks-input';
+    maxMarksInput.value = assessmentService.getMaximumMarks(assessmentSubject);
+    maxMarksInput.min = '0.01';
+    maxMarksInput.setAttribute('aria-label', `${title || 'Subject'} total marks`);
+    maxMarksInput.addEventListener('click', (event) => event.stopPropagation());
+    maxMarksInput.addEventListener('change', () => {
+      handlers.onGradebookMaximumMarksChange(assessmentSubject, maxMarksInput.value);
+    });
+    const passMarkSuffix = document.createElement('span');
+    passMarkSuffix.textContent = ` \u00b7 Pass ${passMarkPercent}%`;
+    maxEl.append('/', maxMarksInput, passMarkSuffix);
+    th.appendChild(maxEl);
+
+    if (gradebookState.gradebookMaxMarksError?.subjectId === assessmentSubject.id) {
+      const error = document.createElement('span');
+      error.className = 'assessment-gradebook__max-marks-error';
+      error.textContent = gradebookState.gradebookMaxMarksError.message;
+      th.appendChild(error);
+    }
+
     headerRow.appendChild(th);
   });
   ['Total', '%'].forEach((label) => {
@@ -1771,9 +1872,11 @@ function renderGradebookStep(classroom, assessment, gradebookState, handlers) {
       const existingResult = assessmentService.getStudentResult(assessmentSubject, student.id);
       const marks = existingResult ? existingResult.marks : null;
 
+      const maximumMarks = assessmentService.getMaximumMarks(assessmentSubject);
+
       if (marks !== null) {
         totalMarks += marks;
-        totalMaximum += assessmentSubject.maximumMarks;
+        totalMaximum += maximumMarks;
       }
 
       const input = document.createElement('input');
@@ -1783,14 +1886,14 @@ function renderGradebookStep(classroom, assessment, gradebookState, handlers) {
       input.dataset.row = String(rowIndex);
       input.dataset.col = String(colIndex);
 
-      const colorClass = getMarksColorClass(marks, assessmentSubject.maximumMarks, passMarkPercent);
+      const colorClass = getMarksColorClass(marks, maximumMarks, passMarkPercent);
       if (colorClass) cell.classList.add(colorClass);
 
       input.addEventListener('change', () => {
         const value = input.value === '' ? null : Number(input.value);
         handlers.onGradebookMarksEdit(assessmentSubject, student.id, value);
         cell.classList.remove('gradebook-cell--high', 'gradebook-cell--mid', 'gradebook-cell--low');
-        const newColorClass = getMarksColorClass(value, assessmentSubject.maximumMarks, passMarkPercent);
+        const newColorClass = getMarksColorClass(value, maximumMarks, passMarkPercent);
         if (newColorClass) cell.classList.add(newColorClass);
       });
 
@@ -1951,7 +2054,7 @@ function handleGradebookPaste(event, tbody, startRow, startCol, students, assess
   });
 }
 
-function renderSubjectStep(classroom, assessment, assessmentSubject, sortBy, isEditing, draft, handlers) {
+function renderSubjectStep(classroom, assessment, assessmentSubject, sortBy, isEditing, draft, maximumMarksError, handlers) {
   const section = document.createElement('div');
   section.className = 'learning-management__section';
 
@@ -1972,17 +2075,22 @@ function renderSubjectStep(classroom, assessment, assessmentSubject, sortBy, isE
     maxMarksInput.value = draft.maximumMarks;
     maxMarksInput.min = '1';
     maxMarksInput.addEventListener('change', () => {
-      const value = Number(maxMarksInput.value);
-      if (!Number.isFinite(value) || value <= 0) return;
-      handlers.onDraftMaximumMarksChange(value);
+      handlers.onDraftMaximumMarksChange(maxMarksInput.value);
     });
     maxMarksLabel.appendChild(maxMarksInput);
   } else {
     const maxMarksValue = document.createElement('strong');
-    maxMarksValue.textContent = String(assessmentSubject.maximumMarks);
+    maxMarksValue.textContent = String(assessmentService.getMaximumMarks(assessmentSubject));
     maxMarksLabel.appendChild(maxMarksValue);
   }
   section.appendChild(maxMarksLabel);
+
+  if (isEditing && maximumMarksError) {
+    const error = document.createElement('p');
+    error.className = 'learning-management__inline-error';
+    error.textContent = maximumMarksError;
+    section.appendChild(error);
+  }
 
   const studentsHeadingRow = document.createElement('div');
   studentsHeadingRow.className = 'assessment-students-heading-row';

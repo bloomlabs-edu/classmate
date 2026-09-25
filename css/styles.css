@@ -14254,6 +14254,39 @@ button.recognition-bento__hero-winner-name {
   margin-top: 2px;
 }
 
+/* Total Marks — editable directly in the subject header (see
+   renderGradebookStep()). Deliberately as understated as the plain
+   text it replaces: a narrow, borderless-until-hover number input,
+   not a prominent control, since this is an occasional edit, not the
+   header's main purpose. */
+.assessment-gradebook__max-marks-input {
+  width: 2.6rem;
+  padding: 0 2px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-muted);
+  font: inherit;
+  font-size: 0.72rem;
+  text-align: center;
+}
+.assessment-gradebook__max-marks-input:hover,
+.assessment-gradebook__max-marks-input:focus {
+  border-color: var(--color-border);
+  background: var(--color-surface, #fff);
+  color: var(--color-ink);
+  outline: none;
+}
+.assessment-gradebook__max-marks-error {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-danger);
+  white-space: normal;
+  max-width: 140px;
+  margin-top: 2px;
+}
+
 /* --- Cell inputs: compact, comfortable, strong focus state --- */
 .assessment-gradebook__cell-input {
   width: 56px;

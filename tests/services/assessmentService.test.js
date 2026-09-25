@@ -418,3 +418,104 @@ test('Pass/Fail is a direct score-vs-passMark comparison, never derived from buc
   assert.equal(outcomeFor(50, 100, 35), 'passed');
   assert.equal(outcomeFor(80, 100, 35), 'passed');
 });
+
+// ---------------------------------------------------------------------
+// Total Marks — assessment-specific, per-Subject, editable maximumMarks.
+// ---------------------------------------------------------------------
+
+test('getMaximumMarks: an existing AssessmentSubject with no maximumMarks field at all (a document from before this field existed) defaults to 100', () => {
+  // A plain object literal, NOT createAssessmentSubject() — exactly
+  // what a pre-existing Firestore document looks like once read back:
+  // no `maximumMarks` key at all.
+  const legacySubject = { id: 'as1', subjectId: 'science', studentResults: [] };
+  assert.equal('maximumMarks' in legacySubject, false);
+  assert.equal(assessmentService.getMaximumMarks(legacySubject), 100);
+});
+
+test('getMaximumMarks: returns the explicitly configured value when set', () => {
+  const classroom = buildClassroomWithScienceOnly();
+  const assessment = assessmentService.createNewAssessment(classroom, { title: 'Quarterly', type: 'Quarterly', academicYear: '2026-2027', date: '2026-09-24', subjectIds: ['record-science'] });
+  const [subject] = assessment.assessmentSubjects;
+  assessmentService.setMaximumMarks(subject, 50);
+  assert.equal(assessmentService.getMaximumMarks(subject), 50);
+});
+
+test('validateMaximumMarksInput: a valid positive number (including decimals) is accepted', () => {
+  assert.deepEqual(assessmentService.validateMaximumMarksInput('50', []), { valid: true, value: 50, error: null });
+  assert.deepEqual(assessmentService.validateMaximumMarksInput('37.5', []), { valid: true, value: 37.5, error: null });
+});
+
+test('validateMaximumMarksInput: rejects blank/non-numeric input — required, never silently defaulted', () => {
+  assert.equal(assessmentService.validateMaximumMarksInput('', []).valid, false);
+  assert.equal(assessmentService.validateMaximumMarksInput('abc', []).valid, false);
+  assert.equal(assessmentService.validateMaximumMarksInput(undefined, []).valid, false);
+});
+
+test('validateMaximumMarksInput: rejects zero', () => {
+  assert.equal(assessmentService.validateMaximumMarksInput('0', []).valid, false);
+});
+
+test('validateMaximumMarksInput: rejects a negative value', () => {
+  assert.equal(assessmentService.validateMaximumMarksInput('-10', []).valid, false);
+});
+
+test('validateMaximumMarksInput: rejects a new maximum lower than an already-entered mark, rather than silently clamping or rescaling it', () => {
+  const existingResults = [
+    { studentId: 's1', marks: 75, absent: false },
+    { studentId: 's2', marks: 40, absent: false },
+  ];
+  const result = assessmentService.validateMaximumMarksInput('50', existingResults);
+  assert.equal(result.valid, false);
+  assert.match(result.error, /75/); // names the offending (highest) mark
+});
+
+test('validateMaximumMarksInput: a mark on an ABSENT result is not counted against the new maximum', () => {
+  const existingResults = [{ studentId: 's1', marks: 90, absent: true }];
+  assert.equal(assessmentService.validateMaximumMarksInput('50', existingResults).valid, true);
+});
+
+test('validateMaximumMarksInput: a new maximum exactly equal to the highest entered mark is accepted (not "lower than")', () => {
+  const existingResults = [{ studentId: 's1', marks: 50, absent: false }];
+  assert.equal(assessmentService.validateMaximumMarksInput('50', existingResults).valid, true);
+});
+
+test('setMaximumMarks: changes only the denominator — stored student marks are never rescaled or mutated', () => {
+  const classroom = buildClassroomWithScienceOnly();
+  const assessment = assessmentService.createNewAssessment(classroom, { title: 'Quarterly', type: 'Quarterly', academicYear: '2026-2027', date: '2026-09-24', subjectIds: ['record-science'] });
+  const [subject] = assessment.assessmentSubjects;
+  assessmentService.recordStudentMarks(subject, 's1', { marks: 35 });
+
+  assessmentService.setMaximumMarks(subject, 50);
+
+  const result = assessmentService.getStudentResult(subject, 's1');
+  assert.equal(result.marks, 35, 'the raw stored mark must stay exactly 35, never rescaled to 17.5');
+  assert.equal(assessmentService.getMaximumMarks(subject), 50);
+});
+
+test('TOTAL MARKS CHANGES THE INTERPRETATION: the same stored mark (35) reads as 35% against a maximum of 100, but 70% against a reduced maximum of 50', () => {
+  const classroom = buildClassroomWithScienceOnly();
+  const assessment = assessmentService.createNewAssessment(classroom, { title: 'Quarterly', type: 'Quarterly', academicYear: '2026-2027', date: '2026-09-24', subjectIds: ['record-science'] });
+  const [subject] = assessment.assessmentSubjects;
+  assessmentService.recordStudentMarks(subject, 's1', { marks: 35 });
+  assessmentService.updateAssessmentDetails(assessment, { title: assessment.title, type: assessment.type, academicYear: assessment.academicYear, date: assessment.date, passMarkPercent: 35 });
+
+  assert.equal(assessmentService.getStudentOutcome(assessment, 's1'), 'passed'); // 35/100 = 35% -> Pass (Yellow)
+
+  assessmentService.setMaximumMarks(subject, 50);
+  assert.equal(assessmentService.getStudentOutcome(assessment, 's1'), 'passed'); // 35/50 = 70% -> Pass (Green) — still passing, now for a different reason
+});
+
+test('PASS/FAIL USES CONFIGURED TOTAL MARKS: Total = 50, Pass Mark = 35% — the exact worked examples', () => {
+  assert.equal(outcomeFor(17, 50, 35), 'failed', '17/50 = 34% -> Fail');
+  assert.equal(outcomeFor(18, 50, 35), 'passed', '18/50 = 36% -> Pass');
+  assert.equal(outcomeFor(35, 50, 35), 'passed', '35/50 = 70% -> Pass');
+  assert.equal(outcomeFor(25, 50, 35), 'passed', '25/50 = 50% -> Pass');
+});
+
+test('BACKWARD COMPATIBILITY: an Assessment whose Subjects were never touched still behaves exactly as before — maximumMarks stays 100 by default', () => {
+  const classroom = buildClassroomWithScienceOnly();
+  const assessment = assessmentService.createNewAssessment(classroom, { title: 'Quarterly', type: 'Quarterly', academicYear: '2026-2027', date: '2026-09-24', subjectIds: ['record-science'] });
+  const [subject] = assessment.assessmentSubjects;
+  assert.equal(assessmentService.getMaximumMarks(subject), 100);
+  assert.equal(subject.maximumMarks, 100);
+});
