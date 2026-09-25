@@ -467,6 +467,25 @@ select:focus {
   background-color: color-mix(in srgb, var(--tonal-green-hue) 48%, var(--color-surface));
 }
 
+/* Neutral tonal — for a supporting/utility action that isn't blue
+   (already "the recurring/primary-adjacent action" — see
+   .btn--tonal-blue's own comment) or green (already "an important,
+   state-changing action" — see .btn--tonal-green's own comment). A
+   restrained grey wash keeps it from competing with either, e.g.
+   ui/views/AssessmentManagementView.js's own "Import Spreadsheet",
+   sitting beside "Publish Assessment" without matching its semantic
+   weight. */
+.btn--tonal-neutral {
+  background-color: color-mix(in srgb, var(--color-muted) 16%, var(--color-surface));
+  color: var(--color-ink);
+}
+.btn--tonal-neutral:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-muted) 24%, var(--color-surface));
+}
+.btn--tonal-neutral:active:not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-muted) 30%, var(--color-surface));
+}
+
 .btn--text {
   color: var(--color-ink);
   padding: 0.6rem 0.5rem;
@@ -11989,6 +12008,37 @@ button.recognition-bento__hero-winner-name {
 .subject-danger-zone-icon {
   color: var(--color-danger);
   flex-shrink: 0;
+}
+
+/* Deliberately NOT redesigning the danger zone itself beyond this
+   file's own action-layout fix below: docs/classmate_ui_consistency_guidelines.md's
+   own destructive-actions section explicitly documents "avoid a large
+   'DANGER ZONE' heading... dramatic language" and "prefer... a small
+   warning/alert icon paired with a plainly-worded action label...
+   instead of a shouted section heading; the action's own label should
+   say what it does, so a separate 'Danger Zone' caption above it adds
+   no information" — the existing .subject-danger-zone above (icon +
+   "Delete Assessment", quiet left-border accent, no background fill)
+   already satisfies every actual requirement here (compact, clearly
+   separated, semantic red only, never a giant block); it doesn't need
+   a heading added on top of it.
+
+   Assessment step's own action layout — "+ Add Subject" and the
+   Import/Publish row must NOT stretch to the full page width the way
+   a plain <button> would as a direct child of
+   .learning-management__section (that section is a flex column with
+   the default align-items: stretch). align-self here overrides just
+   these items, back to their own natural content width, without
+   touching the shared section's own stretch behaviour for anything
+   else inside it. */
+.assessment-add-subject-button {
+  align-self: flex-start;
+}
+.assessment-actions-row {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  align-self: flex-start;
 }
 
 /* SearchableSelect — reusable autocomplete dropdown. See

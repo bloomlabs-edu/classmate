@@ -976,8 +976,9 @@ function renderAssessmentStep(classroom, assessment, isEditingDetails, draft, li
 
   const addSubjectButton = document.createElement('button');
   addSubjectButton.type = 'button';
-  addSubjectButton.className = 'btn btn--primary';
-  addSubjectButton.textContent = '+ Add Subject';
+  addSubjectButton.className = 'btn btn--tonal btn--tonal-blue assessment-add-subject-button';
+  addSubjectButton.appendChild(createIcon('plus', { size: 16 }));
+  addSubjectButton.append('Add Subject');
   addSubjectButton.addEventListener('click', handlers.onGoToAddSubject);
   section.appendChild(addSubjectButton);
 
@@ -998,26 +999,32 @@ function renderAssessmentStep(classroom, assessment, isEditingDetails, draft, li
   });
   section.appendChild(importFileInput);
 
+  const actionsRow = document.createElement('div');
+  actionsRow.className = 'assessment-actions-row';
+
   const importButton = document.createElement('button');
   importButton.type = 'button';
-  importButton.className = 'btn btn--secondary';
-  importButton.textContent = 'Import Spreadsheet';
+  importButton.className = 'btn btn--tonal btn--tonal-neutral';
+  importButton.appendChild(createIcon('file-up', { size: 16 }));
+  importButton.append('Import Spreadsheet');
   importButton.addEventListener('click', () => importFileInput.click());
-  section.appendChild(importButton);
+  actionsRow.appendChild(importButton);
 
   if (assessment.status === 'Draft') {
     const publishButton = document.createElement('button');
     publishButton.type = 'button';
-    publishButton.className = 'btn btn--secondary learning-management__publish-assessment-button';
-    publishButton.textContent = 'Publish Assessment';
+    publishButton.className = 'btn btn--tonal btn--tonal-green';
+    publishButton.appendChild(createIcon('check-circle-2', { size: 16 }));
+    publishButton.append('Publish Assessment');
     publishButton.addEventListener('click', () => handlers.onPublishAssessment(assessment));
-    section.appendChild(publishButton);
+    actionsRow.appendChild(publishButton);
   } else {
     const publishedNotice = document.createElement('p');
     publishedNotice.className = 'learning-management__publish-assessment-notice';
     publishedNotice.textContent = `\u2713 Published \u2014 students have been notified.`;
-    section.appendChild(publishedNotice);
+    actionsRow.appendChild(publishedNotice);
   }
+  section.appendChild(actionsRow);
 
   section.appendChild(renderAssessmentDangerZone(assessment, handlers));
 
@@ -1177,7 +1184,8 @@ function renderAssessmentDangerZone(assessment, handlers) {
   const deleteButton = document.createElement('button');
   deleteButton.type = 'button';
   deleteButton.className = 'btn btn--danger';
-  deleteButton.textContent = 'Delete Assessment';
+  deleteButton.appendChild(createIcon('trash-2', { size: 16 }));
+  deleteButton.append('Delete Assessment');
   deleteButton.addEventListener('click', () => handlers.onDeleteAssessment(assessment));
   zone.appendChild(deleteButton);
 
@@ -1283,7 +1291,8 @@ function renderAssessmentDetailsSection(classroom, assessment, isEditingDetails,
     const saveButton = document.createElement('button');
     saveButton.type = 'button';
     saveButton.className = 'btn btn--primary';
-    saveButton.textContent = 'Save';
+    saveButton.appendChild(createIcon('check', { size: 16 }));
+    saveButton.append('Save');
     saveButton.addEventListener('click', handlers.onSaveAssessmentDetails);
     footer.appendChild(saveButton);
     const cancelButton = document.createElement('button');
