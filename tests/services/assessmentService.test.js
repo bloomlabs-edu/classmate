@@ -12,6 +12,18 @@ function buildClassroomWithScienceOnly() {
   return classroom;
 }
 
+/** For the Edit Details "SUBJECTS" section's own multi-subject tests — a classroom + Learning Record with three real subjects, so an Assessment can bundle all three with independent maximumMarks. */
+function buildClassroomWithThreeSubjects() {
+  const classroom = createClassroom({ id: 'c1', schoolName: 'Test School', gradeSection: 'G1' });
+  classroom.learningRecord.subjects.push(
+    { id: 'record-science', subjectId: 'science', title: 'Science', units: [] },
+    { id: 'record-maths', subjectId: 'maths', title: 'Mathematics', units: [] },
+    { id: 'record-social', subjectId: 'social_science', title: 'Social Science', units: [] }
+  );
+  classroom.teams = [{ id: 't1', name: 'Team 1', students: [{ id: 's1', name: 'Asha' }] }];
+  return classroom;
+}
+
 test('getSubjectTitle: resolves an EXISTING manually-created Assessment\'s subjectId (a Learning Record Subject record id) — "1st Mid Term" regression', () => {
   const classroom = buildClassroomWithScienceOnly();
   // Mirrors createNewAssessment()'s own shape for a pre-existing, manually created Assessment.
@@ -518,4 +530,124 @@ test('BACKWARD COMPATIBILITY: an Assessment whose Subjects were never touched st
   const [subject] = assessment.assessmentSubjects;
   assert.equal(assessmentService.getMaximumMarks(subject), 100);
   assert.equal(subject.maximumMarks, 100);
+});
+
+// ---------------------------------------------------------------------
+// Edit Details' own "SUBJECTS" section — a second, equally real editing
+// surface for the exact same per-Subject maximumMarks the Gradebook's
+// inline subject-header edit already exposes (see
+// ui/views/AssessmentManagementView.js's own
+// renderSubjectsTotalMarksSection()/onDraftSubjectMaximumMarksChange/
+// onSaveAssessmentDetails). These tests exercise the same service-level
+// calls that handler makes for each Subject in the batch Save it does —
+// AssessmentManagementView.js itself is DOM-heavy and untested directly
+// (same convention as every other view in this codebase), so live
+// browser verification covers the rendering/interaction layer; these
+// lock down the underlying business rules that make it correct.
+
+test('EDIT DETAILS LOADS ALL SUBJECTS: an Assessment with three Subjects exposes all three, each with its own current maximumMarks', () => {
+  const classroom = buildClassroomWithThreeSubjects();
+  const assessment = assessmentService.createNewAssessment(classroom, {
+    title: 'Quarterly Examinations', type: 'Quarterly', academicYear: '2026-2027', date: '2026-09-24',
+    subjectIds: ['record-science', 'record-maths', 'record-social'],
+  });
+  assessmentService.setMaximumMarks(assessment.assessmentSubjects[0], 100); // Science
+  assessmentService.setMaximumMarks(assessment.assessmentSubjects[1], 50); // Mathematics
+  // Social Science left untouched — must still resolve to the 100 default.
+
+  assert.equal(assessment.assessmentSubjects.length, 3);
+  const displayed = assessment.assessmentSubjects.map((s) => ({
+    title: assessmentService.getSubjectTitle(classroom, s.subjectId),
+    maximumMarks: assessmentService.getMaximumMarks(s),
+  }));
+  assert.deepEqual(displayed, [
+    { title: 'Science', maximumMarks: 100 },
+    { title: 'Mathematics', maximumMarks: 50 },
+    { title: 'Social Science', maximumMarks: 100 },
+  ]);
+});
+
+test('MULTIPLE SUBJECTS, INDEPENDENT MAXIMUMS: changing one Subject\'s Total Marks never touches another Subject\'s own value', () => {
+  const classroom = buildClassroomWithThreeSubjects();
+  const assessment = assessmentService.createNewAssessment(classroom, {
+    title: 'Quarterly Examinations', type: 'Quarterly', academicYear: '2026-2027', date: '2026-09-24',
+    subjectIds: ['record-science', 'record-maths', 'record-social'],
+  });
+  const [science, maths, social] = assessment.assessmentSubjects;
+  assessmentService.setMaximumMarks(science, 100);
+  assessmentService.setMaximumMarks(maths, 50);
+  assessmentService.setMaximumMarks(social, 100);
+
+  assessmentService.setMaximumMarks(science, 50); // Science: 100 -> 50
+
+  assert.equal(assessmentService.getMaximumMarks(science), 50);
+  assert.equal(assessmentService.getMaximumMarks(maths), 50, 'Mathematics must stay exactly as it was');
+  assert.equal(assessmentService.getMaximumMarks(social), 100, 'Social Science must stay exactly as it was');
+});
+
+test('SAVE BEHAVIOUR: Science 100 -> 50 does not mutate stored marks, and percentage/bucket/Pass-Fail recalculate against the new maximum', () => {
+  const classroom = buildClassroomWithThreeSubjects();
+  const assessment = assessmentService.createNewAssessment(classroom, {
+    title: 'Quarterly Examinations', type: 'Quarterly', academicYear: '2026-2027', date: '2026-09-24',
+    subjectIds: ['record-science'],
+  });
+  const [science] = assessment.assessmentSubjects;
+  assessmentService.recordStudentMarks(science, 's1', { marks: 35 });
+  assessmentService.updateAssessmentDetails(assessment, { title: assessment.title, type: assessment.type, academicYear: assessment.academicYear, date: assessment.date, passMarkPercent: 35 });
+
+  assert.equal(assessmentService.getStudentOutcome(assessment, 's1'), 'passed'); // 35/100 = 35%
+
+  // The exact validate-then-apply sequence onSaveAssessmentDetails()
+  // itself performs for each Subject's own Total Marks field.
+  const validation = assessmentService.validateMaximumMarksInput('50', science.studentResults);
+  assert.equal(validation.valid, true);
+  assessmentService.setMaximumMarks(science, validation.value);
+
+  const result = assessmentService.getStudentResult(science, 's1');
+  assert.equal(result.marks, 35, 'the stored raw mark must never be rescaled or mutated');
+  assert.equal(assessmentService.getMaximumMarks(science), 50);
+  assert.equal(assessmentService.getStudentOutcome(assessment, 's1'), 'passed'); // now 35/50 = 70%, still passing for a different reason
+});
+
+test('INVALID VALUES ARE REJECTED: Edit Details\' own per-Subject validation reuses the identical validator the Gradebook\'s inline edit uses — non-numeric, zero, and negative are all rejected', () => {
+  const classroom = buildClassroomWithScienceOnly();
+  const assessment = assessmentService.createNewAssessment(classroom, { title: 'Quarterly', type: 'Quarterly', academicYear: '2026-2027', date: '2026-09-24', subjectIds: ['record-science'] });
+  const [science] = assessment.assessmentSubjects;
+
+  assert.equal(assessmentService.validateMaximumMarksInput('abc', science.studentResults).valid, false);
+  assert.equal(assessmentService.validateMaximumMarksInput('0', science.studentResults).valid, false);
+  assert.equal(assessmentService.validateMaximumMarksInput('-5', science.studentResults).valid, false);
+});
+
+test('A NEW MAXIMUM BELOW AN EXISTING MARK IS REJECTED from Edit Details exactly as it is from the Gradebook', () => {
+  const classroom = buildClassroomWithScienceOnly();
+  const assessment = assessmentService.createNewAssessment(classroom, { title: 'Quarterly', type: 'Quarterly', academicYear: '2026-2027', date: '2026-09-24', subjectIds: ['record-science'] });
+  const [science] = assessment.assessmentSubjects;
+  assessmentService.recordStudentMarks(science, 's1', { marks: 90 });
+
+  const result = assessmentService.validateMaximumMarksInput('50', science.studentResults);
+  assert.equal(result.valid, false);
+  assert.match(result.error, /90/);
+  assert.equal(assessmentService.getMaximumMarks(science), 100, 'the rejected edit must never have been applied');
+});
+
+test('EDIT DETAILS AND GRADEBOOK STAY SYNCHRONIZED: both are views onto the exact same AssessmentSubject.maximumMarks — there is only one source of truth', () => {
+  const classroom = buildClassroomWithScienceOnly();
+  const assessment = assessmentService.createNewAssessment(classroom, { title: 'Quarterly', type: 'Quarterly', academicYear: '2026-2027', date: '2026-09-24', subjectIds: ['record-science'] });
+  const [science] = assessment.assessmentSubjects;
+
+  // Simulates the Gradebook's own inline edit (applyGradebookMaximumMarksEdit).
+  assessmentService.setMaximumMarks(science, 60);
+  // Edit Details, opened afterward, must read the exact same value —
+  // buildAssessmentDetailsDraftFrom() itself calls getMaximumMarks(),
+  // exercised directly here.
+  assert.equal(assessmentService.getMaximumMarks(science), 60);
+
+  // Simulates Edit Details' own Save (onSaveAssessmentDetails).
+  const validation = assessmentService.validateMaximumMarksInput('75', science.studentResults);
+  assessmentService.setMaximumMarks(science, validation.value);
+  // The Gradebook, re-rendered afterward, must read the exact same
+  // updated value — there is no second, independent copy anywhere.
+  assert.equal(assessmentService.getMaximumMarks(science), 75);
+  assert.equal(science.maximumMarks, 75);
 });

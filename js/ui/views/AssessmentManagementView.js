@@ -224,6 +224,22 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
       // edit.
       passMarkPercentInput: String(assessmentService.getPassMarkPercent(assessment)),
       passMarkPercentError: null,
+      // Total Marks — SUBJECT-specific (models/AssessmentSubject.js's
+      // own maximumMarks), never flattened into one Assessment-wide
+      // value: a multi-subject Assessment can legitimately mix e.g.
+      // Science /100 and Maths /50. Edit Details is a second, equally
+      // real editing surface for the exact same field the Gradebook's
+      // own subject header already edits (see
+      // handlers.onGradebookMaximumMarksChange) — both go through
+      // assessmentService.setMaximumMarks()/getMaximumMarks(), so
+      // AssessmentSubject.maximumMarks itself is the one source of
+      // truth; nothing here is a second, independent copy of it.
+      // Keyed by assessmentSubject.id, same convention as
+      // subjectMaximumMarksErrors below.
+      subjectMaximumMarksInputs: new Map(
+        assessment.assessmentSubjects.map((assessmentSubject) => [assessmentSubject.id, String(assessmentService.getMaximumMarks(assessmentSubject))])
+      ),
+      subjectMaximumMarksErrors: new Map(),
     };
   }
 
@@ -618,6 +634,35 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
       hasUnsavedAssessmentDetailsChanges = true;
       rerender();
     },
+    /**
+     * One Subject's own Total Marks field within Edit Details — kept
+     * as its own handler (not folded into onDraftAssessmentDetailsChange
+     * above) since it's keyed by assessmentSubject.id, not a flat
+     * field name, and validated immediately against that SAME
+     * Subject's own already-entered marks via
+     * assessmentService.validateMaximumMarksInput() — the identical
+     * validator the Gradebook's own inline edit
+     * (onGradebookMaximumMarksChange below) already uses, so "reject
+     * non-numeric/zero/negative" and "reject a new maximum lower than
+     * an already-entered mark" behave identically in both places.
+     * Invalid input is never silently discarded — the error is shown
+     * inline immediately, and Save below re-validates defensively
+     * regardless.
+     */
+    onDraftSubjectMaximumMarksChange: (assessmentSubjectId, rawValue) => {
+      const assessmentSubject = selectedAssessment.assessmentSubjects.find((s) => s.id === assessmentSubjectId);
+      if (!assessmentSubject) return;
+      const result = assessmentService.validateMaximumMarksInput(rawValue, assessmentSubject.studentResults);
+      if (!result.valid) {
+        assessmentDetailsDraft.subjectMaximumMarksErrors.set(assessmentSubjectId, result.error);
+        rerender();
+        return;
+      }
+      assessmentDetailsDraft.subjectMaximumMarksErrors.delete(assessmentSubjectId);
+      assessmentDetailsDraft.subjectMaximumMarksInputs.set(assessmentSubjectId, String(result.value));
+      hasUnsavedAssessmentDetailsChanges = true;
+      rerender();
+    },
     /** Returns true once the Assessment's details have actually been saved, false if validation blocked it (see navigateAwayGuard() above, which must not treat a blocked save as "safe to navigate away now"). */
     onSaveAssessmentDetails: () => {
       const parsedPassMark = assessmentService.parsePassMarkPercentInput(assessmentDetailsDraft.passMarkPercentInput);
@@ -626,7 +671,36 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
         rerender();
         return false;
       }
+
+      // Defensive re-validation of every Subject's own Total Marks —
+      // not just relying on onDraftSubjectMaximumMarksChange above
+      // having already validated, the same reasoning
+      // renderSubjectStep's own onSaveMarks() already documents: a
+      // mark can be entered elsewhere (the Gradebook, open in another
+      // tab) after this draft's own value was last validated here,
+      // making a previously-valid draft newly invalid. All-or-nothing:
+      // one Subject's invalid Total Marks blocks the whole Save,
+      // exactly like Pass Mark above, rather than partially applying.
+      const subjectValidationResults = selectedAssessment.assessmentSubjects.map((assessmentSubject) => ({
+        assessmentSubject,
+        result: assessmentService.validateMaximumMarksInput(
+          assessmentDetailsDraft.subjectMaximumMarksInputs.get(assessmentSubject.id),
+          assessmentSubject.studentResults
+        ),
+      }));
+      const hasInvalidSubject = subjectValidationResults.some(({ result }) => !result.valid);
+      if (hasInvalidSubject) {
+        subjectValidationResults.forEach(({ assessmentSubject, result }) => {
+          if (!result.valid) assessmentDetailsDraft.subjectMaximumMarksErrors.set(assessmentSubject.id, result.error);
+        });
+        rerender();
+        return false;
+      }
+
       assessmentService.updateAssessmentDetails(selectedAssessment, { ...assessmentDetailsDraft, passMarkPercent: parsedPassMark.value });
+      subjectValidationResults.forEach(({ assessmentSubject, result }) => {
+        assessmentService.setMaximumMarks(assessmentSubject, result.value);
+      });
       workspaceService.save(classroom);
       isEditingAssessmentDetails = false;
       hasUnsavedAssessmentDetailsChanges = false;
@@ -1202,6 +1276,8 @@ function renderAssessmentDetailsSection(classroom, assessment, isEditingDetails,
       wrapper.appendChild(passMarkError);
     }
 
+    wrapper.appendChild(renderSubjectsTotalMarksSection(classroom, assessment, true, draft, handlers));
+
     const footer = document.createElement('div');
     footer.className = 'assessment-marks-footer';
     const saveButton = document.createElement('button');
@@ -1235,6 +1311,8 @@ function renderAssessmentDetailsSection(classroom, assessment, isEditingDetails,
 
     if (scheduleDisplay) wrapper.appendChild(renderScheduleReadOnlyRow(scheduleDisplay, handlers));
 
+    wrapper.appendChild(renderSubjectsTotalMarksSection(classroom, assessment, false, draft, handlers));
+
     const footer = document.createElement('div');
     footer.className = 'assessment-marks-footer';
     const lastSaved = document.createElement('p');
@@ -1251,6 +1329,83 @@ function renderAssessmentDetailsSection(classroom, assessment, isEditingDetails,
   }
 
   return wrapper;
+}
+
+/**
+ * SUBJECTS — Edit Details' own second, equally real place to see and
+ * edit each Subject's Total Marks (models/AssessmentSubject.js's own
+ * maximumMarks), not just the Gradebook's inline subject-header edit
+ * (see renderGradebookStep()). Deliberately per-Subject rows, never
+ * one Assessment-wide field: a multi-subject Assessment can legitimately
+ * mix e.g. Science /100 and Maths /50 (see this file's own
+ * assessmentDetailsDraft.subjectMaximumMarksInputs, keyed by
+ * assessmentSubject.id). Both editing surfaces read/write the exact
+ * same assessmentSubject.maximumMarks via
+ * services/assessmentService.js's own getMaximumMarks()/
+ * setMaximumMarks()/validateMaximumMarksInput() — there is only ever
+ * one stored value; this is a second VIEW onto it, not a second copy.
+ *
+ * Omitted entirely once an Assessment has no Subjects yet (the "+ Add
+ * Subject" empty state already covers that case elsewhere) — nothing
+ * useful to show or edit here yet.
+ */
+function renderSubjectsTotalMarksSection(classroom, assessment, isEditingDetails, draft, handlers) {
+  const fragment = document.createDocumentFragment();
+  if (assessment.assessmentSubjects.length === 0) return fragment;
+
+  const label = document.createElement('p');
+  label.className = 'assessment-details-section__subjects-label';
+  label.textContent = 'Subjects';
+  fragment.appendChild(label);
+
+  const list = document.createElement('div');
+  list.className = 'assessment-details-section__subjects';
+
+  assessment.assessmentSubjects.forEach((assessmentSubject) => {
+    const row = document.createElement('div');
+    row.className = 'assessment-details-section__subject-row';
+
+    const titleEl = document.createElement('span');
+    titleEl.className = 'assessment-details-section__subject-title';
+    titleEl.textContent = assessmentService.getSubjectTitle(classroom, assessmentSubject.subjectId) || '(Subject removed)';
+    row.appendChild(titleEl);
+
+    const marksField = document.createElement('div');
+    marksField.className = 'assessment-details-section__subject-marks-field';
+    const marksLabel = document.createElement('span');
+    marksLabel.className = 'assessment-details-section__subject-marks-label';
+    marksLabel.textContent = 'Total Marks';
+    marksField.appendChild(marksLabel);
+
+    if (isEditingDetails) {
+      const marksInput = document.createElement('input');
+      marksInput.type = 'number';
+      marksInput.className = 'assessment-details-section__subject-marks-input';
+      marksInput.min = '0.01';
+      marksInput.value = draft.subjectMaximumMarksInputs.get(assessmentSubject.id);
+      marksInput.addEventListener('change', () => {
+        handlers.onDraftSubjectMaximumMarksChange(assessmentSubject.id, marksInput.value);
+      });
+      marksField.appendChild(marksInput);
+    } else {
+      const marksValue = document.createElement('span');
+      marksValue.className = 'assessment-details-section__subject-marks-value';
+      marksValue.textContent = String(assessmentService.getMaximumMarks(assessmentSubject));
+      marksField.appendChild(marksValue);
+    }
+    row.appendChild(marksField);
+    list.appendChild(row);
+
+    if (isEditingDetails && draft.subjectMaximumMarksErrors.get(assessmentSubject.id)) {
+      const error = document.createElement('p');
+      error.className = 'learning-management__inline-error assessment-details-section__subject-marks-error';
+      error.textContent = draft.subjectMaximumMarksErrors.get(assessmentSubject.id);
+      list.appendChild(error);
+    }
+  });
+
+  fragment.appendChild(list);
+  return fragment;
 }
 
 /** "Scheduled: 24 Sep · Period 1–2" + "View in Timetable" — see resolveLiveScheduleDisplay() above. Reuses the existing Timetable route (see ui/router.js), never a new one. */
