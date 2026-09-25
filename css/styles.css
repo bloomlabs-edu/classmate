@@ -4017,6 +4017,163 @@ textarea.reading-editor__block-input {
   background-color: #EAF2FB;
   color: var(--color-primary);
 }
+.lesson-plan-review-queue__row-action {
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary);
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------
+   Weekly Plan Review (ui/views/WeeklyPlanReviewView.js) — the Monday-
+   Friday grid, reused by both the Fellow (pre-submit) and a Program
+   Manager (post-submit review). Reuses the exact status-badge color
+   convention already established for .lesson-plan-review__status-badge
+   just above (submitted=blue, changes_requested=orange, approved=green)
+   — never a second color system, plus two additional muted tones for
+   the two DERIVED (never stored) states, not_started/draft.
+   --------------------------------------------------------------------- */
+.weekly-plan-review {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 1.5rem 3rem;
+}
+.weekly-plan-review__header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 1.25rem 0 0.25rem;
+}
+.weekly-plan-review__title {
+  font-size: 1.4rem;
+  font-weight: var(--font-weight-black);
+  margin: 0;
+}
+.weekly-plan-review__subtitle {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  margin: 0 0 0.6rem;
+}
+.weekly-plan-review__loading,
+.weekly-plan-review__error {
+  color: var(--color-muted);
+}
+.weekly-plan-review__view-timetable {
+  margin: 0 0 0.75rem;
+}
+.weekly-plan-review__status-badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  border-radius: var(--radius-pill);
+  padding: 0.3rem 0.7rem;
+  margin-bottom: 0.9rem;
+  background-color: #EBEDEF;
+  color: var(--color-muted);
+}
+.weekly-plan-review__status-badge--not_started {
+  background-color: #EBEDEF;
+  color: var(--color-muted);
+}
+.weekly-plan-review__status-badge--draft {
+  background-color: #F0EEF9;
+  color: var(--color-muted);
+}
+.weekly-plan-review__status-badge--submitted {
+  background-color: #EAF2FB;
+  color: var(--color-primary);
+}
+.weekly-plan-review__status-badge--changes_requested {
+  background-color: #FDEEE0;
+  color: var(--color-warning, #BF5F1A);
+}
+.weekly-plan-review__status-badge--approved {
+  background-color: #EAF5E3;
+  color: var(--color-success, #4C9A2A);
+}
+.weekly-plan-review__actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-bottom: 1.25rem;
+}
+
+.weekly-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(200px, 1fr));
+  gap: var(--space-4);
+  overflow-x: auto;
+}
+.weekly-plan-grid__day {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 200px;
+}
+.weekly-plan-grid__day-header {
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-bold);
+  margin: 0;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.weekly-plan-grid__day-note {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+.weekly-plan-grid__period-card {
+  background-color: #ffffff;
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.weekly-plan-grid__period-header {
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  font-weight: var(--font-weight-bold);
+  font-size: 0.85rem;
+  cursor: pointer;
+  color: var(--color-ink);
+}
+.weekly-plan-grid__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.weekly-plan-grid__field-label {
+  font-size: 0.7rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.weekly-plan-grid__field-value {
+  font-size: 0.85rem;
+  word-break: break-word;
+}
+.weekly-plan-grid__open-full-plan {
+  align-self: flex-start;
+  padding: 0;
+  margin-top: 0.2rem;
+}
+
+@media (max-width: 1024px) {
+  .weekly-plan-grid {
+    grid-template-columns: repeat(5, minmax(220px, 1fr));
+  }
+}
+@media (max-width: 480px) {
+  .weekly-plan-grid {
+    grid-auto-flow: column;
+  }
+}
 
 /* ---------------------------------------------------------------------
    Lesson Plan Review (ui/views/LessonPlanReviewView.js) — the reviewer's
@@ -5342,6 +5499,15 @@ button.wizard-checklist__row:hover {
   background-color: #e2effb;
   color: var(--color-primary-strong);
 }
+/* ui/views/AssessmentManagementView.js's "Scheduled from Timetable" cards — same amber/green tones as .status-badge--submitted-late/.status-badge--submitted above, named for this context instead of reusing those unrelated-domain modifiers directly. */
+.status-badge--assessment-pending {
+  background-color: #fff3d6;
+  color: #b7791f;
+}
+.status-badge--assessment-set-up {
+  background-color: #e4f5e8;
+  color: #1e8a3c;
+}
 
 .new-activity-form {
   display: flex;
@@ -6011,6 +6177,72 @@ button.wizard-checklist__row:hover {
 .user-bar__notification-control {
   position: relative;
 }
+/* Slack identity link control — same button/popover shape as the
+   notification bell immediately below (UserBar.js's own
+   createSlackIntegrationControl()), deliberately reusing these exact
+   rules rather than a parallel set. */
+.user-bar__slack-control {
+  position: relative;
+}
+.user-bar__slack-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background-color: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 50%;
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+  color: #e5e7eb;
+  transition: background-color var(--duration-fast, 150ms) var(--ease-standard, ease);
+}
+.user-bar__slack-button:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+}
+.user-bar__slack-button[aria-expanded="true"] {
+  background-color: rgba(255, 255, 255, 0.16);
+}
+.user-bar__slack-icon {
+  display: block;
+  color: #e5e7eb;
+}
+.user-bar__slack-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--color-success, #2e9e5b);
+  border: 1px solid var(--color-chrome-bg);
+}
+.user-bar__slack-popover {
+  display: none;
+  flex-direction: column;
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  width: 260px;
+  background-color: var(--color-surface);
+  border-radius: var(--radius-card);
+  box-shadow: var(--elevation-dialog);
+  padding: 0.85rem;
+  gap: 0.6rem;
+  z-index: 20;
+}
+.user-bar__slack-popover--open {
+  display: flex;
+}
+.user-bar__slack-status {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--color-muted);
+  line-height: 1.4;
+}
+
 /* Circular, soft light-grey treatment (never blue) so the bell reads
    clearly against the header's own near-black background
    (--color-chrome-bg) — per explicit design direction. */
@@ -6621,6 +6853,15 @@ button.wizard-checklist__row:hover {
 
   --palette-community-wash: color-mix(in srgb, var(--color-pink) 6%, var(--color-surface));
   --palette-community-label: color-mix(in srgb, var(--color-pink) 35%, var(--color-ink));
+
+  /* Alert (Failed/Needs Help) and Neutral (Not Assessed / plain data) —
+     same wash/label convention as the palettes above, added for the
+     Assessment/Scorecard stat-tile system (see .stat-tile below). */
+  --palette-alert-wash: color-mix(in srgb, var(--color-danger) 6%, var(--color-surface));
+  --palette-alert-label: color-mix(in srgb, var(--color-danger) 35%, var(--color-ink));
+
+  --palette-neutral-wash: color-mix(in srgb, var(--color-muted) 8%, var(--color-surface));
+  --palette-neutral-label: var(--color-ink);
 }
 [data-theme='dark'] {
   --palette-celebrate-wash: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface));
@@ -6628,6 +6869,8 @@ button.wizard-checklist__row:hover {
   --palette-focus-wash: color-mix(in srgb, var(--color-warning) 10%, var(--color-surface));
   --palette-growth-wash: color-mix(in srgb, var(--color-success) 10%, var(--color-surface));
   --palette-community-wash: color-mix(in srgb, var(--color-pink) 10%, var(--color-surface));
+  --palette-alert-wash: color-mix(in srgb, var(--color-danger) 10%, var(--color-surface));
+  --palette-neutral-wash: color-mix(in srgb, var(--color-muted) 14%, var(--color-surface));
 }
 
 .dashboard-widget {
@@ -10156,6 +10399,46 @@ button.recognition-bento__hero-winner-name {
   margin: -0.35rem 0 0.5rem;
 }
 /*
+ * The Subject heading (.learning-management__step-heading) and a
+ * selected Unit's own heading (.learning-management__primary-section-heading)
+ * each pair with a plain "Edit" btn--text action via this row wrapper
+ * — see renderInlineRenameControl() in LearningManagementView.js. Not
+ * a menu, just a heading + one always-visible action sitting side by
+ * side.
+ */
+.learning-management__heading-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.25rem 0 0.5rem;
+}
+.learning-management__heading-row .learning-management__step-heading,
+.learning-management__heading-row .learning-management__primary-section-heading {
+  margin: 0;
+}
+.learning-management__rename-trigger {
+  padding: 0;
+  flex-shrink: 0;
+}
+.learning-management__rename-control {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  width: 100%;
+}
+.learning-management__rename-input {
+  flex: 1 1 200px;
+  min-width: 120px;
+  padding: 0.4rem 0.6rem;
+  font-size: 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+.learning-management__step-heading-input {
+  font-weight: var(--font-weight-black);
+}
+/*
  * Subject page Bento — Curriculum -> Units (-> Concepts), same quiet-
  * surface Bento language as .classroom-access-bento above (rounded
  * surface tiles, hierarchy from order/typography, no shadows or
@@ -11221,6 +11504,23 @@ button.recognition-bento__hero-winner-name {
   font-weight: normal;
   font-family: inherit;
 }
+/* ui/views/AssessmentManagementView.js's "Edit Assessment Details" Pass
+   Mark field — a "%" suffix beside a plain number input, reusing
+   .create-assessment-modal__labeled-input's own label/field styling
+   otherwise. */
+.assessment-details-section__pass-mark-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.assessment-details-section__pass-mark-input-row input {
+  width: 100px;
+  flex: none;
+}
+.assessment-details-section__pass-mark-suffix {
+  color: var(--color-muted);
+  font-weight: var(--font-weight-medium);
+}
 .create-assessment-modal__subjects-list {
   display: flex;
   flex-direction: column;
@@ -11453,6 +11753,76 @@ button.recognition-bento__hero-winner-name {
   color: var(--color-muted);
   font-size: 1.2rem;
   margin-left: 0.5rem;
+}
+
+/* ui/views/AssessmentManagementView.js's "Scheduled from Timetable"
+   cards — a richer, multi-line sibling of .navigation-row/
+   .learning-management__choice-option above, deliberately its own
+   class rather than an extension of those (which are the shared,
+   platform-wide single-line navigation pattern used across many other
+   lists — see ui/components/NavigationRow.js's own header comment).
+   Still exactly one clickable element per card, matching this app's
+   existing "the whole row is the button" convention. */
+.assessment-scheduled-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.assessment-scheduled-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
+  width: 100%;
+  text-align: left;
+  padding: var(--space-4);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background-color: var(--color-surface);
+  cursor: pointer;
+}
+.assessment-scheduled-card:hover {
+  border-color: var(--color-primary);
+}
+.assessment-scheduled-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.assessment-scheduled-card__title {
+  font-weight: var(--font-weight-bold);
+  font-size: 1.05rem;
+  color: var(--color-ink);
+}
+.assessment-scheduled-card__chevron {
+  flex-shrink: 0;
+  color: var(--color-muted);
+  font-size: 1.2rem;
+}
+.assessment-scheduled-card__subject {
+  margin: 0;
+  font-weight: var(--font-weight-medium);
+  font-size: 0.95rem;
+  color: var(--color-ink);
+}
+.assessment-scheduled-card__meta {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+.assessment-scheduled-card__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.assessment-scheduled-card__action {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary-strong);
 }
 
 .learning-management__curriculum-action {
@@ -12639,6 +13009,9 @@ button.recognition-bento__hero-winner-name {
 .student-name-element--clickable {
   cursor: pointer;
 }
+.student-name-element--clickable:hover .student-name-element__name {
+  text-decoration: underline;
+}
 .student-name-element__avatar {
   display: inline-flex;
   border-radius: 50%;
@@ -13362,40 +13735,390 @@ button.recognition-bento__hero-winner-name {
 }
 
 /* --- Header: compact hierarchy (title / secondary metadata / summary) --- */
+/* --- Individual Assessment header card: identity + actions + stat
+   tiles. Mirrors the Scorecard's own .scorecard__header-card
+   composition immediately below (eyebrow/title/meta, then a divider,
+   then the shared .stat-tile-grid) so both surfaces read as the same
+   ClassMate reporting-card language rather than two different screens
+   that happen to be next to each other. --- */
+.assessment-gradebook__header-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: var(--space-5);
+  margin-bottom: var(--space-5);
+}
 .assessment-gradebook__header {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--space-4);
   flex-wrap: wrap;
 }
 .assessment-gradebook__header-main {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: var(--space-2);
+  min-width: 0;
 }
 .assessment-gradebook__title {
-  font-size: 1.15rem;
+  font-size: 1.5rem;
   font-weight: var(--font-weight-black);
+  color: var(--color-ink);
   margin: 0;
 }
-.assessment-gradebook__subtitle {
-  font-size: 0.85rem;
-  color: var(--color-muted);
-  margin: 0;
+.assessment-gradebook__actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  flex-wrap: wrap;
 }
 .assessment-gradebook__edit-link {
   flex-shrink: 0;
-  font-size: 0.85rem;
-  opacity: 0.75;
+  font-size: 0.82rem;
+  padding: 0.45rem 0.9rem;
 }
-.assessment-gradebook__edit-link:hover {
-  opacity: 1;
+.assessment-gradebook__divider {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: var(--space-4) 0;
 }
-.assessment-gradebook__summary {
-  font-size: 0.85rem;
+/* --- Shared stat tile: reused by the Assessment header above AND the
+   Scorecard header below — one component, not two near-identical
+   ones. Semantic wash per meaning (never decorative color-per-column):
+   neutral/navy for plain counts, success for Passed, alert for Failed,
+   plain neutral-grey for Not Assessed. --- */
+.stat-tile-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.stat-tile {
+  flex: 1 1 108px;
+  border-radius: var(--radius-control);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.stat-tile__value {
+  font-size: 1.6rem;
+  font-weight: var(--font-weight-black);
+  line-height: 1.15;
+}
+.stat-tile__label {
+  font-size: 0.76rem;
+  font-weight: var(--font-weight-medium);
   color: var(--color-muted);
-  margin: 0 0 0.35rem;
+}
+.stat-tile--neutral {
+  background-color: var(--palette-learn-wash);
+}
+.stat-tile--neutral .stat-tile__value {
+  color: var(--palette-learn-label);
+}
+.stat-tile--success {
+  background-color: var(--palette-growth-wash);
+}
+.stat-tile--success .stat-tile__value {
+  color: var(--palette-growth-label);
+}
+.stat-tile--alert {
+  background-color: var(--palette-alert-wash);
+}
+.stat-tile--alert .stat-tile__value {
+  color: var(--palette-alert-label);
+}
+.stat-tile--muted {
+  background-color: var(--palette-neutral-wash);
+}
+.stat-tile--muted .stat-tile__value {
+  color: var(--color-ink);
+}
+
+/* --- Metadata chips: "Quarterly" / "24 Sep 2026 · Period 3–4" /
+   "2026–27" as distinct grouped pills instead of one dot-joined
+   sentence. --- */
+.meta-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.meta-chip {
+  display: inline-flex;
+  align-items: center;
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: 0.28rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-ink);
+}
+
+/* --- Performance legend card: shared by the Assessment header and the
+   Scorecard header. Red/Yellow/Green thresholds are read verbatim from
+   config/assessmentMarksColorConfig.js by the caller — nothing here
+   hardcodes a number, only paints whatever text/values it's given. --- */
+.performance-legend-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+}
+.performance-legend-card__label {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  flex-basis: 100%;
+}
+.performance-legend-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  flex: 1 1 auto;
+}
+.performance-legend-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-3);
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
+}
+.performance-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.performance-legend-chip--red .performance-legend-swatch {
+  background-color: var(--color-danger);
+}
+.performance-legend-chip--yellow .performance-legend-swatch {
+  background-color: var(--color-warning);
+}
+.performance-legend-chip--green .performance-legend-swatch {
+  background-color: var(--color-success);
+}
+.performance-legend-chip-label {
+  font-weight: var(--font-weight-bold);
+  font-size: 0.8rem;
+  color: var(--color-ink);
+}
+.performance-legend-chip-desc {
+  font-size: 0.78rem;
+  color: var(--color-muted);
+}
+.performance-legend-card__pass-mark {
+  flex-shrink: 0;
+  text-align: right;
+}
+.performance-legend-card__pass-mark-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+.performance-legend-card__pass-mark-value {
+  display: block;
+  font-size: 1.3rem;
+  font-weight: var(--font-weight-black);
+  color: var(--color-ink);
+}
+
+@media (max-width: 640px) {
+  .assessment-gradebook__header-card,
+  .scorecard__header-card {
+    padding: var(--space-4);
+  }
+  .stat-tile {
+    flex-basis: 45%;
+  }
+  .performance-legend-card {
+    align-items: flex-start;
+  }
+  .performance-legend-card__pass-mark {
+    text-align: left;
+  }
+}
+
+/* ui/views/AssessmentManagementView.js's Assessments home step — "+
+   Create Assessment" and "Scorecard" side by side. */
+.assessment-home__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/* ui/views/ScorecardView.js — reuses .assessment-gradebook/
+   .assessment-gradebook__scroll/.assessment-gradebook__name-cell
+   directly (sticky Student column + horizontal scroll come for free,
+   no new rule needed for either), plus the existing
+   .gradebook-cell--high/mid/low bucket classes (same restrained
+   soft-background + accent-border treatment the individual
+   Assessment Gradebook already uses — deliberately not a second,
+   louder colour system for the Scorecard). Everything below is this
+   view's own header/stat/chip/legend presentation layer.
+*/
+
+/* --- Header card: eyebrow, title, meta, stat tiles --- */
+.scorecard__header-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: var(--space-5);
+  margin-bottom: var(--space-5);
+}
+.scorecard__eyebrow {
+  margin: 0 0 var(--space-1);
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-primary-strong);
+}
+.scorecard__title {
+  margin: 0 0 var(--space-1);
+  font-size: 1.5rem;
+  font-weight: var(--font-weight-black);
+  color: var(--color-ink);
+}
+.scorecard__meta {
+  margin: 0 0 var(--space-4);
+  font-size: 0.9rem;
+  color: var(--color-muted);
+}
+/* Stat tiles now use the shared .stat-tile-grid/.stat-tile component
+   (see immediately above the Assessment Gradebook header CSS) — no
+   Scorecard-only stat styling left here. */
+
+/* --- Subject overview chips --- */
+.scorecard__section-label {
+  margin: 0 0 var(--space-2);
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+.scorecard__subject-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
+}
+.scorecard__subject-chip {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-3);
+  min-width: 140px;
+}
+.scorecard__subject-chip-title {
+  display: block;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+  font-size: 0.9rem;
+}
+.scorecard__subject-chip-count {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
+/* Legend now uses the shared .performance-legend-card component (see
+   above) — no Scorecard-only legend styling left here. */
+
+/* --- Table container --- */
+.scorecard__table-container {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: var(--space-2);
+}
+.scorecard__scroll {
+  border: none; /* the outer .scorecard__table-container already provides the visible border */
+}
+
+/* --- Subject headers --- */
+.scorecard__subject-header {
+  min-width: 120px;
+}
+.scorecard__subject-header-title {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.scorecard__subject-header-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-weight: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.scorecard__subject-header-link:hover {
+  color: var(--color-primary-strong);
+  text-decoration: underline;
+}
+.scorecard__subject-header-meta,
+.scorecard__subject-header-note {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: var(--font-weight-regular);
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--color-muted);
+  margin-top: 2px;
+}
+
+/* --- Score cells --- */
+.scorecard__cell {
+  white-space: nowrap;
+  padding: var(--space-2) var(--space-3) !important;
+}
+.scorecard__cell--empty {
+  color: var(--color-muted);
+  text-align: center;
+}
+.scorecard__cell-score {
+  font-size: 1rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+}
+.scorecard__cell-max {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
+/* --- Overall column --- */
+.scorecard__overall-cell {
+  white-space: nowrap;
+}
+.scorecard__overall-percent {
+  font-size: 1.05rem;
+  font-weight: var(--font-weight-black);
+  color: var(--color-ink);
+}
+.scorecard__overall-count {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--color-muted);
 }
 
 /* --- Table shell --- */
@@ -13472,18 +14195,63 @@ button.recognition-bento__hero-winner-name {
   background: color-mix(in srgb, var(--color-surface-muted, #f4f4f4) 45%, var(--color-surface, #fff));
 }
 
-/* --- Subject headers: title + maximum marks --- */
+/* --- Notebook Checkpoints' own sticky Score column — same exact
+   sticky mechanism/left offset as .assessment-gradebook__roll-header
+   above (this view has no Roll column of its own, so Score takes that
+   same second-sticky-column slot instead), narrow by design since it
+   only ever shows a compact "⭐ <number>". See
+   ui/views/NotebookCheckpointsView.js's own populateScoreCell(). --- */
+.notebook-checkpoints__score-header,
+.notebook-checkpoints__score-cell {
+  position: sticky;
+  left: 150px;
+  z-index: 1;
+  min-width: 76px;
+  background: var(--color-surface, #fff);
+}
+.assessment-gradebook thead .notebook-checkpoints__score-header {
+  z-index: 3;
+  background: var(--color-surface-muted, #f4f4f4);
+}
+.assessment-gradebook tbody tr:nth-child(even) .notebook-checkpoints__score-cell {
+  background: color-mix(in srgb, var(--color-surface-muted, #f4f4f4) 45%, var(--color-surface, #fff));
+}
+.notebook-checkpoints__score-value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--color-ink);
+}
+.notebook-checkpoints__score-icon {
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+/* --- Subject headers: title + maximum marks — same compact
+   eyebrow-over-meta hierarchy as the Scorecard's own
+   .scorecard__subject-header-title/-meta. --- */
 .assessment-gradebook__subject-header {
-  min-width: 88px;
+  min-width: 92px;
 }
 .assessment-gradebook__subject-title {
   display: block;
+  font-size: 0.78rem;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--color-ink);
 }
 .assessment-gradebook__subject-max {
   display: block;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
   color: var(--color-muted);
+  margin-top: 2px;
 }
 
 /* --- Cell inputs: compact, comfortable, strong focus state --- */
@@ -13529,7 +14297,8 @@ button.recognition-bento__hero-winner-name {
   font-size: 0.85rem;
 }
 .assessment-gradebook__percent-cell {
-  font-weight: 700;
+  font-weight: var(--font-weight-black);
+  font-size: 1.05rem;
 }
 
 /* --- Footer: compact, visually subordinate to the data-entry grid --- */
@@ -13553,53 +14322,47 @@ button.recognition-bento__hero-winner-name {
   }
 }
 
-/* --- Legend: bucket meaning + pass mark, always visible above the table --- */
-.assessment-gradebook__legend {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-  font-size: 0.82rem;
-  color: var(--color-ink);
-  margin-bottom: 0.6rem;
+/* Bucket legend now uses the shared .performance-legend-card component
+   (see up near the header-card CSS) — no bespoke legend rules left
+   here. */
+
+/* --- Filter/sort/search controls: grouped in their own labeled card
+   ("FILTER & SORT") rather than floating loose above the table. --- */
+.assessment-gradebook__filter-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
 }
-.assessment-gradebook__legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-.assessment-gradebook__legend-swatch {
-  display: inline-block;
-  width: 0.85rem;
-  height: 0.85rem;
-  border-radius: 3px;
-}
-.assessment-gradebook__legend-passmark {
-  font-weight: 600;
+.assessment-gradebook__filter-card-label {
+  margin: 0 0 var(--space-3);
+  font-size: 0.72rem;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--color-muted);
 }
-
-/* --- Filter/sort/search controls bar --- */
 .assessment-gradebook__controls {
   display: flex;
   align-items: center;
   gap: 0.6rem;
   flex-wrap: wrap;
-  margin-bottom: 0.85rem;
 }
 .assessment-gradebook__control-select,
 .assessment-gradebook__control-search {
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-pill);
+  padding: 0.45rem 0.85rem;
   font-size: 0.85rem;
-  background: var(--color-surface, #fff);
+  background: var(--color-bg);
   color: var(--color-ink);
 }
 .assessment-gradebook__control-search {
   min-width: 160px;
   flex: 1 1 160px;
   max-width: 240px;
+  border-radius: var(--radius-control);
 }
 .assessment-gradebook__clear-filters {
   font-size: 0.82rem;
@@ -17013,6 +17776,18 @@ button.recognition-bento__hero-winner-name {
   font-size: 0.9rem;
 }
 
+.timetable-view__readonly-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: var(--font-weight-bold);
+  border-radius: var(--radius-pill);
+  padding: 0.2rem 0.6rem;
+  background-color: #EBEDEF;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
 .timetable-view__toolbar {
   display: flex;
   align-items: center;
@@ -18026,6 +18801,13 @@ button.recognition-bento__hero-winner-name {
   margin: 0 0 var(--space-2);
   font-size: 0.85rem;
   color: var(--color-muted);
+}
+
+.period-detail-panel__plan-readonly-value {
+  margin: 0 0 var(--space-3);
+  font-size: 0.9rem;
+  color: var(--color-ink);
+  word-break: break-word;
 }
 
 /* ---------------------------------------------------------------------

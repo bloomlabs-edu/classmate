@@ -25,6 +25,7 @@
 
 import { createBackButton } from '../components/BackButton.js';
 import { createIcon } from '../components/Icon.js';
+import { createStudentNameElement } from '../components/StudentNameElement.js';
 import { ASSESSMENT_TYPES } from '../../config/assessmentTypesConfig.js';
 import { openCreateAssessmentModal } from '../components/CreateAssessmentModal.js';
 import { openAddSubjectToAssessmentModal } from '../components/AddSubjectToAssessmentModal.js';
@@ -32,9 +33,12 @@ import { createNavigationRow } from '../components/NavigationRow.js';
 import { openUnsavedChangesModal } from '../components/UnsavedChangesModal.js';
 import * as assessmentService from '../../services/assessmentService.js';
 import * as assessmentImportService from '../../services/assessmentImportService.js';
+import * as assessmentTimetableLinkService from '../../services/assessmentTimetableLinkService.js';
+import * as scheduledEventRepository from '../../services/scheduledEventRepository.js';
+import { getEventsByType, SCHEDULED_EVENT_TYPES } from '../../services/scheduledEventService.js';
 import * as workspaceService from '../../services/workspaceService.js';
-import { getCurrentIsoDate, formatDate } from '../../utils/dateHelpers.js';
-import { getMarksColorClass, getMarksBucketKey, getPassMarkForSubject, PASS_MARK_PERCENT } from '../../config/assessmentMarksColorConfig.js';
+import { getCurrentIsoDate, getTodayDateKey, shiftDateKey, formatDate, formatDateKey } from '../../utils/dateHelpers.js';
+import { getMarksColorClass, getMarksBucketKey, getPassMarkForSubject, GREEN_THRESHOLD_PERCENT } from '../../config/assessmentMarksColorConfig.js';
 
 export function renderAssessmentManagementView(container, { classroom, onBack, initialAssessmentId = null, initialView = null, onNavigate = null }) {
   const initialAssessment = initialAssessmentId ? assessmentService.getAssessmentById(classroom, initialAssessmentId) : null;
@@ -102,6 +106,53 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
   let importReview = null; // { matchedRows, unmatchedRows, subjectMatches, unmatchedColumns, summary } once a file has been parsed and matched
   let importError = null; // a plain string shown on the review/upload screen if parsing itself failed (e.g. an unreadable file)
 
+  // "Scheduled from Timetable" (Home step only) — every exam-type
+  // ScheduledEvent whose own subject is already in this classroom's
+  // Learning Activities, per services/assessmentTimetableLinkService.js's
+  // own gating rule. `null` = not loaded yet (nothing rendered for this
+  // section, same "empty means empty, no placeholder" convention
+  // renderHomeStep() already documents for the Assessments list itself);
+  // `[]` = loaded, nothing eligible. Loaded once per visit to this view,
+  // not re-fetched on every rerender() — matches
+  // ui/views/TimetableView.js's own eventsListCache convention for the
+  // identical Firestore read.
+  let scheduledExamItems = null;
+
+  async function loadScheduledExamItems() {
+    const todayKey = getTodayDateKey();
+    const start = shiftDateKey(todayKey, -60);
+    const end = shiftDateKey(todayKey, 365);
+    const events = await scheduledEventRepository.getScheduledEventsForDateRange(classroom.id, start, end);
+    const examEvents = getEventsByType(events, SCHEDULED_EVENT_TYPES.EXAM);
+    scheduledExamItems = assessmentTimetableLinkService.getSurfaceableExamAssessments(classroom, examEvents, assessmentService.getAssessments(classroom));
+    if (mode === 'home') rerender();
+  }
+
+  // The live ScheduledEvent behind whichever Assessment is currently
+  // open, when it's linked (`selectedAssessment.scheduledEventId` set)
+  // — `null` while unlinked (nothing to show) OR still loading. This
+  // is what makes the Assessment Details / Gradebook header's own
+  // schedule display always reflect a Timetable reschedule rather than
+  // the possibly-stale `Assessment.date` copy (see
+  // models/Assessment.js's own header comment on that field). Fetched
+  // fresh via services/scheduledEventRepository.js — never a second,
+  // independent date/period calculation.
+  let linkedScheduledEvent = null;
+
+  async function loadLinkedScheduledEvent(assessment) {
+    if (!assessment || !assessment.scheduledEventId) {
+      linkedScheduledEvent = null;
+      return;
+    }
+    const event = await scheduledEventRepository.getScheduledEventById(classroom.id, assessment.scheduledEventId);
+    // Only apply this if the teacher hasn't already navigated to a
+    // different Assessment while this fetch was in flight.
+    if (selectedAssessment === assessment) {
+      linkedScheduledEvent = event;
+      rerender();
+    }
+  }
+
   function rerender() {
     renderView(
       container,
@@ -121,6 +172,8 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
         gradebookBucketFilter,
         gradebookSearchQuery,
         gradebookSort,
+        scheduledExamItems,
+        linkedScheduledEvent,
       },
       handlers
     );
@@ -144,7 +197,23 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
   }
 
   function buildAssessmentDetailsDraftFrom(assessment) {
-    return { title: assessment.title, type: assessment.type, academicYear: assessment.academicYear, date: assessment.date };
+    return {
+      title: assessment.title,
+      type: assessment.type,
+      academicYear: assessment.academicYear,
+      date: assessment.date,
+      // The EFFECTIVE percent (never-edited assessments resolve to the
+      // system default) is what the teacher sees pre-filled — not a
+      // blank field they'd have to already know the default to
+      // reproduce. passMarkPercentInput is the raw string the input
+      // itself holds (so an in-progress invalid edit, e.g. "abc" or
+      // "150", isn't silently discarded before Save is even clicked);
+      // passMarkPercentError holds a validation message once the
+      // teacher tries to save something invalid, cleared on the next
+      // edit.
+      passMarkPercentInput: String(assessmentService.getPassMarkPercent(assessment)),
+      passMarkPercentError: null,
+    };
   }
 
   /**
@@ -179,8 +248,12 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
     if (mode === 'assessment' && hasUnsavedAssessmentDetailsChanges) {
       openUnsavedChangesModal({
         onSave: () => {
-          handlers.onSaveAssessmentDetails();
-          proceed();
+          // Save can now fail validation (an invalid Pass Mark) — only
+          // navigate away if it actually succeeded, matching the same
+          // "never silently discard/proceed past an invalid edit"
+          // requirement Save's own direct button click already
+          // follows.
+          if (handlers.onSaveAssessmentDetails()) proceed();
         },
         onDiscard: () => {
           hasUnsavedAssessmentDetailsChanges = false;
@@ -266,15 +339,42 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
         onAssessmentCreated: () => rerender(),
       });
     },
+    onGoToScorecard: () => {
+      if (onNavigate) onNavigate(`/classroom/${classroom.id}/assessments/scorecard`);
+    },
+    onSetUpAssessmentFromEvent: (item) => {
+      const assessment = assessmentService.createAssessmentFromScheduledEvent(classroom, item.event, item.learningSubject);
+      workspaceService.save(classroom);
+      selectedAssessment = assessment;
+      mode = 'gradebook';
+      linkedScheduledEvent = item.event; // already have it — no refetch needed
+      if (onNavigate) onNavigate(`/classroom/${classroom.id}/assessments/${assessment.id}/gradebook`);
+      rerender();
+    },
     onChooseAssessment: (assessment) => {
       navigateAwayGuard(() => {
         selectedAssessment = assessment;
         isEditingAssessmentDetails = false;
         hasUnsavedAssessmentDetailsChanges = false;
         mode = 'gradebook';
+        linkedScheduledEvent = null;
+        loadLinkedScheduledEvent(assessment);
         if (onNavigate) onNavigate(`/classroom/${classroom.id}/assessments/${assessment.id}/gradebook`);
         rerender();
       });
+    },
+    onViewInTimetable: () => {
+      if (onNavigate) onNavigate(`/classroom/${classroom.id}/timetable`);
+    },
+    // The one, portal-wide canonical student-profile URL (see
+    // ui/router.js's own `studentProfile` route) — every other view
+    // that links a student's name builds this exact same path; this
+    // view had simply never done so before. Takes the whole `student`
+    // object (matching ui/components/StudentNameElement.js's own
+    // `onSelect` callback shape), navigates by `student.id`, never by
+    // name/roll number/row index.
+    onSelectStudent: (student) => {
+      if (onNavigate) onNavigate(`/classroom/${classroom.id}/student/${student.id}`);
     },
     onTogglePinAssessment: (assessment) => {
       // Pinning only changes visibility on the Dashboard's Open Work
@@ -311,6 +411,8 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
         assessmentDetailsDraft = buildAssessmentDetailsDraftFrom(assessment);
         hasUnsavedAssessmentDetailsChanges = false;
         mode = 'assessment';
+        linkedScheduledEvent = null;
+        loadLinkedScheduledEvent(assessment);
         rerender();
       });
     },
@@ -450,15 +552,26 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
     },
     onDraftAssessmentDetailsChange: (updates) => {
       Object.assign(assessmentDetailsDraft, updates);
+      // A fresh edit to the Pass Mark field always clears any previous
+      // validation error — Save (below) re-validates from scratch.
+      if ('passMarkPercentInput' in updates) assessmentDetailsDraft.passMarkPercentError = null;
       hasUnsavedAssessmentDetailsChanges = true;
       rerender();
     },
+    /** Returns true once the Assessment's details have actually been saved, false if validation blocked it (see navigateAwayGuard() above, which must not treat a blocked save as "safe to navigate away now"). */
     onSaveAssessmentDetails: () => {
-      assessmentService.updateAssessmentDetails(selectedAssessment, assessmentDetailsDraft);
+      const parsedPassMark = assessmentService.parsePassMarkPercentInput(assessmentDetailsDraft.passMarkPercentInput);
+      if (!parsedPassMark.valid) {
+        assessmentDetailsDraft.passMarkPercentError = 'Enter a number between 0 and 100, or leave blank to use the default.';
+        rerender();
+        return false;
+      }
+      assessmentService.updateAssessmentDetails(selectedAssessment, { ...assessmentDetailsDraft, passMarkPercent: parsedPassMark.value });
       workspaceService.save(classroom);
       isEditingAssessmentDetails = false;
       hasUnsavedAssessmentDetailsChanges = false;
       rerender();
+      return true;
     },
     onCancelEditAssessmentDetails: () => {
       assessmentDetailsDraft = buildAssessmentDetailsDraftFrom(selectedAssessment);
@@ -469,6 +582,8 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
   };
 
   rerender();
+  loadScheduledExamItems();
+  if (initialAssessment) loadLinkedScheduledEvent(initialAssessment);
 }
 
 function renderView(container, mode, state, handlers) {
@@ -505,7 +620,9 @@ function renderView(container, mode, state, handlers) {
   wrapper.appendChild(header);
 
   if (mode === 'assessment') {
-    wrapper.appendChild(renderAssessmentStep(state.classroom, state.selectedAssessment, state.isEditingAssessmentDetails, state.assessmentDetailsDraft, handlers));
+    wrapper.appendChild(
+      renderAssessmentStep(state.classroom, state.selectedAssessment, state.isEditingAssessmentDetails, state.assessmentDetailsDraft, state.linkedScheduledEvent, handlers)
+    );
   } else if (mode === 'gradebook') {
     wrapper.appendChild(renderGradebookStep(state.classroom, state.selectedAssessment, state, handlers));
   } else if (mode === 'subject') {
@@ -515,20 +632,53 @@ function renderView(container, mode, state, handlers) {
   } else if (mode === 'import-review') {
     wrapper.appendChild(renderImportReviewStep(state.selectedAssessment, state.importReview, state.importError, handlers));
   } else {
-    wrapper.appendChild(renderHomeStep(state.classroom, handlers));
+    wrapper.appendChild(renderHomeStep(state.classroom, handlers, state.scheduledExamItems));
   }
 
   container.appendChild(wrapper);
 }
 
 /**
- * Renders exactly the classroom's own persisted Assessments — nothing
- * else. Empty means empty; no suggested or placeholder assessments
- * ever appear.
+ * Renders the classroom's own persisted Assessments, plus — above
+ * them — exam-type Timetable events already eligible to become one
+ * (see services/assessmentTimetableLinkService.js's own gating rule:
+ * only a Subject already in this classroom's Learning Activities ever
+ * appears here at all). `scheduledExamItems` is `null` while still
+ * loading (see loadScheduledExamItems() above) — that whole section is
+ * simply omitted until it resolves, never a loading spinner over the
+ * rest of an otherwise-ready page. Below that, "Existing Assessments"
+ * is exactly what this step always rendered: empty means empty, no
+ * suggested or placeholder assessments ever appear there.
  */
-function renderHomeStep(classroom, handlers) {
+function renderHomeStep(classroom, handlers, scheduledExamItems) {
   const section = document.createElement('div');
   section.className = 'learning-management__section';
+
+  const hasScheduledItems = Array.isArray(scheduledExamItems) && scheduledExamItems.length > 0;
+
+  if (hasScheduledItems) {
+    const scheduledHeading = document.createElement('p');
+    scheduledHeading.className = 'learning-management__primary-section-heading';
+    scheduledHeading.textContent = 'Scheduled from Timetable';
+    section.appendChild(scheduledHeading);
+
+    const scheduledSubtitle = document.createElement('p');
+    scheduledSubtitle.className = 'learning-management__intro';
+    scheduledSubtitle.textContent = `${scheduledExamItems.length} assessment${scheduledExamItems.length === 1 ? '' : 's'} from your timetable`;
+    section.appendChild(scheduledSubtitle);
+
+    const scheduledList = document.createElement('div');
+    scheduledList.className = 'assessment-scheduled-card-list';
+    scheduledExamItems.forEach((item) => {
+      scheduledList.appendChild(renderScheduledExamCard(classroom, item, handlers));
+    });
+    section.appendChild(scheduledList);
+
+    const existingHeading = document.createElement('p');
+    existingHeading.className = 'learning-management__primary-section-heading';
+    existingHeading.textContent = 'Existing Assessments';
+    section.appendChild(existingHeading);
+  }
 
   const assessments = assessmentService.getAssessments(classroom);
   if (assessments.length > 0) {
@@ -540,14 +690,90 @@ function renderHomeStep(classroom, handlers) {
     section.appendChild(list);
   }
 
+  const actionsRow = document.createElement('div');
+  actionsRow.className = 'assessment-home__actions';
+
   const createButton = document.createElement('button');
   createButton.type = 'button';
   createButton.className = 'btn btn--primary';
   createButton.textContent = '+ Create Assessment';
   createButton.addEventListener('click', handlers.onGoToCreateAssessment);
-  section.appendChild(createButton);
+  actionsRow.appendChild(createButton);
+
+  const scorecardButton = document.createElement('button');
+  scorecardButton.type = 'button';
+  scorecardButton.className = 'btn btn--secondary';
+  scorecardButton.textContent = 'Scorecard';
+  scorecardButton.addEventListener('click', handlers.onGoToScorecard);
+  actionsRow.appendChild(scorecardButton);
+
+  section.appendChild(actionsRow);
 
   return section;
+}
+
+/**
+ * One "Scheduled from Timetable" card — visual hierarchy only (exam
+ * name strongest, subject secondary, date/period muted metadata, a
+ * small status badge, and a distinct action), NOT a new click target:
+ * the whole card is still exactly one <button>, calling exactly the
+ * same handlers renderHomeStep()'s previous single-line version
+ * already called (onChooseAssessment for a linked item,
+ * onSetUpAssessmentFromEvent otherwise) — no new navigation semantics,
+ * no duplicate click handlers. Date/period still resolved live via
+ * services/assessmentTimetableLinkService.js's own getEventPeriodLabel()
+ * exactly as before; this function only changes markup/CSS.
+ */
+function renderScheduledExamCard(classroom, item, handlers) {
+  const periodLabel = assessmentTimetableLinkService.getEventPeriodLabel(classroom, item.event);
+  const metaText = [formatDateKey(item.event.date), periodLabel].filter(Boolean).join(' · ');
+  const isLinked = Boolean(item.linkedAssessment);
+
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'assessment-scheduled-card';
+  card.addEventListener('click', () => (isLinked ? handlers.onChooseAssessment(item.linkedAssessment) : handlers.onSetUpAssessmentFromEvent(item)));
+
+  const top = document.createElement('div');
+  top.className = 'assessment-scheduled-card__top';
+  const title = document.createElement('span');
+  title.className = 'assessment-scheduled-card__title';
+  title.textContent = item.event.title || 'Exam';
+  const chevron = document.createElement('span');
+  chevron.className = 'assessment-scheduled-card__chevron';
+  chevron.textContent = '›';
+  chevron.setAttribute('aria-hidden', 'true');
+  top.append(title, chevron);
+  card.appendChild(top);
+
+  const subject = document.createElement('p');
+  subject.className = 'assessment-scheduled-card__subject';
+  subject.textContent = item.subjectTitle;
+  card.appendChild(subject);
+
+  if (metaText) {
+    const meta = document.createElement('p');
+    meta.className = 'assessment-scheduled-card__meta';
+    meta.textContent = metaText;
+    card.appendChild(meta);
+  }
+
+  const footer = document.createElement('div');
+  footer.className = 'assessment-scheduled-card__footer';
+
+  const status = document.createElement('span');
+  status.className = `status-badge ${isLinked ? 'status-badge--assessment-set-up' : 'status-badge--assessment-pending'}`;
+  status.textContent = isLinked ? 'Assessment set up' : 'Assessment not set up';
+  footer.appendChild(status);
+
+  const action = document.createElement('span');
+  action.className = 'assessment-scheduled-card__action';
+  action.textContent = isLinked ? 'Open Assessment →' : 'Set up Assessment →';
+  footer.appendChild(action);
+
+  card.appendChild(footer);
+
+  return card;
 }
 
 /**
@@ -570,7 +796,7 @@ function renderHomeStep(classroom, handlers) {
  * ui/components/AddSubjectToAssessmentModal.js) — it never creates a
  * new classroom Subject.
  */
-function renderAssessmentStep(classroom, assessment, isEditingDetails, draft, handlers) {
+function renderAssessmentStep(classroom, assessment, isEditingDetails, draft, linkedScheduledEvent, handlers) {
   const section = document.createElement('div');
   section.className = 'learning-management__section';
 
@@ -586,7 +812,7 @@ function renderAssessmentStep(classroom, assessment, isEditingDetails, draft, ha
   pinButton.addEventListener('click', () => handlers.onTogglePinAssessment(assessment));
   section.appendChild(pinButton);
 
-  section.appendChild(renderAssessmentDetailsSection(assessment, isEditingDetails, draft, handlers));
+  section.appendChild(renderAssessmentDetailsSection(classroom, assessment, isEditingDetails, draft, linkedScheduledEvent, handlers));
 
   const divider = document.createElement('hr');
   divider.className = 'learning-management__subject-divider';
@@ -815,9 +1041,28 @@ function renderAssessmentDangerZone(assessment, handlers) {
   return zone;
 }
 
-function renderAssessmentDetailsSection(assessment, isEditingDetails, draft, handlers) {
+/**
+ * The schedule line for a Timetable-linked Assessment — always
+ * resolved from the LIVE ScheduledEvent (see
+ * services/assessmentTimetableLinkService.js's own getEventPeriodLabel()),
+ * never the possibly-stale `Assessment.date` copy (see
+ * models/Assessment.js's own header comment on that field). `null` for
+ * an unlinked/manual Assessment (nothing to show here — the plain Date
+ * field applies instead) or while `linkedScheduledEvent` is still
+ * loading.
+ */
+function resolveLiveScheduleDisplay(classroom, assessment, linkedScheduledEvent) {
+  if (!assessment.scheduledEventId) return null;
+  if (!linkedScheduledEvent) return { text: 'Loading schedule…' };
+  const periodLabel = assessmentTimetableLinkService.getEventPeriodLabel(classroom, linkedScheduledEvent);
+  const text = [formatDateKey(linkedScheduledEvent.date), periodLabel].filter(Boolean).join(' · ');
+  return { text };
+}
+
+function renderAssessmentDetailsSection(classroom, assessment, isEditingDetails, draft, linkedScheduledEvent, handlers) {
   const wrapper = document.createElement('div');
   wrapper.className = 'assessment-details-section';
+  const scheduleDisplay = resolveLiveScheduleDisplay(classroom, assessment, linkedScheduledEvent);
 
   if (isEditingDetails) {
     const nameField = createLabeledInput('Assessment Name');
@@ -835,11 +1080,58 @@ function renderAssessmentDetailsSection(assessment, isEditingDetails, draft, han
     yearField.input.addEventListener('change', () => handlers.onDraftAssessmentDetailsChange({ academicYear: yearField.input.value.trim() }));
     wrapper.appendChild(yearField.wrapper);
 
-    const dateField = createLabeledInput('Date');
-    dateField.input.type = 'date';
-    dateField.input.value = draft.date;
-    dateField.input.addEventListener('change', () => handlers.onDraftAssessmentDetailsChange({ date: dateField.input.value }));
-    wrapper.appendChild(dateField.wrapper);
+    if (scheduleDisplay) {
+      // Linked to a Timetable exam — the date/period is NOT a
+      // separately editable field here; it belongs to the Scheduled
+      // Event (see this feature's own "Assessment -> Timetable"
+      // requirement: "Do not create a separately editable date/period
+      // on the assessment"). `draft.date` is intentionally left
+      // untouched (still whatever buildAssessmentDetailsDraftFrom()
+      // captured), so Save below is a no-op for it.
+      wrapper.appendChild(renderScheduleReadOnlyRow(scheduleDisplay, handlers));
+    } else {
+      const dateField = createLabeledInput('Date');
+      dateField.input.type = 'date';
+      dateField.input.value = draft.date;
+      dateField.input.addEventListener('change', () => handlers.onDraftAssessmentDetailsChange({ date: dateField.input.value }));
+      wrapper.appendChild(dateField.wrapper);
+    }
+
+    // Pass Mark — a percentage of each Subject's own maximumMarks (see
+    // models/Assessment.js's own header comment on `passMarkPercent`),
+    // never an absolute mark, and never the same scale as the
+    // Gradebook's own fixed Red/Yellow/Green bucket boundaries (see
+    // config/assessmentMarksColorConfig.js's own MARKS_COLOR_THRESHOLDS,
+    // untouched by this field). Blank is a valid input, meaning "use
+    // the system default" (services/assessmentService.js's own
+    // getPassMarkPercent()), not an error.
+    const passMarkField = createLabeledInput('Pass Mark');
+    passMarkField.input.type = 'number';
+    passMarkField.input.min = '0';
+    passMarkField.input.max = '100';
+    passMarkField.input.step = '0.01';
+    passMarkField.input.value = draft.passMarkPercentInput;
+    passMarkField.input.addEventListener('change', () => handlers.onDraftAssessmentDetailsChange({ passMarkPercentInput: passMarkField.input.value }));
+    // The base labeled-input wrapper is a vertical (label-over-field)
+    // flex column — this class swaps just the input row itself to a
+    // horizontal one, so the "%" suffix sits beside the number input
+    // rather than falling onto its own line underneath.
+    passMarkField.wrapper.classList.add('assessment-details-section__pass-mark-field');
+    const passMarkInputRow = document.createElement('span');
+    passMarkInputRow.className = 'assessment-details-section__pass-mark-input-row';
+    passMarkField.input.replaceWith(passMarkInputRow);
+    const passMarkSuffix = document.createElement('span');
+    passMarkSuffix.className = 'assessment-details-section__pass-mark-suffix';
+    passMarkSuffix.textContent = '%';
+    passMarkInputRow.append(passMarkField.input, passMarkSuffix);
+    wrapper.appendChild(passMarkField.wrapper);
+
+    if (draft.passMarkPercentError) {
+      const passMarkError = document.createElement('p');
+      passMarkError.className = 'learning-management__inline-error';
+      passMarkError.textContent = draft.passMarkPercentError;
+      wrapper.appendChild(passMarkError);
+    }
 
     const footer = document.createElement('div');
     footer.className = 'assessment-marks-footer';
@@ -862,7 +1154,7 @@ function renderAssessmentDetailsSection(assessment, isEditingDetails, draft, han
     [
       ['Type', assessment.type],
       ['Academic Year', assessment.academicYear],
-      ['Date', assessment.date],
+      ...(scheduleDisplay ? [] : [['Date', assessment.date]]),
     ].forEach(([label, value]) => {
       const dt = document.createElement('dt');
       dt.textContent = label;
@@ -871,6 +1163,8 @@ function renderAssessmentDetailsSection(assessment, isEditingDetails, draft, han
       details.append(dt, dd);
     });
     wrapper.appendChild(details);
+
+    if (scheduleDisplay) wrapper.appendChild(renderScheduleReadOnlyRow(scheduleDisplay, handlers));
 
     const footer = document.createElement('div');
     footer.className = 'assessment-marks-footer';
@@ -888,6 +1182,26 @@ function renderAssessmentDetailsSection(assessment, isEditingDetails, draft, han
   }
 
   return wrapper;
+}
+
+/** "Scheduled: 24 Sep · Period 1–2" + "View in Timetable" — see resolveLiveScheduleDisplay() above. Reuses the existing Timetable route (see ui/router.js), never a new one. */
+function renderScheduleReadOnlyRow(scheduleDisplay, handlers) {
+  const row = document.createElement('div');
+  row.className = 'assessment-details-section__schedule';
+
+  const label = document.createElement('p');
+  label.className = 'assessment-details-section__schedule-label';
+  label.textContent = `Scheduled: ${scheduleDisplay.text}`;
+  row.appendChild(label);
+
+  const viewInTimetableButton = document.createElement('button');
+  viewInTimetableButton.type = 'button';
+  viewInTimetableButton.className = 'btn btn--text';
+  viewInTimetableButton.textContent = 'View in Timetable';
+  viewInTimetableButton.addEventListener('click', handlers.onViewInTimetable);
+  row.appendChild(viewInTimetableButton);
+
+  return row;
 }
 
 function createLabeledInput(labelText) {
@@ -967,7 +1281,7 @@ function createLabeledSelect(labelText, options) {
  * config/assessmentMarksColorConfig.js directly — no second,
  * duplicate threshold definition.
  */
-function getVisibleGradebookStudents(allStudents, assessmentSubjects, subjectFilter, bucketFilter, searchQuery, sort) {
+function getVisibleGradebookStudents(allStudents, assessmentSubjects, subjectFilter, bucketFilter, searchQuery, sort, passMarkPercent) {
   const trimmedQuery = searchQuery.trim().toLowerCase();
 
   const filtered = allStudents.filter((student) => {
@@ -983,7 +1297,7 @@ function getVisibleGradebookStudents(allStudents, assessmentSubjects, subjectFil
       const assessmentSubject = assessmentSubjects.find((s) => s.id === subjectFilter);
       if (!assessmentSubject) return true;
       const result = assessmentService.getStudentResult(assessmentSubject, student.id);
-      const bucket = result ? getMarksBucketKey(result.marks, assessmentSubject.maximumMarks) : null;
+      const bucket = result ? getMarksBucketKey(result.marks, assessmentSubject.maximumMarks, passMarkPercent) : null;
       return bucket === bucketFilter;
     }
 
@@ -994,7 +1308,7 @@ function getVisibleGradebookStudents(allStudents, assessmentSubjects, subjectFil
     // and is stated plainly here rather than silently assumed.
     return assessmentSubjects.some((assessmentSubject) => {
       const result = assessmentService.getStudentResult(assessmentSubject, student.id);
-      const bucket = result ? getMarksBucketKey(result.marks, assessmentSubject.maximumMarks) : null;
+      const bucket = result ? getMarksBucketKey(result.marks, assessmentSubject.maximumMarks, passMarkPercent) : null;
       return bucket === bucketFilter;
     });
   });
@@ -1043,31 +1357,72 @@ function getVisibleGradebookStudents(allStudents, assessmentSubjects, subjectFil
   return sorted;
 }
 
-function renderBucketLegend() {
-  const legend = document.createElement('div');
-  legend.className = 'assessment-gradebook__legend';
+/**
+ * The legend must reflect the ACTUAL performance bands this
+ * Assessment uses \u2014 never the old, hardcoded "0\u201317.99 / 18\u201334.99 /
+ * 35\u201350" absolute-mark ranges (which quietly assumed a /50 maximum
+ * and a fixed 36% boundary; both are wrong for a percentage-based,
+ * per-Assessment Pass Mark). Red/Yellow always move together with
+ * `passMarkPercent`; Green is always anchored at the fixed
+ * GREEN_THRESHOLD_PERCENT, independent of it \u2014 see
+ * config/assessmentMarksColorConfig.js's own header comment for the
+ * confirmed rule this legend is describing, not inventing.
+ */
+/**
+ * "PERFORMANCE" card \u2014 the shared .performance-legend-card component
+ * (see ui/views/ScorecardView.js's own renderLegend(), same markup)
+ * with one addition Scorecard's version deliberately omits: a single
+ * concrete Pass Mark value, safe to show here because exactly one
+ * Assessment (and therefore exactly one passMarkPercent \u2014 see
+ * services/assessmentService.js's own getPassMarkPercent()) is ever in
+ * view on this page, unlike a Scorecard cycle that can span several.
+ * Thresholds are read straight from the values passed in \u2014 nothing
+ * hardcoded here.
+ */
+function renderBucketLegend(passMarkPercent) {
+  const card = document.createElement('div');
+  card.className = 'performance-legend-card';
 
-  const items = [
-    { className: 'gradebook-cell--low', label: `0\u201317.99 \u2014 Red Bucket (Needs Help)` },
-    { className: 'gradebook-cell--mid', label: `18\u201334.99 \u2014 Yellow Bucket (Developing)` },
-    { className: 'gradebook-cell--high', label: `35\u201350 \u2014 Green Bucket (Strong)` },
-  ];
-  items.forEach(({ className, label }) => {
-    const item = document.createElement('span');
-    item.className = 'assessment-gradebook__legend-item';
+  const label = document.createElement('p');
+  label.className = 'performance-legend-card__label';
+  label.textContent = 'Performance';
+  card.appendChild(label);
+
+  const chips = document.createElement('div');
+  chips.className = 'performance-legend-card__chips';
+  [
+    { modifier: 'red', label: 'Red', desc: `Below ${passMarkPercent}% \u00b7 Needs Help` },
+    { modifier: 'yellow', label: 'Yellow', desc: `${passMarkPercent}\u2013${GREEN_THRESHOLD_PERCENT - 0.01}% \u00b7 Developing` },
+    { modifier: 'green', label: 'Green', desc: `${GREEN_THRESHOLD_PERCENT}%+ \u00b7 Strong` },
+  ].forEach(({ modifier, label: chipLabel, desc }) => {
+    const chip = document.createElement('div');
+    chip.className = `performance-legend-chip performance-legend-chip--${modifier}`;
     const swatch = document.createElement('span');
-    swatch.className = `assessment-gradebook__legend-swatch ${className}`;
-    item.appendChild(swatch);
-    item.append(label);
-    legend.appendChild(item);
+    swatch.className = 'performance-legend-swatch';
+    swatch.setAttribute('aria-hidden', 'true');
+    const labelEl = document.createElement('span');
+    labelEl.className = 'performance-legend-chip-label';
+    labelEl.textContent = chipLabel;
+    const descEl = document.createElement('span');
+    descEl.className = 'performance-legend-chip-desc';
+    descEl.textContent = ` \u00b7 ${desc}`;
+    chip.append(swatch, labelEl, descEl);
+    chips.appendChild(chip);
   });
+  card.appendChild(chips);
 
-  const passMarkItem = document.createElement('span');
-  passMarkItem.className = 'assessment-gradebook__legend-item assessment-gradebook__legend-passmark';
-  passMarkItem.textContent = `Pass Mark: ${PASS_MARK_PERCENT}%`;
-  legend.appendChild(passMarkItem);
+  const passMark = document.createElement('div');
+  passMark.className = 'performance-legend-card__pass-mark';
+  const passMarkLabel = document.createElement('span');
+  passMarkLabel.className = 'performance-legend-card__pass-mark-label';
+  passMarkLabel.textContent = 'Pass Mark';
+  const passMarkValue = document.createElement('span');
+  passMarkValue.className = 'performance-legend-card__pass-mark-value';
+  passMarkValue.textContent = `${passMarkPercent}%`;
+  passMark.append(passMarkLabel, passMarkValue);
+  card.appendChild(passMark);
 
-  return legend;
+  return card;
 }
 
 const SORT_OPTIONS_STATIC = [
@@ -1193,6 +1548,44 @@ function requestGradebookSearchRefocus(cursorPosition) {
   });
 }
 
+/**
+ * The header card's own stat-tile row — Students / Marks Entered /
+ * Passed / Failed / Not Assessed, each a real visual tile (see
+ * .stat-tile in css/styles.css), not a line of text. Passed/Failed/
+ * Not Assessed counts are entirely
+ * services/assessmentService.js's own summarizeAssessmentOutcomes()
+ * output — this function only decides how to paint each number, never
+ * recomputes one. Semantic wash per meaning: neutral/navy for the two
+ * plain counts, success for Passed, alert for Failed, muted-neutral
+ * for Not Assessed (never treated as a failure — see this feature's
+ * own "Missing ≠ Failed" rule).
+ */
+function renderGradebookStatTiles(studentCount, enteredCount, possibleCount, outcomeCounts) {
+  const grid = document.createElement('div');
+  grid.className = 'stat-tile-grid';
+
+  [
+    [String(studentCount), studentCount === 1 ? 'Student' : 'Students', 'neutral'],
+    [`${enteredCount}/${possibleCount}`, 'Marks Entered', 'neutral'],
+    [String(outcomeCounts.passed), 'Passed', 'success'],
+    [String(outcomeCounts.failed), 'Failed', 'alert'],
+    [String(outcomeCounts.notAssessed), 'Not Assessed', 'muted'],
+  ].forEach(([value, label, variant]) => {
+    const tile = document.createElement('div');
+    tile.className = `stat-tile stat-tile--${variant}`;
+    const valueEl = document.createElement('span');
+    valueEl.className = 'stat-tile__value';
+    valueEl.textContent = value;
+    const labelEl = document.createElement('span');
+    labelEl.className = 'stat-tile__label';
+    labelEl.textContent = label;
+    tile.append(valueEl, labelEl);
+    grid.appendChild(tile);
+  });
+
+  return grid;
+}
+
 function renderGradebookStep(classroom, assessment, gradebookState, handlers) {
   const { gradebookSubjectFilter, gradebookBucketFilter, gradebookSearchQuery, gradebookSort } = gradebookState;
   const section = document.createElement('div');
@@ -1200,7 +1593,11 @@ function renderGradebookStep(classroom, assessment, gradebookState, handlers) {
 
   const assessmentSubjects = assessment.assessmentSubjects;
   const allStudents = assessmentService.getClassroomStudents(classroom);
-  const students = getVisibleGradebookStudents(allStudents, assessmentSubjects, gradebookSubjectFilter, gradebookBucketFilter, gradebookSearchQuery, gradebookSort);
+  const passMarkPercent = assessmentService.getPassMarkPercent(assessment);
+  const students = getVisibleGradebookStudents(allStudents, assessmentSubjects, gradebookSubjectFilter, gradebookBucketFilter, gradebookSearchQuery, gradebookSort, passMarkPercent);
+
+  const headerCard = document.createElement('div');
+  headerCard.className = 'assessment-gradebook__header-card';
 
   const header = document.createElement('div');
   header.className = 'assessment-gradebook__header';
@@ -1213,21 +1610,45 @@ function renderGradebookStep(classroom, assessment, gradebookState, handlers) {
   title.textContent = assessment.title;
   headerMain.appendChild(title);
 
-  const subtitle = document.createElement('p');
-  subtitle.className = 'assessment-gradebook__subtitle';
-  subtitle.textContent = [assessment.type, formatDate(assessment.date) || assessment.date, assessment.academicYear].filter(Boolean).join(' \u00b7 ');
-  headerMain.appendChild(subtitle);
+  const scheduleDisplay = resolveLiveScheduleDisplay(classroom, assessment, gradebookState.linkedScheduledEvent);
+  const dateTimeText = scheduleDisplay ? scheduleDisplay.text : formatDate(assessment.date) || assessment.date;
+
+  // Structured metadata chips \u2014 Type / Date+Period / Academic Year as
+  // distinct grouped pills (see .meta-chip in css/styles.css) rather
+  // than one dot-joined sentence.
+  const metaRow = document.createElement('div');
+  metaRow.className = 'meta-chip-row';
+  [assessment.type, dateTimeText, assessment.academicYear].filter(Boolean).forEach((text) => {
+    const chip = document.createElement('span');
+    chip.className = 'meta-chip';
+    chip.textContent = text;
+    metaRow.appendChild(chip);
+  });
+  headerMain.appendChild(metaRow);
 
   header.appendChild(headerMain);
 
+  const actions = document.createElement('div');
+  actions.className = 'assessment-gradebook__actions';
+
+  if (scheduleDisplay) {
+    const viewInTimetableButton = document.createElement('button');
+    viewInTimetableButton.type = 'button';
+    viewInTimetableButton.className = 'btn btn--ghost btn--pill assessment-gradebook__edit-link';
+    viewInTimetableButton.textContent = 'View in Timetable';
+    viewInTimetableButton.addEventListener('click', handlers.onViewInTimetable);
+    actions.appendChild(viewInTimetableButton);
+  }
+
   const editDetailsLink = document.createElement('button');
   editDetailsLink.type = 'button';
-  editDetailsLink.className = 'btn btn--text assessment-gradebook__edit-link';
+  editDetailsLink.className = 'btn btn--ghost btn--pill assessment-gradebook__edit-link';
   editDetailsLink.textContent = 'Edit Details';
   editDetailsLink.addEventListener('click', handlers.onGoToEditAssessmentDetails);
-  header.appendChild(editDetailsLink);
+  actions.appendChild(editDetailsLink);
 
-  section.appendChild(header);
+  header.appendChild(actions);
+  headerCard.appendChild(header);
 
   if (assessmentSubjects.length > 0 && allStudents.length > 0) {
     const totalPossibleEntries = allStudents.length * assessmentSubjects.length;
@@ -1235,15 +1656,33 @@ function renderGradebookStep(classroom, assessment, gradebookState, handlers) {
       (sum, s) => sum + s.studentResults.filter((r) => r.marks !== null).length,
       0
     );
-    const summary = document.createElement('p');
-    summary.className = 'assessment-gradebook__summary';
-    summary.textContent = `${allStudents.length} Student${allStudents.length === 1 ? '' : 's'} \u00b7 ${assessmentSubjects.length} Subject${assessmentSubjects.length === 1 ? '' : 's'} \u00b7 ${totalEnteredEntries}/${totalPossibleEntries} Marks Entered`;
-    section.appendChild(summary);
+
+    const divider = document.createElement('hr');
+    divider.className = 'assessment-gradebook__divider';
+    headerCard.appendChild(divider);
+
+    headerCard.appendChild(
+      renderGradebookStatTiles(
+        allStudents.length,
+        totalEnteredEntries,
+        totalPossibleEntries,
+        assessmentService.summarizeAssessmentOutcomes(assessment, allStudents)
+      )
+    );
   }
+  section.appendChild(headerCard);
 
   if (assessmentSubjects.length > 0 && allStudents.length > 0) {
-    section.appendChild(renderBucketLegend());
-    section.appendChild(renderGradebookControls(classroom, assessmentSubjects, gradebookState, handlers));
+    section.appendChild(renderBucketLegend(passMarkPercent));
+
+    const filterCard = document.createElement('div');
+    filterCard.className = 'assessment-gradebook__filter-card';
+    const filterLabel = document.createElement('p');
+    filterLabel.className = 'assessment-gradebook__filter-card-label';
+    filterLabel.textContent = 'Filter & Sort';
+    filterCard.appendChild(filterLabel);
+    filterCard.appendChild(renderGradebookControls(classroom, assessmentSubjects, gradebookState, handlers));
+    section.appendChild(filterCard);
   }
 
   if (assessmentSubjects.length === 0) {
@@ -1290,7 +1729,7 @@ function renderGradebookStep(classroom, assessment, gradebookState, handlers) {
     titleEl.textContent = title || '(Subject removed)';
     const maxEl = document.createElement('span');
     maxEl.className = 'assessment-gradebook__subject-max';
-    const passMark = getPassMarkForSubject(assessmentSubject.maximumMarks);
+    const passMark = getPassMarkForSubject(assessmentSubject.maximumMarks, assessmentService.getPassMarkPercent(assessment));
     maxEl.textContent = passMark !== null ? `/${assessmentSubject.maximumMarks} \u00b7 Pass ${passMark}` : `/${assessmentSubject.maximumMarks}`;
     th.append(titleEl, maxEl);
     headerRow.appendChild(th);
@@ -1316,7 +1755,7 @@ function renderGradebookStep(classroom, assessment, gradebookState, handlers) {
 
     const nameCell = document.createElement('td');
     nameCell.className = 'assessment-gradebook__name-cell';
-    nameCell.textContent = student.name;
+    nameCell.appendChild(createStudentNameElement({ student, onSelect: handlers.onSelectStudent, leadingMarker: 'none' }));
     row.appendChild(nameCell);
 
     const rollCell = document.createElement('td');
@@ -1344,14 +1783,14 @@ function renderGradebookStep(classroom, assessment, gradebookState, handlers) {
       input.dataset.row = String(rowIndex);
       input.dataset.col = String(colIndex);
 
-      const colorClass = getMarksColorClass(marks, assessmentSubject.maximumMarks);
+      const colorClass = getMarksColorClass(marks, assessmentSubject.maximumMarks, passMarkPercent);
       if (colorClass) cell.classList.add(colorClass);
 
       input.addEventListener('change', () => {
         const value = input.value === '' ? null : Number(input.value);
         handlers.onGradebookMarksEdit(assessmentSubject, student.id, value);
         cell.classList.remove('gradebook-cell--high', 'gradebook-cell--mid', 'gradebook-cell--low');
-        const newColorClass = getMarksColorClass(value, assessmentSubject.maximumMarks);
+        const newColorClass = getMarksColorClass(value, assessmentSubject.maximumMarks, passMarkPercent);
         if (newColorClass) cell.classList.add(newColorClass);
       });
 
@@ -1377,7 +1816,7 @@ function renderGradebookStep(classroom, assessment, gradebookState, handlers) {
     if (totalMaximum > 0) {
       const percent = Math.round((totalMarks / totalMaximum) * 100);
       percentCell.textContent = `${percent}%`;
-      const percentColorClass = getMarksColorClass(percent, 100);
+      const percentColorClass = getMarksColorClass(percent, 100, passMarkPercent);
       if (percentColorClass) percentCell.classList.add(percentColorClass);
     } else {
       percentCell.textContent = '\u2014';
@@ -1585,7 +2024,7 @@ function renderSubjectStep(classroom, assessment, assessmentSubject, sortBy, isE
       list.appendChild(renderEditableStudentRow(student, draft.resultsByStudentId.get(student.id), rank, handlers));
     } else {
       const existingResult = assessmentService.getStudentResult(assessmentSubject, student.id);
-      list.appendChild(renderReadOnlyStudentRow(student, existingResult, rank));
+      list.appendChild(renderReadOnlyStudentRow(student, existingResult, rank, handlers));
     }
   });
   section.appendChild(list);
@@ -1702,7 +2141,7 @@ function renderEditableStudentRow(student, draftResult, rank, handlers) {
 
   const nameEl = document.createElement('span');
   nameEl.className = 'assessment-marks-entry__name';
-  nameEl.textContent = student.name;
+  nameEl.appendChild(createStudentNameElement({ student, onSelect: handlers.onSelectStudent, leadingMarker: 'none' }));
   row.appendChild(nameEl);
 
   const marksInput = document.createElement('input');
@@ -1740,7 +2179,7 @@ function renderEditableStudentRow(student, draftResult, rank, handlers) {
   return row;
 }
 
-function renderReadOnlyStudentRow(student, existingResult, rank) {
+function renderReadOnlyStudentRow(student, existingResult, rank, handlers) {
   const row = document.createElement('div');
   row.className = 'assessment-marks-entry__row assessment-marks-entry__row--readonly';
 
@@ -1751,7 +2190,7 @@ function renderReadOnlyStudentRow(student, existingResult, rank) {
 
   const nameEl = document.createElement('span');
   nameEl.className = 'assessment-marks-entry__name';
-  nameEl.textContent = student.name;
+  nameEl.appendChild(createStudentNameElement({ student, onSelect: handlers.onSelectStudent, leadingMarker: 'none' }));
   row.appendChild(nameEl);
 
   const marksEl = document.createElement('span');
