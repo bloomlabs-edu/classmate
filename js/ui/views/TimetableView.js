@@ -456,10 +456,18 @@ export async function renderTimetableView(
     // exceptions + events already composed by schoolCalendarService) —
     // they just cannot open the editors that produce it.
     if (isMutationAllowed()) {
+      // Tonal filled treatment (see .btn--tonal/-blue/-green in
+      // css/styles.css) — a stronger, "polished surface" weight than
+      // .btn--ghost's thin-outline treatment, without competing with
+      // this page's own primary content the way a solid .btn--primary
+      // fill would. Each of these two entry points gets its own hue so
+      // they read as visually distinct actions, not a repeated pair —
+      // blue for the recurring schedule, green for calendar/dates.
       const manageButton = document.createElement('button');
       manageButton.type = 'button';
-      manageButton.className = 'btn btn--ghost timetable-view__manage-button';
-      manageButton.textContent = 'Manage timetable';
+      manageButton.className = 'btn btn--tonal btn--tonal-blue timetable-view__manage-button';
+      manageButton.appendChild(createIcon('clipboard-list', { size: 18 }));
+      manageButton.append('Manage timetable');
       manageButton.addEventListener('click', () => openManageTimetableFlow());
       headerRow.appendChild(manageButton);
 
@@ -469,11 +477,12 @@ export async function renderTimetableView(
       // pattern itself; this one only ever adds DATED exceptions/events on
       // top of it, per this feature's own central architectural
       // principle ("the recurring Timetable is never modified by a
-      // calendar exception"). Same restrained .btn--ghost weight.
+      // calendar exception").
       const calendarButton = document.createElement('button');
       calendarButton.type = 'button';
-      calendarButton.className = 'btn btn--ghost timetable-view__manage-button';
-      calendarButton.textContent = 'School calendar';
+      calendarButton.className = 'btn btn--tonal btn--tonal-green timetable-view__manage-button';
+      calendarButton.appendChild(createIcon('calendar', { size: 18 }));
+      calendarButton.append('School calendar');
       calendarButton.addEventListener('click', () => openSchoolCalendarFlow());
       headerRow.appendChild(calendarButton);
     }

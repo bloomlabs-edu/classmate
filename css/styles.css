@@ -400,6 +400,73 @@ select:focus {
   background-color: rgba(225, 83, 68, 0.08);
 }
 
+/* Tonal filled — a solid, moderately-saturated pastel surface rather
+   than .btn--ghost's thin-outline-on-transparent treatment. For a
+   secondary action that still needs to read as a real, polished
+   ClassMate surface (not a plain browser control) without competing
+   with .btn--primary's own solid-fill weight — see
+   ui/views/TimetableView.js's own "Manage timetable"/"School
+   calendar" buttons, the first adopters. Always paired with a hue
+   modifier (.btn--tonal-blue, .btn--tonal-green, ...), never used
+   alone. Deliberately no visible border in the resting state (a
+   subtle shadow is what defines the surface instead) and
+   --radius-card, not --radius-control, so these read as small card-
+   like surfaces, not pill chips or ordinary form controls. */
+.btn--tonal {
+  border: 1px solid transparent;
+  border-radius: var(--radius-card);
+  padding: 0.7rem 1.25rem;
+  box-shadow: var(--elevation-card);
+}
+.btn--tonal:hover:not(:disabled) {
+  box-shadow: var(--elevation-hover);
+}
+.btn--tonal:active:not(:disabled) {
+  box-shadow: var(--elevation-flat);
+}
+/* No .btn--tonal-specific :focus-visible rule here — the app-wide
+   .btn:focus-visible rule (a deliberate, existing yellow-ring
+   accessibility convention shared by every other button in ClassMate)
+   already applies and is left completely alone, so these two buttons
+   stay consistent with the rest of the app rather than inventing a
+   one-off focus treatment. What "no heavy cyan border" actually meant
+   was .btn--ghost's own always-on resting-state border, which these
+   buttons no longer have at all (see .btn--tonal's transparent resting
+   border above) — the yellow focus ring itself was never that border
+   and was never asked to change. */
+
+.btn--tonal-blue {
+  background-color: color-mix(in srgb, var(--color-primary) 22%, var(--color-surface));
+  color: var(--palette-learn-label);
+}
+.btn--tonal-blue:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-primary) 30%, var(--color-surface));
+}
+.btn--tonal-blue:active:not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-primary) 36%, var(--color-surface));
+}
+
+/* --color-success is TFI Lime (#b7c930) — correct for the Red/Yellow/
+   Green performance bucket it's already used for elsewhere, but a
+   yellow-green on its own reads as olive/khaki rather than the clean
+   "dark green" this button's own approved design direction calls for.
+   Cooled toward true green by blending in the existing blue accent —
+   still built entirely from existing tokens, no new raw colour
+   introduced, just a different combination for this one navigational
+   button pairing (unrelated to the performance-bucket "Green" meaning,
+   so there's no semantic clash in reusing lime differently here). */
+.btn--tonal-green {
+  --tonal-green-hue: color-mix(in srgb, var(--color-success) 55%, var(--color-primary-strong) 45%);
+  background-color: color-mix(in srgb, var(--tonal-green-hue) 32%, var(--color-surface));
+  color: color-mix(in srgb, var(--tonal-green-hue) 55%, var(--color-ink));
+}
+.btn--tonal-green:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--tonal-green-hue) 42%, var(--color-surface));
+}
+.btn--tonal-green:active:not(:disabled) {
+  background-color: color-mix(in srgb, var(--tonal-green-hue) 48%, var(--color-surface));
+}
+
 .btn--text {
   color: var(--color-ink);
   padding: 0.6rem 0.5rem;
