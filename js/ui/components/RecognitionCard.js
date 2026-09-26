@@ -38,6 +38,7 @@
  */
 
 import { createIcon } from './Icon.js';
+import { createStudentNameElement } from './StudentNameElement.js';
 
 function getInitials(name) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -110,16 +111,29 @@ export function createRecognitionCardElement({ category, winners, period, varian
     }
 
     let name;
-    if (onSelectStudent && !isTeamWinner(winner)) {
-      name = document.createElement('button');
-      name.type = 'button';
-      name.className = 'recognition-card__winner-name student-name-link';
-      name.addEventListener('click', () => onSelectStudent(winner.studentId));
-    } else {
+    if (isTeamWinner(winner)) {
       name = document.createElement('span');
       name.className = 'recognition-card__winner-name';
+      name.textContent = winner.teamName;
+    } else {
+      // Keeps this card's own big celebratory initials avatar AND its
+      // already-tuned, contrast-verified name colour/weight untouched
+      // (see this file's own header comment, and this exact CSS rule's
+      // own comment on why the name is deliberately deep-blue-tinted,
+      // not black) — `tintNameWithBucket` is deliberately omitted so
+      // that inline colour never fights this card's own verified
+      // .recognition-card__winner-name colour. What this migration
+      // actually standardizes here is click-behavior: the same
+      // createStudentNameElement `onSelect` convention every other
+      // student name in the portal now uses, replacing the ad-hoc
+      // `student-name-link` button this file used to hand-build.
+      name = createStudentNameElement({
+        student: { id: winner.studentId, name: winner.studentName, bucket: winner.bucket },
+        leadingMarker: 'none',
+        onSelect: onSelectStudent ? () => onSelectStudent(winner.studentId) : undefined,
+      });
+      name.classList.add('recognition-card__winner-name');
     }
-    name.textContent = isTeamWinner(winner) ? winner.teamName : winner.studentName;
 
     winnerEl.append(avatar, name);
     winnersRow.appendChild(winnerEl);

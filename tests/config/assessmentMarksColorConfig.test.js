@@ -18,7 +18,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getMarksColorClass, getMarksBucketKey, GREEN_THRESHOLD_PERCENT } from '../../js/config/assessmentMarksColorConfig.js';
+import { getMarksColorClass, getMarksBucketKey, getPerformanceBucketLabel, GREEN_THRESHOLD_PERCENT } from '../../js/config/assessmentMarksColorConfig.js';
 
 function bucketFor(marks, maximumMarks, passMarkPercent) {
   return getMarksBucketKey(marks, maximumMarks, passMarkPercent);
@@ -99,4 +99,17 @@ test('TOTAL MARKS WORKED EXAMPLES: Total = 50, Pass Mark = 35%', () => {
 test('a blank/null mark is never coloured or bucketed, regardless of Pass Mark', () => {
   assert.equal(getMarksColorClass(null, 100, 35), null);
   assert.equal(bucketFor(null, 100, 35), null);
+});
+
+// Student identity swatch labels (ui/components/StudentNameElement.js's own
+// `performanceBucketKey`) — the accessible/tooltip text a teacher or
+// screen-reader user sees standing in for the swatch colour. Critically,
+// `null` (no mark recorded) must read as "Not Assessed", never as a
+// falsy-string fallback that could visually collide with "Needs Help" (Red).
+test('getPerformanceBucketLabel: each bucket key maps to its own human label, and null/unrecognised always reads Not Assessed, never Red', () => {
+  assert.equal(getPerformanceBucketLabel('red'), 'Needs Help');
+  assert.equal(getPerformanceBucketLabel('yellow'), 'Developing');
+  assert.equal(getPerformanceBucketLabel('green'), 'Strong');
+  assert.equal(getPerformanceBucketLabel(null), 'Not Assessed');
+  assert.equal(getPerformanceBucketLabel(undefined), 'Not Assessed');
 });

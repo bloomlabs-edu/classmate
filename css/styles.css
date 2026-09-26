@@ -7580,6 +7580,22 @@ button.wizard-checklist__row:hover {
      gradient stops that formula was originally checked against. */
   color: color-mix(in srgb, var(--color-primary) 25%, black);
 }
+/* Same fix as .seating-view__cell-name-wrapper's own comment just above
+   this file's other StudentNameElement override: the shared component's
+   own .student-name-element__name rule sets its own direct color/weight,
+   which always wins over an ancestor's inherited value regardless of
+   source order — this card's own verified deep-blue/black-weight name
+   colour needs a rule that targets that inner span directly to actually
+   apply, now that ui/components/RecognitionCard.js renders the name via
+   createStudentNameElement() instead of a plain button/span. */
+.recognition-card__winner-name.student-name-element .student-name-element__name {
+  font-weight: var(--font-weight-black);
+  font-size: var(--text-lg);
+  color: color-mix(in srgb, var(--color-primary) 25%, black);
+}
+.recognition-card--compact .recognition-card__winner-name.student-name-element .student-name-element__name {
+  font-size: var(--text-base);
+}
 
 .recognition-card--compact .recognition-card__winner-name {
   font-size: var(--text-base);
@@ -7874,6 +7890,14 @@ button.recognition-bento__hero-winner-name {
   padding: 0;
   cursor: pointer;
   font-family: inherit;
+}
+/* Same fix as .recognition-card__winner-name's own override just above
+   this file's other StudentNameElement scoped overrides: the shared
+   component's .student-name-element__name sets its own direct
+   font-weight (bold), which otherwise wins over this hero name's
+   intended black weight now that it renders via createStudentNameElement(). */
+.recognition-bento__hero-winner-name.student-name-element .student-name-element__name {
+  font-weight: var(--font-weight-black);
 }
 .recognition-bento__hero-stat {
   margin: 0.3rem 0 0;
@@ -13194,6 +13218,11 @@ button.recognition-bento__hero-winner-name {
 }
 .student-name-element--clickable:hover .student-name-element__name {
   text-decoration: underline;
+}
+.student-name-element--clickable:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-control, 6px);
 }
 .student-name-element__avatar {
   display: inline-flex;

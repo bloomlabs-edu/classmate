@@ -31,7 +31,7 @@ import * as scorecardService from '../../services/scorecardService.js';
 import * as assessmentService from '../../services/assessmentService.js';
 import * as studentService from '../../services/studentService.js';
 import * as workspaceService from '../../services/workspaceService.js';
-import { getMarksColorClass, GREEN_THRESHOLD_PERCENT } from '../../config/assessmentMarksColorConfig.js';
+import { getMarksColorClass, getMarksBucketKey, GREEN_THRESHOLD_PERCENT } from '../../config/assessmentMarksColorConfig.js';
 import { getTodayDateKey, shiftDateKey, formatDateKey } from '../../utils/dateHelpers.js';
 
 export function renderScorecardView(container, { classroom, cycleKey, onBack, onNavigate, onSelectStudent }) {
@@ -353,7 +353,20 @@ export function renderScorecardView(container, { classroom, cycleKey, onBack, on
 
       const nameCell = document.createElement('td');
       nameCell.className = 'assessment-gradebook__name-cell';
-      nameCell.appendChild(createStudentNameElement({ student: row.student, onSelect: onSelectStudentAndNavigate, leadingMarker: 'none' }));
+      // Bucket signal here is this row's own aggregate Overall % (never a
+      // single subject) — a cycle can span subjects whose own linked
+      // Assessments each set a different Pass Mark (see renderLegend()'s
+      // own comment just above), so there is no one Assessment-specific
+      // Pass Mark to apply here; getMarksBucketKey()'s system-default
+      // Pass Mark is the only defensible fallback for a value that
+      // spans subjects by construction. Green's own boundary
+      // (GREEN_THRESHOLD_PERCENT) is unaffected either way, since it is
+      // always Pass-Mark-independent (see that constant's own header
+      // comment).
+      const performanceBucketKey = row.overallPercent === null ? null : getMarksBucketKey(row.overallPercent, 100);
+      nameCell.appendChild(
+        createStudentNameElement({ student: row.student, onSelect: onSelectStudentAndNavigate, leadingMarker: 'swatch', performanceBucketKey })
+      );
       tr.appendChild(nameCell);
 
       const rollCell = createRollNumberCell({

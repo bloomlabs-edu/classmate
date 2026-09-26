@@ -2048,9 +2048,34 @@ function renderGradebookStep(classroom, assessment, gradebookState, handlers) {
   students.forEach((student, rowIndex) => {
     const row = document.createElement('tr');
 
+    // Row-level performance bucket for the Student cell's own swatch —
+    // this Assessment's combined Total/Maximum across every Subject
+    // (identical basis to this same row's own %/percentColorClass just
+    // below), never a single subject in isolation. Computed ahead of
+    // the per-subject loop (which recomputes the identical totals for
+    // the Total/% cells) so the name cell — built first — already
+    // knows the right colour; the small recomputation cost is
+    // preferred over restructuring this loop's existing order.
+    let rowBucketPreviewTotalMarks = 0;
+    let rowBucketPreviewTotalMaximum = 0;
+    assessmentSubjects.forEach((assessmentSubject) => {
+      const existingResult = assessmentService.getStudentResult(assessmentSubject, student.id);
+      const marks = existingResult ? existingResult.marks : null;
+      if (marks !== null) {
+        rowBucketPreviewTotalMarks += marks;
+        rowBucketPreviewTotalMaximum += assessmentService.getMaximumMarks(assessmentSubject);
+      }
+    });
+    const rowPerformanceBucketKey =
+      rowBucketPreviewTotalMaximum > 0
+        ? getMarksBucketKey(Math.round((rowBucketPreviewTotalMarks / rowBucketPreviewTotalMaximum) * 100), 100, passMarkPercent)
+        : null;
+
     const nameCell = document.createElement('td');
     nameCell.className = 'assessment-gradebook__name-cell';
-    nameCell.appendChild(createStudentNameElement({ student, onSelect: handlers.onSelectStudent, leadingMarker: 'none' }));
+    nameCell.appendChild(
+      createStudentNameElement({ student, onSelect: handlers.onSelectStudent, leadingMarker: 'swatch', performanceBucketKey: rowPerformanceBucketKey })
+    );
     row.appendChild(nameCell);
 
     const rollCell = createRollNumberCell({
@@ -2320,15 +2345,18 @@ function renderSubjectStep(classroom, assessment, assessmentSubject, sortBy, isE
   const rankings = assessmentService.computeRankings(assessmentSubject, students);
   const sortedStudents = sortStudents(students, assessmentSubject, rankings, sortBy);
 
+  const rowMaximumMarks = isEditing ? Number(draft.maximumMarks) : assessmentService.getMaximumMarks(assessmentSubject);
+  const rowPassMarkPercent = assessmentService.getPassMarkPercent(assessment);
+
   const list = document.createElement('div');
   list.className = 'assessment-marks-entry__list';
   sortedStudents.forEach((student) => {
     const rank = rankings.get(student.id);
     if (isEditing) {
-      list.appendChild(renderEditableStudentRow(student, draft.resultsByStudentId.get(student.id), rank, handlers));
+      list.appendChild(renderEditableStudentRow(student, draft.resultsByStudentId.get(student.id), rank, rowMaximumMarks, rowPassMarkPercent, handlers));
     } else {
       const existingResult = assessmentService.getStudentResult(assessmentSubject, student.id);
-      list.appendChild(renderReadOnlyStudentRow(student, existingResult, rank, handlers));
+      list.appendChild(renderReadOnlyStudentRow(student, existingResult, rank, rowMaximumMarks, rowPassMarkPercent, handlers));
     }
   });
   section.appendChild(list);
@@ -2434,7 +2462,7 @@ function sortStudents(students, assessmentSubject, rankings, sortBy) {
   });
 }
 
-function renderEditableStudentRow(student, draftResult, rank, handlers) {
+function renderEditableStudentRow(student, draftResult, rank, maximumMarks, passMarkPercent, handlers) {
   const row = document.createElement('div');
   row.className = 'assessment-marks-entry__row';
 
@@ -2445,7 +2473,8 @@ function renderEditableStudentRow(student, draftResult, rank, handlers) {
 
   const nameEl = document.createElement('span');
   nameEl.className = 'assessment-marks-entry__name';
-  nameEl.appendChild(createStudentNameElement({ student, onSelect: handlers.onSelectStudent, leadingMarker: 'none' }));
+  const performanceBucketKey = draftResult.absent ? null : getMarksBucketKey(draftResult.marks, maximumMarks, passMarkPercent);
+  nameEl.appendChild(createStudentNameElement({ student, onSelect: handlers.onSelectStudent, leadingMarker: 'swatch', performanceBucketKey }));
   row.appendChild(nameEl);
 
   const marksInput = document.createElement('input');
@@ -2483,7 +2512,7 @@ function renderEditableStudentRow(student, draftResult, rank, handlers) {
   return row;
 }
 
-function renderReadOnlyStudentRow(student, existingResult, rank, handlers) {
+function renderReadOnlyStudentRow(student, existingResult, rank, maximumMarks, passMarkPercent, handlers) {
   const row = document.createElement('div');
   row.className = 'assessment-marks-entry__row assessment-marks-entry__row--readonly';
 
@@ -2494,7 +2523,8 @@ function renderReadOnlyStudentRow(student, existingResult, rank, handlers) {
 
   const nameEl = document.createElement('span');
   nameEl.className = 'assessment-marks-entry__name';
-  nameEl.appendChild(createStudentNameElement({ student, onSelect: handlers.onSelectStudent, leadingMarker: 'none' }));
+  const performanceBucketKey = existingResult && existingResult.absent ? null : getMarksBucketKey(existingResult ? existingResult.marks : null, maximumMarks, passMarkPercent);
+  nameEl.appendChild(createStudentNameElement({ student, onSelect: handlers.onSelectStudent, leadingMarker: 'swatch', performanceBucketKey }));
   row.appendChild(nameEl);
 
   const marksEl = document.createElement('span');

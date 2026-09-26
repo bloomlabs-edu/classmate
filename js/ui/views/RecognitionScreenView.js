@@ -58,6 +58,7 @@ import { formatKeyStatistic } from '../components/RecognitionCard.js';
 import { createLeaderboardListElement } from '../components/LeaderboardList.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { createBackButton } from '../components/BackButton.js';
+import { createStudentNameElement } from '../components/StudentNameElement.js';
 import { createIcon, ICON_CATEGORIES } from '../components/Icon.js';
 
 const PERIOD_TABS = [
@@ -297,12 +298,13 @@ function createHeroTile({ category, winners, period, onSelectStudent }) {
   winnersRow.className = 'recognition-bento__hero-winners';
   const isTeam = isTeamWinner(winners[0]);
 
-  if (winners.length === 1 && onSelectStudent && !isTeam) {
-    const nameButton = document.createElement('button');
-    nameButton.type = 'button';
-    nameButton.className = 'recognition-bento__hero-winner-name student-name-link';
-    nameButton.textContent = winners[0].studentName;
-    nameButton.addEventListener('click', () => onSelectStudent(winners[0].studentId));
+  if (winners.length === 1 && !isTeam) {
+    const nameButton = createStudentNameElement({
+      student: { id: winners[0].studentId, name: winners[0].studentName, bucket: winners[0].bucket },
+      leadingMarker: 'none',
+      onSelect: onSelectStudent ? () => onSelectStudent(winners[0].studentId) : undefined,
+    });
+    nameButton.classList.add('recognition-bento__hero-winner-name');
     winnersRow.appendChild(nameButton);
   } else {
     const nameEl = document.createElement('span');
