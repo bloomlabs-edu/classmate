@@ -18,6 +18,7 @@
  *   #/classroom/{id}/activities               -> learning activities list
  *   #/classroom/{id}/activities/{activityId}  -> one activity's roster
  *   #/classroom/{id}/assessments/{assessmentId?}/{view?} -> Assessment Management — no assessmentId = the list; an assessmentId with no view defaults to the Gradebook (see ui/views/AssessmentManagementView.js)
+ *   #/classroom/{id}/assessments/scorecard/{cycleKey?}    -> the Scorecard — no cycleKey = the list of eligible exam cycles; a cycleKey opens that one cycle's student-by-subject table (see ui/views/ScorecardView.js)
  *   #/classroom/{id}/goals                     -> Goal Management
  *   #/classroom/{id}/learning                  -> Learning Management
  *   #/classroom/{id}/lesson-plans              -> Lesson Plans list (see ui/views/LessonPlansListView.js)
@@ -155,6 +156,20 @@ export function resolvePathParts(parts) {
       // (see ui/views/WorkRequestRosterView.js) — there is no longer
       // a route shape that needs a dateKey or yearMonth segment at all.
       return { name: 'workRequestCreate', classroomId: parts[1], subjectId, notebookTypeId };
+    }
+    if (parts[2] === 'assessments' && parts[3] === 'scorecard') {
+      // Deliberately its own route name, not folded into the generic
+      // {assessmentId?} slot below — "scorecard" is a reserved literal
+      // there, never a real Assessment id (see models/Assessment.js's
+      // own generateId(), which never produces this exact string), so
+      // there is no possible collision, but branching on the string
+      // explicitly here (checked BEFORE the generic 'assessments'
+      // return) keeps that reservation obvious rather than implicit.
+      // `cycleKey` is the URL-encoded exam-cycle title
+      // (services/scheduledEventService.js's own groupEventsByTitle()
+      // key) identifying one specific cycle's own table; absent for
+      // the Scorecard's own cycle-picker list.
+      return { name: 'assessmentsScorecard', classroomId: parts[1], cycleKey: parts[4] ? decodeURIComponent(parts[4]) : null };
     }
     if (parts[2] === 'assessments') {
       return { name: 'assessments', classroomId: parts[1], assessmentId: parts[3] || null, view: parts[4] || null };
