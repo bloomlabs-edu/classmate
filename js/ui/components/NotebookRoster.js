@@ -14,6 +14,7 @@
  */
 
 import { SUBMISSION_STATUSES, SUBMISSION_LABELS, COMPLETION_STATUSES, COMPLETION_LABELS } from '../../config/notebookStatuses.js';
+import { createStudentNameElement } from './StudentNameElement.js';
 
 export function createNotebookRosterElement({ students, getEntryForStudent, onSetSubmission, onSetCompletion, onSelectStudent }) {
   const list = document.createElement('div');
@@ -39,18 +40,8 @@ function createRosterRow({ student, team, entry, onSetSubmission, onSetCompletio
   const row = document.createElement('div');
   row.className = 'notebook-checking-row';
 
-  const nameLabel = team ? `${student.name} \u00b7 ${team.name}` : student.name;
-  let nameEl;
-  if (onSelectStudent) {
-    nameEl = document.createElement('button');
-    nameEl.type = 'button';
-    nameEl.className = 'notebook-checking-row__name student-name-link';
-    nameEl.addEventListener('click', onSelectStudent);
-  } else {
-    nameEl = document.createElement('span');
-    nameEl.className = 'notebook-checking-row__name';
-  }
-  nameEl.textContent = nameLabel;
+  const nameEl = createStudentNameElement({ student, team, leadingMarker: 'swatch', onSelect: onSelectStudent ? () => onSelectStudent() : undefined });
+  nameEl.classList.add('notebook-checking-row__name');
   row.appendChild(nameEl);
 
   row.appendChild(

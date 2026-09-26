@@ -14,6 +14,8 @@
  * route, so the Recognition Screen stays self-contained.
  */
 
+import { createStudentNameElement } from './StudentNameElement.js';
+
 const COLLAPSED_COUNT = 3;
 
 /** Same reliable, CSS-based rank badge as WeeklySnapshotWidget.js — see that file's doc comment for why emoji medals were replaced (a real cross-platform rendering gap, not just a style preference). */
@@ -59,17 +61,26 @@ export function createLeaderboardListElement({ entries, formatValue, onSelectStu
       rank.className = 'leaderboard-list__rank';
       rank.appendChild(createRankIndicator(entry.rank));
 
+      // Team-Champion entries have a teamName, not a studentId/bucket —
+      // those keep the plain, unstyled label (see this file's own
+      // header comment: this component is deliberately generic over
+      // both students and teams). A student entry always carries its
+      // own teacher-assigned Learning Bucket now (see
+      // services/studentProgressService.js's own passthrough) so it
+      // gets the same bucket-themed identity treatment as every other
+      // student list in the portal.
       let name;
-      if (onSelectStudent && entry.studentId) {
-        name = document.createElement('button');
-        name.type = 'button';
-        name.className = 'leaderboard-list__name student-name-link';
-        name.addEventListener('click', () => onSelectStudent(entry.studentId));
+      if (entry.studentId) {
+        name = createStudentNameElement({
+          student: { id: entry.studentId, name: entry.studentName, bucket: entry.bucket },
+          leadingMarker: 'swatch',
+          onSelect: onSelectStudent ? () => onSelectStudent(entry.studentId) : undefined,
+        });
       } else {
         name = document.createElement('span');
-        name.className = 'leaderboard-list__name';
+        name.textContent = entry.teamName;
       }
-      name.textContent = entry.studentName || entry.teamName;
+      name.classList.add('leaderboard-list__name');
 
       const value = document.createElement('span');
       value.className = 'leaderboard-list__value';

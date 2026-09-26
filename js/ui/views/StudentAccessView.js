@@ -48,6 +48,7 @@ import { getDisplayName } from '../../services/classroomService.js';
 import { APP_BASE_URL } from '../../config/appConfig.js';
 import { createIcon } from '../components/Icon.js';
 import { createBackButton } from '../components/BackButton.js';
+import { createStudentNameElement } from '../components/StudentNameElement.js';
 
 export function renderStudentAccessView(container, { classroom, currentUser, onBack, onSelectStudent }) {
   container.innerHTML = '';
@@ -579,17 +580,8 @@ function createJoinedStatusList(allStudents, onSelectStudent) {
     const row = document.createElement('div');
     row.className = 'student-access-row';
 
-    let nameEl;
-    if (onSelectStudent) {
-      nameEl = document.createElement('button');
-      nameEl.type = 'button';
-      nameEl.className = 'student-access-row__name student-name-link';
-      nameEl.addEventListener('click', () => onSelectStudent(student.id));
-    } else {
-      nameEl = document.createElement('p');
-      nameEl.className = 'student-access-row__name';
-    }
-    nameEl.textContent = student.name;
+    const nameEl = createStudentNameElement({ student, leadingMarker: 'swatch', onSelect: onSelectStudent ? () => onSelectStudent(student.id) : undefined });
+    nameEl.classList.add('student-access-row__name');
     row.appendChild(nameEl);
 
     const statusEl = document.createElement('p');

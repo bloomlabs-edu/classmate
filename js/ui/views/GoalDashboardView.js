@@ -40,6 +40,7 @@ import { createBackButton } from '../components/BackButton.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { createIcon } from '../components/Icon.js';
 import { showToast } from '../components/Toast.js';
+import { createStudentNameElement } from '../components/StudentNameElement.js';
 import { renderGoalManagementView } from './GoalManagementView.js';
 
 export function renderGoalDashboardView(container, { classroom, onBack }) {
@@ -330,12 +331,7 @@ function renderCategoryMatrix(classroom, cycle, allGoals, handlers) {
 
     const nameCell = document.createElement('td');
     nameCell.className = 'assessment-gradebook__name-cell';
-    const nameButton = document.createElement('button');
-    nameButton.type = 'button';
-    nameButton.className = 'btn btn--text';
-    nameButton.textContent = student.name;
-    nameButton.addEventListener('click', () => handlers.onSelectStudent(student.id));
-    nameCell.appendChild(nameButton);
+    nameCell.appendChild(createStudentNameElement({ student, leadingMarker: 'swatch', onSelect: () => handlers.onSelectStudent(student.id) }));
     row.appendChild(nameCell);
 
     categories.forEach((category) => {

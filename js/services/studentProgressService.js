@@ -363,6 +363,11 @@ export function getRankInRange(classroom, { start, end }) {
     studentId: student.id,
     studentName: student.name,
     teamId: team.id,
+    // Passed through purely for display (see
+    // ui/components/LeaderboardList.js/WeeklySnapshotWidget.js's own
+    // bucket-themed name treatment) — never read by any ranking logic
+    // in this file itself.
+    bucket: student.bucket,
     stars: getStarsInRange(classroom, student.id, { start, end }),
   }));
 
@@ -393,6 +398,7 @@ export function getStreakRankInRange(classroom, { start, end }) {
     studentId: student.id,
     studentName: student.name,
     teamId: team.id,
+    bucket: student.bucket,
     streak: getBestActiveStreakAcrossNotebooksInRange(classroom, student.id, { start, end }),
   }));
 
@@ -406,6 +412,7 @@ export function getNotebookCompletionRankInRange(classroom, { start, end }) {
       studentId: student.id,
       studentName: student.name,
       teamId: team.id,
+      bucket: student.bucket,
       completionPercent: getOverallNotebookCompletionInRange(classroom, student.id, { start, end }),
     }))
     .filter((entry) => entry.completionPercent !== null);
@@ -452,6 +459,7 @@ export function getBiggestClimber(classroom, { currentRange, previousRange }) {
         studentId: current.studentId,
         studentName: current.studentName,
         teamId: current.teamId,
+        bucket: current.bucket,
         previousRank: previous.rank,
         currentRank: current.rank,
         movement: previous.rank - current.rank, // positive = climbed

@@ -18,6 +18,7 @@ import * as studentProgressService from '../../services/studentProgressService.j
 import { getWeekRange } from '../../utils/dateHelpers.js';
 import { createEmptyStateElement } from './EmptyState.js';
 import { createIcon, createIconBadge } from './Icon.js';
+import { createStudentNameElement } from './StudentNameElement.js';
 
 /**
  * A small, reliable rank indicator — a colored circular badge for the
@@ -91,17 +92,12 @@ export function createWeeklySnapshotWidgetElement({ classroom, onSelectStudent }
       const rank = document.createElement('span');
       rank.className = 'editorial-list__rank';
       rank.appendChild(createRankIndicator(entry.rank));
-      let name;
-      if (onSelectStudent) {
-        name = document.createElement('button');
-        name.type = 'button';
-        name.className = 'editorial-list__name student-name-link';
-        name.addEventListener('click', () => onSelectStudent(entry.studentId));
-      } else {
-        name = document.createElement('span');
-        name.className = 'editorial-list__name';
-      }
-      name.textContent = entry.studentName;
+      const name = createStudentNameElement({
+        student: { id: entry.studentId, name: entry.studentName, bucket: entry.bucket },
+        leadingMarker: 'swatch',
+        onSelect: onSelectStudent ? () => onSelectStudent(entry.studentId) : undefined,
+      });
+      name.classList.add('editorial-list__name');
       const value = document.createElement('span');
       value.className = 'editorial-list__value';
       value.textContent = `${entry.stars} \u2b50`;

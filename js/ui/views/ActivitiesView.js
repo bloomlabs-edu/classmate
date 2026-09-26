@@ -17,6 +17,7 @@ import { ACTIVITY_TYPES } from '../../config/activityTypes.js';
 import { SUBMISSION_STATUSES } from '../../config/submissionStatuses.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { createBackButton } from '../components/BackButton.js';
+import { createStudentNameElement } from '../components/StudentNameElement.js';
 
 export function renderActivitiesListView(container, { classroom, onBack, onSelectActivity }) {
   container.innerHTML = '';
@@ -204,17 +205,12 @@ function createRosterRow(classroom, student, team, activity, onSelectStudent) {
   const row = document.createElement('div');
   row.className = 'activity-roster-row';
 
-  let nameEl;
-  if (onSelectStudent) {
-    nameEl = document.createElement('button');
-    nameEl.type = 'button';
-    nameEl.className = 'activity-roster-row__name student-name-link';
-    nameEl.addEventListener('click', () => onSelectStudent(student.id));
-  } else {
-    nameEl = document.createElement('span');
-    nameEl.className = 'activity-roster-row__name';
-  }
-  nameEl.textContent = `${student.name} \u00b7 ${team.name}`;
+  // Same bucket-themed identity treatment as every other student list
+  // in the portal (see ui/components/StudentNameElement.js) \u2014 this row
+  // is a plain marks-entry-adjacent form, not Class Mode, so a click
+  // opens Student Profile just like Assessment Gradebook/Scorecard do.
+  const nameEl = createStudentNameElement({ student, team, leadingMarker: 'swatch', onSelect: onSelectStudent ? () => onSelectStudent(student.id) : undefined });
+  nameEl.classList.add('activity-roster-row__name');
 
   const existing = student.submissions?.[activity.id] || {};
 
