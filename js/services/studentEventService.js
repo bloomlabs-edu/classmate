@@ -23,8 +23,31 @@
 
 import { createStudentEvent } from '../models/StudentEvent.js';
 import * as studentDeviceService from './studentDeviceService.js';
-import * as studentAuthService from './studentAuthService.js';
-import * as readStateRepository from '../repositories/firestoreStudentEventReadStateRepository.js';
+
+/**
+ * `studentAuthService.js` and `firestoreStudentEventReadStateRepository.js`
+ * are deliberately dynamically (not statically) imported — both
+ * transitively touch the Firebase browser-CDN (`https://www.gstatic.com/...`),
+ * which only resolves in a real browser. A static top-level import of
+ * either would make simply IMPORTING this file fail under plain Node
+ * (`node --test`), even for a caller that only ever needs this file's
+ * own pure half (publishEvent()/publishEventToAllStudents()/
+ * getEventsForStudent()/getEventCopyForViewer()/countUnread(), all
+ * unchanged, all still synchronous) — exactly the breakage found while
+ * adding tests/services/scorecardClassroomIsolation.test.js (which
+ * only needs services/assessmentService.js's own
+ * publishEventToAllStudents() call, never the three read-state
+ * functions below). Deferred to only the three functions that actually
+ * need them, below — every one of those three is already async, so
+ * this is a pure internal implementation detail: identical behavior in
+ * a real browser, just resolved lazily instead of eagerly.
+ */
+async function getStudentAuthService() {
+  return import('./studentAuthService.js');
+}
+async function getReadStateRepository() {
+  return import('../repositories/firestoreStudentEventReadStateRepository.js');
+}
 
 /**
  * Publishes one event for one student. Call this only after the
@@ -181,6 +204,7 @@ async function resolveActiveStudentContext() {
   const slotIndex = studentDeviceService.getSlotForStudent(activeProfile.studentId);
   if (slotIndex === null) return null;
 
+  const studentAuthService = await getStudentAuthService();
   const db = studentAuthService.getFirestoreForSlot(slotIndex);
   const uid = await studentAuthService.ensureAnonymousSignIn(slotIndex);
   return { classroomId: activeProfile.classroomId, db, uid };
@@ -192,6 +216,7 @@ export async function markEventReadForCurrentStudent(eventId) {
   if (!context) return false;
 
   try {
+    const readStateRepository = await getReadStateRepository();
     await readStateRepository.markEventRead(context.db, context.classroomId, context.uid, eventId);
     return true;
   } catch (error) {
@@ -208,6 +233,7 @@ export async function markEventsReadForCurrentStudent(eventIds) {
   if (!context) return false;
 
   try {
+    const readStateRepository = await getReadStateRepository();
     await readStateRepository.markEventsRead(context.db, context.classroomId, context.uid, eventIds);
     return true;
   } catch (error) {
@@ -230,8 +256,10 @@ export function subscribeToReadStateForCurrentStudent(onChange, onError) {
   let cancelled = false;
 
   resolveActiveStudentContext()
-    .then((context) => {
+    .then(async (context) => {
       if (!context || cancelled) return;
+      const readStateRepository = await getReadStateRepository();
+      if (cancelled) return;
       unsubscribe = readStateRepository.subscribeToReadState(context.db, context.classroomId, context.uid, onChange, onError);
     })
     .catch((error) => onError?.(error));
