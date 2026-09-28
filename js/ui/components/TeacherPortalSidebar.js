@@ -57,6 +57,7 @@ const NAV_ITEMS = [
   { id: 'notebooks', label: 'Notebooks', icon: 'book-open', path: (classroomId) => `/classroom/${classroomId}/notebooks` },
   { id: 'assessments', label: 'Assessments', icon: 'clipboard-list', path: (classroomId) => `/classroom/${classroomId}/assessments` },
   { id: 'lessonPlans', label: 'Lesson Plans', icon: 'file-text', path: (classroomId) => `/classroom/${classroomId}/lesson-plans` },
+  { id: 'chapterPlans', label: 'Chapter Plans', icon: 'folder', path: (classroomId) => `/classroom/${classroomId}/chapter-plans` },
   { id: 'teachingProgrammes', label: 'Teaching Programmes', icon: 'graduation-cap', path: (classroomId) => `/classroom/${classroomId}/learning-programmes` },
   { id: 'classFeed', label: 'Class Feed', icon: 'message-circle', path: (classroomId) => `/classroom/${classroomId}/feed` },
   { id: 'learningCircle', label: 'Learning Circle', icon: 'users', path: (classroomId) => `/classroom/${classroomId}/learning-programmes` },

@@ -120,6 +120,20 @@ test('program-manager with no matching second segment does not resolve to the we
   assert.notDeepEqual(resolvePathParts(parts('program-manager/something-else')), { name: 'programManagerWeeklyPlans' });
 });
 
+test('program-manager chapter-plans route — not classroom-scoped, no classroomId in the resolved route', () => {
+  assert.deepEqual(resolvePathParts(parts('program-manager/chapter-plans')), { name: 'programManagerChapterPlans' });
+});
+
+test('program-manager chapter-plans/review route resolves distinctly from the queue route', () => {
+  assert.deepEqual(resolvePathParts(parts('program-manager/chapter-plans/review')), { name: 'programManagerChapterPlanReview' });
+});
+
+test('program-manager chapter-plans route does not collide with the Fellow-facing classroom-scoped chapter-plans route', () => {
+  const pmRoute = resolvePathParts(parts('program-manager/chapter-plans'));
+  const fellowRoute = resolvePathParts(parts('classroom/classroom-1/chapter-plans'));
+  assert.notEqual(pmRoute.name, fellowRoute.name);
+});
+
 test('pre-existing route: learning management', () => {
   assert.deepEqual(resolvePathParts(parts('classroom/classroom-1/learning')), { name: 'learningManagement', classroomId: 'classroom-1' });
 });
@@ -134,6 +148,24 @@ test('lesson plan builder route', () => {
     classroomId: 'classroom-1',
     lessonPlanId: 'plan-1',
   });
+});
+
+test('chapter plans list route', () => {
+  assert.deepEqual(resolvePathParts(parts('classroom/classroom-1/chapter-plans')), { name: 'chapterPlansList', classroomId: 'classroom-1' });
+});
+
+test('chapter plan editor route', () => {
+  assert.deepEqual(resolvePathParts(parts('classroom/classroom-1/chapter-plans/plan-1')), {
+    name: 'chapterPlanEditor',
+    classroomId: 'classroom-1',
+    chapterPlanId: 'plan-1',
+  });
+});
+
+test('chapter plan editor route is stable on a fresh parse (browser refresh) — resolvePathParts is pure and derives the same route from the same URL every time', () => {
+  const first = resolvePathParts(parts('classroom/classroom-1/chapter-plans/plan-1'));
+  const second = resolvePathParts(parts('classroom/classroom-1/chapter-plans/plan-1'));
+  assert.deepEqual(first, second);
 });
 
 test('lesson plan review queue route', () => {

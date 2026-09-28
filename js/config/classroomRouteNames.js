@@ -48,6 +48,8 @@ export const CLASSROOM_ROUTE_NAMES = [
   'lessonPlanBuilder',
   'lessonPlanReviewQueue',
   'lessonPlanReview',
+  'chapterPlansList',
+  'chapterPlanEditor',
   'feed',
   'timetable',
   'scoreboardArchive',

@@ -80,6 +80,17 @@ export const PERMISSIONS = Object.freeze({
   // above) — not a distinct permission shape from a co-teacher's.
   REVIEW_LESSON_PLAN: 'review_lesson_plan',
   APPROVE_LESSON_PLAN: 'approve_lesson_plan',
+  // Chapter Plan Review — DELIBERATELY DISTINCT from REVIEW_LESSON_PLAN/
+  // APPROVE_LESSON_PLAN above, not a reuse. The Chapter Plan (long-range,
+  // per-chapter, models/ChapterPlan.js) is a second, independent planning
+  // tier with its own review lifecycle — see that model's own header
+  // comment — so a classroom member's authority over it is tracked
+  // independently of Lesson Plan review, even though today every role
+  // below happens to grant both together. A future
+  // services/chapterPlanReviewService.js (not built this phase) would
+  // check these, never REVIEW_LESSON_PLAN/APPROVE_LESSON_PLAN.
+  REVIEW_CHAPTER_PLAN: 'review_chapter_plan',
+  APPROVE_CHAPTER_PLAN: 'approve_chapter_plan',
 });
 
 export const ROLE_PERMISSIONS = Object.freeze({
@@ -98,6 +109,8 @@ export const ROLE_PERMISSIONS = Object.freeze({
     PERMISSIONS.DELETE_CLASSROOM,
     PERMISSIONS.REVIEW_LESSON_PLAN,
     PERMISSIONS.APPROVE_LESSON_PLAN,
+    PERMISSIONS.REVIEW_CHAPTER_PLAN,
+    PERMISSIONS.APPROVE_CHAPTER_PLAN,
   ]),
   [MEMBER_ROLES.TEACHER]: Object.freeze([
     PERMISSIONS.AWARD_POINTS,
@@ -110,6 +123,8 @@ export const ROLE_PERMISSIONS = Object.freeze({
     PERMISSIONS.CREATE_LEARNING_ACTIVITY,
     PERMISSIONS.REVIEW_LESSON_PLAN,
     PERMISSIONS.APPROVE_LESSON_PLAN,
+    PERMISSIONS.REVIEW_CHAPTER_PLAN,
+    PERMISSIONS.APPROVE_CHAPTER_PLAN,
   ]),
   [MEMBER_ROLES.VIEWER]: Object.freeze([]),
   // STUDENT/PARENT stay intentionally empty — see file header; real
@@ -117,15 +132,17 @@ export const ROLE_PERMISSIONS = Object.freeze({
   // approved, not something to guess at now.
   [MEMBER_ROLES.STUDENT]: Object.freeze([]),
   [MEMBER_ROLES.PARENT]: Object.freeze([]),
-  // PROGRAM_MANAGER: exactly the two permissions Weekly Plan Review
-  // needs, nothing else — no AWARD_POINTS, no EDIT_STUDENTS, no
-  // INVITE_TEACHER, etc. A PM added to a classroom this way gains no
-  // classroom-management capability at all, only the ability to review/
-  // approve LessonPlans, identical in shape to a TEACHER's own grant of
-  // the same two permissions above.
+  // PROGRAM_MANAGER: exactly the review/approve permission pairs the
+  // Lesson Plan and Chapter Plan review flows need, nothing else — no
+  // AWARD_POINTS, no EDIT_STUDENTS, no INVITE_TEACHER, etc. A PM added
+  // to a classroom this way gains no classroom-management capability at
+  // all, only the ability to review/approve plans, identical in shape
+  // to a TEACHER's own grant of the same permissions above.
   [MEMBER_ROLES.PROGRAM_MANAGER]: Object.freeze([
     PERMISSIONS.REVIEW_LESSON_PLAN,
     PERMISSIONS.APPROVE_LESSON_PLAN,
+    PERMISSIONS.REVIEW_CHAPTER_PLAN,
+    PERMISSIONS.APPROVE_CHAPTER_PLAN,
   ]),
   // HEAD_MASTER stays intentionally empty — untouched by this change.
   [MEMBER_ROLES.HEAD_MASTER]: Object.freeze([]),

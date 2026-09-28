@@ -115,7 +115,7 @@ const FACILITATOR_HEX = getGroupColorHex('purple');
 
 export function renderPersonalHubView(
   container,
-  { classrooms, currentUser, onSelectClassroom, onNewClassroom, onJoinClassroom, onDeleteClassroom, onOpenCurriculumManagement, onOpenTimetable, onOpenWeeklyPlans }
+  { classrooms, currentUser, onSelectClassroom, onNewClassroom, onJoinClassroom, onDeleteClassroom, onOpenCurriculumManagement, onOpenTimetable, onOpenWeeklyPlans, onOpenChapterPlans }
 ) {
   container.innerHTML = '';
 
@@ -996,6 +996,25 @@ export function renderPersonalHubView(
           title: 'Weekly Plans',
           description: 'Review Weekly Plans submitted for your review, across every classroom.',
           onClick: onOpenWeeklyPlans,
+        })
+      );
+    }
+    // Chapter Plans — Program Manager review. Same
+    // `isProgramManagerAnywhere` gate as Weekly Plans immediately above
+    // — never shown to a plain teacher/co-teacher with nothing to
+    // review here, even though REVIEW_CHAPTER_PLAN/APPROVE_CHAPTER_PLAN
+    // are also granted to OWNER/TEACHER roles (a co-teacher's own
+    // same-classroom Chapter Plan review, if ever built, would be a
+    // separate entry point — this one is specifically the PM's own
+    // cross-classroom queue).
+    if (isProgramManagerAnywhere && onOpenChapterPlans) {
+      section.appendChild(
+        buildManagementRow({
+          icon: 'folder',
+          category: 'progress',
+          title: 'Chapter Plans',
+          description: "Review your Fellows' Chapter Plans, across every classroom.",
+          onClick: onOpenChapterPlans,
         })
       );
     }

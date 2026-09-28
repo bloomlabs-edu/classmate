@@ -4750,6 +4750,525 @@ textarea.reading-editor__block-input {
   color: var(--color-muted);
 }
 
+/* ---- Chapter Plans List -------------------------------------------- */
+
+.chapter-plans-list {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 0 1.5rem 3rem;
+}
+.chapter-plans-list__header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 1.25rem 0 1rem;
+}
+.chapter-plans-list__title {
+  font-size: 1.4rem;
+  font-weight: var(--font-weight-black);
+  margin: 0;
+  flex: 1;
+}
+.chapter-plans-list__create-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.chapter-plans-list__loading,
+.chapter-plans-list__error {
+  color: var(--color-muted);
+}
+.chapter-plans-list__empty {
+  color: var(--color-muted);
+  background-color: #ffffff;
+  border-radius: 14px;
+  padding: 2rem;
+  text-align: center;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+}
+.chapter-plans-list__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.chapter-plans-list__row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background-color: #ffffff;
+  border: none;
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+.chapter-plans-list__row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1;
+  min-width: 0;
+}
+.chapter-plans-list__row-title {
+  font-weight: var(--font-weight-bold);
+}
+.chapter-plans-list__row-meta {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+.chapter-plans-list__status-badge {
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  border-radius: var(--radius-pill);
+  padding: 0.3rem 0.7rem;
+  white-space: nowrap;
+  background-color: #EBEDEF;
+  color: var(--color-muted);
+}
+.chapter-plans-list__status-badge--submitted {
+  background-color: #EAF2FB;
+  color: var(--color-primary);
+}
+.chapter-plans-list__status-badge--changes_requested {
+  background-color: #FDEEE0;
+  color: var(--color-warning, #BF5F1A);
+}
+.chapter-plans-list__status-badge--approved {
+  background-color: #EAF5E3;
+  color: var(--color-success, #4C9A2A);
+}
+
+/* ---- Chapter Plan Create Modal (wizard) ----------------------------- */
+
+.chapter-plan-create-modal__step-label {
+  font-size: 0.78rem;
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-muted);
+  margin: 0 0 0.25rem;
+}
+.chapter-plan-create-modal__hint {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  margin: 0 0 0.75rem;
+}
+.chapter-plan-create-modal__empty {
+  color: var(--color-muted);
+  background-color: var(--color-bg);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+.chapter-plan-create-modal__error {
+  color: var(--color-warning, #BF5F1A);
+  font-size: 0.85rem;
+}
+.chapter-plan-create-modal__option-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.chapter-plan-create-modal__option {
+  text-align: left;
+  background-color: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+.chapter-plan-create-modal__option:hover {
+  border-color: var(--color-primary);
+}
+
+/* ---- Chapter Plan Editor --------------------------------------------- */
+
+.chapter-plan-editor {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 1.5rem 4rem;
+}
+.chapter-plan-editor__error,
+.chapter-plan-editor__loading {
+  color: var(--color-muted);
+}
+.chapter-plan-editor__title-bar {
+  padding: 1.5rem 1.75rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  margin: 1.25rem 0;
+}
+.chapter-plan-editor__header-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.chapter-plan-editor__status-badge {
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  border-radius: var(--radius-pill);
+  padding: 0.3rem 0.7rem;
+  white-space: nowrap;
+  background-color: #EBEDEF;
+  color: var(--color-muted);
+}
+.chapter-plan-editor__status-badge--submitted {
+  background-color: #EAF2FB;
+  color: var(--color-primary);
+}
+.chapter-plan-editor__status-badge--changes_requested {
+  background-color: #FDEEE0;
+  color: var(--color-warning, #BF5F1A);
+}
+.chapter-plan-editor__status-badge--approved {
+  background-color: #EAF5E3;
+  color: var(--color-success, #4C9A2A);
+}
+.chapter-plan-editor__submit-button {
+  margin-left: auto;
+}
+.chapter-plan-editor__title-line {
+  margin-top: 0.75rem;
+}
+.chapter-plan-editor__title-input {
+  width: 100%;
+  font-size: 1.6rem;
+  font-weight: var(--font-weight-black);
+  letter-spacing: -0.01em;
+  border: none;
+  background: none;
+  padding: 0.2rem 0;
+  font-family: inherit;
+}
+.chapter-plan-editor__title-input:focus {
+  outline: none;
+  border-bottom: 2px solid var(--color-primary);
+}
+.chapter-plan-editor__title-input:disabled {
+  color: inherit;
+  opacity: 1;
+}
+.chapter-plan-editor__meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.chapter-plan-editor__meta-pill {
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-muted);
+  background-color: var(--color-bg);
+  border-radius: var(--radius-pill);
+  padding: 0.3rem 0.7rem;
+}
+.chapter-plan-editor__review-feedback {
+  background-color: #FDEEE0;
+  border: 1px solid var(--color-warning, #BF5F1A);
+  border-radius: 18px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.25rem;
+}
+.chapter-plan-editor__review-feedback-heading {
+  font-size: 1rem;
+  font-weight: var(--font-weight-black);
+  color: var(--color-warning, #BF5F1A);
+  margin: 0 0 0.75rem;
+}
+.chapter-plan-editor__review-feedback-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.chapter-plan-editor__review-feedback-entry {
+  background-color: #ffffff;
+  border-radius: 10px;
+  padding: 0.6rem 0.8rem;
+}
+.chapter-plan-editor__review-feedback-meta {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+  margin-bottom: 0.25rem;
+}
+.chapter-plan-editor__review-feedback-text {
+  margin: 0;
+  font-size: 0.9rem;
+}
+.chapter-plan-editor__section {
+  background-color: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: 18px;
+  padding: 1.5rem 1.75rem;
+  margin-bottom: 1.25rem;
+}
+.chapter-plan-editor__section-heading {
+  font-size: 1.1rem;
+  font-weight: var(--font-weight-black);
+  margin: 0 0 1rem;
+}
+.chapter-plan-editor__field-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-muted);
+  margin-bottom: 1rem;
+}
+.chapter-plan-editor__field-input {
+  display: block;
+  width: 100%;
+  margin-top: 0.4rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font-family: inherit;
+  font-size: 0.95rem;
+  color: var(--color-text, #1f2933);
+  min-height: 2.4rem;
+  resize: vertical;
+}
+textarea.chapter-plan-editor__field-input {
+  min-height: 5rem;
+}
+.chapter-plan-editor__field-input--number {
+  max-width: 140px;
+}
+.chapter-plan-editor__field-input:disabled {
+  background-color: var(--color-bg);
+  color: var(--color-muted);
+}
+.chapter-plan-editor__list-field {
+  margin-bottom: 1rem;
+}
+.chapter-plan-editor__list-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+.chapter-plan-editor__list-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.chapter-plan-editor__list-row .chapter-plan-editor__field-input {
+  margin-top: 0;
+}
+.chapter-plan-editor__list-remove-button {
+  flex-shrink: 0;
+  color: var(--color-muted);
+}
+.chapter-plan-editor__list-add-button {
+  margin-top: 0.4rem;
+}
+.chapter-plan-editor__browse-sparks-button,
+.chapter-plan-editor__attach-resource-button {
+  margin: 0.25rem 0 1rem;
+}
+.chapter-plan-editor__spark-ref-list,
+.chapter-plan-editor__resource-link-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+.chapter-plan-editor__spark-ref-list-heading,
+.chapter-plan-editor__resource-link-list-heading {
+  font-size: 0.78rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+  width: 100%;
+}
+.chapter-plan-editor__spark-ref-chip,
+.chapter-plan-editor__resource-link-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  background-color: var(--color-bg);
+  border-radius: var(--radius-pill);
+  padding: 0.3rem 0.6rem;
+}
+.chapter-plan-editor__spark-ref-remove-button,
+.chapter-plan-editor__resource-link-remove-button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0;
+}
+
+/* ---- Spark Browser ("✨ Browse Sparks") ------------------------------ */
+
+.spark-browser__intro {
+  font-size: 0.95rem;
+  color: var(--color-muted);
+  margin: 0 0 0.75rem;
+}
+.spark-browser__filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+.spark-browser__search-input,
+.spark-browser__type-select,
+.spark-browser__grade-input {
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+.spark-browser__search-input {
+  flex: 1;
+  min-width: 180px;
+}
+.spark-browser__grade-input {
+  max-width: 140px;
+}
+.spark-browser__loading,
+.spark-browser__error {
+  color: var(--color-muted);
+}
+.spark-browser__empty {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--color-muted);
+  background-color: var(--color-bg);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+.spark-browser__card-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.6rem;
+}
+.spark-browser__card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  background-color: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+}
+.spark-browser__card-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.spark-browser__card-title {
+  font-weight: var(--font-weight-medium);
+  font-size: 0.92rem;
+}
+.spark-browser__card-type-badge {
+  font-size: 0.7rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary);
+  background-color: #EAF2FB;
+  border-radius: var(--radius-pill);
+  padding: 0.15rem 0.5rem;
+}
+.spark-browser__card-concept-badge {
+  font-size: 0.7rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-success, #4C9A2A);
+  background-color: #EAF5E3;
+  border-radius: var(--radius-pill);
+  padding: 0.15rem 0.5rem;
+}
+.spark-browser__card-description {
+  font-size: 0.85rem;
+  margin: 0;
+}
+.spark-browser__card-meta {
+  font-size: 0.78rem;
+  color: var(--color-muted);
+}
+.spark-browser__card-use-button {
+  align-self: flex-start;
+  margin-top: 0.2rem;
+}
+
+/* ---- Spark Picker Modal feedback ------------------------------------- */
+
+.spark-picker-modal__feedback {
+  min-height: 1.2rem;
+  font-size: 0.85rem;
+}
+.spark-picker-modal__feedback--success {
+  color: var(--color-success, #4C9A2A);
+}
+.spark-picker-modal__feedback--error {
+  color: var(--color-warning, #BF5F1A);
+}
+
+/* ---- Chapter Plan Resource Picker Modal ------------------------------ */
+
+.chapter-plan-resource-picker__feedback {
+  min-height: 1.2rem;
+  font-size: 0.85rem;
+}
+.chapter-plan-resource-picker__feedback--success {
+  color: var(--color-success, #4C9A2A);
+}
+.chapter-plan-resource-picker__feedback--error {
+  color: var(--color-warning, #BF5F1A);
+}
+.chapter-plan-resource-picker__section {
+  margin-bottom: 1.5rem;
+}
+.chapter-plan-resource-picker__section-heading {
+  font-size: 0.95rem;
+  font-weight: var(--font-weight-bold);
+  margin: 0 0 0.5rem;
+}
+.chapter-plan-resource-picker__section-empty {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+.chapter-plan-resource-picker__card-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.6rem;
+}
+.chapter-plan-resource-picker__card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  background-color: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+}
+.chapter-plan-resource-picker__card-title {
+  font-weight: var(--font-weight-medium);
+  font-size: 0.92rem;
+}
+.chapter-plan-resource-picker__card-meta {
+  font-size: 0.78rem;
+  color: var(--color-muted);
+}
+.chapter-plan-resource-picker__card-attach-button {
+  align-self: flex-start;
+  margin-top: 0.2rem;
+}
+
 /* ---------------------------------------------------------------------
    Phase 4 — Teaching Idea preview modal (element + complete lesson)
    --------------------------------------------------------------------- */

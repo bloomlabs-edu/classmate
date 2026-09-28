@@ -55,6 +55,8 @@ const CLASSROOM_SCOPED_PATHS = [
   `classroom/${CLASSROOM_ID}/lesson-plans/review`,
   `classroom/${CLASSROOM_ID}/lesson-plans/lp1/review`,
   `classroom/${CLASSROOM_ID}/lesson-plans/lp1`,
+  `classroom/${CLASSROOM_ID}/chapter-plans`,
+  `classroom/${CLASSROOM_ID}/chapter-plans/cp1`,
   `classroom/${CLASSROOM_ID}/feed`,
   `classroom/${CLASSROOM_ID}/timetable`,
   `classroom/${CLASSROOM_ID}/scoreboard-archive`,

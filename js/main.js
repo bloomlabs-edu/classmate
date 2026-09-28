@@ -61,9 +61,13 @@ import { renderLessonPlansListView } from './ui/views/LessonPlansListView.js';
 import { renderProgramManagerObservationsView } from './ui/views/ProgramManagerObservationsView.js';
 import { renderProgramManagerWeeklyPlanQueueView } from './ui/views/ProgramManagerWeeklyPlanQueueView.js';
 import { renderWeeklyPlanReviewView } from './ui/views/WeeklyPlanReviewView.js';
+import { renderProgramManagerChapterPlanQueueView } from './ui/views/ProgramManagerChapterPlanQueueView.js';
+import { renderProgramManagerChapterPlanReviewView } from './ui/views/ProgramManagerChapterPlanReviewView.js';
 import { renderLessonPlanBuilderView } from './ui/views/LessonPlanBuilderView.js';
 import { renderLessonPlanReviewQueueView } from './ui/views/LessonPlanReviewQueueView.js';
 import { renderLessonPlanReviewView } from './ui/views/LessonPlanReviewView.js';
+import { renderChapterPlansListView } from './ui/views/ChapterPlansListView.js';
+import { renderChapterPlanEditorView } from './ui/views/ChapterPlanEditorView.js';
 import { renderAssessmentManagementView } from './ui/views/AssessmentManagementView.js';
 import { renderScorecardView } from './ui/views/ScorecardView.js';
 import { renderGoalManagementView } from './ui/views/GoalManagementView.js';
@@ -925,6 +929,43 @@ function renderRoute(route, reason = 'unspecified') {
     return;
   }
 
+  if (route.name === 'programManagerChapterPlans') {
+    renderProgramManagerChapterPlanQueueView(appContainer, {
+      classrooms: workspaceService.getState().classrooms,
+      currentUser,
+      onBack: () => router.navigate('/teacher'),
+      onOpenChapterPlanReview: (classroomId, chapterPlanId) =>
+        router.navigate(
+          `/program-manager/chapter-plans/review?classroomId=${encodeURIComponent(classroomId)}&chapterPlanId=${encodeURIComponent(chapterPlanId)}`
+        ),
+    });
+    return;
+  }
+
+  if (route.name === 'programManagerChapterPlanReview') {
+    const { classroomId, chapterPlanId } = route.query || {};
+    const classroom = workspaceService.getClassroomById(classroomId);
+    if (!classroom) {
+      // Same in-flight-vs-genuinely-missing distinction as
+      // 'programManagerWeeklyPlanReview' above — a refresh landing
+      // directly on this query-param route can arrive before this
+      // specific classroom's own snapshot has loaded.
+      if (workspaceService.hasClassroomSubscription(classroomId)) {
+        renderLoadingScreen(appContainer);
+        return;
+      }
+      router.navigate('/program-manager/chapter-plans');
+      return;
+    }
+    renderProgramManagerChapterPlanReviewView(appContainer, {
+      classroom,
+      currentUser,
+      chapterPlanId,
+      onBack: () => router.navigate('/program-manager/chapter-plans'),
+    });
+    return;
+  }
+
   if (route.name === 'programManagerObservations') {
     renderProgramManagerObservationsView(appContainer, {
       classrooms: workspaceService.getState().classrooms,
@@ -1153,6 +1194,20 @@ function renderRoute(route, reason = 'unspecified') {
         onOpenLessonPlan: (lessonPlanId) => router.navigate(`/classroom/${classroom.id}/lesson-plans/${lessonPlanId}`),
         onOpenLessonPlanReview: (lessonPlanId) => router.navigate(`/classroom/${classroom.id}/lesson-plans/${lessonPlanId}/review`),
         onOpenReviewQueue: () => router.navigate(`/classroom/${classroom.id}/lesson-plans/review`),
+      });
+    } else if (route.name === 'chapterPlansList') {
+      renderChapterPlansListView(appContainer, {
+        classroom,
+        currentUser,
+        onBack: () => router.navigate(`/classroom/${classroom.id}`),
+        onOpenChapterPlan: (chapterPlanId) => router.navigate(`/classroom/${classroom.id}/chapter-plans/${chapterPlanId}`),
+      });
+    } else if (route.name === 'chapterPlanEditor') {
+      renderChapterPlanEditorView(appContainer, {
+        classroom,
+        currentUser,
+        chapterPlanId: route.chapterPlanId,
+        onBack: () => router.navigate(`/classroom/${classroom.id}/chapter-plans`),
       });
     } else if (route.name === 'lessonPlanBuilder') {
       renderLessonPlanBuilderView(appContainer, {
@@ -1494,6 +1549,7 @@ function renderRoute(route, reason = 'unspecified') {
       onOpenTimetable: (classroomId) => router.navigate(`/classroom/${classroomId}/timetable`),
       onOpenWeeklyPlans: () => router.navigate('/program-manager/weekly-plans'),
       onOpenObservations: () => router.navigate('/program-manager/observations'),
+      onOpenChapterPlans: () => router.navigate('/program-manager/chapter-plans'),
     });
   }
 }

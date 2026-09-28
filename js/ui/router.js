@@ -25,6 +25,13 @@
  *   #/classroom/{id}/lesson-plans/review       -> Review Queue, same-classroom SUBMITTED plans not your own (see ui/views/LessonPlanReviewQueueView.js)
  *   #/classroom/{id}/lesson-plans/{lessonPlanId} -> the Lesson Plan Builder for one plan (see ui/views/LessonPlanBuilderView.js)
  *   #/classroom/{id}/lesson-plans/{lessonPlanId}/review -> the reviewer's read+comment+decide view for one plan (see ui/views/LessonPlanReviewView.js)
+ *   #/classroom/{id}/chapter-plans              -> Chapter Plans list, THIS Fellow's own plans only (see ui/views/ChapterPlansListView.js) — Fellow-facing only
+ *   #/classroom/{id}/chapter-plans/{chapterPlanId} -> the Chapter Plan Editor for one plan (see ui/views/ChapterPlanEditorView.js)
+ *   #/program-manager/chapter-plans            -> Program Manager Chapter Plan Review — the cross-classroom queue of
+ *                                                 Fellows' submitted Chapter Plans (see ui/views/ProgramManagerChapterPlanQueueView.js)
+ *   #/program-manager/chapter-plans/review     -> the reviewer's read+comment+decide view for one plan (see
+ *                                                 ui/views/ProgramManagerChapterPlanReviewView.js), reached with
+ *                                                 `?classroomId=&chapterPlanId=` query params
  *   #/classroom/{id}/learning-programmes                              -> Learning Programmes list (see ui/views/LearningProgrammesListView.js)
  *   #/classroom/{id}/learning-programmes/{programmeId}                -> one programme's overview (see ui/views/LearningProgrammeOverviewView.js)
  *   #/classroom/{id}/learning-programmes/{programmeId}/settings       -> that programme's settings (see ui/views/LearningProgrammeSettingsView.js)
@@ -192,6 +199,22 @@ export function resolvePathParts(parts) {
       }
       return { name: 'lessonPlansList', classroomId: parts[1] };
     }
+    // Chapter Plans — Fellow-facing only (see
+    // ui/views/ChapterPlansListView.js/ChapterPlanEditorView.js). No
+    // separate "create" route: creation is a modal
+    // (ui/components/ChapterPlanCreateModal.js) reached from the list,
+    // never its own URL — mirrors how `lesson-plans` above has no
+    // "create" route of its own either (LessonPlansListView.js's own
+    // "+ New Lesson Plan" creates instantly, no wizard needed there; a
+    // Chapter Plan's wizard is a modal for the identical reason: nothing
+    // about "which subject/term/chapter" needs its own back-button-
+    // stable address).
+    if (parts[2] === 'chapter-plans') {
+      if (parts[3]) {
+        return { name: 'chapterPlanEditor', classroomId: parts[1], chapterPlanId: parts[3] };
+      }
+      return { name: 'chapterPlansList', classroomId: parts[1] };
+    }
     if (parts[2] === 'feed') {
       return { name: 'feed', classroomId: parts[1] };
     }
@@ -261,6 +284,25 @@ export function resolvePathParts(parts) {
 
   if (parts[0] === 'program-manager' && parts[1] === 'weekly-plans') {
     return { name: 'programManagerWeeklyPlans' };
+  }
+
+  // Program Manager Chapter Plan review. Same shape as the Weekly Plan
+  // Review pair immediately above: a cross-classroom queue (no
+  // classroomId in the path — a PM reviews across every classroom they
+  // belong to) plus a `/review` detail reached via `?classroomId=&
+  // chapterPlanId=` query params, not path segments — a ChapterPlan
+  // lives at `classrooms/{classroomId}/chapterPlans/{chapterPlanId}`,
+  // so both ids are needed together and neither alone is a valid
+  // classroom-scoped route the way `#/classroom/{id}/chapter-plans/{id}`
+  // already is for the Fellow's OWN editor (see the `chapter-plans`
+  // branch above) — this is a deliberately different, PM-only route,
+  // never a reuse of that one.
+  if (parts[0] === 'program-manager' && parts[1] === 'chapter-plans' && parts[2] === 'review') {
+    return { name: 'programManagerChapterPlanReview' };
+  }
+
+  if (parts[0] === 'program-manager' && parts[1] === 'chapter-plans') {
+    return { name: 'programManagerChapterPlans' };
   }
 
   if (parts[0] === 'student') {

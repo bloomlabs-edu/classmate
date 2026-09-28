@@ -811,6 +811,65 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Chapter Plan (Phase 1 domain foundation — see models/ChapterPlan.js,
+    // repositories/chapterPlanRepository.js). Long-range, per-chapter
+    // planning, kept as its own classroom-scoped subcollection —
+    // `classrooms/{classroomId}/chapterPlans/{chapterPlanId}` — same
+    // shape/reasoning as the `lessonPlans` block immediately above, re-
+    // scoped to this model's own field names via isChapterPlanAuthorEdit()/
+    // isChapterPlanReviewerAction() (defined near the bottom of this
+    // file, alongside their LessonPlan/WeeklyPlanSubmission equivalents).
+    //
+    // A Chapter Plan is owned by the Fellow named in `teacherUid` —
+    // deliberately checked against `teacherUid`, not `createdByUid`
+    // (unlike `lessonPlans`, which has no separate teacherUid field at
+    // all) — matching `weeklyPlanSubmissions`' own "no submission can be
+    // created on behalf of a different uid" rule: `createdByUid` must
+    // equal `teacherUid` at creation, and both stay immutable to the
+    // author afterward. This is also the field that makes "multiple
+    // Fellows can independently plan the same curriculum chapter" a
+    // Firestore-level reality, not just a UI convention: each Fellow's
+    // own ChapterPlan document is owned by their own uid, scoped to
+    // their own classroom, regardless of how many other classrooms have
+    // a ChapterPlan for the exact same `linkedCurriculumUnitId`.
+    //
+    // create: only the classroom member the plan is FOR (`teacherUid ==
+    // request.auth.uid`), starting in 'draft', with no review history/
+    // comments yet — a client cannot forge a pre-reviewed document at
+    // creation time, same as `lessonPlans` above.
+    //
+    // update: the same author-edit / reviewer-action split every other
+    // review-lifecycle collection in this file already uses.
+    //
+    // delete: always false — matches every other review-lifecycle
+    // collection in this file; a Fellow abandoning a draft simply leaves
+    // it in 'draft' rather than deleting the document (Phase 1 exposes
+    // no delete path from any rule for this reason, even though
+    // repositories/chapterPlanRepository.js's own deleteChapterPlan()
+    // exists at the JS layer for a later phase's "Delete draft" UI to
+    // reconsider deliberately, not accidentally, before ever calling it).
+    match /classrooms/{classroomId}/chapterPlans/{chapterPlanId} {
+      allow read: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+
+      allow create: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids &&
+        request.resource.data.teacherUid == request.auth.uid &&
+        request.resource.data.createdByUid == request.resource.data.teacherUid &&
+        request.resource.data.status == 'draft' &&
+        request.resource.data.reviewHistory.size() == 0 &&
+        request.resource.data.activeComments.size() == 0;
+
+      allow update: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids &&
+        (
+          isChapterPlanAuthorEdit(resource, request) ||
+          isChapterPlanReviewerAction(resource, request, get(/databases/$(database)/documents/classrooms/$(classroomId)).data.members[request.auth.uid].role)
+        );
+
+      allow delete: if false;
+    }
+
     // Teaching Ideas (Phase 4 — see services/teachingIdeasService.js,
     // repositories/teachingIdeasRepository.js). A DELIBERATELY SEPARATE,
     // TOP-LEVEL collection — never a subcollection of `classrooms`, and
@@ -933,6 +992,62 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Spark (Phase 1 domain foundation — see models/Spark.js,
+    // repositories/sparkRepository.js). A DELIBERATELY SEPARATE,
+    // TOP-LEVEL `sparks/{sparkId}` collection, never a subcollection of
+    // `classrooms` — same "must be discoverable across every classroom,
+    // not just its author's own" reasoning as `teachingIdeas` above and
+    // `weeklyPlanReviewIndex` below, but a Spark is NOT a derived
+    // projection of anything else the way `teachingIdeas` is: it is
+    // independently authored, at any time, by any classroom member, and
+    // — unlike `teachingIdeas` — genuinely editable by its own creator
+    // afterward.
+    //
+    // read: any authenticated ClassMate user, unconditionally — this IS
+    // the "browse what other Fellows discovered, not what they wrote"
+    // requirement (see models/Spark.js's own header comment). A
+    // document's own id isn't independently sensitive; nothing about a
+    // Spark's content is classroom-private the way student data is.
+    //
+    // create: the writer must be exactly who they claim as the Spark's
+    // own `createdByUid` — provenance can never be forged at creation
+    // (a random authenticated user cannot publish a Spark attributed to
+    // someone else).
+    //
+    // update: ONLY the Spark's own creator, ever — closes the exact gap
+    // this collection's own explicit security requirement calls out
+    // ("another Fellow must not be able to impersonate or silently
+    // modify another Fellow's provenance"). `createdByUid` and
+    // `createdAt` are additionally pinned to their existing values on
+    // every update, so even the creator themselves can never reassign
+    // authorship or backdate/forge when a Spark was first created — the
+    // one thing every OTHER Fellow's "Created by: [Fellow] · Created:
+    // [date]" provenance display depends on staying trustworthy.
+    //
+    // delete: only the Spark's own creator — a Fellow retracting their
+    // own contribution. Note this is Phase 1 policy only: it does not
+    // yet check whether any ChapterPlan/other Spark currently references
+    // this Spark's `resourceRefs`-style id before allowing deletion —
+    // no such back-reference exists to check yet in this phase, since
+    // "use a Spark" (a later phase's feature) doesn't dereference by
+    // Spark id, it copies a reference the same way a ChapterPlanResourceLink
+    // does. Revisit if a future phase adds a true "used by N plans"
+    // cross-reference that deletion could orphan.
+    match /sparks/{sparkId} {
+      allow read: if request.auth != null;
+
+      allow create: if request.auth != null &&
+        request.resource.data.createdByUid == request.auth.uid;
+
+      allow update: if request.auth != null &&
+        resource.data.createdByUid == request.auth.uid &&
+        request.resource.data.createdByUid == resource.data.createdByUid &&
+        request.resource.data.createdAt == resource.data.createdAt;
+
+      allow delete: if request.auth != null &&
+        resource.data.createdByUid == request.auth.uid;
+    }
+
     // Weekly Plan Review Index (Programme Manager Weekly Plan Review —
     // see services/weeklyPlanReviewIndexService.js,
     // repositories/weeklyPlanReviewIndexRepository.js). A DELIBERATELY
@@ -1013,26 +1128,44 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Learning Hub — Resource (see models/Resource.js,
-    // services/resourceService.js, services/resourceRepository.js).
-    // Fixes the exact pre-existing gap flagged in this file's own NOTE
-    // above: this collection previously had no rule at all and fell
-    // through to deny-by-default, making resource create/read/update/
-    // delete non-functional in production for every caller — both
-    // ui/views/ConceptWorkspaceView.js's own pre-existing "+Add
-    // Resource" and the Timetable's own "+ Add resource".
+    // Chapter Plan Review Index (Phase 1 domain foundation — see
+    // repositories/chapterPlanReviewIndexRepository.js). A DELIBERATELY
+    // SEPARATE, TOP-LEVEL, REFERENCE-ONLY collection — never a
+    // subcollection of `classrooms`, and never a copy of a ChapterPlan's
+    // own content — mirroring `weeklyPlanReviewIndex` immediately above,
+    // field-for-field, re-scoped to ChapterPlan. Its only job is letting
+    // a Program Manager discover which of their own classrooms currently
+    // have a Chapter Plan awaiting review, without fetching every
+    // ChapterPlan in every classroom they belong to; it is NOT a
+    // security boundary on its own, and NOT a second state machine —
+    // `classrooms/{classroomId}/chapterPlans/{chapterPlanId}` above
+    // remains the one authoritative document for both content and
+    // status. No entry-building service exists yet this phase (see this
+    // collection's own repository header comment) — this rule exists so
+    // that service, when built, has somewhere safe to write.
     //
-    // Same member-scoped shape as the lessons block immediately above:
-    // read requires only a signed-in identity (a Resource's own id is
-    // never guessable/listable — list stays implicitly denied, no
-    // allow list exists here, same as every other collection in this
-    // file); create/update require the caller be a current classroom
-    // member. Unlike lessons (which never deletes), delete is also
-    // member-scoped rather than disallowed — services/resourceService.js's
-    // own deleteResource() is a real, existing, teacher-facing action
-    // (see that file's own header comment on this app having no
-    // separate "Unlink" vs "Delete" distinction yet), so this only
-    // grants what that already-existing function needs, not more.
+    // read/create/update/delete: identical shape to `weeklyPlanReviewIndex`
+    // above, via isFaithfulToSourceChapterPlan() below (defined nested,
+    // for the same `database`-binding-scope reason
+    // isFaithfulToSourceLessonPlan() above is nested).
+    match /chapterPlanReviewIndex/{chapterPlanId} {
+      function isFaithfulToSourceChapterPlan() {
+        let sourcePlan = get(/databases/$(database)/documents/classrooms/$(request.resource.data.classroomId)/chapterPlans/$(chapterPlanId)).data;
+        return sourcePlan.status == request.resource.data.status &&
+          sourcePlan.createdByUid == request.resource.data.createdByUid;
+      }
+
+      allow read: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(resource.data.classroomId)).data.memberUids;
+
+      allow create, update: if request.auth != null &&
+        request.resource.data.chapterPlanId == chapterPlanId &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(request.resource.data.classroomId)).data.memberUids &&
+        isFaithfulToSourceChapterPlan();
+
+      allow delete: if false;
+    }
+
     match /classrooms/{classroomId}/resources/{resourceId} {
       allow read: if request.auth != null;
 
@@ -1533,6 +1666,215 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ---------------------------------------------------------------------
+    // Learner Identity Bridge (ClassMate side) — see
+    // docs/architecture/CLASSROOM_INVITATION_VERIFICATION_BRIDGE.md for
+    // the full design this implements. New collections only; nothing
+    // above this comment block was changed to accommodate this feature —
+    // per explicit product decision, memberUids/classrooms' own existing
+    // rules are untouched (see that doc's own "why memberUids is not
+    // reused" section).
+    //
+    // ARCHITECTURAL NOTE, read before touching any rule below: Learning
+    // Hub NEVER reads or writes any of these collections directly via a
+    // client SDK — every interaction crosses the product boundary
+    // through a trusted, IAM-authenticated server context (Admin SDK,
+    // which bypasses these rules by design), never through a
+    // Learning-Hub-issued Firebase ID token that these rules could even
+    // recognize (Learning Hub's Firebase project is not this project —
+    // its auth tokens are not valid `request.auth` values here at all).
+    // Every rule below therefore only ever needs to reason about TWO
+    // kinds of caller: a ClassMate teacher (existing, real,
+    // Google-authenticated `memberUids` membership), or "no legitimate
+    // client caller at all" (creation/activation is Admin-SDK-only).
+    //
+    // Hashing is NOT available in the Firestore rules language — this is
+    // the concrete, technical reason the one-time student verification
+    // code's redemption (which requires computing a hash to look up a
+    // document) cannot be a plain rules-gated client write, and instead
+    // requires the trusted server module
+    // (server/learnerVerification/verifyLearnerConnection.js in this
+    // repo) to perform it. Rules alone protect everything else: teacher
+    // authorship of invitations/codes, and — the most safety-critical
+    // property — that no client, of any kind, can ever move a
+    // relationship into ACTIVE, or move a REVOKED relationship back out
+    // of it.
+
+    // A classroom-wide invitation. Identifies ONE classroom; never
+    // identifies, and never resolves to, any specific student — see the
+    // architecture doc's own "classroom invitation must not expose the
+    // roster" requirement. Nested under the classroom it belongs to,
+    // since only a classroom's own teacher ever creates or manages one.
+    match /classrooms/{classroomId}/classroomInvitations/{invitationId} {
+      function isTeacherOfClassroom() {
+        return request.auth != null &&
+          request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+      }
+
+      allow read: if isTeacherOfClassroom();
+
+      allow create: if isTeacherOfClassroom() &&
+        request.resource.data.classroomId == classroomId &&
+        request.resource.data.status == 'active';
+
+      // Teachers may only ever revoke — never resurrect, never touch
+      // any other field. Mirrors this file's own established
+      // "narrow, single-field diff" pattern (see visitorAccessCodes'
+      // own revoke-only update rule above).
+      allow update: if isTeacherOfClassroom() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+        resource.data.status == 'active' &&
+        request.resource.data.status == 'revoked';
+
+      allow delete: if false;
+    }
+
+    // The plain-text, human-shareable code itself — a top-level lookup
+    // exactly like this file's own existing joinCodes/studentJoinCodes
+    // pattern (a code resolves to a classroomId; nothing else). NOT
+    // secret, by design (item 2 of the architecture doc: "shareable
+    // with the whole class") — its own document contains nothing beyond
+    // a classroomId/invitationId pointer, so exposure carries no roster
+    // risk BY ITSELF. Deliberately NOT readable by an arbitrary
+    // unauthenticated caller the way studentJoinCodes is: resolution for
+    // this bridge always happens server-side (Admin SDK, bypassing this
+    // rule entirely) — see this block's own header note. Client read is
+    // scoped to the owning teacher only, for their own management UI.
+    match /classroomInvitationCodes/{code} {
+      function classroomIdForThisCode() {
+        return resource.data.classroomId;
+      }
+
+      allow read: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomIdForThisCode())).data.memberUids;
+
+      allow create: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(request.resource.data.classroomId)).data.memberUids;
+
+      allow update: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomIdForThisCode())).data.memberUids &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+        resource.data.status == 'active' &&
+        request.resource.data.status == 'revoked';
+
+      allow delete: if false;
+    }
+
+    // The student-specific, one-time fallback verification credential
+    // (architecture doc item 4). Document ID is the credential's own
+    // SHA-256 hash — the raw code is never persisted, matching this
+    // project's own established "hash, never the secret itself"
+    // convention (see docs/architecture/STUDENT_PROFILE_BRIDGE_SECURITY_REVIEW.md).
+    // No client, including the issuing teacher, can ever move `status`
+    // to 'redeemed' — only the trusted server module can, since only it
+    // can compute the hash needed to look this document up in the first
+    // place. A teacher MAY revoke their own still-active code, the same
+    // narrow, single-field pattern used throughout this file.
+    match /classrooms/{classroomId}/studentVerificationCodes/{codeHash} {
+      function isTeacherOfThisClassroom() {
+        return request.auth != null &&
+          request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+      }
+
+      // NOTE — no rules-level "is this a real roster student" check
+      // here, by deliberate necessity, not oversight: that would need a
+      // NESTED list macro (teams[].exists() containing students[].exists()),
+      // and this exact codebase already has real, emulator-verified
+      // proof that the Firestore Rules engine implements only a
+      // constrained subset of CEL — a single-level `.exists()` works
+      // (see the `p.memberships.exists(m, ...)` block elsewhere in this
+      // file), but `.all()` was confirmed NOT supported by a real
+      // failing emulator run (see this file's own Phase 3.6 comment,
+      // "Function not found error: Name: [all]") — and a live run of
+      // THIS block's own original nested-exists() attempt hit the exact
+      // same "Function not found" failure. Given that documented
+      // constraint, "does this studentId exist anywhere in this
+      // classroom's roster" is enforced where it can actually be
+      // expressed correctly: server/learnerVerification/
+      // verifyLearnerConnection.js's verifyStudentCode() already
+      // re-checks the LIVE roster, inside its own transaction, before
+      // ever activating a relationship (see that function's own
+      // `rosterStillHasStudent` check) — so a code naming a
+      // nonexistent or wrong-classroom studentId can be CREATED here
+      // (the classroom-membership check below still applies), but can
+      // never be successfully REDEEMED into an active relationship.
+      // This is a real, working, tested enforcement point, just at a
+      // different layer than originally attempted.
+
+      allow read: if isTeacherOfThisClassroom();
+
+      allow create: if isTeacherOfThisClassroom() &&
+        request.resource.data.classroomId == classroomId &&
+        request.resource.data.status == 'active' &&
+        request.resource.data.studentId is string &&
+        request.resource.data.studentId.size() > 0;
+
+      allow update: if isTeacherOfThisClassroom() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+        resource.data.status == 'active' &&
+        request.resource.data.status == 'revoked';
+
+      allow delete: if false;
+    }
+
+    // The verified (or pending, or revoked) relationship itself —
+    // architecture doc §5: Learning Hub Learner Profile ↕ ClassMate
+    // Student ↕ Classroom. Top-level (not nested under the classroom):
+    // the identity being authorized here is the pair
+    // (learnerProfileId, classroomId), an opaque, cross-product key —
+    // ClassMate treats `learnerProfileId` as a meaningless string it
+    // never interprets, exactly as the architecture contract requires.
+    // Document id is the deterministic `${learnerProfileId}_${classroomId}`
+    // composite (mirrors the MembershipLink-generalized pattern: doc id
+    // is the identity being checked, enabling one listless get(), never
+    // a query).
+    //
+    // THE ONE RULE THAT MATTERS MOST IN THIS ENTIRE FILE ADDITION: no
+    // `create` or `update` branch below can EVER produce a document
+    // whose `status` is `'ACTIVE'`. That transition is exclusively an
+    // Admin-SDK operation, performed only by
+    // server/learnerVerification/verifyLearnerConnection.js after a
+    // real credential has been verified — see this block's own header
+    // note on why rules cannot do this themselves (no hashing in the
+    // rules language). This is what makes "a learner cannot self-approve
+    // their own connection" and "a revoked relationship cannot silently
+    // reactivate" true for every possible client, not merely the
+    // well-behaved ones.
+    match /learnerClassroomRelationships/{relationshipId} {
+      function isTeacherOfRelationshipClassroom() {
+        return request.auth != null &&
+          request.auth.uid in get(/databases/$(database)/documents/classrooms/$(resource.data.classroomId)).data.memberUids;
+      }
+
+      // Teacher-facing visibility only (ClassMate owns "teacher-facing
+      // learner representation" — see the architecture doc's ownership
+      // table). There is no concept of "the learner's own uid" on this
+      // side of the boundary at all — Learning Hub's own Firebase Auth
+      // tokens are not valid `request.auth` values in this project, by
+      // construction, so no rule here could recognize one even if it
+      // tried.
+      allow read: if isTeacherOfRelationshipClassroom();
+
+      // No client-side create, ever — PENDING creation is exclusively
+      // an Admin-SDK operation (see server/learnerVerification/), same
+      // reasoning as the ACTIVE transition above: this collection's
+      // entire write surface, except revocation below, is trusted-server-only.
+      allow create: if false;
+
+      // The ONLY client-side mutation this collection ever allows: a
+      // classroom's own teacher revoking an ACTIVE relationship. Every
+      // other transition (creating PENDING, PENDING -> ACTIVE, any
+      // resurrection of REVOKED) is impossible through this rule by
+      // construction — there is no branch that permits it.
+      allow update: if isTeacherOfRelationshipClassroom() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'revokedAt', 'revokedByUid']) &&
+        resource.data.status == 'ACTIVE' &&
+        request.resource.data.status == 'REVOKED' &&
+        request.resource.data.revokedByUid == request.auth.uid;
+
+      allow delete: if false;
+    }
+
     // Legacy, pre-sharing location — migration-only (see
     // services/workspaceService.js). Nothing new is ever written here.
     //
@@ -1658,6 +2000,65 @@ function isLessonPlanReviewerAction(resource, request, reviewerRole) {
         reviewerRole in ['owner', 'teacher', 'program_manager'] && // APPROVE_LESSON_PLAN — keep in sync with config/memberRoles.js
         request.resource.data.status == 'approved' &&
         request.resource.data.reviewHistory[resource.data.reviewHistory.size()].status == 'approved' &&
+        request.resource.data.activeComments.size() == 0
+      )
+    );
+}
+
+// The ChapterPlan equivalent of isLessonPlanAuthorEdit() above — same
+// two-branch shape (touch-in-place while still draft/changes_requested,
+// or transition to submitted), re-implemented over models/ChapterPlan.js's
+// own field set. Checked against `teacherUid` (the Fellow the plan is
+// FOR), not `createdByUid` — see the `chapterPlans` match block's own
+// comment for why ChapterPlan, unlike LessonPlan, distinguishes the two.
+function isChapterPlanAuthorEdit(resource, request) {
+  return resource.data.teacherUid == request.auth.uid &&
+    resource.data.status in ['draft', 'changes_requested'] &&
+    request.resource.data.teacherUid == resource.data.teacherUid &&
+    request.resource.data.createdByUid == resource.data.createdByUid &&
+    (
+      (
+        request.resource.data.status == resource.data.status &&
+        request.resource.data.reviewHistory == resource.data.reviewHistory &&
+        request.resource.data.activeComments.size() <= resource.data.activeComments.size()
+      ) ||
+      (
+        request.resource.data.status == 'submitted' &&
+        request.resource.data.reviewHistory.size() == resource.data.reviewHistory.size() + 1 &&
+        request.resource.data.reviewHistory[resource.data.reviewHistory.size()].status == 'submitted' &&
+        request.resource.data.reviewHistory[resource.data.reviewHistory.size()].byUid == request.auth.uid &&
+        request.resource.data.reviewHistory[resource.data.reviewHistory.size()].comments.size() == 0 &&
+        request.resource.data.activeComments.size() == 0
+      )
+    );
+}
+
+// The ChapterPlan equivalent of isLessonPlanReviewerAction() above — any
+// OTHER current classroom member acting as a reviewer on a SUBMITTED
+// plan, never the plan's own `teacherUid`. Can ONLY touch
+// status/reviewerUid/reviewHistory/activeComments/updatedAt — Chapter
+// Plan content (purpose/mastery/methods/subjectSpecific/resourceLinks)
+// is completely off-limits to a reviewer, full stop. Uses
+// REVIEW_CHAPTER_PLAN/APPROVE_CHAPTER_PLAN's own role grant (today
+// identical to REVIEW_LESSON_PLAN/REVIEW_WEEKLY_PLAN's, per
+// config/memberRoles.js, but checked as its own literal list here so a
+// future role split needs no change to this function's shape).
+function isChapterPlanReviewerAction(resource, request, reviewerRole) {
+  return request.auth.uid != resource.data.teacherUid &&
+    resource.data.status == 'submitted' &&
+    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewerUid', 'reviewHistory', 'activeComments', 'updatedAt']) &&
+    request.resource.data.reviewHistory.size() == resource.data.reviewHistory.size() + 1 &&
+    request.resource.data.reviewHistory[resource.data.reviewHistory.size()].byUid == request.auth.uid &&
+    (
+      (
+        reviewerRole in ['owner', 'teacher', 'program_manager'] && // REVIEW_CHAPTER_PLAN -- keep in sync with config/memberRoles.js
+        request.resource.data.status == 'changes_requested' &&
+        request.resource.data.reviewHistory[resource.data.reviewHistory.size()].status == 'changes_requested' &&
+        request.resource.data.reviewHistory[resource.data.reviewHistory.size()].comments.size() >= 1
+      ) ||
+      (
+        reviewerRole in ['owner', 'teacher', 'program_manager'] && // APPROVE_CHAPTER_PLAN -- keep in sync with config/memberRoles.js
+        request.resource.data.status == 'approved' &&
         request.resource.data.activeComments.size() == 0
       )
     );
