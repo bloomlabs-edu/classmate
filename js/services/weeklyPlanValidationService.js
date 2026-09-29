@@ -55,3 +55,30 @@ export function getWeeklyPlanReadiness(lesson) {
 export function isWeeklyPlanComplete(lesson) {
   return getWeeklyPlanReadiness(lesson).ready;
 }
+
+/**
+ * "Has this Fellow started this period's Weekly Plan at all" — an ANY,
+ * not ALL, check, deliberately the opposite shape from
+ * getWeeklyPlanReadiness() above. Used only to distinguish the PM
+ * dashboard's derived "Not started" from "Draft" BEFORE any
+ * models/WeeklyPlanSubmission.js document exists (see
+ * services/weeklyPlanSubmissionService.js's own
+ * getWeekPlanDisplayStatus()) — once a real submission document
+ * exists, its own stored `status` is used instead and this function is
+ * no longer consulted for that period. Never used to gate submission
+ * itself: a Fellow may submit a Weekly Plan with only some periods
+ * touched, per explicit product direction (inform, never silently
+ * lock — the same philosophy already established for the Lesson Plan
+ * Builder's own readiness checks).
+ */
+export function hasMeaningfulWeeklyPlanContent(lesson) {
+  if (!lesson) return false;
+  return Boolean(
+    lesson.curriculumUnitId ||
+      (lesson.conceptIds && lesson.conceptIds.length > 0) ||
+      (lesson.objectives || []).some((objective) => !isBlank(objective.text)) ||
+      !isBlank(lesson.bigQuestion) ||
+      !isBlank(lesson.planSummary) ||
+      !isBlank(lesson.assessmentNote)
+  );
+}
