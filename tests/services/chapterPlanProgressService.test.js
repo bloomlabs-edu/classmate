@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createLesson } from '../../js/models/Lesson.js';
 import { createChapterPlan } from '../../js/models/ChapterPlan.js';
-import { getChapterPlanProgress, getChapterPlanWeeks } from '../../js/services/chapterPlanProgressService.js';
+import { getChapterPlanProgress, getChapterPlanWeeks, getChapterPlanLessons } from '../../js/services/chapterPlanProgressService.js';
 
 function plan(overrides = {}) {
   return createChapterPlan({
@@ -147,4 +147,73 @@ test('getChapterPlanWeeks: excludes Lessons from a different classroom or a diff
   const weeks = getChapterPlanWeeks([otherClassroom, otherUnit, thisChapter], plan());
   assert.equal(weeks.length, 1);
   assert.equal(weeks[0].lessonCount, 1);
+});
+
+// ---------------------------------------------------------------------
+// getChapterPlanLessons
+// ---------------------------------------------------------------------
+
+test('getChapterPlanLessons: a Lesson matching classroomId + curriculumUnitId is included', () => {
+  const lesson = createLesson({ classroomId: 'classroom-a', curriculumUnitId: 'unit-local-17', date: '2026-09-07', teachingSlotId: 'classroom-a_2026-09-07_p1' });
+  const lessons = getChapterPlanLessons([lesson], plan());
+  assert.equal(lessons.length, 1);
+  assert.equal(lessons[0].id, lesson.id);
+});
+
+test('getChapterPlanLessons: a Lesson from a different classroomId is excluded', () => {
+  const lesson = createLesson({ classroomId: 'classroom-b', curriculumUnitId: 'unit-local-17', date: '2026-09-07', teachingSlotId: 'classroom-b_2026-09-07_p1' });
+  assert.deepEqual(getChapterPlanLessons([lesson], plan()), []);
+});
+
+test('getChapterPlanLessons: a Lesson with a different curriculumUnitId is excluded', () => {
+  const lesson = createLesson({ classroomId: 'classroom-a', curriculumUnitId: 'unit-local-99', date: '2026-09-07', teachingSlotId: 'classroom-a_2026-09-07_p1' });
+  assert.deepEqual(getChapterPlanLessons([lesson], plan()), []);
+});
+
+test('getChapterPlanLessons: a Lesson matching this chapter\'s linkedCurriculumUnitId but a DIFFERENT curriculumUnitId is excluded — the association is never made via linkedCurriculumUnitId', () => {
+  // plan()'s own linkedCurriculumUnitId is 'curriculum-index-unit-hazards' — this Lesson carries that
+  // same value in its OWN curriculumUnitId field (a different classroom's local id could coincidentally
+  // collide with another classroom's linkedCurriculumUnitId string) but is NOT plan()'s curriculumUnitId.
+  const lesson = createLesson({
+    classroomId: 'classroom-a',
+    curriculumUnitId: 'curriculum-index-unit-hazards',
+    date: '2026-09-07',
+    teachingSlotId: 'classroom-a_2026-09-07_p1',
+  });
+  assert.deepEqual(getChapterPlanLessons([lesson], plan()), []);
+});
+
+test('getChapterPlanLessons: returns Lessons ordered chronologically by date, then by period number for the same day', () => {
+  const later = createLesson({ classroomId: 'classroom-a', curriculumUnitId: 'unit-local-17', date: '2026-09-14', teachingSlotId: 'classroom-a_2026-09-14_p1' });
+  const earlierLaterPeriod = createLesson({ classroomId: 'classroom-a', curriculumUnitId: 'unit-local-17', date: '2026-09-07', teachingSlotId: 'classroom-a_2026-09-07_p3' });
+  const earlierEarlierPeriod = createLesson({ classroomId: 'classroom-a', curriculumUnitId: 'unit-local-17', date: '2026-09-07', teachingSlotId: 'classroom-a_2026-09-07_p1' });
+
+  const lessons = getChapterPlanLessons([later, earlierLaterPeriod, earlierEarlierPeriod], plan());
+  assert.deepEqual(
+    lessons.map((lesson) => lesson.id),
+    [earlierEarlierPeriod.id, earlierLaterPeriod.id, later.id]
+  );
+});
+
+test('getChapterPlanLessons: LessonPlan presence is read straight off the existing lesson.lessonPlanId relationship, never re-derived', () => {
+  const withPlan = createLesson({ classroomId: 'classroom-a', curriculumUnitId: 'unit-local-17', date: '2026-09-07', teachingSlotId: 'slot-1', lessonPlanId: 'lesson-plan-1' });
+  const withoutPlan = createLesson({ classroomId: 'classroom-a', curriculumUnitId: 'unit-local-17', date: '2026-09-08', teachingSlotId: 'slot-2' });
+
+  const lessons = getChapterPlanLessons([withPlan, withoutPlan], plan());
+  assert.equal(lessons.find((lesson) => lesson.id === withPlan.id).lessonPlanId, 'lesson-plan-1');
+  assert.equal(lessons.find((lesson) => lesson.id === withoutPlan.id).lessonPlanId, null);
+});
+
+test('getChapterPlanLessons: does not mutate its inputs and persists nothing — a pure read', () => {
+  const lesson = createLesson({ classroomId: 'classroom-a', curriculumUnitId: 'unit-local-17', date: '2026-09-07', teachingSlotId: 'slot-1' });
+  const inputLessons = [lesson];
+  const inputPlan = plan();
+  const snapshotLesson = JSON.stringify(lesson);
+  const snapshotPlan = JSON.stringify(inputPlan);
+
+  getChapterPlanLessons(inputLessons, inputPlan);
+
+  assert.equal(JSON.stringify(lesson), snapshotLesson);
+  assert.equal(JSON.stringify(inputPlan), snapshotPlan);
+  assert.equal(inputLessons.length, 1); // the input array itself is untouched, not filtered in place
 });

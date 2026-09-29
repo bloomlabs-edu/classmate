@@ -336,6 +336,17 @@ test('buildTeachingSlotId: a past date+period keeps the same id after the recurr
   assert.equal(idBefore, idAfter); // ...never changes the id a Lesson for that real date is stored under.
 });
 
+test('parsePeriodNumberFromTeachingSlotId: recovers the exact periodNumber buildTeachingSlotId encoded, including multi-digit periods', () => {
+  assert.equal(timetableService.parsePeriodNumberFromTeachingSlotId(timetableService.buildTeachingSlotId('classroom-1', '2026-08-24', 2)), 2);
+  assert.equal(timetableService.parsePeriodNumberFromTeachingSlotId(timetableService.buildTeachingSlotId('classroom-1', '2026-08-24', 11)), 11);
+});
+
+test('parsePeriodNumberFromTeachingSlotId: a malformed or missing id degrades to null, never throws', () => {
+  assert.equal(timetableService.parsePeriodNumberFromTeachingSlotId('not-a-teaching-slot-id'), null);
+  assert.equal(timetableService.parsePeriodNumberFromTeachingSlotId(''), null);
+  assert.equal(timetableService.parsePeriodNumberFromTeachingSlotId(undefined), null);
+});
+
 test('getConcreteSlotsForDateRange: a past date reflects whatever subject the recurring pattern says NOW — the pattern has no memory of what it said before, which is exactly why historical protection lives in the Lesson’s own stored data, not in the pattern', () => {
   const classroom = classroomWithPattern();
   const before = timetableService.getConcreteSlotsForDateRange(classroom, '2026-08-24', '2026-08-24'); // Monday

@@ -52,6 +52,7 @@
 
 import { hasMeaningfulWeeklyPlanContent } from './weeklyPlanValidationService.js';
 import { getMondayStartOfWeek } from '../utils/dateHelpers.js';
+import { parsePeriodNumberFromTeachingSlotId } from './timetableService.js';
 
 function belongsToChapterPlan(lesson, chapterPlan) {
   return lesson.classroomId === chapterPlan.classroomId && lesson.curriculumUnitId === chapterPlan.curriculumUnitId;
@@ -120,4 +121,34 @@ export function getChapterPlanWeeks(lessons, chapterPlan) {
   return [...countByWeekStartDate.entries()]
     .map(([weekStartDate, lessonCount]) => ({ weekStartDate, lessonCount }))
     .sort((a, b) => (a.weekStartDate < b.weekStartDate ? -1 : a.weekStartDate > b.weekStartDate ? 1 : 0));
+}
+
+/**
+ * The "Lessons" lens's own list — every real Lesson document belonging
+ * to this Chapter (same classroomId+curriculumUnitId join as
+ * getChapterPlanProgress()/getChapterPlanWeeks() above — never
+ * linkedCurriculumUnitId), returned chronologically (by date, then by
+ * period number for same-day Lessons). Deliberately NOT filtered by
+ * hasMeaningfulWeeklyPlanContent() the way the other two functions in
+ * this file are — the Lessons tab's own job is to show every real
+ * occurrence tied to this chapter so a Fellow can see and open even a
+ * barely-touched one, not to pre-judge which ones count as "planned."
+ *
+ * Returns the raw Lesson documents, unmodified — whether a detailed
+ * LessonPlan exists is already a plain field on each one
+ * (`lesson.lessonPlanId`), and concept titles are resolved by the
+ * caller via services/timetableDisplayService.js's own
+ * resolveLessonConcepts(), exactly as ui/views/WeeklyPlanReviewView.js
+ * already does — this function never duplicates that resolution.
+ */
+export function getChapterPlanLessons(lessons, chapterPlan) {
+  return (lessons || [])
+    .filter((lesson) => belongsToChapterPlan(lesson, chapterPlan))
+    .slice()
+    .sort((a, b) => {
+      if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+      const periodA = parsePeriodNumberFromTeachingSlotId(a.teachingSlotId) ?? 0;
+      const periodB = parsePeriodNumberFromTeachingSlotId(b.teachingSlotId) ?? 0;
+      return periodA - periodB;
+    });
 }

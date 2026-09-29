@@ -1236,13 +1236,39 @@ function renderRoute(route, reason = 'unspecified') {
           router.navigate(
             `/program-manager/weekly-plans/review?classroomId=${encodeURIComponent(classroom.id)}&teacherUid=${encodeURIComponent(teacherUid)}&week=${encodeURIComponent(weekStartDate)}&chapterCurriculumUnitId=${encodeURIComponent(chapterCurriculumUnitId)}&chapterName=${encodeURIComponent(chapterName)}&chapterPlanId=${encodeURIComponent(route.chapterPlanId)}&returnTab=weeks`
           ),
+        // Additive "Lessons" lens — reuses the EXISTING lessonPlanBuilder
+        // route (see ui/views/LessonPlanBuilderView.js) for a Lesson that
+        // already has a Detailed Lesson Plan; `returnTab=lessons` mirrors
+        // onOpenWeek's own explicit-signal convention above so that
+        // route's own Back handler knows to return here, to the Lessons
+        // tab specifically.
+        onOpenLessonPlan: (lessonPlanId) =>
+          router.navigate(
+            `/classroom/${classroom.id}/lesson-plans/${lessonPlanId}?chapterPlanId=${encodeURIComponent(route.chapterPlanId)}&returnTab=lessons`
+          ),
+        // A Lesson with no Detailed Lesson Plan yet: "Build Detailed
+        // Lesson Plan" only exists on the Timetable's own Period Detail
+        // panel (services/timetableLessonService.js's
+        // buildDetailedLessonPlanFromLesson()) — never reimplemented
+        // here. Same plain route every other "Open Timetable" affordance
+        // in this app already uses (e.g. ui/views/WeeklyPlanReviewView.js's
+        // own onOpenTimetable) — the Timetable has no date-deep-linking
+        // support today, so this is a genuine, accepted "go find the
+        // right day yourself" limitation, not silently swallowed.
+        onOpenTimetable: () => router.navigate(`/classroom/${classroom.id}/timetable`),
       });
     } else if (route.name === 'lessonPlanBuilder') {
+      const { chapterPlanId: lessonPlanReturnChapterPlanId, returnTab: lessonPlanReturnTab } = route.query || {};
       renderLessonPlanBuilderView(appContainer, {
         classroom,
         currentUser,
         lessonPlanId: route.lessonPlanId,
-        onBack: () => router.navigate(`/classroom/${classroom.id}/lesson-plans`),
+        onBack: () =>
+          router.navigate(
+            lessonPlanReturnChapterPlanId
+              ? `/classroom/${classroom.id}/chapter-plans/${lessonPlanReturnChapterPlanId}${lessonPlanReturnTab === 'lessons' ? '?tab=lessons' : ''}`
+              : `/classroom/${classroom.id}/lesson-plans`
+          ),
       });
     } else if (route.name === 'lessonPlanReviewQueue') {
       renderLessonPlanReviewQueueView(appContainer, {

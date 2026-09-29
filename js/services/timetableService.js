@@ -140,6 +140,12 @@ export function buildTeachingSlotId(classroomId, dateKey, periodNumber) {
   return `${classroomId}_${dateKey}_p${periodNumber}`;
 }
 
+/** The inverse of buildTeachingSlotId() above — a Lesson has no separate `periodNumber` field of its own (see models/Lesson.js), only `teachingSlotId`, which already encodes it deterministically. Returns `null` for a malformed/missing id rather than throwing, since a caller doing display-only work (e.g. a chronological Lesson list) should degrade gracefully, never crash, on unexpected data. */
+export function parsePeriodNumberFromTeachingSlotId(teachingSlotId) {
+  const match = /_p(\d+)$/.exec(teachingSlotId || '');
+  return match ? Number(match[1]) : null;
+}
+
 /** A dateKey's own day-of-week (0=Sun..6=Sat) — exported so callers needing "which weekday is this date" (e.g. services/personalHubService.js's own working-day check) reuse this one conversion rather than each writing their own. */
 export function weekdayOfDateKey(dateKey) {
   const [year, month, day] = dateKey.split('-').map(Number);

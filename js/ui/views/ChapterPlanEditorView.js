@@ -37,14 +37,22 @@ import * as chapterPlanService from '../../services/chapterPlanService.js';
 import * as chapterPlanReviewService from '../../services/chapterPlanReviewService.js';
 import * as chapterPlanReviewIndexService from '../../services/chapterPlanReviewIndexService.js';
 import * as plannerRepository from '../../services/plannerRepository.js';
-import { getChapterPlanProgress, getChapterPlanWeeks } from '../../services/chapterPlanProgressService.js';
+import { getChapterPlanProgress, getChapterPlanWeeks, getChapterPlanLessons } from '../../services/chapterPlanProgressService.js';
+import { resolveLessonConcepts } from '../../services/timetableDisplayService.js';
+import { parsePeriodNumberFromTeachingSlotId } from '../../services/timetableService.js';
 import { CHAPTER_PLAN_STATUS, CHAPTER_PLAN_SECTION_KEYS, CHAPTER_PLAN_SPARK_SECTIONS } from '../../models/ChapterPlan.js';
 import { getChapterPlanTemplateConfig } from '../../config/chapterPlanTemplateConfig.js';
 import { openSparkPickerModal } from '../components/SparkPickerModal.js';
 import { openChapterPlanResourcePickerModal } from '../components/ChapterPlanResourcePickerModal.js';
 import { createSaveIndicatorController } from '../components/ProgrammeSessionSaveIndicator.js';
 import { createBackButton } from '../components/BackButton.js';
-import { formatRelativeTimestamp, getMondayStartOfWeek, getCurrentIsoDate, formatWeekDateRange } from '../../utils/dateHelpers.js';
+import {
+  formatRelativeTimestamp,
+  getMondayStartOfWeek,
+  getCurrentIsoDate,
+  formatWeekDateRange,
+  formatDateKeyWithWeekday,
+} from '../../utils/dateHelpers.js';
 import { resolveInitialChapterPlanTab, CHAPTER_PLAN_EDITOR_TABS } from './ChapterPlanEditorTabDisplay.js';
 
 const STATUS_LABELS = Object.freeze({
@@ -62,23 +70,25 @@ const SECTION_LABELS = Object.freeze({
   [CHAPTER_PLAN_SECTION_KEYS.SUBJECT_SPECIFIC]: 'Subject-Specific',
 });
 
-export function renderChapterPlanEditorView(container, { classroom, currentUser, chapterPlanId, onBack, onOpenWeek, initialTab }) {
+export function renderChapterPlanEditorView(
+  container,
+  { classroom, currentUser, chapterPlanId, onBack, onOpenWeek, onOpenLessonPlan, onOpenTimetable, initialTab }
+) {
   let plan = null; // null = loading
   let loadError = null;
   let saveIndicator = null;
-  // `lessons` backs both the "Lessons Planned" readout and the "Weeks"
-  // tab (see renderLessonsProgressReadout()/renderWeeksTab() below) —
-  // one fetch, two derived readouts, never anything the Chapter Plan
-  // itself stores. `null` (not yet fetched, or fetch failed) is
-  // distinct from `[]` (fetched, genuinely none yet) so each readout can
-  // tell "no lessons planned yet" from "couldn't check."
+  // `lessons` backs the "Lessons Planned" readout, the "Weeks" tab, AND
+  // the "Lessons" tab (see renderLessonsProgressReadout()/renderWeeksTab()/
+  // renderLessonsTab() below) — one fetch, three derived readouts, never
+  // anything the Chapter Plan itself stores. `null` (not yet fetched, or
+  // fetch failed) is distinct from `[]` (fetched, genuinely none yet) so
+  // each readout can tell "no lessons planned yet" from "couldn't check."
   let lessons = null;
-  // Which of the two connected-planning perspectives is showing —
-  // "Lessons" is a later phase, not built yet (see this view's own
-  // header comment on scope). Resolved from the caller's own
-  // `?tab=weeks` query param (see ui/views/ChapterPlanEditorTabDisplay.js)
-  // so Back-navigation from a Weeks-tab-opened Weekly Plan can land
-  // directly back on the Weeks tab, not silently reset to Chapter.
+  // Which of the three connected-planning perspectives is showing.
+  // Resolved from the caller's own `?tab=` query param (see
+  // ui/views/ChapterPlanEditorTabDisplay.js) so Back-navigation from a
+  // Weeks/Lessons-tab-opened Weekly Plan/Lesson Plan can land directly
+  // back on that same tab, not silently reset to Chapter.
   let activeTab = resolveInitialChapterPlanTab(initialTab);
 
   mount();
@@ -177,6 +187,8 @@ export function renderChapterPlanEditorView(container, { classroom, currentUser,
 
     if (activeTab === CHAPTER_PLAN_EDITOR_TABS.WEEKS) {
       wrapper.appendChild(renderWeeksTab(plan));
+    } else if (activeTab === CHAPTER_PLAN_EDITOR_TABS.LESSONS) {
+      wrapper.appendChild(renderLessonsTab(plan));
     } else {
       wrapper.appendChild(renderPurposeSection(plan, editable));
       wrapper.appendChild(renderMasterySection(plan, editable));
@@ -190,10 +202,9 @@ export function renderChapterPlanEditorView(container, { classroom, currentUser,
   }
 
   /**
-   * `[ Chapter ] [ Weeks ]` — the approved connected-planning
-   * perspectives. "Lessons" is a later phase (not built here). Purely a
-   * local view-state toggle — never persisted, never affects `plan`
-   * itself.
+   * `[ Chapter ] [ Weeks ] [ Lessons ]` — the approved connected-planning
+   * perspectives. Purely a local view-state toggle — never persisted,
+   * never affects `plan` itself.
    */
   function renderTabStrip() {
     const strip = document.createElement('div');
@@ -202,6 +213,7 @@ export function renderChapterPlanEditorView(container, { classroom, currentUser,
     [
       { key: CHAPTER_PLAN_EDITOR_TABS.CHAPTER, label: 'Chapter' },
       { key: CHAPTER_PLAN_EDITOR_TABS.WEEKS, label: 'Weeks' },
+      { key: CHAPTER_PLAN_EDITOR_TABS.LESSONS, label: 'Lessons' },
     ].forEach(({ key, label }) => {
       const tabButton = document.createElement('button');
       tabButton.type = 'button';
@@ -610,6 +622,129 @@ export function renderChapterPlanEditorView(container, { classroom, currentUser,
     section.appendChild(list);
 
     return section;
+  }
+
+  // ---------------------------------------------------------------------
+  // LESSONS — the atomic teaching occurrences belonging to this Chapter
+  // ---------------------------------------------------------------------
+
+  /**
+   * The "Lessons" perspective — every real models/Lesson.js document
+   * belonging to this Chapter (services/chapterPlanProgressService.js's
+   * own getChapterPlanLessons(), same classroomId+curriculumUnitId join,
+   * same `lessons` array already fetched for the other two tabs — no new
+   * fetch), ordered chronologically. This tab is deliberately a read-only
+   * INDEX, never a second Lesson/LessonPlan editor: Concepts are resolved
+   * via the EXISTING services/timetableDisplayService.js's own
+   * resolveLessonConcepts() (the same resolution
+   * ui/views/WeeklyPlanReviewView.js's grid already uses), and the one
+   * action per row always hands off to an EXISTING flow —
+   * `onOpenLessonPlan` (the exact ui/views/WeeklyPlanReviewView.js's own
+   * onOpenFullLessonPlan pattern) when `lesson.lessonPlanId` is already
+   * set, or `onOpenTimetable` (where "Build Detailed Lesson Plan" itself
+   * actually lives — see services/timetableLessonService.js's own
+   * buildDetailedLessonPlanFromLesson()) when it isn't. This view never
+   * calls that builder directly — doing so here would mean re-resolving
+   * the Period Detail panel's own gating/context, which is exactly the
+   * "parallel editor" this phase is not supposed to build.
+   *
+   * Lesson vs. LessonPlan stays an explicit, visible distinction per
+   * row, never conflated: "Lesson" = this teaching occurrence has been
+   * scheduled/planned at all (the row exists); "Detailed Lesson Plan" =
+   * whether the separate, optional models/LessonPlan.js document has
+   * been created for it — read straight off `lesson.lessonPlanId`,
+   * never re-derived.
+   */
+  function renderLessonsTab(currentPlan) {
+    const section = renderSection('Lessons');
+
+    if (lessons === null) {
+      const loading = document.createElement('p');
+      loading.className = 'chapter-plan-editor__lessons-loading';
+      loading.textContent = 'Checking lessons…';
+      section.appendChild(loading);
+      return section;
+    }
+
+    const chapterLessons = getChapterPlanLessons(lessons, currentPlan);
+
+    if (chapterLessons.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'chapter-plan-editor__lessons-empty';
+      empty.textContent = 'No lessons yet for this chapter.';
+      section.appendChild(empty);
+      return section;
+    }
+
+    const list = document.createElement('div');
+    list.className = 'chapter-plan-editor__lessons-list';
+    chapterLessons.forEach((lesson) => {
+      list.appendChild(renderLessonRow(lesson));
+    });
+    section.appendChild(list);
+
+    return section;
+  }
+
+  function renderLessonRow(lesson) {
+    const row = document.createElement('div');
+    row.className = 'chapter-plan-editor__lessons-row';
+
+    const meta = document.createElement('div');
+    meta.className = 'chapter-plan-editor__lessons-row-meta';
+
+    const dateLine = document.createElement('span');
+    dateLine.className = 'chapter-plan-editor__lessons-row-date';
+    const periodNumber = parsePeriodNumberFromTeachingSlotId(lesson.teachingSlotId);
+    const periodLabel = periodNumber ? `Period ${periodNumber}` : 'Period —';
+    dateLine.textContent = `${formatDateKeyWithWeekday(lesson.date)} · ${periodLabel}`;
+    meta.appendChild(dateLine);
+
+    const weekLine = document.createElement('span');
+    weekLine.className = 'chapter-plan-editor__lessons-row-week';
+    weekLine.textContent = `Week of ${formatWeekDateRange(getMondayStartOfWeek(lesson.date))}`;
+    meta.appendChild(weekLine);
+
+    const concepts = resolveLessonConcepts(classroom, lesson);
+    const conceptsLine = document.createElement('span');
+    conceptsLine.className = 'chapter-plan-editor__lessons-row-concepts';
+    conceptsLine.textContent = concepts.length > 0 ? concepts.map((concept) => concept.title).join(', ') : 'No concepts yet';
+    meta.appendChild(conceptsLine);
+
+    row.appendChild(meta);
+
+    const planStatus = document.createElement('div');
+    planStatus.className = 'chapter-plan-editor__lessons-row-plan-status';
+
+    if (lesson.lessonPlanId) {
+      const label = document.createElement('span');
+      label.className = 'chapter-plan-editor__lessons-row-plan-badge chapter-plan-editor__lessons-row-plan-badge--exists';
+      label.textContent = 'Detailed Lesson Plan';
+      planStatus.appendChild(label);
+
+      const openButton = document.createElement('button');
+      openButton.type = 'button';
+      openButton.className = 'btn btn--text';
+      openButton.textContent = 'Open Lesson Plan →';
+      openButton.addEventListener('click', () => onOpenLessonPlan(lesson.lessonPlanId));
+      planStatus.appendChild(openButton);
+    } else {
+      const label = document.createElement('span');
+      label.className = 'chapter-plan-editor__lessons-row-plan-badge';
+      label.textContent = 'No Detailed Lesson Plan yet';
+      planStatus.appendChild(label);
+
+      const openButton = document.createElement('button');
+      openButton.type = 'button';
+      openButton.className = 'btn btn--text';
+      openButton.textContent = 'Open in Timetable →';
+      openButton.addEventListener('click', () => onOpenTimetable());
+      planStatus.appendChild(openButton);
+    }
+
+    row.appendChild(planStatus);
+
+    return row;
   }
 
   // ---------------------------------------------------------------------
