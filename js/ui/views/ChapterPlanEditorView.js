@@ -36,6 +36,8 @@ import * as chapterPlanReviewIndexRepository from '../../repositories/chapterPla
 import * as chapterPlanService from '../../services/chapterPlanService.js';
 import * as chapterPlanReviewService from '../../services/chapterPlanReviewService.js';
 import * as chapterPlanReviewIndexService from '../../services/chapterPlanReviewIndexService.js';
+import * as plannerRepository from '../../services/plannerRepository.js';
+import { getChapterPlanProgress } from '../../services/chapterPlanProgressService.js';
 import { CHAPTER_PLAN_STATUS, CHAPTER_PLAN_SECTION_KEYS, CHAPTER_PLAN_SPARK_SECTIONS } from '../../models/ChapterPlan.js';
 import { getChapterPlanTemplateConfig } from '../../config/chapterPlanTemplateConfig.js';
 import { openSparkPickerModal } from '../components/SparkPickerModal.js';
@@ -63,6 +65,12 @@ export function renderChapterPlanEditorView(container, { classroom, currentUser,
   let plan = null; // null = loading
   let loadError = null;
   let saveIndicator = null;
+  // `lessons` backs the derived "Lessons Planned" readout only (see
+  // renderLessonsProgressReadout() below) — never anything the Chapter
+  // Plan itself stores. `null` (not yet fetched, or fetch failed) is
+  // distinct from `[]` (fetched, genuinely none yet) so the readout can
+  // tell "no lessons planned yet" from "couldn't check."
+  let lessons = null;
 
   mount();
 
@@ -77,6 +85,16 @@ export function renderChapterPlanEditorView(container, { classroom, currentUser,
       loadError = "Couldn't load this Chapter Plan. Check your connection and try again.";
     }
     rerender();
+
+    if (plan) {
+      try {
+        lessons = await plannerRepository.getLessonsForUnit(classroom.id, plan.curriculumUnitId);
+      } catch (error) {
+        console.error('[ChapterPlanEditorView] Failed to load Lessons for the "Lessons Planned" readout:', error);
+        lessons = null;
+      }
+      rerender();
+    }
   }
 
   function persist(mutationFn) {
@@ -424,6 +442,53 @@ export function renderChapterPlanEditorView(container, { classroom, currentUser,
     return list;
   }
 
+  /**
+   * Replaces the old manually-entered "Number of Lessons/Days" number
+   * input with a read-only, DERIVED readout — per the approved
+   * connected-planning architecture, a Chapter Plan does not own
+   * Lessons, so this count is never authored here; it's computed live
+   * from Lesson documents via services/chapterPlanProgressService.js's
+   * getChapterPlanProgress(). `currentPlan.numberOfLessonsDays` itself
+   * is left in the model/Firestore document untouched (nothing reads or
+   * writes it from this view anymore) — no migration, no field removal.
+   *
+   * Three states: still loading (`lessons === null` before the first
+   * fetch resolves), fetch failed (`lessons === null` after mount()'s
+   * own catch — same sentinel, distinguished only by whether mount()
+   * has finished at least once; a failed fetch reads identically to
+   * "still loading" here, which is the safe default: never claim "No
+   * lessons planned yet" when the truth is simply unknown), and loaded
+   * (`lessons` is an array, `[]` included).
+   */
+  function renderLessonsProgressReadout(currentPlan) {
+    const wrap = document.createElement('div');
+    wrap.className = 'chapter-plan-editor__lessons-progress';
+
+    const label = document.createElement('span');
+    label.className = 'chapter-plan-editor__field-label';
+    label.textContent = 'Lessons Planned';
+    wrap.appendChild(label);
+
+    const text = document.createElement('p');
+    text.className = 'chapter-plan-editor__lessons-progress-text';
+
+    if (lessons === null) {
+      text.textContent = 'Checking planned lessons…';
+    } else {
+      const progress = getChapterPlanProgress(lessons, currentPlan);
+      if (progress.lessonsPlanned === 0) {
+        text.textContent = 'No lessons planned yet.';
+      } else {
+        const lessonWord = progress.lessonsPlanned === 1 ? 'lesson' : 'lessons';
+        const weekWord = progress.weeksSpanned === 1 ? 'week' : 'weeks';
+        text.textContent = `${progress.lessonsPlanned} ${lessonWord} planned across ${progress.weeksSpanned} ${weekWord}.`;
+      }
+    }
+    wrap.appendChild(text);
+
+    return wrap;
+  }
+
   // ---------------------------------------------------------------------
   // PURPOSE AND INTEGRATION
   // ---------------------------------------------------------------------
@@ -431,20 +496,7 @@ export function renderChapterPlanEditorView(container, { classroom, currentUser,
   function renderPurposeSection(currentPlan, editable) {
     const section = renderSection('Purpose & Integration');
 
-    const numberField = document.createElement('label');
-    numberField.className = 'chapter-plan-editor__field-label';
-    numberField.textContent = 'Number of Lessons/Days';
-    const numberInput = document.createElement('input');
-    numberInput.type = 'number';
-    numberInput.className = 'chapter-plan-editor__field-input chapter-plan-editor__field-input--number';
-    numberInput.value = currentPlan.numberOfLessonsDays ?? '';
-    numberInput.disabled = !editable;
-    numberInput.addEventListener('change', () => {
-      const parsed = numberInput.value === '' ? null : Number(numberInput.value);
-      persist(() => chapterPlanService.updateContext(currentPlan, { numberOfLessonsDays: parsed }));
-    });
-    numberField.appendChild(numberInput);
-    section.appendChild(numberField);
+    section.appendChild(renderLessonsProgressReadout(currentPlan));
 
     renderTextField(section, {
       label: "What's Worth Learning?",

@@ -63,6 +63,8 @@ import * as chapterPlanReviewIndexService from '../../services/chapterPlanReview
 import * as chapterPlanReviewIndexRepository from '../../repositories/chapterPlanReviewIndexRepository.js';
 import * as sparkRepository from '../../repositories/sparkRepository.js';
 import * as resourceRepository from '../../services/resourceRepository.js';
+import * as plannerRepository from '../../services/plannerRepository.js';
+import { getChapterPlanProgress } from '../../services/chapterPlanProgressService.js';
 import { CHAPTER_PLAN_STATUS, CHAPTER_PLAN_SECTION_KEYS, CHAPTER_PLAN_SPARK_SECTIONS } from '../../models/ChapterPlan.js';
 import { getChapterPlanTemplateConfig } from '../../config/chapterPlanTemplateConfig.js';
 import { getSparkCardDisplay } from '../components/SparkCardDisplay.js';
@@ -89,6 +91,11 @@ export function renderProgramManagerChapterPlanReviewView(container, { classroom
   let isIndexStale = false;
   let sparksById = new Map(); // sparkId -> Spark | null (fetched once the plan loads)
   let resourcesByLinkId = new Map(); // resourceLinkId -> Resource | null
+  // Backs the same derived "Lessons Planned" readout as
+  // ui/views/ChapterPlanEditorView.js's own renderLessonsProgressReadout()
+  // — `null` = not yet fetched (or fetch failed), never conflated with
+  // `[]` (fetched, genuinely none).
+  let lessons = null;
   const pendingComments = []; // [{ sectionKey, text }] — accumulated locally, not yet saved
   let openCommentFormKey = null;
   const collapsedCommentSectionKeys = new Set();
@@ -96,7 +103,7 @@ export function renderProgramManagerChapterPlanReviewView(container, { classroom
   function rerender() {
     renderReview(
       container,
-      { classroom, plan, loadError, actionError, isSubmittingAction, isIndexStale, sparksById, resourcesByLinkId, pendingComments, openCommentFormKey, collapsedCommentSectionKeys },
+      { classroom, plan, loadError, actionError, isSubmittingAction, isIndexStale, sparksById, resourcesByLinkId, lessons, pendingComments, openCommentFormKey, collapsedCommentSectionKeys },
       {
         onBack,
         canReview: plan ? chapterPlanReviewService.canReviewChapterPlan(classroom, plan, currentUser?.uid) : false,
@@ -241,6 +248,13 @@ export function renderProgramManagerChapterPlanReviewView(container, { classroom
       }
 
       await loadContextualSparksAndResources();
+
+      try {
+        lessons = await plannerRepository.getLessonsForUnit(classroom.id, plan.curriculumUnitId);
+      } catch (lessonsError) {
+        console.error('[ProgramManagerChapterPlanReviewView] Failed to load Lessons for the "Lessons Planned" readout:', lessonsError);
+        lessons = null;
+      }
       rerender();
     } catch (error) {
       console.error('[ProgramManagerChapterPlanReviewView] Failed to load chapter plan:', error);
@@ -295,7 +309,7 @@ function renderReview(container, state, handlers) {
   }
 
   wrapper.appendChild(
-    renderSection('Purpose & Integration', renderPurposeContent(plan), plan, CHAPTER_PLAN_SECTION_KEYS.PURPOSE, state, handlers)
+    renderSection('Purpose & Integration', renderPurposeContent(plan, state.lessons), plan, CHAPTER_PLAN_SECTION_KEYS.PURPOSE, state, handlers)
   );
   wrapper.appendChild(renderSection('Mastery', renderMasteryContent(plan), plan, CHAPTER_PLAN_SECTION_KEYS.MASTERY, state, handlers));
   wrapper.appendChild(
@@ -561,10 +575,29 @@ function renderCommentForm(sectionKey, handlers) {
 
 // ---- Section content — read-only, plain text/lists only --------------
 
-function renderPurposeContent(plan) {
+/** Same three states as ui/views/ChapterPlanEditorView.js's own renderLessonsProgressReadout() — `lessons === null` covers both "not yet fetched" and "fetch failed," deliberately never shown as "No lessons planned yet." */
+function formatLessonsPlannedReadout(plan, lessons) {
+  if (lessons === null) return 'Checking…';
+  const progress = getChapterPlanProgress(lessons, plan);
+  if (progress.lessonsPlanned === 0) return 'No lessons planned yet.';
+  const lessonWord = progress.lessonsPlanned === 1 ? 'lesson' : 'lessons';
+  const weekWord = progress.weeksSpanned === 1 ? 'week' : 'weeks';
+  return `${progress.lessonsPlanned} ${lessonWord} planned across ${progress.weeksSpanned} ${weekWord}.`;
+}
+
+/**
+ * `numberOfLessonsDays` itself is no longer shown here — per the
+ * approved connected-planning architecture, a Chapter Plan's own
+ * "lessons planned" is a DERIVED fact (services/chapterPlanProgressService.js),
+ * not an authored field, so the reviewer sees the same live readout the
+ * Fellow's own editor shows (ui/views/ChapterPlanEditorView.js's
+ * renderLessonsProgressReadout()) rather than a stale, possibly-never-
+ * populated number.
+ */
+function renderPurposeContent(plan, lessons) {
   const wrap = document.createElement('div');
   wrap.appendChild(renderReadOnlyField('Chapter Name', plan.chapterName));
-  wrap.appendChild(renderReadOnlyField('Number of Lessons/Days', plan.numberOfLessonsDays != null ? String(plan.numberOfLessonsDays) : ''));
+  wrap.appendChild(renderReadOnlyField('Lessons Planned', formatLessonsPlannedReadout(plan, lessons)));
   wrap.appendChild(renderReadOnlyField("What's Worth Learning?", plan.purpose.whatsWorthLearning));
   wrap.appendChild(renderReadOnlyField('Why does learning this matter?', plan.purpose.whyDoesLearningMatter));
   wrap.appendChild(renderReadOnlyField('Important Concepts', plan.purpose.importantConcepts));

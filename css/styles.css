@@ -5039,12 +5039,18 @@ textarea.reading-editor__block-input {
 textarea.chapter-plan-editor__field-input {
   min-height: 5rem;
 }
-.chapter-plan-editor__field-input--number {
-  max-width: 140px;
-}
 .chapter-plan-editor__field-input:disabled {
   background-color: var(--color-bg);
   color: var(--color-muted);
+}
+.chapter-plan-editor__lessons-progress {
+  margin-bottom: 1rem;
+}
+.chapter-plan-editor__lessons-progress-text {
+  margin: 0.4rem 0 0;
+  font-size: 0.95rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text, #1f2933);
 }
 .chapter-plan-editor__list-field {
   margin-bottom: 1rem;
