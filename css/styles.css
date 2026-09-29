@@ -1127,6 +1127,128 @@ select:focus-visible,
   border-left: 3px dashed var(--color-muted);
 }
 
+/* My Work task layer — Today's block (.hub-today-tasks) and My Week's
+   block (.hub-week-tasks) share the same .hub-task-row row styling
+   below; only their own wrapper/header/"+N more" classes differ so
+   each can sit correctly within its own section's existing spacing.
+   Deliberately a plain tinted panel, never styled to resemble
+   .hub-today-card or .hub-week-entry — these are Tasks, not scheduled
+   periods, and must stay visually distinguishable at a glance (see
+   PersonalHubView.js's own "MY WORK INTEGRATION" comment). */
+.hub-today-tasks,
+.hub-week-tasks {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background-color: color-mix(in srgb, var(--color-primary) 4%, var(--color-surface));
+}
+.hub-today-tasks__header,
+.hub-week-tasks__header {
+  display: flex;
+  /* Lets the title and the "Open My Work" link drop to their own line
+     as whole units on narrow phone widths (~320-390px) instead of
+     each wrapping mid-phrase — see .hub-today-tasks__title's own
+     min-width:0 and .hub-today-tasks__link's own white-space:nowrap
+     below for the two halves of this fix. */
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.hub-today-tasks__title,
+.hub-week-tasks__title {
+  /* Allowed to shrink onto its own wrapped line rather than forcing
+     the link beside it to also shrink/wrap — flex-basis:auto with a
+     real min-width (not the flex-item default content-based minimum)
+     is what lets this line wrap as a whole phrase instead of
+     splitting mid-word under real narrow-viewport pressure. */
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.78rem;
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-muted);
+}
+.hub-today-tasks__link,
+.hub-week-tasks__link,
+.hub-today-tasks__more,
+.hub-week-tasks__more {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-primary-strong);
+  cursor: pointer;
+  /* Never wraps/shrinks itself — short, fixed phrase ("Open My Work",
+     "+N more in My Work"); it's the title above that gives way first
+     when both don't fit on one line. */
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.hub-today-tasks__more,
+.hub-week-tasks__more {
+  margin-top: var(--space-2);
+}
+.hub-today-tasks__list,
+.hub-week-tasks__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.hub-task-row {
+  display: flex;
+}
+.hub-task-row__button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  border: none;
+  background-color: var(--color-surface);
+  border-radius: var(--radius-control);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+.hub-task-row__button:hover {
+  background-color: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
+}
+.hub-task-row__priority {
+  flex-shrink: 0;
+  font-size: 0.85rem;
+}
+.hub-task-row__title {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.84rem;
+  color: var(--color-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hub-task-row__due {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+}
+.hub-task-row__due--overdue {
+  color: var(--color-danger, #dc2626);
+}
+
 /* My Schools & Programs */
 .hub-org-column {
   display: flex;

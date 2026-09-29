@@ -54,11 +54,40 @@
  *   - "View All" links on Schools/Learning Programmes are omitted —
  *     there is no dedicated list route for either today, and a link
  *     to nowhere would be worse than showing every real item inline.
- *   - The "Tasks & Reminders" / "Upcoming Events" sidebar next to My
- *     Week is omitted — there is no unified, cross-classroom Task or
- *     Event aggregation anywhere in ClassMate yet (WorkRequest/
- *     PendingTask/Notification are all classroom-scoped and shaped
- *     very differently); My Week takes the full row instead.
+ *   - A dedicated "Tasks & Reminders" / "Upcoming Events" SIDEBAR next
+ *     to My Week is still omitted (My Week keeps the full row) — but
+ *     see the "My Work integration" comment below: Today and My Week
+ *     now both surface real My Work Task data as an in-line layer
+ *     within their own existing sections, rather than as a separate
+ *     sidebar module.
+ *
+ * MY WORK INTEGRATION (Phase 3): Today and My Week each additionally
+ * surface the user's own My Work Tasks (models/Task.js, stored at
+ * users/{uid}/tasks — see js/ui/views/MyWorkView.js for the full
+ * management UI at #/my-work) alongside their existing schedule
+ * content. This is a strictly additive read-only layer:
+ *   - ONE shared fetch (taskRepository.getTasksForUser(uid)) is made
+ *     per render of this whole view and reused by both sections —
+ *     there is no second Task data-access path, and neither section's
+ *     own schedule-fetching/rendering logic (fetchEventsByClassroomId,
+ *     personalHubService's own schedule functions, renderWeekTable,
+ *     the period-card strip loop) is modified to make room for it.
+ *   - Today shows active Tasks due today or overdue
+ *     (MyWorkTaskDisplay.getTasksDueToday) in a small, visually
+ *     distinct block below the period strip — never merged into a
+ *     period card, never styled to look like a scheduled period.
+ *   - My Week shows active Tasks due within the displayed week
+ *     (MyWorkTaskDisplay.getTasksDueInRange) in a small block below
+ *     the grid — never added as extra grid rows/cells.
+ *   - Both blocks are read-only: clicking a task or the "Open My
+ *     Work"/"View all in My Work" link navigates to #/my-work
+ *     (onOpenMyWork) for any actual mutation (complete/edit/reopen/
+ *     delete). No task mutation UI, Focus Sessions, Subtasks, or
+ *     entity-linking UI is introduced here — that scope stays with
+ *     #/my-work itself.
+ *   - A Firestore failure loading Tasks degrades to "no tasks shown"
+ *     for this render (same try/catch-and-continue convention already
+ *     used for Scheduled Events above) rather than breaking the page.
  */
 
 import { createClassroomCardElement } from '../components/ClassroomCard.js';
@@ -73,6 +102,8 @@ import {
 import * as memberService from '../../services/memberService.js';
 import * as personalHubService from '../../services/personalHubService.js';
 import * as scheduledEventRepository from '../../services/scheduledEventRepository.js';
+import * as taskRepository from '../../repositories/taskRepository.js';
+import { getPriorityDisplay, getDueDateLabel, getTasksDueToday, getTasksDueInRange } from './MyWorkTaskDisplay.js';
 import { getGroupColorHex } from '../../config/groupColorConfig.js';
 import { getTimetableSubjectColor } from '../../config/timetableSubjectColors.js';
 import { formatDateKey, getTodayDateKey, getWeekRange, shiftDateKey } from '../../utils/dateHelpers.js';
@@ -115,13 +146,22 @@ const FACILITATOR_HEX = getGroupColorHex('purple');
 
 export function renderPersonalHubView(
   container,
-  { classrooms, currentUser, onSelectClassroom, onNewClassroom, onJoinClassroom, onDeleteClassroom, onOpenCurriculumManagement, onOpenTimetable, onOpenWeeklyPlans, onOpenChapterPlans }
+  { classrooms, currentUser, onSelectClassroom, onNewClassroom, onJoinClassroom, onDeleteClassroom, onOpenCurriculumManagement, onOpenTimetable, onOpenWeeklyPlans, onOpenChapterPlans, onOpenMyWork }
 ) {
   container.innerHTML = '';
 
   const uid = currentUser.uid;
   const colorMap = personalHubService.buildClassroomColorMap(classrooms);
   let weekAnchor = getTodayDateKey();
+
+  // Fetched once per render, shared by both renderTodaySection() and
+  // renderWeekSection() below — see this file's own top-of-file "MY
+  // WORK INTEGRATION" comment for why this must stay a single shared
+  // fetch rather than each section reading Tasks independently.
+  const tasksPromise = taskRepository.getTasksForUser(uid).catch((error) => {
+    console.error('[PersonalHubView] Failed to load My Work tasks:', error);
+    return [];
+  });
 
   const wrapper = document.createElement('div');
   wrapper.className = 'personal-hub';
@@ -339,14 +379,14 @@ export function renderPersonalHubView(
     section.appendChild(loading);
 
     const todayKey = getTodayDateKey();
-    fetchEventsByClassroomId(classrooms, todayKey, shiftDateKey(todayKey, 14))
-      .then((eventsByClassroomId) => populateTodaySection(section, eventsByClassroomId))
+    Promise.all([fetchEventsByClassroomId(classrooms, todayKey, shiftDateKey(todayKey, 14)), tasksPromise])
+      .then(([eventsByClassroomId, tasks]) => populateTodaySection(section, eventsByClassroomId, tasks))
       .catch((error) => console.error('[PersonalHubView] Failed to load Today strip events:', error));
 
     return section;
   }
 
-  function populateTodaySection(section, eventsByClassroomId) {
+  function populateTodaySection(section, eventsByClassroomId, tasks) {
     section.innerHTML = '';
 
     const header = document.createElement('div');
@@ -411,6 +451,14 @@ export function renderPersonalHubView(
 
     if (entries.length === 0) {
       section.appendChild(createEmptyStateElement({ message: 'No periods scheduled today.' }));
+      // Tasks are anchored to the REAL calendar today (todayKey), not
+      // `dateKey` — the schedule above may be showing a future "Next"
+      // day when today isn't a working day (see isToday above), but
+      // "what's due/overdue" stays a statement about today regardless
+      // of which day's (empty) schedule is on screen. Appended after
+      // the existing empty state, not before, so the schedule (even an
+      // empty one) always reads as this section's primary content.
+      section.appendChild(buildTodayTasksBlock(tasks, todayKey));
       return;
     }
 
@@ -514,6 +562,108 @@ export function renderPersonalHubView(
     helper.className = 'hub-today-helper';
     helper.textContent = 'Tap any period to open the classroom';
     section.appendChild(helper);
+
+    // Tasks are anchored to the REAL calendar today (todayKey), not
+    // `dateKey` — the schedule strip above may be showing a future
+    // "Next" day when today isn't a working day (see isToday above),
+    // but "what's due/overdue" stays a statement about today
+    // regardless of which day's periods are on screen. Appended only
+    // after the existing schedule strip + helper text, so the real
+    // schedule stays this section's primary content and the task
+    // layer reads as a supplementary addition beneath it.
+    section.appendChild(buildTodayTasksBlock(tasks, todayKey));
+  }
+
+  const TODAY_TASKS_VISIBLE_LIMIT = 4;
+
+  /**
+   * The Today section's own task layer — see this file's top-of-file
+   * "MY WORK INTEGRATION" comment. Read-only: every row and the
+   * header/footer links navigate to #/my-work rather than mutating a
+   * Task in place, keeping this section a schedule+overview surface,
+   * not a second task-management interface.
+   *
+   * Renders an empty DocumentFragment (nothing at all, no empty-state
+   * message) when there's genuinely nothing due/overdue — a user who
+   * has never touched My Work should see a Today section that looks
+   * exactly like it did before this integration existed, not a new
+   * permanent "no tasks" line competing with the real schedule.
+   */
+  function buildTodayTasksBlock(tasks, todayKey) {
+    const dueTasks = getTasksDueToday(tasks, todayKey);
+    if (dueTasks.length === 0) return document.createDocumentFragment();
+
+    const block = document.createElement('div');
+    block.className = 'hub-today-tasks';
+
+    const header = document.createElement('div');
+    header.className = 'hub-today-tasks__header';
+    const title = document.createElement('span');
+    title.className = 'hub-today-tasks__title';
+    title.textContent = 'Tasks due today';
+    const openLink = document.createElement('button');
+    openLink.type = 'button';
+    openLink.className = 'hub-today-tasks__link';
+    openLink.append('Open My Work ', createIcon('arrow-right', { size: 14 }));
+    openLink.addEventListener('click', () => onOpenMyWork?.());
+    header.append(title, openLink);
+    block.appendChild(header);
+
+    const list = document.createElement('ul');
+    list.className = 'hub-today-tasks__list';
+    dueTasks.slice(0, TODAY_TASKS_VISIBLE_LIMIT).forEach((task) => list.appendChild(buildTaskRow(task, todayKey)));
+    block.appendChild(list);
+
+    const overflow = dueTasks.length - TODAY_TASKS_VISIBLE_LIMIT;
+    if (overflow > 0) {
+      const more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'hub-today-tasks__more';
+      more.textContent = `+${overflow} more in My Work`;
+      more.addEventListener('click', () => onOpenMyWork?.());
+      block.appendChild(more);
+    }
+
+    return block;
+  }
+
+  /**
+   * One task row shared by the Today block above and the My Week block
+   * below (buildWeekTasksBlock) — same priority icon + title + due
+   * label vocabulary MyWorkView.js's own list uses, at a much more
+   * compact size. The due label still renders on Today's own rows
+   * (not just My Week's) — "Overdue" vs "Today" is exactly the
+   * distinction Today's block needs to surface within its own list.
+   */
+  function buildTaskRow(task, todayKey) {
+    const row = document.createElement('li');
+    row.className = 'hub-task-row';
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'hub-task-row__button';
+    button.addEventListener('click', () => onOpenMyWork?.());
+
+    const priority = document.createElement('span');
+    priority.className = 'hub-task-row__priority';
+    priority.textContent = getPriorityDisplay(task.priority).icon;
+
+    const titleText = document.createElement('span');
+    titleText.className = 'hub-task-row__title';
+    titleText.textContent = task.title;
+
+    button.append(priority, titleText);
+
+    const dueLabel = getDueDateLabel(task, todayKey);
+    if (dueLabel) {
+      const due = document.createElement('span');
+      due.className = 'hub-task-row__due' + (dueLabel === 'Overdue' ? ' hub-task-row__due--overdue' : '');
+      due.textContent = dueLabel;
+      button.appendChild(due);
+    }
+
+    row.appendChild(button);
+    return row;
   }
 
   // --- My Classrooms / Other Classrooms ----------------------------------
@@ -803,15 +953,15 @@ export function renderPersonalHubView(
 
     const requestedAnchor = weekAnchor;
     const { start, end } = getWeekRange(weekAnchor);
-    fetchEventsByClassroomId(classrooms, start, end)
-      .then((eventsByClassroomId) => {
+    Promise.all([fetchEventsByClassroomId(classrooms, start, end), tasksPromise])
+      .then(([eventsByClassroomId, tasks]) => {
         if (weekAnchor !== requestedAnchor) return; // a newer navigation has already superseded this fetch
-        populateWeekSectionBody(bodyContainer, requestedAnchor, eventsByClassroomId);
+        populateWeekSectionBody(bodyContainer, requestedAnchor, eventsByClassroomId, tasks);
       })
       .catch((error) => console.error('[PersonalHubView] Failed to load My Week events:', error));
   }
 
-  function populateWeekSectionBody(bodyContainer, weekAnchorForThisRender, eventsByClassroomId) {
+  function populateWeekSectionBody(bodyContainer, weekAnchorForThisRender, eventsByClassroomId, tasks) {
     bodyContainer.innerHTML = '';
 
     const { range, days, rows } = personalHubService.getWeekGrid(classrooms, uid, weekAnchorForThisRender, eventsByClassroomId);
@@ -844,6 +994,8 @@ export function renderPersonalHubView(
       bodyContainer.appendChild(renderWeekTable(days, rows, todayKey));
     }
 
+    bodyContainer.appendChild(buildWeekTasksBlock(tasks, range, todayKey));
+
     const footer = document.createElement('div');
     footer.className = 'hub-week__footer';
     const viewFullButton = document.createElement('button');
@@ -857,6 +1009,57 @@ export function renderPersonalHubView(
     });
     footer.appendChild(viewFullButton);
     bodyContainer.appendChild(footer);
+  }
+
+  const WEEK_TASKS_VISIBLE_LIMIT = 6;
+
+  /**
+   * My Week's own task layer — see this file's top-of-file "MY WORK
+   * INTEGRATION" comment. Reuses buildTaskRow() exactly as the Today
+   * block does; that row's own due label (getDueDateLabel) already
+   * reads as "Today"/"Tomorrow"/a plain formatted date, which is
+   * exactly the per-day context a week-spanning list needs — no
+   * separate day-of-week grouping is built here. A genuinely empty
+   * week (no active Task due within `range`) renders nothing, same
+   * "don't show a permanent empty state for a feature this user may
+   * never have touched" reasoning as buildTodayTasksBlock() above.
+   */
+  function buildWeekTasksBlock(tasks, range, todayKey) {
+    const dueTasks = getTasksDueInRange(tasks, range.start, range.end);
+    if (dueTasks.length === 0) return document.createDocumentFragment();
+
+    const block = document.createElement('div');
+    block.className = 'hub-week-tasks';
+
+    const header = document.createElement('div');
+    header.className = 'hub-week-tasks__header';
+    const title = document.createElement('span');
+    title.className = 'hub-week-tasks__title';
+    title.textContent = 'Tasks & deadlines this week';
+    const openLink = document.createElement('button');
+    openLink.type = 'button';
+    openLink.className = 'hub-week-tasks__link';
+    openLink.append('Open My Work ', createIcon('arrow-right', { size: 14 }));
+    openLink.addEventListener('click', () => onOpenMyWork?.());
+    header.append(title, openLink);
+    block.appendChild(header);
+
+    const list = document.createElement('ul');
+    list.className = 'hub-week-tasks__list';
+    dueTasks.slice(0, WEEK_TASKS_VISIBLE_LIMIT).forEach((task) => list.appendChild(buildTaskRow(task, todayKey)));
+    block.appendChild(list);
+
+    const overflow = dueTasks.length - WEEK_TASKS_VISIBLE_LIMIT;
+    if (overflow > 0) {
+      const more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'hub-week-tasks__more';
+      more.textContent = `+${overflow} more in My Work`;
+      more.addEventListener('click', () => onOpenMyWork?.());
+      block.appendChild(more);
+    }
+
+    return block;
   }
 
   function renderWeekTable(days, rows, todayKey) {
