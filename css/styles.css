@@ -4141,6 +4141,12 @@ textarea.reading-editor__block-input {
   font-size: 0.9rem;
   margin: 0 0 0.6rem;
 }
+.weekly-plan-review__chapter-note {
+  color: var(--color-primary-strong, var(--color-primary));
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-medium);
+  margin: 0 0 0.6rem;
+}
 .weekly-plan-review__loading,
 .weekly-plan-review__error {
   color: var(--color-muted);
@@ -4248,6 +4254,15 @@ textarea.reading-editor__block-input {
   align-self: flex-start;
   padding: 0;
   margin-top: 0.2rem;
+}
+.weekly-plan-grid__chapter-chip {
+  align-self: flex-start;
+  background-color: var(--color-primary, #1f2933);
+  color: #ffffff;
+  font-size: 0.7rem;
+  font-weight: var(--font-weight-bold);
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
 }
 
 @media (max-width: 1024px) {
@@ -5051,6 +5066,50 @@ textarea.chapter-plan-editor__field-input {
   font-size: 0.95rem;
   font-weight: var(--font-weight-medium);
   color: var(--color-text, #1f2933);
+}
+.chapter-plan-editor__tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.chapter-plan-editor__tab {
+  border: none;
+  background: none;
+  padding: 0.65rem 0.9rem;
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+.chapter-plan-editor__tab--active {
+  color: var(--color-text, #1f2933);
+  border-bottom-color: var(--color-primary, #1f2933);
+}
+.chapter-plan-editor__weeks-jump-row {
+  margin-bottom: 1rem;
+}
+.chapter-plan-editor__weeks-empty {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+.chapter-plan-editor__weeks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.chapter-plan-editor__weeks-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 0.9rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+.chapter-plan-editor__weeks-row-label {
+  font-size: 0.9rem;
 }
 .chapter-plan-editor__list-field {
   margin-bottom: 1rem;

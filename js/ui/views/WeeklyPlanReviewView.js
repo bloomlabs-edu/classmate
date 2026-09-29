@@ -16,6 +16,23 @@
  * never a second timetable reconstruction, never a snapshot). The
  * status badge/actions are the ONE thing this view reads from
  * models/WeeklyPlanSubmission.js — never a copy of grid content.
+ *
+ * Optional Chapter lens — `chapterCurriculumUnitId`/`chapterName`
+ * (both default `null`) — this view IS the "existing Weekly Plan grid"
+ * the approved connected-planning architecture's Weeks perspective
+ * reuses, per explicit product direction: a Chapter's Weeks view is
+ * never a second grid/timetable implementation, only this same one
+ * with periods belonging to the current Chapter visually flagged. When
+ * `chapterCurriculumUnitId` is set, a period whose own Lesson has a
+ * matching `curriculumUnitId` (see
+ * services/chapterPlanProgressService.js's own identical
+ * classroomId+curriculumUnitId join — NEVER linkedCurriculumUnitId)
+ * gets a small chip; every other period renders exactly as before,
+ * never hidden — a week can, and often does, contain periods from
+ * OTHER chapters, and this view must keep showing the Fellow's real
+ * whole week regardless of which Chapter Plan opened it. When these two
+ * params are omitted entirely (every existing caller — the Program
+ * Manager queue), this view's output is byte-for-byte unchanged.
  */
 
 import * as weeklyPlanSubmissionRepository from '../../repositories/weeklyPlanSubmissionRepository.js';
@@ -54,7 +71,18 @@ function getStatusLabel(displayStatus, submission) {
 
 export function renderWeeklyPlanReviewView(
   container,
-  { classroom, teacherUid, teacherDisplayName, weekStartDate, currentUser, onBack, onOpenTimetable, onOpenFullLessonPlan }
+  {
+    classroom,
+    teacherUid,
+    teacherDisplayName,
+    weekStartDate,
+    currentUser,
+    onBack,
+    onOpenTimetable,
+    onOpenFullLessonPlan,
+    chapterCurriculumUnitId = null,
+    chapterName = null,
+  }
 ) {
   let state = null; // null = loading
   let loadError = null;
@@ -70,6 +98,8 @@ export function renderWeeklyPlanReviewView(
       state,
       loadError,
       expandedTeachingSlotIds,
+      chapterCurriculumUnitId,
+      chapterName,
     }, { onBack, onOpenTimetable, onOpenFullLessonPlan, onToggleExpand, onSubmit, onRequestChanges, onApprove });
   }
 
@@ -139,7 +169,7 @@ function renderPeriodField(container, label, value, { expanded }) {
   container.appendChild(field);
 }
 
-function renderPeriodCard(classroom, period, { expanded, onToggleExpand, onOpenFullLessonPlan }) {
+function renderPeriodCard(classroom, period, { expanded, onToggleExpand, onOpenFullLessonPlan, chapterCurriculumUnitId }) {
   const card = document.createElement('div');
   card.className = 'weekly-plan-grid__period-card';
 
@@ -150,6 +180,18 @@ function renderPeriodCard(classroom, period, { expanded, onToggleExpand, onOpenF
   header.textContent = `P${period.periodNumber} · ${period.startTime}–${period.endTime} · ${subjectTitle}`;
   header.addEventListener('click', () => onToggleExpand(period.teachingSlotId));
   card.appendChild(header);
+
+  // Additive Chapter-lens highlight only — see this file's own header
+  // comment. Same classroomId+curriculumUnitId join
+  // services/chapterPlanProgressService.js uses, never
+  // linkedCurriculumUnitId; every other period keeps rendering exactly
+  // as before, whether or not this chip is ever shown.
+  if (chapterCurriculumUnitId && period.lesson?.curriculumUnitId === chapterCurriculumUnitId) {
+    const chip = document.createElement('span');
+    chip.className = 'weekly-plan-grid__chapter-chip';
+    chip.textContent = 'This Chapter';
+    card.appendChild(chip);
+  }
 
   const lesson = period.lesson;
   const unitTitle = period.unit?.title || null;
@@ -179,7 +221,7 @@ function renderPeriodCard(classroom, period, { expanded, onToggleExpand, onOpenF
   return card;
 }
 
-function renderDayColumn(classroom, day, { expandedTeachingSlotIds, onToggleExpand, onOpenFullLessonPlan }) {
+function renderDayColumn(classroom, day, { expandedTeachingSlotIds, onToggleExpand, onOpenFullLessonPlan, chapterCurriculumUnitId }) {
   const column = document.createElement('div');
   column.className = 'weekly-plan-grid__day';
 
@@ -210,6 +252,7 @@ function renderDayColumn(classroom, day, { expandedTeachingSlotIds, onToggleExpa
         expanded: expandedTeachingSlotIds.has(period.teachingSlotId),
         onToggleExpand,
         onOpenFullLessonPlan,
+        chapterCurriculumUnitId,
       })
     );
   });
@@ -237,6 +280,13 @@ function renderContent(container, data, handlers) {
   subtitle.className = 'weekly-plan-review__subtitle';
   subtitle.textContent = `${data.classroom.name || 'Classroom'} · ${formatWeekDateRange(data.weekStartDate)}`;
   wrapper.appendChild(subtitle);
+
+  if (data.chapterCurriculumUnitId && data.chapterName) {
+    const chapterNote = document.createElement('p');
+    chapterNote.className = 'weekly-plan-review__chapter-note';
+    chapterNote.textContent = `Highlighting periods for: ${data.chapterName}`;
+    wrapper.appendChild(chapterNote);
+  }
 
   const viewTimetable = document.createElement('button');
   viewTimetable.type = 'button';
@@ -318,6 +368,7 @@ function renderContent(container, data, handlers) {
         expandedTeachingSlotIds: data.expandedTeachingSlotIds,
         onToggleExpand: handlers.onToggleExpand,
         onOpenFullLessonPlan: handlers.onOpenFullLessonPlan,
+        chapterCurriculumUnitId: data.chapterCurriculumUnitId,
       })
     );
   });

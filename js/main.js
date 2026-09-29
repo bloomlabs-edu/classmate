@@ -901,7 +901,7 @@ function renderRoute(route, reason = 'unspecified') {
   }
 
   if (route.name === 'programManagerWeeklyPlanReview') {
-    const { classroomId, teacherUid, week } = route.query || {};
+    const { classroomId, teacherUid, week, chapterCurriculumUnitId, chapterName, chapterPlanId, returnTab } = route.query || {};
     const classroom = workspaceService.getClassroomById(classroomId);
     if (!classroom) {
       // Same in-flight-vs-genuinely-missing distinction as the
@@ -922,9 +922,20 @@ function renderRoute(route, reason = 'unspecified') {
       teacherDisplayName: classroom.members?.[teacherUid]?.displayName,
       weekStartDate: week,
       currentUser,
-      onBack: () => router.navigate('/program-manager/weekly-plans'),
+      onBack: () =>
+        router.navigate(
+          chapterPlanId
+            ? `/classroom/${classroomId}/chapter-plans/${chapterPlanId}${returnTab === 'weeks' ? '?tab=weeks' : ''}`
+            : '/program-manager/weekly-plans'
+        ),
       onOpenTimetable: (classroomId) => router.navigate(`/classroom/${classroomId}/timetable`),
       onOpenFullLessonPlan: (classroomId, lessonPlanId) => router.navigate(`/classroom/${classroomId}/lesson-plans/${lessonPlanId}`),
+      // Additive Chapter-lens params (see ui/views/WeeklyPlanReviewView.js's
+      // own header comment) — undefined for every existing PM-queue
+      // navigation, since this same route/view is now also reached from
+      // ui/views/ChapterPlanEditorView.js's own "Weeks" tab.
+      chapterCurriculumUnitId,
+      chapterName,
     });
     return;
   }
@@ -1208,6 +1219,23 @@ function renderRoute(route, reason = 'unspecified') {
         currentUser,
         chapterPlanId: route.chapterPlanId,
         onBack: () => router.navigate(`/classroom/${classroom.id}/chapter-plans`),
+        // `?tab=weeks` survives a refresh/deep-link the same way every
+        // other query param on this route already does (router.js's
+        // parsing is generic — see ui/views/ChapterPlanEditorTabDisplay.js).
+        initialTab: route.query?.tab,
+        // Additive "Weeks" lens — reuses the EXISTING Weekly Plan grid
+        // route/view (ui/views/WeeklyPlanReviewView.js) rather than a
+        // second grid implementation; see that view's own header
+        // comment on the chapterCurriculumUnitId/chapterName params.
+        // `returnTab=weeks` is this call's own explicit signal (never
+        // inferred from chapterPlanId's mere presence) that Back should
+        // land on the Weeks tab specifically — onOpenWeek is only ever
+        // wired up from that tab, so this is always `weeks` today, but
+        // the param stays explicit rather than assumed.
+        onOpenWeek: (teacherUid, weekStartDate, chapterCurriculumUnitId, chapterName) =>
+          router.navigate(
+            `/program-manager/weekly-plans/review?classroomId=${encodeURIComponent(classroom.id)}&teacherUid=${encodeURIComponent(teacherUid)}&week=${encodeURIComponent(weekStartDate)}&chapterCurriculumUnitId=${encodeURIComponent(chapterCurriculumUnitId)}&chapterName=${encodeURIComponent(chapterName)}&chapterPlanId=${encodeURIComponent(route.chapterPlanId)}&returnTab=weeks`
+          ),
       });
     } else if (route.name === 'lessonPlanBuilder') {
       renderLessonPlanBuilderView(appContainer, {

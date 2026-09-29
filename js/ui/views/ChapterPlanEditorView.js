@@ -37,14 +37,15 @@ import * as chapterPlanService from '../../services/chapterPlanService.js';
 import * as chapterPlanReviewService from '../../services/chapterPlanReviewService.js';
 import * as chapterPlanReviewIndexService from '../../services/chapterPlanReviewIndexService.js';
 import * as plannerRepository from '../../services/plannerRepository.js';
-import { getChapterPlanProgress } from '../../services/chapterPlanProgressService.js';
+import { getChapterPlanProgress, getChapterPlanWeeks } from '../../services/chapterPlanProgressService.js';
 import { CHAPTER_PLAN_STATUS, CHAPTER_PLAN_SECTION_KEYS, CHAPTER_PLAN_SPARK_SECTIONS } from '../../models/ChapterPlan.js';
 import { getChapterPlanTemplateConfig } from '../../config/chapterPlanTemplateConfig.js';
 import { openSparkPickerModal } from '../components/SparkPickerModal.js';
 import { openChapterPlanResourcePickerModal } from '../components/ChapterPlanResourcePickerModal.js';
 import { createSaveIndicatorController } from '../components/ProgrammeSessionSaveIndicator.js';
 import { createBackButton } from '../components/BackButton.js';
-import { formatRelativeTimestamp } from '../../utils/dateHelpers.js';
+import { formatRelativeTimestamp, getMondayStartOfWeek, getCurrentIsoDate, formatWeekDateRange } from '../../utils/dateHelpers.js';
+import { resolveInitialChapterPlanTab, CHAPTER_PLAN_EDITOR_TABS } from './ChapterPlanEditorTabDisplay.js';
 
 const STATUS_LABELS = Object.freeze({
   [CHAPTER_PLAN_STATUS.DRAFT]: 'Draft',
@@ -61,16 +62,24 @@ const SECTION_LABELS = Object.freeze({
   [CHAPTER_PLAN_SECTION_KEYS.SUBJECT_SPECIFIC]: 'Subject-Specific',
 });
 
-export function renderChapterPlanEditorView(container, { classroom, currentUser, chapterPlanId, onBack }) {
+export function renderChapterPlanEditorView(container, { classroom, currentUser, chapterPlanId, onBack, onOpenWeek, initialTab }) {
   let plan = null; // null = loading
   let loadError = null;
   let saveIndicator = null;
-  // `lessons` backs the derived "Lessons Planned" readout only (see
-  // renderLessonsProgressReadout() below) — never anything the Chapter
-  // Plan itself stores. `null` (not yet fetched, or fetch failed) is
-  // distinct from `[]` (fetched, genuinely none yet) so the readout can
+  // `lessons` backs both the "Lessons Planned" readout and the "Weeks"
+  // tab (see renderLessonsProgressReadout()/renderWeeksTab() below) —
+  // one fetch, two derived readouts, never anything the Chapter Plan
+  // itself stores. `null` (not yet fetched, or fetch failed) is
+  // distinct from `[]` (fetched, genuinely none yet) so each readout can
   // tell "no lessons planned yet" from "couldn't check."
   let lessons = null;
+  // Which of the two connected-planning perspectives is showing —
+  // "Lessons" is a later phase, not built yet (see this view's own
+  // header comment on scope). Resolved from the caller's own
+  // `?tab=weeks` query param (see ui/views/ChapterPlanEditorTabDisplay.js)
+  // so Back-navigation from a Weeks-tab-opened Weekly Plan can land
+  // directly back on the Weeks tab, not silently reset to Chapter.
+  let activeTab = resolveInitialChapterPlanTab(initialTab);
 
   mount();
 
@@ -164,14 +173,49 @@ export function renderChapterPlanEditorView(container, { classroom, currentUser,
     wrapper.appendChild(renderTitleBar(plan, editable));
     const reviewFeedback = renderReviewFeedback(plan);
     if (reviewFeedback) wrapper.appendChild(reviewFeedback);
-    wrapper.appendChild(renderPurposeSection(plan, editable));
-    wrapper.appendChild(renderMasterySection(plan, editable));
-    wrapper.appendChild(renderMethodsSection(plan, editable, config));
-    if (config.subjectSpecificFields.length > 0) {
-      wrapper.appendChild(renderSubjectSpecificSection(plan, editable, config));
+    wrapper.appendChild(renderTabStrip());
+
+    if (activeTab === CHAPTER_PLAN_EDITOR_TABS.WEEKS) {
+      wrapper.appendChild(renderWeeksTab(plan));
+    } else {
+      wrapper.appendChild(renderPurposeSection(plan, editable));
+      wrapper.appendChild(renderMasterySection(plan, editable));
+      wrapper.appendChild(renderMethodsSection(plan, editable, config));
+      if (config.subjectSpecificFields.length > 0) {
+        wrapper.appendChild(renderSubjectSpecificSection(plan, editable, config));
+      }
     }
 
     container.appendChild(wrapper);
+  }
+
+  /**
+   * `[ Chapter ] [ Weeks ]` — the approved connected-planning
+   * perspectives. "Lessons" is a later phase (not built here). Purely a
+   * local view-state toggle — never persisted, never affects `plan`
+   * itself.
+   */
+  function renderTabStrip() {
+    const strip = document.createElement('div');
+    strip.className = 'chapter-plan-editor__tabs';
+
+    [
+      { key: CHAPTER_PLAN_EDITOR_TABS.CHAPTER, label: 'Chapter' },
+      { key: CHAPTER_PLAN_EDITOR_TABS.WEEKS, label: 'Weeks' },
+    ].forEach(({ key, label }) => {
+      const tabButton = document.createElement('button');
+      tabButton.type = 'button';
+      tabButton.className = `chapter-plan-editor__tab${activeTab === key ? ' chapter-plan-editor__tab--active' : ''}`;
+      tabButton.textContent = label;
+      tabButton.addEventListener('click', () => {
+        if (activeTab === key) return;
+        activeTab = key;
+        rerender();
+      });
+      strip.appendChild(tabButton);
+    });
+
+    return strip;
   }
 
   // ---------------------------------------------------------------------
@@ -487,6 +531,85 @@ export function renderChapterPlanEditorView(container, { classroom, currentUser,
     wrap.appendChild(text);
 
     return wrap;
+  }
+
+  // ---------------------------------------------------------------------
+  // WEEKS — a chapter-filtered LENS over the existing Weekly Plan
+  // ---------------------------------------------------------------------
+
+  /**
+   * The "Weeks" perspective — per the approved connected-planning
+   * architecture, this is NEVER a second Weekly Plan/timetable
+   * implementation. It only lists WHICH weeks this chapter has a real
+   * footprint in (services/chapterPlanProgressService.js's own
+   * getChapterPlanWeeks(), reusing the exact same `lessons` already
+   * fetched for the "Lessons Planned" readout — one fetch, not two —
+   * and the same classroomId+curriculumUnitId join, never
+   * linkedCurriculumUnitId). Opening a week (or "This Week", always
+   * offered even before any Lesson exists for it) navigates into the
+   * SAME ui/views/WeeklyPlanReviewView.js the Fellow's own Weekly Plan
+   * already uses — this view renders none of a week's own schedule
+   * itself, so a week containing other chapters' periods is never
+   * misrepresented here.
+   */
+  function renderWeeksTab(currentPlan) {
+    const section = renderSection('Weeks');
+
+    if (lessons === null) {
+      const loading = document.createElement('p');
+      loading.className = 'chapter-plan-editor__weeks-loading';
+      loading.textContent = 'Checking planned weeks…';
+      section.appendChild(loading);
+      return section;
+    }
+
+    const openWeek = (weekStartDate) => onOpenWeek(currentPlan.teacherUid, weekStartDate, currentPlan.curriculumUnitId, currentPlan.chapterName);
+    const currentWeekStartDate = getMondayStartOfWeek(getCurrentIsoDate());
+
+    const jumpRow = document.createElement('div');
+    jumpRow.className = 'chapter-plan-editor__weeks-jump-row';
+    const jumpButton = document.createElement('button');
+    jumpButton.type = 'button';
+    jumpButton.className = 'btn btn--secondary';
+    jumpButton.textContent = 'Open This Week →';
+    jumpButton.addEventListener('click', () => openWeek(currentWeekStartDate));
+    jumpRow.appendChild(jumpButton);
+    section.appendChild(jumpRow);
+
+    const weeks = getChapterPlanWeeks(lessons, currentPlan);
+
+    if (weeks.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'chapter-plan-editor__weeks-empty';
+      empty.textContent = 'No weeks planned yet for this chapter.';
+      section.appendChild(empty);
+      return section;
+    }
+
+    const list = document.createElement('div');
+    list.className = 'chapter-plan-editor__weeks-list';
+    weeks.forEach(({ weekStartDate, lessonCount }) => {
+      const row = document.createElement('div');
+      row.className = 'chapter-plan-editor__weeks-row';
+
+      const label = document.createElement('span');
+      label.className = 'chapter-plan-editor__weeks-row-label';
+      const periodWord = lessonCount === 1 ? 'period' : 'periods';
+      label.textContent = `Week of ${formatWeekDateRange(weekStartDate)} · ${lessonCount} ${periodWord}`;
+      row.appendChild(label);
+
+      const openButton = document.createElement('button');
+      openButton.type = 'button';
+      openButton.className = 'btn btn--text';
+      openButton.textContent = 'Open →';
+      openButton.addEventListener('click', () => openWeek(weekStartDate));
+      row.appendChild(openButton);
+
+      list.appendChild(row);
+    });
+    section.appendChild(list);
+
+    return section;
   }
 
   // ---------------------------------------------------------------------

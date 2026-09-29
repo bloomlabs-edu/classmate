@@ -91,3 +91,33 @@ export function getChapterPlanProgress(lessons, chapterPlan) {
     lastPlannedDate,
   };
 }
+
+/**
+ * The "Weeks" lens's own list — every week this chapter has a real
+ * footprint in, one entry per distinct Monday-start week among this
+ * chapter's own planned Lessons (same classroomId+curriculumUnitId join,
+ * same hasMeaningfulWeeklyPlanContent() "planned" definition as
+ * getChapterPlanProgress() above — never a second, separately-invented
+ * notion of "planned"). `{ weekStartDate, lessonCount }[]`, sorted
+ * ascending by date. This is deliberately NOT a reconstruction of the
+ * week itself (no periods, no subjects, no times) — per the approved
+ * architecture, the actual week is always rendered by the EXISTING
+ * Weekly Plan grid (services/weeklyPlanGridService.js's own
+ * buildWeeklyPlanGrid(), as already rendered by
+ * ui/views/WeeklyPlanReviewView.js); this is only the index of WHICH
+ * weeks to offer as a jump-off point, not a copy of what's in them.
+ */
+export function getChapterPlanWeeks(lessons, chapterPlan) {
+  const matchingLessons = (lessons || []).filter((lesson) => belongsToChapterPlan(lesson, chapterPlan));
+  const plannedLessons = matchingLessons.filter((lesson) => hasMeaningfulWeeklyPlanContent(lesson) && lesson.date);
+
+  const countByWeekStartDate = new Map();
+  plannedLessons.forEach((lesson) => {
+    const weekStartDate = getMondayStartOfWeek(lesson.date);
+    countByWeekStartDate.set(weekStartDate, (countByWeekStartDate.get(weekStartDate) || 0) + 1);
+  });
+
+  return [...countByWeekStartDate.entries()]
+    .map(([weekStartDate, lessonCount]) => ({ weekStartDate, lessonCount }))
+    .sort((a, b) => (a.weekStartDate < b.weekStartDate ? -1 : a.weekStartDate > b.weekStartDate ? 1 : 0));
+}

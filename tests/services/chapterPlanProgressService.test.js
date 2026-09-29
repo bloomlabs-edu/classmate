@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createLesson } from '../../js/models/Lesson.js';
 import { createChapterPlan } from '../../js/models/ChapterPlan.js';
-import { getChapterPlanProgress } from '../../js/services/chapterPlanProgressService.js';
+import { getChapterPlanProgress, getChapterPlanWeeks } from '../../js/services/chapterPlanProgressService.js';
 
 function plan(overrides = {}) {
   return createChapterPlan({
@@ -117,4 +117,34 @@ test('getChapterPlanProgress: an empty/no Lessons list returns all-zero, non-nul
     conceptsIntended: ['concept-natural-hazards', 'concept-human-made-hazards', 'concept-risk'],
     lastPlannedDate: null,
   });
+});
+
+// ---------------------------------------------------------------------
+// getChapterPlanWeeks
+// ---------------------------------------------------------------------
+
+test('getChapterPlanWeeks: an empty/no Lessons list returns an empty list', () => {
+  assert.deepEqual(getChapterPlanWeeks([], plan()), []);
+});
+
+test('getChapterPlanWeeks: groups Lessons into one entry per distinct Monday-start week, sorted ascending, with a per-week lessonCount', () => {
+  const mondayLesson = meaningfulLesson({ teachingSlotId: 'slot-mon-1', date: '2026-09-07' }); // Monday
+  const wedSameWeek = meaningfulLesson({ teachingSlotId: 'slot-wed-1', date: '2026-09-09' }); // same week
+  const nextWeekLesson = meaningfulLesson({ teachingSlotId: 'slot-mon-2', date: '2026-09-14' }); // following week
+
+  const weeks = getChapterPlanWeeks([nextWeekLesson, mondayLesson, wedSameWeek], plan());
+  assert.deepEqual(weeks, [
+    { weekStartDate: '2026-09-07', lessonCount: 2 },
+    { weekStartDate: '2026-09-14', lessonCount: 1 },
+  ]);
+});
+
+test('getChapterPlanWeeks: excludes Lessons from a different classroom or a different curriculumUnitId — never linkedCurriculumUnitId', () => {
+  const otherClassroom = meaningfulLesson({ classroomId: 'classroom-b', teachingSlotId: 'classroom-b_slot-1' });
+  const otherUnit = meaningfulLesson({ curriculumUnitId: 'unit-local-99', teachingSlotId: 'slot-other-unit' });
+  const thisChapter = meaningfulLesson({ teachingSlotId: 'slot-this-chapter' });
+
+  const weeks = getChapterPlanWeeks([otherClassroom, otherUnit, thisChapter], plan());
+  assert.equal(weeks.length, 1);
+  assert.equal(weeks[0].lessonCount, 1);
 });
