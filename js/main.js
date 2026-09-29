@@ -901,7 +901,7 @@ function renderRoute(route, reason = 'unspecified') {
   }
 
   if (route.name === 'programManagerWeeklyPlanReview') {
-    const { classroomId, teacherUid, week, chapterCurriculumUnitId, chapterName, chapterPlanId, returnTab } = route.query || {};
+    const { classroomId, teacherUid, week, chapterCurriculumUnitId, chapterName, chapterPlanId, returnTab, returnTo } = route.query || {};
     const classroom = workspaceService.getClassroomById(classroomId);
     if (!classroom) {
       // Same in-flight-vs-genuinely-missing distinction as the
@@ -922,9 +922,18 @@ function renderRoute(route, reason = 'unspecified') {
       teacherDisplayName: classroom.members?.[teacherUid]?.displayName,
       weekStartDate: week,
       currentUser,
+      // `returnTo` takes priority — the PM Chapter Plan Review path's own
+      // explicit "come back to exactly this URL" signal (same generic
+      // convention already used elsewhere in this file, e.g.
+      // 'programManagerObservations' above). Falls through to the
+      // pre-existing `chapterPlanId`+`returnTab` Fellow-editor path
+      // (byte-for-byte unchanged) when `returnTo` is absent, then to the
+      // original PM-queue default.
       onBack: () =>
         router.navigate(
-          chapterPlanId
+          returnTo
+            ? returnTo
+            : chapterPlanId
             ? `/classroom/${classroomId}/chapter-plans/${chapterPlanId}${returnTab === 'weeks' ? '?tab=weeks' : ''}`
             : '/program-manager/weekly-plans'
         ),
@@ -973,6 +982,31 @@ function renderRoute(route, reason = 'unspecified') {
       currentUser,
       chapterPlanId,
       onBack: () => router.navigate('/program-manager/chapter-plans'),
+      // Additive Weeks/Lessons drill-down (Phase 5B) — reuses the SAME
+      // existing routes/views the Fellow's own Chapter Plan tabs already
+      // use (ui/views/WeeklyPlanReviewView.js, ui/views/LessonPlanReviewView.js,
+      // ui/views/TimetableView.js), never a parallel PM-only
+      // implementation. `returnTo` is this PM review screen's own URL,
+      // encoded — see 'programManagerWeeklyPlanReview' above and the
+      // 'lessonPlanReview' route below, both of which already honor this
+      // exact generic convention.
+      onOpenWeek: (teacherUid, weekStartDate, chapterCurriculumUnitId, chapterName) =>
+        router.navigate(
+          `/program-manager/weekly-plans/review?classroomId=${encodeURIComponent(classroomId)}&teacherUid=${encodeURIComponent(teacherUid)}&week=${encodeURIComponent(weekStartDate)}&chapterCurriculumUnitId=${encodeURIComponent(chapterCurriculumUnitId)}&chapterName=${encodeURIComponent(chapterName)}&returnTo=${encodeURIComponent(`/program-manager/chapter-plans/review?classroomId=${classroomId}&chapterPlanId=${chapterPlanId}`)}`
+        ),
+      // Deliberately LessonPlanReviewView (the reviewer's read+comment+
+      // decide view), never LessonPlanBuilderView — a PM reviewing a
+      // Chapter Plan should land on the same reviewer surface used
+      // everywhere else a PM inspects a LessonPlan (see
+      // 'programManagerObservations' above's own identical
+      // onOpenPlanReview).
+      onOpenLessonPlanReview: (lessonPlanId) =>
+        router.navigate(
+          `/classroom/${classroomId}/lesson-plans/${lessonPlanId}/review?returnTo=${encodeURIComponent(`/program-manager/chapter-plans/review?classroomId=${classroomId}&chapterPlanId=${chapterPlanId}`)}`
+        ),
+      // Plain route only, per Phase 5B's own explicit scope — no
+      // contextual Back for this PM path in this phase.
+      onOpenTimetable: () => router.navigate(`/classroom/${classroomId}/timetable`),
     });
     return;
   }

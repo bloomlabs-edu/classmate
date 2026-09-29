@@ -64,13 +64,20 @@ import * as chapterPlanReviewIndexRepository from '../../repositories/chapterPla
 import * as sparkRepository from '../../repositories/sparkRepository.js';
 import * as resourceRepository from '../../services/resourceRepository.js';
 import * as plannerRepository from '../../services/plannerRepository.js';
-import { getChapterPlanProgress } from '../../services/chapterPlanProgressService.js';
+import { getChapterPlanProgress, getChapterPlanWeeks, getChapterPlanLessons } from '../../services/chapterPlanProgressService.js';
+import { resolveLessonConcepts } from '../../services/timetableDisplayService.js';
+import { parsePeriodNumberFromTeachingSlotId } from '../../services/timetableService.js';
 import { CHAPTER_PLAN_STATUS, CHAPTER_PLAN_SECTION_KEYS, CHAPTER_PLAN_SPARK_SECTIONS } from '../../models/ChapterPlan.js';
 import { getChapterPlanTemplateConfig } from '../../config/chapterPlanTemplateConfig.js';
 import { getSparkCardDisplay } from '../components/SparkCardDisplay.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createIcon } from '../components/Icon.js';
-import { formatRelativeTimestamp } from '../../utils/dateHelpers.js';
+import {
+  formatRelativeTimestamp,
+  getMondayStartOfWeek,
+  formatWeekDateRange,
+  formatDateKeyWithWeekday,
+} from '../../utils/dateHelpers.js';
 
 const STATUS_LABELS = Object.freeze({
   [CHAPTER_PLAN_STATUS.DRAFT]: 'Draft',
@@ -83,7 +90,10 @@ function getDisplayName(classroom, uid) {
   return classroom.members?.[uid]?.displayName || 'A teacher';
 }
 
-export function renderProgramManagerChapterPlanReviewView(container, { classroom, currentUser, chapterPlanId, onBack }) {
+export function renderProgramManagerChapterPlanReviewView(
+  container,
+  { classroom, currentUser, chapterPlanId, onBack, onOpenWeek, onOpenLessonPlanReview, onOpenTimetable }
+) {
   let plan = null; // null = loading
   let loadError = null;
   let actionError = null;
@@ -106,6 +116,9 @@ export function renderProgramManagerChapterPlanReviewView(container, { classroom
       { classroom, plan, loadError, actionError, isSubmittingAction, isIndexStale, sparksById, resourcesByLinkId, lessons, pendingComments, openCommentFormKey, collapsedCommentSectionKeys },
       {
         onBack,
+        onOpenWeek,
+        onOpenLessonPlanReview,
+        onOpenTimetable,
         canReview: plan ? chapterPlanReviewService.canReviewChapterPlan(classroom, plan, currentUser?.uid) : false,
         canApprove: plan ? chapterPlanReviewService.canApproveChapterPlan(classroom, plan, currentUser?.uid) : false,
 
@@ -322,6 +335,9 @@ function renderReview(container, state, handlers) {
       renderSection(`${config.label} — Subject-Specific`, renderSubjectSpecificContent(plan, state, config), plan, CHAPTER_PLAN_SECTION_KEYS.SUBJECT_SPECIFIC, state, handlers)
     );
   }
+
+  wrapper.appendChild(renderWeeksSection(plan, state.lessons, handlers));
+  wrapper.appendChild(renderLessonsSection(classroom, plan, state.lessons, handlers));
 
   wrapper.appendChild(renderReviewHistory(classroom, plan));
   wrapper.appendChild(renderReviewActions(state, handlers));
@@ -694,6 +710,188 @@ function renderResourceLinksReadOnly(plan, state) {
   });
 
   return wrap;
+}
+
+// ---- Weeks / Lessons — navigation/inspection only, never commentable.
+// Per explicit product direction: these are NOT review-content sections
+// (nothing here is something a Fellow authored that a PM comments on),
+// so they deliberately skip renderSection()'s own
+// renderCommentableSegment() wrapper entirely — a plain heading + list,
+// matching the read-only shape every other read-only block on this page
+// (Review History below) already uses. Both reuse the EXACT SAME pure
+// derivations and the SAME already-fetched `lessons` array the
+// "Lessons Planned" readout above already uses — no new Firestore read,
+// no second definition of "which Lessons belong to this Chapter."
+// ---------------------------------------------------------------------
+
+function renderPlainSection(heading) {
+  const section = document.createElement('section');
+  section.className = 'lesson-plan-review__section';
+  const headingEl = document.createElement('h2');
+  headingEl.className = 'lesson-plan-review__section-heading';
+  headingEl.textContent = heading;
+  section.appendChild(headingEl);
+  return section;
+}
+
+/**
+ * Same classroomId+curriculumUnitId-derived list the Fellow's own Weeks
+ * tab shows (ui/views/ChapterPlanEditorView.js's own renderWeeksTab()) —
+ * getChapterPlanWeeks() never uses linkedCurriculumUnitId. Opening a
+ * week navigates to the SAME ui/views/WeeklyPlanReviewView.js route the
+ * PM's own Weekly Plan queue already uses, never a second grid.
+ */
+function renderWeeksSection(plan, lessons, handlers) {
+  const section = renderPlainSection('Weeks');
+
+  if (lessons === null) {
+    const loading = document.createElement('p');
+    loading.className = 'chapter-plan-editor__weeks-loading';
+    loading.textContent = 'Checking planned weeks…';
+    section.appendChild(loading);
+    return section;
+  }
+
+  const weeks = getChapterPlanWeeks(lessons, plan);
+
+  if (weeks.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'chapter-plan-editor__weeks-empty';
+    empty.textContent = 'No weeks planned yet for this chapter.';
+    section.appendChild(empty);
+    return section;
+  }
+
+  const list = document.createElement('div');
+  list.className = 'chapter-plan-editor__weeks-list';
+  weeks.forEach(({ weekStartDate, lessonCount }) => {
+    const row = document.createElement('div');
+    row.className = 'chapter-plan-editor__weeks-row';
+
+    const label = document.createElement('span');
+    label.className = 'chapter-plan-editor__weeks-row-label';
+    const periodWord = lessonCount === 1 ? 'period' : 'periods';
+    label.textContent = `Week of ${formatWeekDateRange(weekStartDate)} · ${lessonCount} ${periodWord}`;
+    row.appendChild(label);
+
+    const openButton = document.createElement('button');
+    openButton.type = 'button';
+    openButton.className = 'btn btn--text';
+    openButton.textContent = 'Open Weekly Plan Review →';
+    openButton.addEventListener('click', () => handlers.onOpenWeek(plan.teacherUid, weekStartDate, plan.curriculumUnitId, plan.chapterName));
+    row.appendChild(openButton);
+
+    list.appendChild(row);
+  });
+  section.appendChild(list);
+
+  return section;
+}
+
+/**
+ * Same classroomId+curriculumUnitId-derived, chronologically-ordered
+ * list the Fellow's own Lessons tab shows (ui/views/ChapterPlanEditorView.js's
+ * own renderLessonsTab()) — getChapterPlanLessons() never uses
+ * linkedCurriculumUnitId. Lesson vs. LessonPlan stays explicit: a
+ * Lesson's own row always renders; whether it also has a Detailed
+ * Lesson Plan is read straight off `lesson.lessonPlanId`, never
+ * re-derived. A Lesson WITH a plan opens the existing
+ * ui/views/LessonPlanReviewView.js — the reviewer's own read+comment+
+ * decide view — never ui/views/LessonPlanBuilderView.js (the Fellow's
+ * editable one). A Lesson without one opens the plain existing
+ * Timetable route, no contextual Back for this PM path in this phase,
+ * per explicit scope.
+ */
+function renderLessonsSection(classroom, plan, lessons, handlers) {
+  const section = renderPlainSection('Lessons');
+
+  if (lessons === null) {
+    const loading = document.createElement('p');
+    loading.className = 'chapter-plan-editor__lessons-loading';
+    loading.textContent = 'Checking lessons…';
+    section.appendChild(loading);
+    return section;
+  }
+
+  const chapterLessons = getChapterPlanLessons(lessons, plan);
+
+  if (chapterLessons.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'chapter-plan-editor__lessons-empty';
+    empty.textContent = 'No lessons yet for this chapter.';
+    section.appendChild(empty);
+    return section;
+  }
+
+  const list = document.createElement('div');
+  list.className = 'chapter-plan-editor__lessons-list';
+  chapterLessons.forEach((lesson) => {
+    list.appendChild(renderPmLessonRow(classroom, lesson, handlers));
+  });
+  section.appendChild(list);
+
+  return section;
+}
+
+function renderPmLessonRow(classroom, lesson, handlers) {
+  const row = document.createElement('div');
+  row.className = 'chapter-plan-editor__lessons-row';
+
+  const meta = document.createElement('div');
+  meta.className = 'chapter-plan-editor__lessons-row-meta';
+
+  const dateLine = document.createElement('span');
+  dateLine.className = 'chapter-plan-editor__lessons-row-date';
+  const periodNumber = parsePeriodNumberFromTeachingSlotId(lesson.teachingSlotId);
+  const periodLabel = periodNumber ? `Period ${periodNumber}` : 'Period —';
+  dateLine.textContent = `${formatDateKeyWithWeekday(lesson.date)} · ${periodLabel}`;
+  meta.appendChild(dateLine);
+
+  const weekLine = document.createElement('span');
+  weekLine.className = 'chapter-plan-editor__lessons-row-week';
+  weekLine.textContent = `Week of ${formatWeekDateRange(getMondayStartOfWeek(lesson.date))}`;
+  meta.appendChild(weekLine);
+
+  const concepts = resolveLessonConcepts(classroom, lesson);
+  const conceptsLine = document.createElement('span');
+  conceptsLine.className = 'chapter-plan-editor__lessons-row-concepts';
+  conceptsLine.textContent = concepts.length > 0 ? concepts.map((concept) => concept.title).join(', ') : 'No concepts yet';
+  meta.appendChild(conceptsLine);
+
+  row.appendChild(meta);
+
+  const planStatus = document.createElement('div');
+  planStatus.className = 'chapter-plan-editor__lessons-row-plan-status';
+
+  if (lesson.lessonPlanId) {
+    const label = document.createElement('span');
+    label.className = 'chapter-plan-editor__lessons-row-plan-badge chapter-plan-editor__lessons-row-plan-badge--exists';
+    label.textContent = 'Detailed Lesson Plan';
+    planStatus.appendChild(label);
+
+    const openButton = document.createElement('button');
+    openButton.type = 'button';
+    openButton.className = 'btn btn--text';
+    openButton.textContent = 'Open Lesson Plan Review →';
+    openButton.addEventListener('click', () => handlers.onOpenLessonPlanReview(lesson.lessonPlanId));
+    planStatus.appendChild(openButton);
+  } else {
+    const label = document.createElement('span');
+    label.className = 'chapter-plan-editor__lessons-row-plan-badge';
+    label.textContent = 'No Detailed Lesson Plan yet';
+    planStatus.appendChild(label);
+
+    const openButton = document.createElement('button');
+    openButton.type = 'button';
+    openButton.className = 'btn btn--text';
+    openButton.textContent = 'Open Timetable →';
+    openButton.addEventListener('click', () => handlers.onOpenTimetable());
+    planStatus.appendChild(openButton);
+  }
+
+  row.appendChild(planStatus);
+
+  return row;
 }
 
 // ---- Review history — compact, append-only round list -----------------
