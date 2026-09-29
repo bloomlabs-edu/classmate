@@ -77,6 +77,7 @@ import {
   getMondayStartOfWeek,
 } from '../../utils/dateHelpers.js';
 import { createIcon } from '../components/Icon.js';
+import { createBackButton } from '../components/BackButton.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { renderSubjectBadge, renderLessonTopicLabel } from '../components/ScheduleItemLabels.js';
 import { createTimePicker } from '../components/TimePicker.js';
@@ -119,7 +120,23 @@ let preservedState = null; // { classroomId, state } | null
 
 export async function renderTimetableView(
   container,
-  { classroom, currentUser, preserveState = false, onOpenLessonPlan = () => {}, onOpenLearningManagement = () => {}, readOnly = false }
+  {
+    classroom,
+    currentUser,
+    preserveState = false,
+    onOpenLessonPlan = () => {},
+    onOpenLearningManagement = () => {},
+    readOnly = false,
+    // Contextual Back — `null` for every normal caller (sidebar/mobile
+    // nav, Dashboard, Assessment Management), which is why the Timetable
+    // has never had a Back button before this: it's a main navigation
+    // section, not a drill-down. Only set when reached from Chapter
+    // Plan's own Lessons tab ("Open in Timetable →" for a Lesson with no
+    // Detailed Lesson Plan yet — see ui/views/ChapterPlanEditorView.js),
+    // which otherwise has no way back at all. See renderHeader() below
+    // for where this actually renders.
+    onBackToChapterPlan = null,
+  }
 ) {
   const state =
     preserveState && preservedState && preservedState.classroomId === classroom.id
@@ -410,6 +427,17 @@ export async function renderTimetableView(
   function renderHeader() {
     const header = document.createElement('div');
     header.className = 'timetable-view__header';
+
+    // Contextual Back — only when reached from Chapter Plan's Lessons
+    // tab (see onBackToChapterPlan's own doc comment above). Plain
+    // "← Back" via the platform-wide ui/components/BackButton.js, never
+    // a destination-specific label, per that component's own explicit
+    // convention. Absent for every normal caller — the Timetable's own
+    // header gains nothing extra for the sidebar/Dashboard/mobile-nav
+    // paths.
+    if (onBackToChapterPlan) {
+      header.appendChild(createBackButton(onBackToChapterPlan));
+    }
 
     const headerRow = document.createElement('div');
     headerRow.className = 'timetable-view__header-row';

@@ -1099,6 +1099,12 @@ function renderRoute(route, reason = 'unspecified') {
       // reason (a genuine 'url-route-changed' navigation, sign-in,
       // etc.) still gets TimetableView's normal clean-slate mount — see
       // that view's own renderTimetableView() header comment.
+      // `chapterPlanId`/`returnTab` — the same explicit contextual-nav
+      // params already used for Weeks/LessonPlan Back — are `undefined`
+      // for every normal caller (sidebar/mobile nav, Dashboard,
+      // Assessment Management), so `onBackToChapterPlan` stays `null`
+      // and TimetableView renders no Back button, exactly as before.
+      const { chapterPlanId: timetableReturnChapterPlanId, returnTab: timetableReturnTab } = route.query || {};
       renderTimetableView(appContainer, {
         classroom,
         currentUser,
@@ -1132,6 +1138,10 @@ function renderRoute(route, reason = 'unspecified') {
           if (conceptId) params.set('conceptId', conceptId);
           router.navigate(`/classroom/${classroom.id}/learning?${params.toString()}`);
         },
+        onBackToChapterPlan:
+          timetableReturnChapterPlanId && timetableReturnTab === 'lessons'
+            ? () => router.navigate(`/classroom/${classroom.id}/chapter-plans/${timetableReturnChapterPlanId}?tab=lessons`)
+            : null,
       });
     } else if (route.name === 'assessments') {
       renderAssessmentManagementView(appContainer, {
@@ -1255,7 +1265,14 @@ function renderRoute(route, reason = 'unspecified') {
         // own onOpenTimetable) — the Timetable has no date-deep-linking
         // support today, so this is a genuine, accepted "go find the
         // right day yourself" limitation, not silently swallowed.
-        onOpenTimetable: () => router.navigate(`/classroom/${classroom.id}/timetable`),
+        // `chapterPlanId`/`returnTab=lessons` (same explicit-signal
+        // convention as onOpenWeek/onOpenLessonPlan above) let the
+        // Timetable route render a contextual Back — see
+        // ui/views/TimetableView.js's own onBackToChapterPlan.
+        onOpenTimetable: () =>
+          router.navigate(
+            `/classroom/${classroom.id}/timetable?chapterPlanId=${encodeURIComponent(route.chapterPlanId)}&returnTab=lessons`
+          ),
       });
     } else if (route.name === 'lessonPlanBuilder') {
       const { chapterPlanId: lessonPlanReturnChapterPlanId, returnTab: lessonPlanReturnTab } = route.query || {};
