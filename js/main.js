@@ -84,6 +84,7 @@ import { renderStudentProfileView } from './ui/views/StudentProfileView.js';
 import { renderTeamProfileView } from './ui/views/TeamProfileView.js';
 import { CLASSROOM_ROUTE_NAMES } from './config/classroomRouteNames.js';
 import { MEMBER_ROLES } from './config/memberRoles.js';
+import * as memberService from './services/memberService.js';
 import { renderStudentAccessView } from './ui/views/StudentAccessView.js';
 import { renderVisitorAccessView } from './ui/views/VisitorAccessView.js';
 import { renderActivitiesListView, renderActivityRosterView } from './ui/views/ActivitiesView.js';
@@ -888,6 +889,18 @@ function renderRoute(route, reason = 'unspecified') {
   }
 
   if (route.name === 'programManagerWeeklyPlans') {
+    // Route-level PM authorization — checked BEFORE rendering the view
+    // or loading any PM queue data, per the audit finding that
+    // visibility (PersonalHubView's own nav gating) and the queue's own
+    // classroom-scoping filter are not, on their own, a route guard: a
+    // signed-in owner/teacher who has never joined a PM invite could
+    // otherwise reach this URL directly. Same exact authorization basis
+    // as everywhere else PM status is checked — see
+    // services/memberService.js's own isProgramManagerAnywhere().
+    if (!memberService.isProgramManagerAnywhere(workspaceService.getState().classrooms, currentUser?.uid)) {
+      router.navigate('/teacher');
+      return;
+    }
     renderProgramManagerWeeklyPlanQueueView(appContainer, {
       classrooms: workspaceService.getState().classrooms,
       currentUser,
@@ -901,6 +914,12 @@ function renderRoute(route, reason = 'unspecified') {
   }
 
   if (route.name === 'programManagerWeeklyPlanReview') {
+    // Route-level PM authorization — see 'programManagerWeeklyPlans'
+    // above's own identical guard/comment.
+    if (!memberService.isProgramManagerAnywhere(workspaceService.getState().classrooms, currentUser?.uid)) {
+      router.navigate('/teacher');
+      return;
+    }
     const { classroomId, teacherUid, week, chapterCurriculumUnitId, chapterName, chapterPlanId, returnTab, returnTo } = route.query || {};
     const classroom = workspaceService.getClassroomById(classroomId);
     if (!classroom) {
@@ -950,6 +969,12 @@ function renderRoute(route, reason = 'unspecified') {
   }
 
   if (route.name === 'programManagerChapterPlans') {
+    // Route-level PM authorization — see 'programManagerWeeklyPlans'
+    // above's own identical guard/comment.
+    if (!memberService.isProgramManagerAnywhere(workspaceService.getState().classrooms, currentUser?.uid)) {
+      router.navigate('/teacher');
+      return;
+    }
     renderProgramManagerChapterPlanQueueView(appContainer, {
       classrooms: workspaceService.getState().classrooms,
       currentUser,
@@ -963,6 +988,12 @@ function renderRoute(route, reason = 'unspecified') {
   }
 
   if (route.name === 'programManagerChapterPlanReview') {
+    // Route-level PM authorization — see 'programManagerWeeklyPlans'
+    // above's own identical guard/comment.
+    if (!memberService.isProgramManagerAnywhere(workspaceService.getState().classrooms, currentUser?.uid)) {
+      router.navigate('/teacher');
+      return;
+    }
     const { classroomId, chapterPlanId } = route.query || {};
     const classroom = workspaceService.getClassroomById(classroomId);
     if (!classroom) {
@@ -1012,6 +1043,12 @@ function renderRoute(route, reason = 'unspecified') {
   }
 
   if (route.name === 'programManagerObservations') {
+    // Route-level PM authorization — see 'programManagerWeeklyPlans'
+    // above's own identical guard/comment.
+    if (!memberService.isProgramManagerAnywhere(workspaceService.getState().classrooms, currentUser?.uid)) {
+      router.navigate('/teacher');
+      return;
+    }
     renderProgramManagerObservationsView(appContainer, {
       classrooms: workspaceService.getState().classrooms,
       currentUser,

@@ -8,7 +8,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getWeekLabel, getMondayStartOfWeek, shiftDateKey, formatDateKeyRange } from '../../js/utils/dateHelpers.js';
+import { getWeekLabel, getMondayStartOfWeek, shiftDateKey, formatDateKeyRange, getTodayDateKey } from '../../js/utils/dateHelpers.js';
 
 const TODAY = '2026-09-10'; // Thursday
 const THIS_WEEK_MONDAY = getMondayStartOfWeek(TODAY); // 2026-09-07
@@ -57,4 +57,34 @@ test('formatDateKeyRange: a range crossing a month boundary within the same year
 
 test('formatDateKeyRange: a range crossing a year boundary spells out both full dates including year', () => {
   assert.equal(formatDateKeyRange('2026-12-29', '2027-01-03'), '29 Dec 2026 – 3 Jan 2027');
+});
+
+// ---------------------------------------------------------------------
+// getMondayStartOfWeek(getTodayDateKey()) — the exact composition
+// ui/views/ProgramManagerWeeklyPlanQueueView.js's getNextWeekStartDate()
+// and ui/views/ChapterPlanEditorView.js's "Open This Week" both use.
+// A deployed defect once fed getCurrentIsoDate() (a full ISO timestamp)
+// into getMondayStartOfWeek() instead, producing "NaN-NaN-NaN" and a
+// rendered "Invalid Date NaN-NaN" — these tests lock in the correct
+// composition and document the exact shape of that regression.
+// ---------------------------------------------------------------------
+
+test('getMondayStartOfWeek(getTodayDateKey()): produces a real "YYYY-MM-DD" Monday, never NaN-NaN-NaN', () => {
+  const monday = getMondayStartOfWeek(getTodayDateKey());
+  assert.match(monday, /^\d{4}-\d{2}-\d{2}$/);
+  assert.notEqual(monday, 'NaN-NaN-NaN');
+  const [, month, day] = monday.split('-').map(Number);
+  assert.ok(month >= 1 && month <= 12);
+  assert.ok(day >= 1 && day <= 31);
+});
+
+test('shiftDateKey(getMondayStartOfWeek(getTodayDateKey()), 7): the "next week start" composition used by getNextWeekStartDate() and "Open This Week" is a valid dateKey, never NaN-NaN-NaN', () => {
+  const nextWeekStart = shiftDateKey(getMondayStartOfWeek(getTodayDateKey()), 7);
+  assert.match(nextWeekStart, /^\d{4}-\d{2}-\d{2}$/);
+  assert.notEqual(nextWeekStart, 'NaN-NaN-NaN');
+});
+
+test('REGRESSION CHARACTERIZATION — feeding a full ISO timestamp (getCurrentIsoDate()-shaped input) into getMondayStartOfWeek() is exactly the deployed bug: it silently produces "NaN-NaN-NaN" instead of throwing, which is why this must never be done again', () => {
+  const isoTimestamp = new Date().toISOString(); // e.g. "2026-09-29T10:39:57.123Z"
+  assert.equal(getMondayStartOfWeek(isoTimestamp), 'NaN-NaN-NaN');
 });

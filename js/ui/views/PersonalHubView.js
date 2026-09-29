@@ -987,7 +987,7 @@ export function renderPersonalHubView(
     // itself (ui/views/ProgramManagerWeeklyPlansView.js) aggregates
     // across every classroom this check found, so opening it is never
     // "pick a classroom first."
-    const isProgramManagerAnywhere = classrooms.some((classroom) => classroom.members?.[uid]?.role === 'program_manager');
+    const isProgramManagerAnywhere = memberService.isProgramManagerAnywhere(classrooms, uid);
     if (isProgramManagerAnywhere && onOpenWeeklyPlans) {
       section.appendChild(
         buildManagementRow({

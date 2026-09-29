@@ -36,7 +36,7 @@ import {
   WEEKLY_PLAN_DISPLAY_STATUS_NOT_STARTED,
 } from '../../services/weeklyPlanSubmissionService.js';
 import { WEEKLY_PLAN_SUBMISSION_STATUS } from '../../models/WeeklyPlanSubmission.js';
-import { getMondayStartOfWeek, shiftDateKey, formatWeekDateRange, getCurrentIsoDate } from '../../utils/dateHelpers.js';
+import { getMondayStartOfWeek, shiftDateKey, formatWeekDateRange, getTodayDateKey } from '../../utils/dateHelpers.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createIcon } from '../components/Icon.js';
 
@@ -54,7 +54,11 @@ function getStatusLabel(displayStatus, submission) {
 
 /** Next Monday relative to today — the target week a weekend PM review is for. If today already IS a Monday-through-Friday of the "current" week, this still means NEXT week, matching "reviewed every weekend, for the week ahead." */
 function getNextWeekStartDate() {
-  const thisWeekStart = getMondayStartOfWeek(getCurrentIsoDate());
+  // getMondayStartOfWeek() expects a plain "YYYY-MM-DD" dateKey, never
+  // getCurrentIsoDate()'s full ISO timestamp (that mismatch produced a
+  // deployed "Invalid Date NaN-NaN" defect — see getTodayDateKey()'s
+  // own doc comment for why it's the correct helper here).
+  const thisWeekStart = getMondayStartOfWeek(getTodayDateKey());
   return shiftDateKey(thisWeekStart, 7);
 }
 

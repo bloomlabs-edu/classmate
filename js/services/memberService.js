@@ -50,6 +50,23 @@ export function isOwner(classroom, uid) {
   return getRole(classroom, uid) === MEMBER_ROLES.OWNER;
 }
 
+/**
+ * The single, shared definition of "is this uid a real Program Manager
+ * anywhere" — a PM's authority comes entirely from an actual
+ * `classroom.members[uid] = { role: 'program_manager' }` entry on at
+ * least one classroom they were added to (see config/memberRoles.js's
+ * own PROGRAM_MANAGER comment), never inferred from being that
+ * classroom's owner/creator, and never a global account attribute.
+ * Originally written inline in ui/views/PersonalHubView.js (to decide
+ * whether to show the Weekly Plans/Observations/Chapter Plans nav
+ * rows); extracted here so main.js's own PM route guards check the
+ * exact same condition rather than a second, potentially-drifting copy
+ * of it.
+ */
+export function isProgramManagerAnywhere(classrooms, uid) {
+  return (classrooms || []).some((classroom) => getRole(classroom, uid) === MEMBER_ROLES.PROGRAM_MANAGER);
+}
+
 export function listMembers(classroom) {
   return Object.entries(classroom.members || {}).map(([uid, info]) => ({ uid, ...info }));
 }

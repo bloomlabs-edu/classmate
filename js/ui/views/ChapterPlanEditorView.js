@@ -49,7 +49,7 @@ import { createBackButton } from '../components/BackButton.js';
 import {
   formatRelativeTimestamp,
   getMondayStartOfWeek,
-  getCurrentIsoDate,
+  getTodayDateKey,
   formatWeekDateRange,
   formatDateKeyWithWeekday,
 } from '../../utils/dateHelpers.js';
@@ -576,7 +576,10 @@ export function renderChapterPlanEditorView(
     }
 
     const openWeek = (weekStartDate) => onOpenWeek(currentPlan.teacherUid, weekStartDate, currentPlan.curriculumUnitId, currentPlan.chapterName);
-    const currentWeekStartDate = getMondayStartOfWeek(getCurrentIsoDate());
+    // getMondayStartOfWeek() expects a plain "YYYY-MM-DD" dateKey, never
+    // a full ISO timestamp — see
+    // ui/views/ProgramManagerWeeklyPlanQueueView.js's own identical fix.
+    const currentWeekStartDate = getMondayStartOfWeek(getTodayDateKey());
 
     const jumpRow = document.createElement('div');
     jumpRow.className = 'chapter-plan-editor__weeks-jump-row';
