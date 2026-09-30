@@ -6471,6 +6471,59 @@ button.wizard-checklist__row:hover {
   transform: translateY(0);
 }
 
+/*
+ * Guidance/Coachmark system (see ui/components/GuidanceOverlay.js).
+ * `.guidance-card` is `position: fixed` and positioned in JS relative
+ * to whatever live element it's anchoring to — never laid out by CSS
+ * alone. z-index 400 is deliberately above this file's own highest
+ * existing value (.modal's own stacking context tops out at 300, see
+ * .toast-container above) so a coachmark is never hidden behind a
+ * modal or toast that happens to be open at the same time.
+ */
+.guidance-card {
+  position: fixed;
+  z-index: 400;
+  width: 320px;
+  max-width: calc(100vw - 24px);
+  background-color: var(--color-surface);
+  border-radius: var(--radius-card);
+  box-shadow: var(--elevation-card);
+  padding: 1.25rem;
+}
+.guidance-card:focus {
+  /* Focused programmatically (see GuidanceOverlay.js's own card.focus())
+     purely so a screen reader announces the dialog, not because a
+     teacher tabbed here themselves — an outline here would be visual
+     noise on every single appearance. */
+  outline: none;
+}
+.guidance-card__title {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+  font-weight: var(--font-weight-black);
+}
+.guidance-card__body {
+  margin: 0 0 1rem;
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+  line-height: 1.5;
+}
+.guidance-card__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+/* The live target element a coachmark is currently pointing at — an
+   outline (not a box-shadow/z-index/position change) so this never
+   risks altering an existing element's stacking context or layout,
+   whatever it happens to be (a card, a button, a whole section). */
+.guidance-highlight {
+  outline: 3px solid var(--color-primary-strong);
+  outline-offset: 4px;
+  border-radius: var(--radius-control);
+}
+
 /* Bottom sheet (Quick Actions) */
 
 .sheet-overlay {
@@ -7110,6 +7163,27 @@ button.wizard-checklist__row:hover {
 .user-bar__notification-icon {
   display: block;
   color: #e5e7eb;
+}
+/* Guidance/Coachmark system's Help control — same icon-button shape as
+   .user-bar__notification-button immediately above, no aria-expanded
+   state since it never opens a popover of its own (see
+   ui/components/UserBar.js's own header comment on this button). */
+.user-bar__help-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background-color: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 50%;
+  padding: 0;
+  cursor: pointer;
+  color: #e5e7eb;
+  transition: background-color var(--duration-fast, 150ms) var(--ease-standard, ease);
+}
+.user-bar__help-button:hover {
+  background-color: rgba(255, 255, 255, 0.12);
 }
 /* A small dot rather than any text/badge — this is a settings toggle,
    not an unread count. Only ever shown when the unread badge below

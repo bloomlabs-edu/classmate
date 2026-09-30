@@ -9,8 +9,12 @@
  *   users/{uid}                                — per-account flags (migration),
  *                                                 `recentNotebooks` (Continue Working —
  *                                                 see services/continueWorkingService.js),
- *                                                 and `fcmTokens` (browser push registration —
- *                                                 see services/pushNotificationService.js);
+ *                                                 `fcmTokens` (browser push registration —
+ *                                                 see services/pushNotificationService.js),
+ *                                                 and `guidanceCompleted` (the Guidance/
+ *                                                 Coachmark system's own { [flowId]:
+ *                                                 completedVersion } map — see
+ *                                                 services/guidancePreferenceService.js);
  *                                                 personal to the teacher, never the classroom
  *   teachers/{uid}/classrooms/{classroomId}    — legacy, pre-sharing location (read/delete only, for migration)
  *
@@ -531,6 +535,23 @@ class FirestoreClassroomRepository extends ClassroomRepository {
 
   async setAccentColorPreference(uid, colorId) {
     await setDoc(this._userDoc(uid), { accentColor: colorId }, { merge: true });
+  }
+
+  /** The Guidance/Coachmark system's own { [flowId]: completedVersion } map — see services/guidancePreferenceService.js. */
+  async getGuidanceCompletedOnce(uid) {
+    const docSnapshot = await getDoc(this._userDoc(uid));
+    return docSnapshot.exists() ? docSnapshot.data().guidanceCompleted || null : null;
+  }
+
+  /**
+   * Merges exactly one flow's own completed version into
+   * users/{uid}.guidanceCompleted — {merge:true} deep-merges into the
+   * existing map, so completing one flow never overwrites another
+   * flow's own already-saved entry, same technique as saveFcmToken()
+   * below.
+   */
+  async setGuidanceCompleted(uid, flowId, version) {
+    await setDoc(this._userDoc(uid), { guidanceCompleted: { [flowId]: version } }, { merge: true });
   }
 
   /**

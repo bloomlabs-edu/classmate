@@ -48,7 +48,7 @@ import { createIcon } from './Icon.js';
 import { getDisplayName } from '../../services/classroomService.js';
 import { registerOpenPopup, clearOpenPopup } from '../../utils/popupCoordinator.js';
 
-export function renderUserBar(container, { user, onSignOut, currentAccentColorId, onSelectAccentColor, onSelectCustomAccentColor, onPreviewCustomAccentColor, onGoToOverview, notificationPermissionState, onEnableNotifications, onDisableNotifications, notificationUnreadCount, notifications, hasClassroomContext, onOpenNotification, onNotificationsViewed, currentClassroom, classroomList, onSwitchClassroom }) {
+export function renderUserBar(container, { user, onSignOut, currentAccentColorId, onSelectAccentColor, onSelectCustomAccentColor, onPreviewCustomAccentColor, onGoToOverview, notificationPermissionState, onEnableNotifications, onDisableNotifications, notificationUnreadCount, notifications, hasClassroomContext, onOpenNotification, onNotificationsViewed, currentClassroom, classroomList, onSwitchClassroom, onOpenGuidance }) {
   container.innerHTML = '';
   if (!user) return;
 
@@ -268,6 +268,25 @@ export function renderUserBar(container, { user, onSignOut, currentAccentColorId
         currentUserUid: user.uid,
       })
     );
+  }
+
+  // Guidance/Coachmark system's own persistent entry point (see
+  // ui/components/GuidanceOverlay.js) — a single icon-only button, no
+  // popover, since clicking it always does exactly one thing: replay
+  // whatever guided flow is registered for the CURRENT route (see
+  // main.js's own handleOpenGuidance()). Appended directly to
+  // rightGroup (not secondaryMenu), same "always visible at every
+  // width" treatment as the notification bell immediately below —
+  // Help should never be hidden behind the mobile hamburger.
+  if (onOpenGuidance) {
+    const helpButton = document.createElement('button');
+    helpButton.type = 'button';
+    helpButton.className = 'user-bar__help-button';
+    helpButton.setAttribute('aria-label', 'Help');
+    helpButton.title = 'Help';
+    helpButton.appendChild(createIcon('circle-help', { size: 20 }));
+    helpButton.addEventListener('click', onOpenGuidance);
+    rightGroup.appendChild(helpButton);
   }
 
   if (onGoToOverview) {

@@ -23,6 +23,10 @@ import * as authService from './services/authService.js';
 import * as accentColorService from './services/accentColorService.js';
 import * as classSessionService from './services/classSessionService.js';
 import * as accentColorPreferenceService from './services/accentColorPreferenceService.js';
+import * as guidancePreferenceService from './services/guidancePreferenceService.js';
+import { getFlowForRoute } from './config/guidanceFlows.js';
+import { isFlowComplete } from './services/guidanceEngine.js';
+import { playFlow, dismissActiveFlow } from './ui/components/GuidanceOverlay.js';
 import * as pushNotificationService from './services/pushNotificationService.js';
 import * as slackIntegrationService from './services/slackIntegrationService.js';
 import * as notificationService from './services/notificationService.js';
@@ -140,6 +144,32 @@ let notificationPermissionState = pushNotificationService.getPermissionState();
 let slackConnected = false;
 let handledSlackRedirectParam = false;
 
+// Guidance/Coachmark system (see config/guidanceFlows.js,
+// services/guidanceEngine.js, ui/components/GuidanceOverlay.js) --
+// `guidanceCompletedMap` mirrors currentAccentColorId's own "read once
+// at sign-in, cache in memory" shape, loaded from this teacher's own
+// users/{uid}.guidanceCompleted map. `guidanceShownThisSession` is
+// PAGE-SESSION-only (never persisted) -- it's what stops an
+// auto-triggered flow from re-showing itself on every subsequent
+// re-render of the same route within one visit (see
+// maybeShowGuidanceForRoute() below); the Help control bypasses it
+// entirely via its own `force` flag. `activeGuidanceFlowId` tracks
+// whichever flow is CURRENTLY on screen, if any, so a same-route
+// re-render (e.g. a Firestore snapshot arriving while a coachmark is
+// showing) never restarts it from its first step.
+let guidanceCompletedMap = {};
+// False until the Firestore read above actually resolves -- without
+// this, maybeShowGuidanceForRoute() below could see the initial empty
+// {} and wrongly conclude a flow a returning teacher already completed
+// is still incomplete, flashing it once per device/session before the
+// real map arrives. Every auto-triggered call is skipped until this
+// flips true (the Help control's own `force` path is unaffected -- an
+// explicit replay request never needs to wait on this).
+let guidanceCompletedMapLoaded = false;
+const guidanceShownThisSession = new Set();
+let activeGuidanceFlowId = null;
+let lastGuidanceRouteName = null;
+
 // In-app notifications — classroom-scoped, unlike
 // notificationPermissionState above (a per-device browser setting), so
 // this only ever holds data for whichever classroom the current route
@@ -200,6 +230,7 @@ function refreshUserBar() {
     slackConnected,
     onConnectSlack: handleConnectSlack,
     onDisconnectSlack: handleDisconnectSlack,
+    onOpenGuidance: handleOpenGuidance,
     notificationUnreadCount,
     notifications,
     hasClassroomContext: !!notificationsClassroomId,
@@ -223,6 +254,64 @@ function handleSelectAccentColor(colorId) {
   accentColorService.applyAccentColor(colorId); // optimistic — applies immediately, doesn't wait on the save below
   accentColorPreferenceService.setPreference(currentUser?.uid, colorId);
   refreshUserBar();
+}
+
+/**
+ * Starts the guided flow registered for `routeName` (see
+ * config/guidanceFlows.js's own getFlowForRoute()) — automatically,
+ * once per page session per flow, the first time this teacher reaches
+ * a guided route without having already completed that flow's current
+ * version; or unconditionally, bypassing both the completed-check and
+ * the once-per-session guard, when `force: true` (see
+ * handleOpenGuidance() below, the Help control's own entry point).
+ *
+ * Never called for a flow that's already the one currently on screen
+ * (`activeGuidanceFlowId` check) — a same-route re-render (e.g. a
+ * Firestore snapshot arriving while a coachmark is showing) should
+ * leave an in-progress flow alone rather than restarting it from its
+ * first step.
+ */
+function maybeShowGuidanceForRoute(routeName, { force = false } = {}) {
+  if (!currentUser) return;
+  const flow = getFlowForRoute(routeName);
+  if (!flow) {
+    if (force) showToast('No guided tour for this page yet.');
+    return;
+  }
+  if (activeGuidanceFlowId === flow.id) return;
+  if (!force) {
+    if (!guidanceCompletedMapLoaded) return;
+    if (guidanceShownThisSession.has(flow.id)) return;
+    if (isFlowComplete(flow, guidanceCompletedMap)) return;
+  }
+  guidanceShownThisSession.add(flow.id);
+  activeGuidanceFlowId = flow.id;
+  playFlow(flow, {
+    onEnd: (reason) => {
+      activeGuidanceFlowId = null;
+      if (reason === 'completed') {
+        guidanceCompletedMap = { ...guidanceCompletedMap, [flow.id]: flow.version };
+        guidancePreferenceService.setFlowCompleted(currentUser.uid, flow.id, flow.version);
+      } else if (reason === 'no-target') {
+        // Nothing was ever actually shown to the teacher this attempt
+        // (this route rendered before the target existed, e.g. still
+        // loading) — allow a later re-render of this same route to try
+        // again this session, rather than treating it as "seen."
+        guidanceShownThisSession.delete(flow.id);
+      }
+      // 'dismissed' (explicit Skip/Escape) and 'superseded' (a route
+      // change cut it short) both intentionally leave the
+      // guidanceShownThisSession entry in place — an explicit dismissal
+      // should not immediately re-trigger itself on the very next
+      // re-render within the same session; the Help control remains
+      // available for a deliberate replay.
+    },
+  });
+}
+
+/** The persistent Help control's (see UserBar.js) only job — replay whatever flow belongs to the CURRENT route, regardless of prior completion. Not a second onboarding implementation: this calls the exact same maybeShowGuidanceForRoute() the automatic first-time trigger uses, just with its guards bypassed. */
+function handleOpenGuidance() {
+  maybeShowGuidanceForRoute(router.getCurrentRoute().name, { force: true });
 }
 
 /**
@@ -773,6 +862,17 @@ async function renderStudentPortalMain(route) {
 
 function renderRoute(route, reason = 'unspecified') {
   logPersistenceEvent(`renderRoute() called`, { reason, routeName: route?.name });
+
+  // Guidance/Coachmark flows are always scoped to exactly one route
+  // (see config/guidanceFlows.js's own header comment) — ending
+  // whatever's showing the moment the route actually CHANGES (not on
+  // every re-render of the SAME route, e.g. a Firestore snapshot
+  // update) is what keeps a coachmark from ever surviving onto a
+  // screen it was never written for.
+  if (route.name !== lastGuidanceRouteName) {
+    dismissActiveFlow('superseded');
+    lastGuidanceRouteName = route.name;
+  }
 
   // Default to hidden — the persistent Teacher Portal sidebar (see
   // ui/components/TeacherPortalSidebar.js) only ever applies inside
@@ -1703,6 +1803,12 @@ function renderRoute(route, reason = 'unspecified') {
       onOpenChapterPlans: () => router.navigate('/program-manager/chapter-plans'),
       onOpenMyWork: () => router.navigate('/my-work'),
     });
+    // First guided surface (see config/guidanceFlows.js's own `myWork`
+    // entry) — called every time Personal Hub actually renders, not
+    // just once; maybeShowGuidanceForRoute() itself is the thing that
+    // decides whether this teacher has already seen it this session or
+    // ever completed it, so calling it unconditionally here is safe.
+    maybeShowGuidanceForRoute('home');
   }
 }
 
@@ -1814,6 +1920,15 @@ function init() {
           currentAccentColorId = 'ocean';
           accentColorService.applyAccentColor('ocean');
           slackConnected = false;
+          // Wiped on sign-out, same as every other per-teacher cache
+          // above -- the next sign-in (possibly a different teacher on
+          // the same device) must not inherit a stale completed map or
+          // "already shown this session" state that belonged to
+          // whoever was signed in before.
+          guidanceCompletedMap = {};
+          guidanceCompletedMapLoaded = false;
+          guidanceShownThisSession.clear();
+          dismissActiveFlow('superseded');
           renderRoute(router.getCurrentRoute(), 'auth-callback-signed-out');
           return;
         }
@@ -1823,6 +1938,16 @@ function init() {
           refreshUserBar();
         });
         handleSlackRedirectIfPresent();
+
+        guidancePreferenceService.getCompletedMapOnce(user.uid).then((completedMap) => {
+          guidanceCompletedMap = completedMap;
+          guidanceCompletedMapLoaded = true;
+          // Retries the current route now that the real map has
+          // arrived -- Personal Hub may well have already rendered
+          // once (and skipped triggering guidance) before this promise
+          // resolved.
+          maybeShowGuidanceForRoute(router.getCurrentRoute().name);
+        });
 
         accentColorPreferenceService.getPreferenceOnce(user.uid).then((storedValue) => {
           currentAccentColorId = storedValue;
