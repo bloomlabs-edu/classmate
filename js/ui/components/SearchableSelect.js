@@ -43,7 +43,20 @@
 
 import { registerOpenPopup, clearOpenPopup } from '../../utils/popupCoordinator.js';
 
-export function createSearchableSelect({ options, value = '', placeholder = 'Type to search\u2026', onSelect, allowCustom = true }) {
+export function createSearchableSelect({
+  options,
+  value = '',
+  placeholder = 'Type to search\u2026',
+  onSelect,
+  allowCustom = true,
+  // Additive, backward-compatible \u2014 every existing caller keeps the
+  // exact `+ Create "{text}"` wording it already had (this default
+  // reproduces that literal string) unless it opts into its own
+  // phrasing. ui/components/KnowledgeConceptPicker.js is the first
+  // caller to use this, since "+ Create new Concept: '{text}'" reads
+  // meaningfully clearer than the generic default in that one context.
+  createLabel = (typed) => `+ Create "${typed}"`,
+}) {
   let normalizedOptions = options.map((opt) => (typeof opt === 'string' ? { value: opt, label: opt } : opt));
 
   const wrapper = document.createElement('div');
@@ -125,7 +138,7 @@ export function createSearchableSelect({ options, value = '', placeholder = 'Typ
       const createRow = document.createElement('button');
       createRow.type = 'button';
       createRow.className = 'searchable-select__option searchable-select__option--create';
-      createRow.textContent = `+ Create "${input.value.trim()}"`;
+      createRow.textContent = createLabel(input.value.trim());
       createRow.addEventListener('click', () => choose(input.value.trim(), input.value.trim(), true));
       dropdown.appendChild(createRow);
     }

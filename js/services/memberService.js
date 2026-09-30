@@ -67,6 +67,24 @@ export function isProgramManagerAnywhere(classrooms, uid) {
   return (classrooms || []).some((classroom) => getRole(classroom, uid) === MEMBER_ROLES.PROGRAM_MANAGER);
 }
 
+/**
+ * Every classroom id where this uid actually holds `program_manager` —
+ * the real credentials isProgramManagerAnywhere() above only reports
+ * the existence of. Used by ClassMate Knowledge Model authoring (see
+ * ui/views/KnowledgeAuthoringView.js) to resolve a real
+ * `authorizingClassroomId` for a knowledge record write: firestore.rules'
+ * own isKnowledgeAuthor() needs ONE concrete classroom to check
+ * membership/role against (see that rule's own header comment on why),
+ * so a caller needs the actual id(s), not just a yes/no. Almost always
+ * a single-item array in practice (a PM is typically added to one
+ * classroom at a time via the existing manual grant process — see
+ * config/memberRoles.js's own PROGRAM_MANAGER comment) but never
+ * assumed to be.
+ */
+export function getProgramManagerClassroomIds(classrooms, uid) {
+  return (classrooms || []).filter((classroom) => getRole(classroom, uid) === MEMBER_ROLES.PROGRAM_MANAGER).map((classroom) => classroom.id);
+}
+
 export function listMembers(classroom) {
   return Object.entries(classroom.members || {}).map(([uid, info]) => ({ uid, ...info }));
 }

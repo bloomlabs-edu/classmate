@@ -70,6 +70,12 @@ import * as curriculumSubmissionsService from '../../services/curriculumSubmissi
 import { createCurriculumIndexSession } from '../../services/curriculumIndexSession.js';
 import * as unitPageRangeService from '../../services/unitPageRangeService.js';
 import * as workspaceService from '../../services/workspaceService.js';
+import * as authService from '../../services/authService.js';
+import { isProgramManagerAnywhere } from '../../services/memberService.js';
+import { renderKnowledgeAuthoringView } from './KnowledgeAuthoringView.js';
+import * as knowledgeConceptRepository from '../../repositories/knowledgeConceptRepository.js';
+import * as knowledgeRelationshipRepository from '../../repositories/knowledgeRelationshipRepository.js';
+import { buildUnitKnowledgeEnrichment } from './KnowledgeCurriculumLinkDisplay.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createIcon } from '../components/Icon.js';
@@ -91,6 +97,15 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
   let previewPack = null;
   let expandedUnitId = null;
   let loadError = null;
+
+  // K3 — Knowledge Model read-only enrichment for Preview Structure
+  // only (see ui/views/KnowledgeCurriculumLinkDisplay.js's own header
+  // comment). `null` = not yet loaded for this preview; a Firestore
+  // failure here degrades to "no enrichment shown," never a load error
+  // for the whole screen — the existing curriculum preview must stay
+  // fully usable even if this one additional read fails.
+  let knowledgeConcepts = null;
+  let knowledgeRelationships = null;
 
   // Two-Phase Curriculum Import redesign, Milestone 1 — "Create
   // Curriculum" now means building a Curriculum Index only (Phase 1):
@@ -126,6 +141,8 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
         previewPack,
         expandedUnitId,
         loadError,
+        knowledgeConcepts,
+        knowledgeRelationships,
         selectedSubmission,
         indexSession,
         indexExtractionReason,
@@ -151,6 +168,10 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
           mode = 'browse';
           rerender();
         },
+        onGoToKnowledgeAuthoring: () => {
+          mode = 'knowledge-authoring';
+          rerender();
+        },
         onOpenCurriculumDetails: (curriculum) => {
           selectedCurriculum = curriculum;
           previewGrade = null;
@@ -172,6 +193,8 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
         onChoosePreviewSubject: async (subjectEntry) => {
           previewSubjectEntry = subjectEntry;
           loadError = null;
+          knowledgeConcepts = null;
+          knowledgeRelationships = null;
           try {
             previewPack = await curriculumLibraryService.getPack(subjectEntry.submissionId);
           } catch (error) {
@@ -180,6 +203,24 @@ export function renderCurriculumManagementView(container, { onBack, onOpenLearni
           }
           expandedUnitId = null;
           mode = 'preview-structure';
+          rerender();
+          // K3 — fetched independently of previewPack above, and its own
+          // failure is deliberately swallowed (never surfaced as
+          // `loadError`): the existing curriculum preview is fully usable
+          // without this, so a Knowledge Model read hiccup must never
+          // block or error the screen it's merely enriching.
+          try {
+            const [loadedConcepts, loadedRelationships] = await Promise.all([
+              knowledgeConceptRepository.getAllKnowledgeConcepts(),
+              knowledgeRelationshipRepository.getAllKnowledgeRelationships(),
+            ]);
+            knowledgeConcepts = loadedConcepts;
+            knowledgeRelationships = loadedRelationships;
+          } catch (error) {
+            console.error('[CurriculumManagementView] Failed to load Knowledge Model enrichment (non-fatal):', error);
+            knowledgeConcepts = [];
+            knowledgeRelationships = [];
+          }
           rerender();
         },
         onToggleUnit: (unitId) => {
@@ -429,6 +470,7 @@ function renderView(container, mode, state, handlers) {
       'index-unit-concepts': 'index-review-units',
       'review-list': 'hub',
       'review-detail': 'review-list',
+      'knowledge-authoring': 'hub',
     }[mode];
     handlers.onBackTo(previous);
   });
@@ -479,6 +521,24 @@ function renderView(container, mode, state, handlers) {
     wrapper.appendChild(renderReviewListStep(handlers));
   } else if (mode === 'review-detail') {
     wrapper.appendChild(renderReviewDetailStep(state.selectedSubmission, state.expandedUnitId, handlers));
+  } else if (mode === 'knowledge-authoring') {
+    // ClassMate Knowledge Model — K2.1 "Knowledge Authoring". This is
+    // the ONE role-gated entry point in this whole file (see
+    // renderHubStep()'s own header-card gating below) — every other
+    // tool here remains exactly as ungated as it already was. Manages
+    // its own internal render loop from here on (same "mount a
+    // container, hand it a full sub-app" pattern ui/views/MyWorkView.js
+    // and ui/views/PersonalHubView.js's own sub-sections already use),
+    // rather than threading Knowledge-Model-specific state through this
+    // file's own `mode`/handlers — that state is a different domain
+    // (shared, global knowledge, not curriculum-authoring-session
+    // state) and stays fully separate.
+    const knowledgeAuthoringContainer = document.createElement('div');
+    wrapper.appendChild(knowledgeAuthoringContainer);
+    renderKnowledgeAuthoringView(knowledgeAuthoringContainer, {
+      classrooms: workspaceService.getState().classrooms,
+      currentUser: authService.getCurrentUser(),
+    });
   } else {
     wrapper.appendChild(renderHubStep(handlers));
   }
@@ -514,6 +574,28 @@ function renderHubStep(handlers) {
       handlers.onGoToReview
     )
   );
+
+  // ClassMate Knowledge Model \u2014 K2.1 "Knowledge Authoring". The ONLY
+  // gated tile on this whole hub \u2014 every other card above is reachable
+  // by any signed-in user, exactly as it already was before this
+  // change (see this file's own header comment: Curriculum Management
+  // is "a platform administration workspace," not a permissioned one,
+  // and that stays true for its existing tools). Knowledge Model
+  // authorship is restricted to a real Program Manager
+  // (config/memberRoles.js), per this feature's own frozen K1
+  // authorization design \u2014 firestore.rules' own isKnowledgeAuthor()
+  // would reject every write anyway, but hiding the entry point
+  // entirely (rather than showing it and letting every write fail) is
+  // the honest UX for a tool a plain Teacher genuinely cannot use here.
+  // Checked fresh at hub-render time (matches onOpenAssignCurriculum's
+  // own "live classrooms list at click time" reasoning above), not
+  // cached from when this whole view first opened.
+  const isProgramManager = isProgramManagerAnywhere(workspaceService.getState().classrooms, authService.getCurrentUser()?.uid);
+  if (isProgramManager) {
+    grid.appendChild(
+      createHubCard('\ud83e\udde0', 'Knowledge Authoring', 'Search, reuse, or create shared Knowledge Concepts', handlers.onGoToKnowledgeAuthoring)
+    );
+  }
 
   section.appendChild(grid);
   return section;
@@ -907,12 +989,26 @@ function renderPreviewStructureStep(state, handlers) {
     concepts: unit.concepts.map((conceptTitle) => ({ id: conceptTitle, title: conceptTitle })),
   }));
 
+  // K3 — read-only Knowledge Model enrichment, computed only for the
+  // currently-expanded Unit (cheap, pure, recomputed on every render;
+  // no new fetch per expand/collapse — see
+  // ui/views/KnowledgeCurriculumLinkDisplay.js's own
+  // buildUnitKnowledgeEnrichment()). `null` while the Knowledge Model
+  // read is still in flight or nothing is expanded yet — the panel
+  // renders with zero enrichment either way, identical to today.
+  const expandedUnit = state.previewPack.units.find((unit) => unit.id === state.expandedUnitId) || null;
+  const knowledgeEnrichmentByItemTitle =
+    expandedUnit && state.knowledgeConcepts && state.knowledgeRelationships
+      ? buildUnitKnowledgeEnrichment(expandedUnit, state.knowledgeConcepts, state.knowledgeRelationships)
+      : null;
+
   section.appendChild(
     createCurriculumExplorerPanel({
       units: normalizedUnits,
       expandedUnitId: state.expandedUnitId,
       onToggleUnit: handlers.onToggleUnit,
       readOnly: true,
+      knowledgeEnrichmentByItemTitle,
     })
   );
 

@@ -42,22 +42,38 @@
  * original behavior exactly — both of this panel's other two callers
  * (ui/views/LearningManagementView.js, ui/views/CurriculumManagementView.js)
  * never pass it, so neither one's rendering changes at all.
+ *
+ * `knowledgeEnrichmentByItemTitle` (optional, K3) — a plain object
+ * keyed by a concept's own `id` in the `units` shape above (which,
+ * for the Preview Structure caller, IS that concept's title string —
+ * see ui/views/CurriculumManagementView.js's own normalization), each
+ * value produced by ui/views/KnowledgeCurriculumLinkDisplay.js's own
+ * buildUnitKnowledgeEnrichment(): `{conceptTitle, relationshipLines}`.
+ * When a concept's own key is present, its static row gains a small,
+ * read-only "Knowledge Model" block underneath (never for the
+ * clickable, non-readOnly concept-option branch — this is a
+ * read-only-curriculum-browsing enrichment, per explicit product
+ * direction, so it only ever attaches to the same static rendering
+ * `readOnly: true` already uses). Omitted (the default, `null`) — the
+ * ONLY case ui/views/LearningManagementView.js's own live materialize
+ * flow ever hits — reproduces this component's exact prior rendering,
+ * with zero new DOM for that caller.
  */
 
 import { createIcon } from './Icon.js';
 
-export function createCurriculumExplorerPanel({ units, expandedUnitId, onToggleUnit, readOnly = false, onAddConcept = null }) {
+export function createCurriculumExplorerPanel({ units, expandedUnitId, onToggleUnit, readOnly = false, onAddConcept = null, knowledgeEnrichmentByItemTitle = null }) {
   const accordion = document.createElement('div');
   accordion.className = 'curriculum-explorer-panel';
 
   units.forEach((unit) => {
-    accordion.appendChild(createUnitRow(unit, expandedUnitId === unit.id, onToggleUnit, readOnly, onAddConcept));
+    accordion.appendChild(createUnitRow(unit, expandedUnitId === unit.id, onToggleUnit, readOnly, onAddConcept, knowledgeEnrichmentByItemTitle));
   });
 
   return accordion;
 }
 
-function createUnitRow(unit, isExpanded, onToggleUnit, readOnly, onAddConcept) {
+function createUnitRow(unit, isExpanded, onToggleUnit, readOnly, onAddConcept, knowledgeEnrichmentByItemTitle) {
   const row = document.createElement('div');
   row.className = 'curriculum-explorer-panel__unit-row';
 
@@ -85,9 +101,23 @@ function createUnitRow(unit, isExpanded, onToggleUnit, readOnly, onAddConcept) {
 
     unit.concepts.forEach((concept) => {
       if (readOnly || !concept.onClick) {
-        const item = document.createElement('span');
+        const item = document.createElement('div');
         item.className = 'curriculum-explorer-panel__concept-static';
-        item.textContent = concept.title;
+        const titleSpan = document.createElement('span');
+        titleSpan.textContent = concept.title;
+        item.appendChild(titleSpan);
+
+        // K3 — read-only Knowledge Model enrichment. Present only when
+        // this exact concept's own key was already reviewed and linked
+        // (see ui/views/KnowledgeCurriculumLinkDisplay.js's own
+        // buildUnitKnowledgeEnrichment()) — an unreviewed item renders
+        // with nothing added here at all, per explicit "no placeholder,
+        // no noise" direction.
+        const enrichment = knowledgeEnrichmentByItemTitle?.[concept.id];
+        if (enrichment) {
+          item.appendChild(createKnowledgeEnrichmentBlock(enrichment));
+        }
+
         conceptList.appendChild(item);
       } else {
         const button = document.createElement('button');
@@ -107,6 +137,42 @@ function createUnitRow(unit, isExpanded, onToggleUnit, readOnly, onAddConcept) {
   }
 
   return row;
+}
+
+/**
+ * K3's own read-only enrichment block — a small "Knowledge Model"
+ * label plus a bullet per direct relationship line (already fully
+ * display-ready text from
+ * ui/views/KnowledgeCurriculumLinkDisplay.js's own
+ * buildRelationshipDisplayLines()). Renders the label even with zero
+ * relationship lines (a reviewed-and-linked Concept that simply has no
+ * relationships authored yet is still worth distinguishing from an
+ * unreviewed item) — but never anything beyond what `enrichment`
+ * itself already carries; this function makes no Firestore read, no
+ * decision about matching, and no relationship-label wording choice of
+ * its own.
+ */
+function createKnowledgeEnrichmentBlock(enrichment) {
+  const block = document.createElement('div');
+  block.className = 'curriculum-explorer-panel__knowledge-enrichment';
+
+  const label = document.createElement('span');
+  label.className = 'curriculum-explorer-panel__knowledge-enrichment-label';
+  label.textContent = 'Knowledge Model';
+  block.appendChild(label);
+
+  if (enrichment.relationshipLines.length > 0) {
+    const list = document.createElement('ul');
+    list.className = 'curriculum-explorer-panel__knowledge-enrichment-list';
+    enrichment.relationshipLines.forEach((line) => {
+      const item = document.createElement('li');
+      item.textContent = line.text;
+      list.appendChild(item);
+    });
+    block.appendChild(list);
+  }
+
+  return block;
 }
 
 function createAddConceptRow(unitId, onAddConcept) {
