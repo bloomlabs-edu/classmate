@@ -1316,6 +1316,86 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Weekly Plan Submission (see models/WeeklyPlanSubmission.js,
+    // services/weeklyPlanSubmissionService.js,
+    // repositories/weeklyPlanSubmissionRepository.js). A DELIBERATELY
+    // SEPARATE, TOP-LEVEL collection — same "discoverable across every
+    // classroom a Program Manager belongs to, without `list`-ing
+    // `classrooms`" reasoning as `weeklyPlanReviewIndex` just above —
+    // but UNLIKE that collection, this one IS the canonical document for
+    // its own status: there is no separate LessonPlan-shaped source
+    // document behind it to stay "faithful" to (the Weekly Plan is
+    // deliberately independent of any detailed LessonPlan — see this
+    // repo's own architecture doc). Authorization uses its OWN
+    // permissions, REVIEW_WEEKLY_PLAN/APPROVE_WEEKLY_PLAN
+    // (config/memberRoles.js) — never REVIEW_LESSON_PLAN/APPROVE_LESSON_PLAN,
+    // so the two planning tiers' review authority can diverge later
+    // without touching this block.
+    //
+    // read: same membership scope as every other classroom-scoped
+    // collection in this file — a classroom member (Fellow or PM) may
+    // read any submission for a classroom they belong to.
+    //
+    // create: only the Fellow the submission is about
+    // (`request.resource.data.teacherUid == request.auth.uid`, and
+    // `createdByUid` must match it too — no submission can be created
+    // "on behalf of" a different uid), only for a classroom they're
+    // actually a member of, only starting in `draft` or `submitted`
+    // (never straight to `changes_requested`/`approved` — those only
+    // ever exist after a real reviewer transition), and only with the
+    // reviewer fields still empty — a client cannot forge a
+    // pre-reviewed document at creation time.
+    //
+    // update: exactly the same author-edit / reviewer-action split
+    // `lessonPlans` above already uses, just re-implemented over this
+    // model's own (smaller) field set — see isWeeklyPlanSubmissionAuthorEdit()/
+    // isWeeklyPlanSubmissionReviewerAction() below.
+    //
+    // delete: always false — matches every other review-lifecycle
+    // collection in this file.
+    match /weeklyPlanSubmissions/{submissionId} {
+      allow read: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(resource.data.classroomId)).data.memberUids;
+
+      allow create: if request.auth != null &&
+        request.auth.uid == request.resource.data.teacherUid &&
+        request.resource.data.createdByUid == request.resource.data.teacherUid &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(request.resource.data.classroomId)).data.memberUids &&
+        request.resource.data.status in ['draft', 'submitted'] &&
+        request.resource.data.hadChangesRequested == false &&
+        request.resource.data.reviewerUid == null &&
+        request.resource.data.reviewedAt == null;
+
+      allow update: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(resource.data.classroomId)).data.memberUids &&
+        (
+          isWeeklyPlanSubmissionAuthorEdit(resource, request) ||
+          isWeeklyPlanSubmissionReviewerAction(resource, request, get(/databases/$(database)/documents/classrooms/$(resource.data.classroomId)).data.members[request.auth.uid].role)
+        );
+
+      allow delete: if false;
+    }
+
+    // Learning Hub — Resource (see models/Resource.js,
+    // services/resourceService.js, services/resourceRepository.js).
+    // Fixes the exact pre-existing gap flagged in this file's own NOTE
+    // above: this collection previously had no rule at all and fell
+    // through to deny-by-default, making resource create/read/update/
+    // delete non-functional in production for every caller — both
+    // ui/views/ConceptWorkspaceView.js's own pre-existing "+Add
+    // Resource" and the Timetable's own "+ Add resource".
+    //
+    // Same member-scoped shape as the lessons block immediately above:
+    // read requires only a signed-in identity (a Resource's own id is
+    // never guessable/listable — list stays implicitly denied, no
+    // allow list exists here, same as every other collection in this
+    // file); create/update require the caller be a current classroom
+    // member. Unlike lessons (which never deletes), delete is also
+    // member-scoped rather than disallowed — services/resourceService.js's
+    // own deleteResource() is a real, existing, teacher-facing action
+    // (see that file's own header comment on this app having no
+    // separate "Unlink" vs "Delete" distinction yet), so this only
+    // grants what that already-existing function needs, not more.
     match /classrooms/{classroomId}/resources/{resourceId} {
       allow read: if request.auth != null;
 
@@ -2151,6 +2231,55 @@ function isLessonPlanReviewerAction(resource, request, reviewerRole) {
         request.resource.data.status == 'approved' &&
         request.resource.data.reviewHistory[resource.data.reviewHistory.size()].status == 'approved' &&
         request.resource.data.activeComments.size() == 0
+      )
+    );
+}
+
+// The Weekly Plan Submission equivalent of isLessonPlanAuthorEdit()
+// above — same two-branch shape (touch-in-place while still
+// draft/changes_requested, or transition to submitted), re-implemented
+// over models/WeeklyPlanSubmission.js's own, smaller field set (no
+// reviewHistory/activeComments — see that model's own header comment).
+function isWeeklyPlanSubmissionAuthorEdit(resource, request) {
+  return resource.data.teacherUid == request.auth.uid &&
+    resource.data.status in ['draft', 'changes_requested'] &&
+    request.resource.data.teacherUid == resource.data.teacherUid &&
+    request.resource.data.createdByUid == resource.data.createdByUid &&
+    request.resource.data.classroomId == resource.data.classroomId &&
+    request.resource.data.weekStartDate == resource.data.weekStartDate &&
+    (
+      (
+        request.resource.data.status == resource.data.status &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt'])
+      ) ||
+      (
+        request.resource.data.status == 'submitted' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'submittedAt', 'updatedAt'])
+      )
+    );
+}
+
+// The Weekly Plan Submission equivalent of isLessonPlanReviewerAction()
+// above -- never the Fellow the submission belongs to (checked here
+// too, not just in the service), can ONLY touch
+// status/reviewerUid/reviewedAt/hadChangesRequested/updatedAt. Uses
+// REVIEW_WEEKLY_PLAN/APPROVE_WEEKLY_PLAN, deliberately not
+// REVIEW_LESSON_PLAN/APPROVE_LESSON_PLAN -- see this collection's own
+// match-block comment for why.
+function isWeeklyPlanSubmissionReviewerAction(resource, request, reviewerRole) {
+  return request.auth.uid != resource.data.teacherUid &&
+    resource.data.status == 'submitted' &&
+    request.resource.data.reviewerUid == request.auth.uid &&
+    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewerUid', 'reviewedAt', 'hadChangesRequested', 'updatedAt']) &&
+    (
+      (
+        reviewerRole in ['owner', 'teacher', 'program_manager'] && // REVIEW_WEEKLY_PLAN -- keep in sync with config/memberRoles.js
+        request.resource.data.status == 'changes_requested' &&
+        request.resource.data.hadChangesRequested == true
+      ) ||
+      (
+        reviewerRole in ['owner', 'teacher', 'program_manager'] && // APPROVE_WEEKLY_PLAN -- keep in sync with config/memberRoles.js
+        request.resource.data.status == 'approved'
       )
     );
 }

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createLesson } from '../../js/models/Lesson.js';
 import { createLessonPlanObjective } from '../../js/models/LessonPlan.js';
-import { getWeeklyPlanReadiness, isWeeklyPlanComplete, WEEKLY_PLAN_SECTION_KEYS } from '../../js/services/weeklyPlanValidationService.js';
+import { getWeeklyPlanReadiness, isWeeklyPlanComplete, hasMeaningfulWeeklyPlanContent, WEEKLY_PLAN_SECTION_KEYS } from '../../js/services/weeklyPlanValidationService.js';
 
 test('getWeeklyPlanReadiness: a brand-new lesson (no concepts, no objectives, no big question) is not ready', () => {
   const lesson = createLesson({ classroomId: 'c1', conceptIds: [] });
@@ -50,4 +50,46 @@ test('getWeeklyPlanReadiness: multiple concepts/objectives are all fine, not jus
     bigQuestion: 'Why?',
   });
   assert.equal(isWeeklyPlanComplete(lesson), true);
+});
+
+// ---------------------------------------------------------------------
+// hasMeaningfulWeeklyPlanContent — an ANY check, deliberately the
+// opposite shape from getWeeklyPlanReadiness()'s ALL check. Used only
+// to derive the PM dashboard's "Not started" vs "Draft" — see
+// services/weeklyPlanSubmissionService.js's own getWeekPlanDisplayStatus().
+// ---------------------------------------------------------------------
+
+test('hasMeaningfulWeeklyPlanContent: a completely untouched lesson has none', () => {
+  const lesson = createLesson({ classroomId: 'c1' });
+  assert.equal(hasMeaningfulWeeklyPlanContent(lesson), false);
+});
+
+test('hasMeaningfulWeeklyPlanContent: null lesson has none', () => {
+  assert.equal(hasMeaningfulWeeklyPlanContent(null), false);
+});
+
+test('hasMeaningfulWeeklyPlanContent: a unit alone (no objectives/big question yet) already counts', () => {
+  const lesson = createLesson({ classroomId: 'c1', curriculumUnitId: 'unit-1' });
+  assert.equal(hasMeaningfulWeeklyPlanContent(lesson), true);
+});
+
+test('hasMeaningfulWeeklyPlanContent: only a Plan note (no unit/objective/big question) already counts', () => {
+  const lesson = createLesson({ classroomId: 'c1', planSummary: 'Quick recap then group work.' });
+  assert.equal(hasMeaningfulWeeklyPlanContent(lesson), true);
+});
+
+test('hasMeaningfulWeeklyPlanContent: only an Assessment note already counts', () => {
+  const lesson = createLesson({ classroomId: 'c1', assessmentNote: 'Exit ticket with 3 questions.' });
+  assert.equal(hasMeaningfulWeeklyPlanContent(lesson), true);
+});
+
+test('hasMeaningfulWeeklyPlanContent: blank-only strings do not count', () => {
+  const lesson = createLesson({ classroomId: 'c1', bigQuestion: '   ', planSummary: '  ', assessmentNote: '' });
+  assert.equal(hasMeaningfulWeeklyPlanContent(lesson), false);
+});
+
+test('hasMeaningfulWeeklyPlanContent: does NOT require every field, unlike getWeeklyPlanReadiness', () => {
+  const lesson = createLesson({ classroomId: 'c1', bigQuestion: 'Why?' });
+  assert.equal(isWeeklyPlanComplete(lesson), false); // still not "ready" (no concepts/objective)
+  assert.equal(hasMeaningfulWeeklyPlanContent(lesson), true); // but has started
 });

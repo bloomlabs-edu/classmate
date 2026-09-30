@@ -58,6 +58,18 @@
  * on the Timetable's Period Detail panel. Most periods stop here —
  * see services/weeklyPlanValidationService.js's own getWeeklyPlanReadiness().
  *
+ * `planSummary`/`assessmentNote` — the two remaining fields the Weekly
+ * Plan review grid needs (Unit/Topic/Big Question/Objective/Plan/
+ * Assessment) that this model didn't already have. Free text, nullable,
+ * deliberately named to avoid colliding with models/LessonPlan.js's own
+ * vocabulary (`activities[]`, `assessments[]`) — these are the Weekly
+ * Plan's own concise "what will happen" / "how will you check
+ * understanding" notes, never a copy of a LessonPlan's detailed
+ * content, and never required for a LessonPlan to exist. Edited
+ * alongside Objectives/Big Question on the same Timetable Period Detail
+ * "Plan" tab; read live by services/weeklyPlanSubmissionService.js's
+ * review grid, never snapshotted anywhere.
+ *
  * `lessonPlanId` — nullable. Set exactly once, the moment a teacher
  * chooses "Build Detailed Lesson Plan" for this period (see
  * services/timetableLessonService.js's own buildDetailedLessonPlanFromLesson()) —
@@ -101,6 +113,8 @@ export function createLesson({
   conceptProvenance = {},
   objectives = [],
   bigQuestion = '',
+  planSummary = null,
+  assessmentNote = null,
   lessonPlanId = null,
   // Pre-existing latent bug, fixed here: with no default, this stayed
   // `undefined` for any Lesson created outside services/plannerStrategies/
@@ -146,6 +160,8 @@ export function createLesson({
     conceptProvenance,
     objectives,
     bigQuestion,
+    planSummary,
+    assessmentNote,
     lessonPlanId,
     sequenceIndex,
     estimatedMinutes,

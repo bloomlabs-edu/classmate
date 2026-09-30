@@ -101,6 +101,20 @@ export async function updateLessonBigQuestion(classroom, lesson, bigQuestion) {
   return lesson;
 }
 
+/** The Weekly Plan's own "Plan" field (models/Lesson.js's `planSummary`) — same explicit-save shape as updateLessonBigQuestion() above. */
+export async function updateLessonPlanSummary(classroom, lesson, planSummary) {
+  lesson.planSummary = planSummary;
+  await plannerRepository.saveLesson(classroom.id, lesson);
+  return lesson;
+}
+
+/** The Weekly Plan's own "Assessment" field (models/Lesson.js's `assessmentNote`) — same explicit-save shape as updateLessonBigQuestion() above. */
+export async function updateLessonAssessmentNote(classroom, lesson, assessmentNote) {
+  lesson.assessmentNote = assessmentNote;
+  await plannerRepository.saveLesson(classroom.id, lesson);
+  return lesson;
+}
+
 export async function addLessonObjective(classroom, lesson, text = '') {
   lesson.objectives = [...lesson.objectives, createLessonPlanObjective({ text })];
   await plannerRepository.saveLesson(classroom.id, lesson);

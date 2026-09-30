@@ -80,15 +80,30 @@ export const PERMISSIONS = Object.freeze({
   // above) — not a distinct permission shape from a co-teacher's.
   REVIEW_LESSON_PLAN: 'review_lesson_plan',
   APPROVE_LESSON_PLAN: 'approve_lesson_plan',
-  // Chapter Plan Review — DELIBERATELY DISTINCT from REVIEW_LESSON_PLAN/
-  // APPROVE_LESSON_PLAN above, not a reuse. The Chapter Plan (long-range,
-  // per-chapter, models/ChapterPlan.js) is a second, independent planning
-  // tier with its own review lifecycle — see that model's own header
-  // comment — so a classroom member's authority over it is tracked
-  // independently of Lesson Plan review, even though today every role
-  // below happens to grant both together. A future
-  // services/chapterPlanReviewService.js (not built this phase) would
+  // Weekly Plan Review — DELIBERATELY DISTINCT from REVIEW_LESSON_PLAN/
+  // APPROVE_LESSON_PLAN above, not a reuse. The Weekly Plan (concise,
+  // whole-week, models/WeeklyPlanSubmission.js) and the detailed
+  // LessonPlan (5 Questions, one period, models/LessonPlan.js) are two
+  // separate planning tiers with two separate review lifecycles — see
+  // docs/CLASSMATE_WEEKLY_PLAN_AND_LESSON_PLAN_ARCHITECTURE.md — so a
+  // classroom member's authority over one is tracked independently of
+  // the other, even though today every role below happens to grant both
+  // together. services/weeklyPlanSubmissionService.js's own
+  // canReviewWeeklyPlanSubmission()/canApproveWeeklyPlanSubmission()
   // check these, never REVIEW_LESSON_PLAN/APPROVE_LESSON_PLAN.
+  REVIEW_WEEKLY_PLAN: 'review_weekly_plan',
+  APPROVE_WEEKLY_PLAN: 'approve_weekly_plan',
+  // Chapter Plan Review — DELIBERATELY DISTINCT from REVIEW_LESSON_PLAN/
+  // APPROVE_LESSON_PLAN and REVIEW_WEEKLY_PLAN/APPROVE_WEEKLY_PLAN above,
+  // not a reuse. The Chapter Plan (long-range, per-chapter,
+  // models/ChapterPlan.js) is a third, independent planning tier with
+  // its own review lifecycle — see that model's own header comment —
+  // so a classroom member's authority over it is tracked independently
+  // of the other two, even though today every role below happens to
+  // grant all three together. A future services/chapterPlanReviewService.js
+  // (not built this phase) would check these, never
+  // REVIEW_LESSON_PLAN/APPROVE_LESSON_PLAN or
+  // REVIEW_WEEKLY_PLAN/APPROVE_WEEKLY_PLAN.
   REVIEW_CHAPTER_PLAN: 'review_chapter_plan',
   APPROVE_CHAPTER_PLAN: 'approve_chapter_plan',
 });
@@ -109,6 +124,8 @@ export const ROLE_PERMISSIONS = Object.freeze({
     PERMISSIONS.DELETE_CLASSROOM,
     PERMISSIONS.REVIEW_LESSON_PLAN,
     PERMISSIONS.APPROVE_LESSON_PLAN,
+    PERMISSIONS.REVIEW_WEEKLY_PLAN,
+    PERMISSIONS.APPROVE_WEEKLY_PLAN,
     PERMISSIONS.REVIEW_CHAPTER_PLAN,
     PERMISSIONS.APPROVE_CHAPTER_PLAN,
   ]),
@@ -123,6 +140,8 @@ export const ROLE_PERMISSIONS = Object.freeze({
     PERMISSIONS.CREATE_LEARNING_ACTIVITY,
     PERMISSIONS.REVIEW_LESSON_PLAN,
     PERMISSIONS.APPROVE_LESSON_PLAN,
+    PERMISSIONS.REVIEW_WEEKLY_PLAN,
+    PERMISSIONS.APPROVE_WEEKLY_PLAN,
     PERMISSIONS.REVIEW_CHAPTER_PLAN,
     PERMISSIONS.APPROVE_CHAPTER_PLAN,
   ]),
@@ -133,14 +152,17 @@ export const ROLE_PERMISSIONS = Object.freeze({
   [MEMBER_ROLES.STUDENT]: Object.freeze([]),
   [MEMBER_ROLES.PARENT]: Object.freeze([]),
   // PROGRAM_MANAGER: exactly the review/approve permission pairs the
-  // Lesson Plan and Chapter Plan review flows need, nothing else — no
-  // AWARD_POINTS, no EDIT_STUDENTS, no INVITE_TEACHER, etc. A PM added
-  // to a classroom this way gains no classroom-management capability at
-  // all, only the ability to review/approve plans, identical in shape
-  // to a TEACHER's own grant of the same permissions above.
+  // Lesson Plan, Weekly Plan, and Chapter Plan review flows need,
+  // nothing else — no AWARD_POINTS, no EDIT_STUDENTS, no
+  // INVITE_TEACHER, etc. A PM added to a classroom this way gains no
+  // classroom-management capability at all, only the ability to review/
+  // approve plans, identical in shape to a TEACHER's own grant of the
+  // same permissions above.
   [MEMBER_ROLES.PROGRAM_MANAGER]: Object.freeze([
     PERMISSIONS.REVIEW_LESSON_PLAN,
     PERMISSIONS.APPROVE_LESSON_PLAN,
+    PERMISSIONS.REVIEW_WEEKLY_PLAN,
+    PERMISSIONS.APPROVE_WEEKLY_PLAN,
     PERMISSIONS.REVIEW_CHAPTER_PLAN,
     PERMISSIONS.APPROVE_CHAPTER_PLAN,
   ]),

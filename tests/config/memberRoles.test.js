@@ -9,9 +9,11 @@ import { getRolesSummary, roleLabel } from '../../js/services/personalHubService
 // ---------------------------------------------------------------------
 // Phase 6 introduced PROGRAM_MANAGER / HEAD_MASTER as reserved,
 // zero-permission role placeholders, mirroring STUDENT/PARENT (see
-// config/memberRoles.js's own header comment). Lesson Plan Review was
-// the first real PROGRAM_MANAGER capability; Chapter Plan Phase 1 adds
-// a second pair, REVIEW_CHAPTER_PLAN/APPROVE_CHAPTER_PLAN — these tests
+// config/memberRoles.js's own header comment). Programme Manager Weekly
+// Plan Review was the first real PROGRAM_MANAGER capability
+// (REVIEW_LESSON_PLAN/APPROVE_LESSON_PLAN, then
+// REVIEW_WEEKLY_PLAN/APPROVE_WEEKLY_PLAN); Chapter Plan Phase 1 adds a
+// third pair, REVIEW_CHAPTER_PLAN/APPROVE_CHAPTER_PLAN — these tests
 // confirm the grant is exact (no classroom-management permission leaks
 // in) and that HEAD_MASTER remains completely untouched, still exactly
 // the empty placeholder it always was.
@@ -36,16 +38,20 @@ test('ROLE_PERMISSIONS: HEAD_MASTER grants zero permissions, matching STUDENT/PA
   assert.deepEqual(ROLE_PERMISSIONS[MEMBER_ROLES.PARENT], []);
 });
 
-test('ROLE_PERMISSIONS: PROGRAM_MANAGER grants EXACTLY the four Lesson Plan + Chapter Plan review/approve permissions — no classroom-management permission of any kind', () => {
+test('ROLE_PERMISSIONS: PROGRAM_MANAGER grants EXACTLY the six Lesson Plan + Weekly Plan + Chapter Plan review/approve permissions — no classroom-management permission of any kind', () => {
   assert.deepEqual(ROLE_PERMISSIONS[MEMBER_ROLES.PROGRAM_MANAGER], [
     PERMISSIONS.REVIEW_LESSON_PLAN,
     PERMISSIONS.APPROVE_LESSON_PLAN,
+    PERMISSIONS.REVIEW_WEEKLY_PLAN,
+    PERMISSIONS.APPROVE_WEEKLY_PLAN,
     PERMISSIONS.REVIEW_CHAPTER_PLAN,
     PERMISSIONS.APPROVE_CHAPTER_PLAN,
   ]);
   const reviewPermissions = [
     PERMISSIONS.REVIEW_LESSON_PLAN,
     PERMISSIONS.APPROVE_LESSON_PLAN,
+    PERMISSIONS.REVIEW_WEEKLY_PLAN,
+    PERMISSIONS.APPROVE_WEEKLY_PLAN,
     PERMISSIONS.REVIEW_CHAPTER_PLAN,
     PERMISSIONS.APPROVE_CHAPTER_PLAN,
   ];
@@ -71,6 +77,8 @@ test('ROLE_PERMISSIONS: existing roles keep their exact existing permission sets
     PERMISSIONS.DELETE_CLASSROOM,
     PERMISSIONS.REVIEW_LESSON_PLAN,
     PERMISSIONS.APPROVE_LESSON_PLAN,
+    PERMISSIONS.REVIEW_WEEKLY_PLAN,
+    PERMISSIONS.APPROVE_WEEKLY_PLAN,
     PERMISSIONS.REVIEW_CHAPTER_PLAN,
     PERMISSIONS.APPROVE_CHAPTER_PLAN,
   ]);
@@ -85,6 +93,8 @@ test('ROLE_PERMISSIONS: existing roles keep their exact existing permission sets
     PERMISSIONS.CREATE_LEARNING_ACTIVITY,
     PERMISSIONS.REVIEW_LESSON_PLAN,
     PERMISSIONS.APPROVE_LESSON_PLAN,
+    PERMISSIONS.REVIEW_WEEKLY_PLAN,
+    PERMISSIONS.APPROVE_WEEKLY_PLAN,
     PERMISSIONS.REVIEW_CHAPTER_PLAN,
     PERMISSIONS.APPROVE_CHAPTER_PLAN,
   ]);
@@ -97,28 +107,34 @@ test('permissionService.canPerform: a head_master member can perform no permissi
   });
 });
 
-test('permissionService.listPermissionsForRole: HEAD_MASTER still returns empty; PROGRAM_MANAGER now returns exactly the four review/approve permissions', () => {
+test('permissionService.listPermissionsForRole: HEAD_MASTER still returns empty; PROGRAM_MANAGER now returns exactly the six review/approve permissions', () => {
   assert.deepEqual(listPermissionsForRole(MEMBER_ROLES.HEAD_MASTER), []);
   assert.deepEqual(listPermissionsForRole(MEMBER_ROLES.PROGRAM_MANAGER), [
     PERMISSIONS.REVIEW_LESSON_PLAN,
     PERMISSIONS.APPROVE_LESSON_PLAN,
+    PERMISSIONS.REVIEW_WEEKLY_PLAN,
+    PERMISSIONS.APPROVE_WEEKLY_PLAN,
     PERMISSIONS.REVIEW_CHAPTER_PLAN,
     PERMISSIONS.APPROVE_CHAPTER_PLAN,
   ]);
 });
 
-test('permissionService.canPerformAsUid: a real classroom member added with the program_manager role can review/approve LessonPlans and Chapter Plans, and nothing else', () => {
+test('permissionService.canPerformAsUid: a real classroom member added with the program_manager role can review/approve LessonPlans, Weekly Plans, and Chapter Plans, and nothing else', () => {
   const classroom = createClassroom({ id: 'c1', schoolName: 'Test School', gradeSection: 'Grade 8A' });
   addMember(classroom, 'pm-uid', MEMBER_ROLES.PROGRAM_MANAGER, 'A Program Manager');
 
   assert.equal(getRole(classroom, 'pm-uid'), 'program_manager');
   assert.equal(canPerformAsUid(classroom, 'pm-uid', PERMISSIONS.REVIEW_LESSON_PLAN), true);
   assert.equal(canPerformAsUid(classroom, 'pm-uid', PERMISSIONS.APPROVE_LESSON_PLAN), true);
+  assert.equal(canPerformAsUid(classroom, 'pm-uid', PERMISSIONS.REVIEW_WEEKLY_PLAN), true);
+  assert.equal(canPerformAsUid(classroom, 'pm-uid', PERMISSIONS.APPROVE_WEEKLY_PLAN), true);
   assert.equal(canPerformAsUid(classroom, 'pm-uid', PERMISSIONS.REVIEW_CHAPTER_PLAN), true);
   assert.equal(canPerformAsUid(classroom, 'pm-uid', PERMISSIONS.APPROVE_CHAPTER_PLAN), true);
   const reviewPermissions = [
     PERMISSIONS.REVIEW_LESSON_PLAN,
     PERMISSIONS.APPROVE_LESSON_PLAN,
+    PERMISSIONS.REVIEW_WEEKLY_PLAN,
+    PERMISSIONS.APPROVE_WEEKLY_PLAN,
     PERMISSIONS.REVIEW_CHAPTER_PLAN,
     PERMISSIONS.APPROVE_CHAPTER_PLAN,
   ];
