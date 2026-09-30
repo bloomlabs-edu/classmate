@@ -1048,6 +1048,132 @@ service cloud.firestore {
         resource.data.createdByUid == request.auth.uid;
     }
 
+    // ClassMate Knowledge Model v1 (see models/KnowledgeConcept.js,
+    // models/KnowledgeRelationship.js, models/KnowledgeClassification.js,
+    // models/KnowledgeClassificationMembership.js) — four DELIBERATELY
+    // SEPARATE, TOP-LEVEL collections, never subcollections of
+    // `classrooms`, same "must be discoverable everywhere, owned by no
+    // one classroom" reasoning as `sparks` immediately above. This is a
+    // shared knowledge layer, explicitly NOT the same tree as a
+    // classroom's own `learningRecord.subjects[].units[].concepts[]`
+    // (models/LearningConcept.js) — see models/KnowledgeConcept.js's own
+    // header comment for the full "why these stay separate" reasoning.
+    //
+    // AUTHORIZATION — v1 write gate, an explicitly INTERIM mechanism:
+    // shared knowledge records must be authored only by a Program
+    // Manager (config/memberRoles.js's own PROGRAM_MANAGER role), never
+    // a plain Teacher or Owner. But PROGRAM_MANAGER is a PER-CLASSROOM
+    // membership role (see that file's own header comment — there is
+    // still no cross-classroom "this uid is a PM anywhere" identity in
+    // this app, the same real gap that file's own comment already
+    // documents for PM/HM generally). Firestore Security Rules cannot
+    // enumerate "every classroom this uid belongs to" to check that
+    // without a known path — so every write requires
+    // `authorizingClassroomId`, naming ONE classroom where the author
+    // actually holds `program_manager`, purely so this rule has a
+    // concrete document to `get()`. Same mechanism `chapterPlanReviewIndex`/
+    // `weeklyPlanSubmissions` above already use for an identical
+    // "top-level collection, but the authorization check needs a real
+    // classroom membership" problem.
+    //
+    // This field is a WRITE-TIME CREDENTIAL ONLY — it MUST NOT be read
+    // as the record's scope/ownership (a Concept authored "via" a Grade
+    // 8 Geography PM grant is not a Grade-8-Geography-owned Concept; see
+    // models/KnowledgeConcept.js's own header comment). Revisit once a
+    // real cross-classroom PM identity exists (a custom claim synced by
+    // a Cloud Function, or similar) — this mechanism is intentionally
+    // the smallest thing that actually works today, not a permanent
+    // design.
+    //
+    // read: any authenticated user — shared knowledge is discoverable by
+    // every signed-in Fellow, same posture as `sparks`.
+    // create/update: gated by isKnowledgeAuthor() below; update also
+    // pins every identity field (createdByUid/createdAt, and each
+    // collection's own "what this record IS" fields) so an author can
+    // never quietly reassign provenance or turn one fact into a
+    // different one via edit — same "pin identity, only content moves"
+    // convention `sparks`' own `allow update` above already uses.
+    // delete: the same isKnowledgeAuthor() check, evaluated against the
+    // EXISTING document's own `authorizingClassroomId` (not the
+    // request's) — a PM who has since lost that classroom membership can
+    // no longer delete a record authored under it, matching this
+    // mechanism's own "re-verified every time" design.
+    function isKnowledgeAuthor(recordData) {
+      return request.auth != null &&
+        recordData.authorizingClassroomId != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(recordData.authorizingClassroomId)).data.memberUids &&
+        get(/databases/$(database)/documents/classrooms/$(recordData.authorizingClassroomId)).data.members[request.auth.uid].role == 'program_manager';
+    }
+
+    match /knowledgeConcepts/{conceptId} {
+      allow read: if request.auth != null;
+
+      allow create: if isKnowledgeAuthor(request.resource.data) &&
+        request.resource.data.createdByUid == request.auth.uid;
+
+      allow update: if isKnowledgeAuthor(request.resource.data) &&
+        isKnowledgeAuthor(resource.data) &&
+        request.resource.data.createdByUid == resource.data.createdByUid &&
+        request.resource.data.createdAt == resource.data.createdAt;
+
+      allow delete: if isKnowledgeAuthor(resource.data);
+    }
+
+    match /knowledgeRelationships/{relationshipId} {
+      allow read: if request.auth != null;
+
+      allow create: if isKnowledgeAuthor(request.resource.data) &&
+        request.resource.data.createdByUid == request.auth.uid &&
+        request.resource.data.type in [
+          'IS_A', 'PART_OF', 'CAUSES', 'HAS_ASPECT', 'HAS_PROPERTY',
+          'EXAMPLE_OF', 'RELATED_TO', 'CONTRASTS_WITH', 'PREREQUISITE_FOR'
+        ] &&
+        request.resource.data.fromConceptId != request.resource.data.toConceptId;
+
+      allow update: if isKnowledgeAuthor(request.resource.data) &&
+        isKnowledgeAuthor(resource.data) &&
+        request.resource.data.createdByUid == resource.data.createdByUid &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.fromConceptId == resource.data.fromConceptId &&
+        request.resource.data.toConceptId == resource.data.toConceptId &&
+        request.resource.data.type in [
+          'IS_A', 'PART_OF', 'CAUSES', 'HAS_ASPECT', 'HAS_PROPERTY',
+          'EXAMPLE_OF', 'RELATED_TO', 'CONTRASTS_WITH', 'PREREQUISITE_FOR'
+        ];
+
+      allow delete: if isKnowledgeAuthor(resource.data);
+    }
+
+    match /knowledgeClassifications/{classificationId} {
+      allow read: if request.auth != null;
+
+      allow create: if isKnowledgeAuthor(request.resource.data) &&
+        request.resource.data.createdByUid == request.auth.uid;
+
+      allow update: if isKnowledgeAuthor(request.resource.data) &&
+        isKnowledgeAuthor(resource.data) &&
+        request.resource.data.createdByUid == resource.data.createdByUid &&
+        request.resource.data.createdAt == resource.data.createdAt;
+
+      allow delete: if isKnowledgeAuthor(resource.data);
+    }
+
+    match /knowledgeClassificationMemberships/{membershipId} {
+      allow read: if request.auth != null;
+
+      allow create: if isKnowledgeAuthor(request.resource.data) &&
+        request.resource.data.createdByUid == request.auth.uid;
+
+      allow update: if isKnowledgeAuthor(request.resource.data) &&
+        isKnowledgeAuthor(resource.data) &&
+        request.resource.data.createdByUid == resource.data.createdByUid &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.conceptId == resource.data.conceptId &&
+        request.resource.data.classificationId == resource.data.classificationId;
+
+      allow delete: if isKnowledgeAuthor(resource.data);
+    }
+
     // Weekly Plan Review Index (Programme Manager Weekly Plan Review —
     // see services/weeklyPlanReviewIndexService.js,
     // repositories/weeklyPlanReviewIndexRepository.js). A DELIBERATELY
