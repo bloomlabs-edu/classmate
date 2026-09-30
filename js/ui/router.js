@@ -282,6 +282,14 @@ export function resolvePathParts(parts) {
     return { name: 'curriculumManagement' };
   }
 
+  // "My Work" (see js/models/Task.js) — flat, top-level, not
+  // classroom-scoped, the exact same shape as 'curriculum-management'
+  // immediately above: a Task belongs to a signed-in PERSON, never a
+  // classroom, so there is no {classroomId} segment here at all.
+  if (parts[0] === 'my-work') {
+    return { name: 'myWork' };
+  }
+
   if (parts[0] === 'program-manager' && parts[1] === 'weekly-plans') {
     return { name: 'programManagerWeeklyPlans' };
   }

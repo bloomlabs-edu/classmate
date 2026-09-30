@@ -56,6 +56,7 @@ import { renderStudentAvatarBuilderView } from './ui/student-portal/views/Studen
 import { renderStudentProfileView as renderStudentPortalProfileView } from './ui/student-portal/views/StudentProfileView.js';
 import { renderPersonalHubView } from './ui/views/PersonalHubView.js';
 import { renderCurriculumManagementView } from './ui/views/CurriculumManagementView.js';
+import { renderMyWorkView } from './ui/views/MyWorkView.js';
 import { renderLearningManagementView } from './ui/views/LearningManagementView.js';
 import { renderLessonPlansListView } from './ui/views/LessonPlansListView.js';
 import { renderProgramManagerObservationsView } from './ui/views/ProgramManagerObservationsView.js';
@@ -888,6 +889,14 @@ function renderRoute(route, reason = 'unspecified') {
     return;
   }
 
+  if (route.name === 'myWork') {
+    renderMyWorkView(appContainer, {
+      currentUser,
+      onBack: () => router.navigate('/teacher'),
+    });
+    return;
+  }
+
   if (route.name === 'programManagerWeeklyPlans') {
     // Route-level PM authorization — checked BEFORE rendering the view
     // or loading any PM queue data, per the audit finding that
@@ -1692,6 +1701,7 @@ function renderRoute(route, reason = 'unspecified') {
       onOpenWeeklyPlans: () => router.navigate('/program-manager/weekly-plans'),
       onOpenObservations: () => router.navigate('/program-manager/observations'),
       onOpenChapterPlans: () => router.navigate('/program-manager/chapter-plans'),
+      onOpenMyWork: () => router.navigate('/my-work'),
     });
   }
 }
