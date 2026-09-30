@@ -283,6 +283,30 @@ service cloud.firestore {
           request.auth.uid == uid || isClassroomOwnerRemovingMemberRef()
         );
       }
+
+      // "My Work" Tasks (see models/Task.js) — a Task belongs to
+      // exactly one uid, never a classroom, so this needs none of
+      // classroomRefs' own membership-batch-delete exception above:
+      // read/create/update/delete are ALL simply "this is my own
+      // subcollection," full stop. `create`/`update` additionally
+      // pin `ownerUid` to the path uid (create) and forbid it ever
+      // changing to a different uid on update — the same
+      // "the owning field can't be reassigned to someone else"
+      // invariant already used elsewhere in this file (e.g. the
+      // weeklyPlanSubmissions block's own teacherUid checks) — a
+      // client can never write a Task into its own path that claims
+      // to belong to somebody else.
+      match /tasks/{taskId} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+
+        allow create: if request.auth != null && request.auth.uid == uid &&
+          request.resource.data.ownerUid == uid;
+
+        allow update: if request.auth != null && request.auth.uid == uid &&
+          request.resource.data.ownerUid == resource.data.ownerUid;
+
+        allow delete: if request.auth != null && request.auth.uid == uid;
+      }
     }
 
     // This rule's own create/update condition no longer
