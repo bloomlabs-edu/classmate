@@ -313,6 +313,10 @@ export function resolvePathParts(parts) {
     return { name: 'programManagerChapterPlans' };
   }
 
+  if (parts[0] === 'program-manager' && parts[1] === 'observations') {
+    return { name: 'programManagerObservations' };
+  }
+
   if (parts[0] === 'student') {
     const section = parts[1] || 'home';
     // Generic — a detail screen reachable from an event card (see

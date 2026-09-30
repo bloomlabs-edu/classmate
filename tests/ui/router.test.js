@@ -134,6 +134,10 @@ test('program-manager chapter-plans route does not collide with the Fellow-facin
   assert.notEqual(pmRoute.name, fellowRoute.name);
 });
 
+test('program-manager observations route — the renamed detailed LessonPlan queue, not classroom-scoped', () => {
+  assert.deepEqual(resolvePathParts(parts('program-manager/observations')), { name: 'programManagerObservations' });
+});
+
 test('pre-existing route: learning management', () => {
   assert.deepEqual(resolvePathParts(parts('classroom/classroom-1/learning')), { name: 'learningManagement', classroomId: 'classroom-1' });
 });
