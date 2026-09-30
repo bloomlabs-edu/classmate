@@ -76,6 +76,12 @@
  *     (MyWorkTaskDisplay.getTasksDueToday) in a small, visually
  *     distinct block below the period strip — never merged into a
  *     period card, never styled to look like a scheduled period.
+ *     REVISED: this block now always renders at least its own
+ *     persistent "My Work" header + "Open My Work" link, even with
+ *     zero due Tasks - see buildTodayTasksBlock()'s own comment for
+ *     why an entry point that only appears once a Task already
+ *     exists made the feature undiscoverable in the first place. My
+ *     Week's own block (below) does not yet have this same change.
  *   - My Week shows active Tasks due within the displayed week
  *     (MyWorkTaskDisplay.getTasksDueInRange) in a small block below
  *     the grid — never added as extra grid rows/cells.
@@ -583,15 +589,19 @@ export function renderPersonalHubView(
    * Task in place, keeping this section a schedule+overview surface,
    * not a second task-management interface.
    *
-   * Renders an empty DocumentFragment (nothing at all, no empty-state
-   * message) when there's genuinely nothing due/overdue — a user who
-   * has never touched My Work should see a Today section that looks
-   * exactly like it did before this integration existed, not a new
-   * permanent "no tasks" line competing with the real schedule.
+   * REVISED PRODUCT DECISION (supersedes this function's original
+   * "render nothing when empty" behavior): My Work must be
+   * discoverable from this dashboard even for a teacher who has never
+   * created a Task, not only once one already exists — an entirely
+   * hidden entry point meant nobody could ever find the feature in
+   * the first place. When there's nothing due/overdue, this now
+   * renders ONLY the persistent header (a "My Work" label + "Open My
+   * Work" link) inside the same `.hub-today-tasks` panel, never a
+   * fake empty task list below it. When there IS something due, the
+   * full header+list+overflow-link rendering is unchanged from before.
    */
   function buildTodayTasksBlock(tasks, todayKey) {
     const dueTasks = getTasksDueToday(tasks, todayKey);
-    if (dueTasks.length === 0) return document.createDocumentFragment();
 
     const block = document.createElement('div');
     block.className = 'hub-today-tasks';
@@ -600,7 +610,7 @@ export function renderPersonalHubView(
     header.className = 'hub-today-tasks__header';
     const title = document.createElement('span');
     title.className = 'hub-today-tasks__title';
-    title.textContent = 'Tasks due today';
+    title.textContent = dueTasks.length === 0 ? 'My Work' : 'Tasks due today';
     const openLink = document.createElement('button');
     openLink.type = 'button';
     openLink.className = 'hub-today-tasks__link';
@@ -608,6 +618,8 @@ export function renderPersonalHubView(
     openLink.addEventListener('click', () => onOpenMyWork?.());
     header.append(title, openLink);
     block.appendChild(header);
+
+    if (dueTasks.length === 0) return block;
 
     const list = document.createElement('ul');
     list.className = 'hub-today-tasks__list';
