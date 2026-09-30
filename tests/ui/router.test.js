@@ -120,6 +120,10 @@ test('program-manager with no matching second segment does not resolve to the we
   assert.notDeepEqual(resolvePathParts(parts('program-manager/something-else')), { name: 'programManagerWeeklyPlans' });
 });
 
+test('program-manager weekly-plans/review route resolves distinctly from the queue route', () => {
+  assert.deepEqual(resolvePathParts(parts('program-manager/weekly-plans/review')), { name: 'programManagerWeeklyPlanReview' });
+});
+
 test('program-manager chapter-plans route — not classroom-scoped, no classroomId in the resolved route', () => {
   assert.deepEqual(resolvePathParts(parts('program-manager/chapter-plans')), { name: 'programManagerChapterPlans' });
 });

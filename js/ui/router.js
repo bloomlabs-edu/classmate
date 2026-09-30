@@ -290,6 +290,10 @@ export function resolvePathParts(parts) {
     return { name: 'myWork' };
   }
 
+  if (parts[0] === 'program-manager' && parts[1] === 'weekly-plans' && parts[2] === 'review') {
+    return { name: 'programManagerWeeklyPlanReview' };
+  }
+
   if (parts[0] === 'program-manager' && parts[1] === 'weekly-plans') {
     return { name: 'programManagerWeeklyPlans' };
   }
