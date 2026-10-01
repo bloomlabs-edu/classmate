@@ -37,7 +37,7 @@ import { getCurrentIsoDate } from '../utils/dateHelpers.js';
 const DIFFERENTIATION_BUCKET_LABELS = Object.freeze({
   redBucket: 'Red Bucket',
   greenBucket: 'Green Bucket',
-  others: 'Others',
+  others: 'Yellow Bucket', // field key stays `others` (never renamed — see models/LessonPlan.js's own createLessonPlanDifferentiation()); only the display label changed, 2026-10
 });
 
 function isBlank(value) {

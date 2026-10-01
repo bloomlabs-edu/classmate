@@ -199,12 +199,12 @@ test('extractElements: extracts the Activity itself as one element', () => {
   assert.equal(activity.content.teacherAction, 'Mark a line on the floor.');
 });
 
-test('extractElements: extracts Red Bucket and Green Bucket as two INDEPENDENT Differentiation elements, and skips a blank bucket ("Others")', () => {
+test('extractElements: extracts Red Bucket and Green Bucket as two INDEPENDENT Differentiation elements, and skips a blank bucket ("Yellow Bucket", field key `others`)', () => {
   const { teachingIdea, activityId } = buildFullTeachingIdea();
   const elements = teachingIdeasService.extractElements(teachingIdea);
   const differentiationElements = elements.filter((element) => element.elementType === 'differentiation');
 
-  assert.equal(differentiationElements.length, 2); // NOT 3 — "others" was blank
+  assert.equal(differentiationElements.length, 2); // NOT 3 — the `others` (Yellow Bucket) field was blank
   const red = differentiationElements.find((element) => element.bucket === 'redBucket');
   const green = differentiationElements.find((element) => element.bucket === 'greenBucket');
   assert.ok(red);
@@ -214,6 +214,22 @@ test('extractElements: extracts Red Bucket and Green Bucket as two INDEPENDENT D
   assert.equal(red.sourceActivityId, activityId);
   assert.equal(green.sourceActivityId, activityId);
   assert.ok(green.title.includes('Green Bucket'));
+});
+
+test('extractElements: a populated `others` field is extracted as a "Yellow Bucket" element — never "Others" (2026-10 terminology fix; the field key itself stays `others`)', () => {
+  const classroom = makeClassroom();
+  const plan = makeApprovedPlan();
+  const activity = lessonPlanService.addActivity(plan);
+  lessonPlanService.addActivityDifferentiation(plan, activity.id);
+  lessonPlanService.updateActivityDifferentiation(plan, activity.id, { others: 'Record the group’s ideas in simple sentences.' });
+
+  const teachingIdea = teachingIdeasService.buildTeachingIdeaProjection(classroom, plan);
+  const elements = teachingIdeasService.extractElements(teachingIdea);
+  const yellow = elements.find((element) => element.elementType === 'differentiation' && element.bucket === 'others');
+
+  assert.ok(yellow);
+  assert.ok(yellow.title.includes('Yellow Bucket'));
+  assert.ok(!yellow.title.includes('Others'));
 });
 
 test('extractElements: a plan with no assessments/differentiation produces no elements for those types (nothing invented)', () => {

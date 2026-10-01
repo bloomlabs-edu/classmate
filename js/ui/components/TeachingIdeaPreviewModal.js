@@ -28,7 +28,7 @@ const ELEMENT_TYPE_LABELS = Object.freeze({
   differentiation: 'Differentiation',
 });
 
-const BUCKET_LABELS = Object.freeze({ redBucket: 'Red Bucket', greenBucket: 'Green Bucket', others: 'Others' });
+const BUCKET_LABELS = Object.freeze({ redBucket: 'Red Bucket', greenBucket: 'Green Bucket', others: 'Yellow Bucket' });
 
 function renderElementBody(element) {
   const body = document.createElement('div');

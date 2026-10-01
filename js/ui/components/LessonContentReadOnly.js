@@ -68,8 +68,8 @@ export function renderReadOnlyActivityCard(activityOrSpark) {
     diffWrap.className = 'lesson-content-readonly__differentiation';
     [
       { field: 'redBucket', label: 'Red Bucket' },
+      { field: 'others', label: 'Yellow Bucket' },
       { field: 'greenBucket', label: 'Green Bucket' },
-      { field: 'others', label: 'Others' },
     ].forEach(({ field, label }) => {
       if (differentiation[field] && differentiation[field].trim()) {
         diffWrap.appendChild(renderReadOnlyField(label, differentiation[field]));
@@ -93,7 +93,7 @@ function renderReadOnlyInteraction(interaction, index) {
 
   const pair = document.createElement('div');
   pair.className = 'lesson-content-readonly__interaction-pair';
-  pair.appendChild(renderReadOnlyInteractionSide('Teacher', 'chalkboard-easel', interaction.teacherAction, 'teacher'));
+  pair.appendChild(renderReadOnlyInteractionSide('Teacher', 'user', interaction.teacherAction, 'teacher'));
   pair.appendChild(renderReadOnlyInteractionSide('Students', 'users', interaction.studentAction, 'students'));
   wrap.appendChild(pair);
 

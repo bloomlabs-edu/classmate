@@ -91,7 +91,7 @@ import * as workspaceService from '../../services/workspaceService.js';
 import { getGradeLabelForClassroom } from '../../services/classroomService.js';
 import { getTodayDateKey } from '../../utils/dateHelpers.js';
 import { LESSON_PLAN_STATUS, LESSON_PLAN_SECTION_KEYS, LESSON_RESOURCE_TYPES, getActivityInteractions } from '../../models/LessonPlan.js';
-import { getLessonPlanReadiness, getLessonPlanStageCompletion, getLessonPlanReadinessByStage, canSubmitLessonPlan, LESSON_PLAN_STAGES } from '../../services/lessonPlanValidationService.js';
+import { getLessonPlanStageCompletion, getLessonPlanReadinessByStage, canSubmitLessonPlan, LESSON_PLAN_STAGES } from '../../services/lessonPlanValidationService.js';
 import { getTimetableSubjectColor, getTimetableSubjectWash } from '../../config/timetableSubjectColors.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createIcon } from '../components/Icon.js';
@@ -1807,27 +1807,26 @@ const STAGE_CHECKLIST_LABELS = Object.freeze({
 });
 
 /**
- * The submission check — an ALWAYS-VISIBLE checklist plus the Submit/
- * Resubmit action, per explicit product direction: the checklist is
- * advisory, never a gate. The ONE real submission requirement is
- * services/lessonPlanValidationService.js's own canSubmitLessonPlan()
- * (at least one Activity, no maximum) — everything else the checklist
- * reports (Student Action, Pair Explanation, Exit Ticket) is a warning
- * a teacher can see and choose to submit past, via the "Submit without
- * these?" confirmation
- * (ui/components/SubmitLessonPlanWarningsModal.js) — never a silent
- * lock and never a second, separate definition of "done" from
- * getLessonPlanReadiness()/getLessonPlanReadinessByStage().
+ * The Submit/Resubmit action itself — 2026-10 redesign: the page
+ * represents the lesson plan, not its own validation state, so the
+ * previously ALWAYS-VISIBLE checklist (a persistent "Submission check"
+ * block with a running list of incomplete items) is gone entirely.
+ * services/lessonPlanValidationService.js's own getLessonPlanReadiness()/
+ * getLessonPlanReadinessByStage() are completely UNCHANGED — still the
+ * one source of truth for what's missing — they're just no longer
+ * rendered inline on every page load. The exact same missing-item list
+ * now only ever surfaces the moment a teacher actually clicks Submit,
+ * via the pre-existing "Submit without these?" confirmation
+ * (ui/components/SubmitLessonPlanWarningsModal.js, itself untouched)
+ * — never a silent lock, never a second definition of "done."
  *
- * Three states:
- *   - Zero activities: the one real block. A clear reason, no Submit
- *     action at all (nothing to confirm past — there's truly nothing
- *     to submit yet).
- *   - Activities exist, but some checklist items are incomplete:
- *     checklist + Submit, which opens the confirmation modal first.
- *   - Everything complete: "Ready for review." + Submit, submits
- *     immediately — no confirmation manufactured just because the
- *     checklist happens to be complete.
+ * Two states:
+ *   - Zero activities: the one real, structural block (there is
+ *     genuinely nothing to submit yet) — a quiet inline note, no
+ *     Submit button at all.
+ *   - Otherwise: just the bare Submit/Resubmit button. Complete ->
+ *     submits immediately. Incomplete -> opens the warnings modal
+ *     first, exactly as before.
  */
 function renderReadinessPanel(plan, handlers) {
   // Not editable (SUBMITTED/APPROVED) — nothing actionable left to show
@@ -1838,13 +1837,7 @@ function renderReadinessPanel(plan, handlers) {
   const panel = document.createElement('div');
   panel.className = 'lesson-plan-builder__readiness';
 
-  const heading = document.createElement('p');
-  heading.className = 'lesson-plan-builder__readiness-heading';
-  heading.textContent = 'Submission check';
-  panel.appendChild(heading);
-
   if (!canSubmitLessonPlan(plan)) {
-    panel.classList.add('lesson-plan-builder__readiness--blocked');
     const warning = document.createElement('p');
     warning.className = 'lesson-plan-builder__readiness-warning';
     warning.textContent = 'Add at least one Learning Activity before submitting.';
@@ -1852,46 +1845,10 @@ function renderReadinessPanel(plan, handlers) {
     return panel;
   }
 
-  const readiness = getLessonPlanReadiness(plan);
   const byStage = getLessonPlanReadinessByStage(plan);
   const incompleteStages = byStage.filter((entry) => !entry.complete);
-
-  if (readiness.ready) {
-    panel.classList.add('lesson-plan-builder__readiness--ready');
-    heading.appendChild(createIcon('check-circle-2', { size: 16 }));
-    const note = document.createElement('p');
-    note.className = 'lesson-plan-builder__readiness-note';
-    note.textContent = plan.status === LESSON_PLAN_STATUS.CHANGES_REQUESTED ? 'Ready to resubmit.' : 'Ready for review.';
-    panel.appendChild(note);
-  } else {
-    // Compact by design, per explicit product direction: completed
-    // stages consumed significant vertical space for very little real
-    // information ("✓ Concepts / ✓ Purpose / ✓ Connection / ✓ Showcase"
-    // never changes and never needs re-confirming). Only what still
-    // needs attention is listed — the same underlying messages the
-    // "Submit without these?" modal below also uses (see
-    // getLessonPlanReadinessByStage()'s own doc comment), just flat
-    // rather than grouped, since a short count-and-list reads faster
-    // than a 6-row checklist for this purpose.
-    panel.classList.add('lesson-plan-builder__readiness--warning');
-    const allMessages = incompleteStages.flatMap((entry) => entry.messages);
-    const note = document.createElement('p');
-    note.className = 'lesson-plan-builder__readiness-note';
-    note.textContent = `⚠ ${allMessages.length} item${allMessages.length === 1 ? '' : 's'} to consider`;
-    panel.appendChild(note);
-
-    const list = document.createElement('ul');
-    list.className = 'lesson-plan-builder__readiness-checklist';
-    allMessages.forEach((message) => {
-      const item = document.createElement('li');
-      item.className = 'lesson-plan-builder__readiness-checklist-item';
-      item.textContent = message;
-      list.appendChild(item);
-    });
-    panel.appendChild(list);
-  }
-
   const isResubmit = plan.status === LESSON_PLAN_STATUS.CHANGES_REQUESTED;
+
   const submitButton = document.createElement('button');
   submitButton.type = 'button';
   submitButton.className = 'btn btn--primary lesson-plan-builder__submit-button';
@@ -2212,13 +2169,19 @@ function renderLearningResourcesSection(plan, state, handlers, { slot, filter, h
   const wrap = document.createElement('div');
   wrap.className = 'lesson-plan-builder__resources';
 
+  const resources = (plan.resources || []).filter(filter);
+  const isAddingHere = state.addingResourceSlot === slot;
+
+  const headingRow = document.createElement('div');
+  headingRow.className = 'lesson-plan-builder__resources-heading-row';
   const heading = document.createElement('p');
   heading.className = 'lesson-plan-builder__primary-section-heading';
   heading.textContent = headingText;
-  wrap.appendChild(heading);
-
-  const resources = (plan.resources || []).filter(filter);
-  const isAddingHere = state.addingResourceSlot === slot;
+  headingRow.appendChild(heading);
+  if (handlers.editable && !isAddingHere) {
+    headingRow.appendChild(createAddRowButton('+ Add Resource', () => handlers.onStartAddResource(slot)));
+  }
+  wrap.appendChild(headingRow);
 
   if (resources.length === 0 && !isAddingHere) {
     const empty = document.createElement('p');
@@ -2245,20 +2208,16 @@ function renderLearningResourcesSection(plan, state, handlers, { slot, filter, h
     wrap.appendChild(list);
   }
 
-  if (handlers.editable) {
-    if (isAddingHere) {
-      wrap.appendChild(
-        renderResourceForm(plan, {
-          resource: null,
-          onSave: handlers.onSaveNewResource,
-          onCancel: handlers.onCancelAddResource,
-          submitLabel: 'Add Resource',
-          defaultSectionKey,
-        })
-      );
-    } else {
-      wrap.appendChild(createAddRowButton('+ Add Resource', () => handlers.onStartAddResource(slot)));
-    }
+  if (handlers.editable && isAddingHere) {
+    wrap.appendChild(
+      renderResourceForm(plan, {
+        resource: null,
+        onSave: handlers.onSaveNewResource,
+        onCancel: handlers.onCancelAddResource,
+        submitLabel: 'Add Resource',
+        defaultSectionKey,
+      })
+    );
   }
 
   return wrap;
@@ -2473,21 +2432,31 @@ function createDynamicListRow({ value, placeholder, onChange, onRemove, disabled
   return row;
 }
 
+/**
+ * 2026-10 visual redesign: every "+ Add X" row action now uses the
+ * same established tonal-blue pill tier (css/styles.css's own
+ * `.btn--tonal`/`.btn--tonal-blue`/`.btn--pill`, already proven
+ * elsewhere in this app — ui/views/TimetableView.js's "Manage" button,
+ * ui/views/AssessmentManagementView.js's "+ Add Subject") instead of
+ * the previous bare `.btn--ghost` outline, which read as a wireframe/
+ * form-builder control rather than a polished app action — never a
+ * new button system invented for this.
+ */
 function createAddRowButton(label, onClick) {
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = 'btn btn--ghost lesson-plan-builder__add-row-button';
+  button.className = 'btn btn--tonal btn--tonal-blue btn--pill lesson-plan-builder__add-row-button';
   button.appendChild(createIcon('plus', { size: 14 }));
   button.append(` ${label.replace(/^\+\s*/, '')}`);
   button.addEventListener('click', onClick);
   return button;
 }
 
-/** Phase 4 — the "Browse Ideas" affordance (product-language rename from "+ From Teaching Ideas"; the underlying Teaching Ideas feature/service is unchanged), same visual weight as createAddRowButton() above, used everywhere a teacher can browse/copy in reusable content instead of writing it by hand. */
+/** Phase 4 — the "Browse Ideas" affordance (product-language rename from "+ From Teaching Ideas"; the underlying Teaching Ideas feature/service is unchanged). Same tonal-blue pill tier as createAddRowButton() above — both are the same kind of action ("add/reveal content"), just two different ways of doing it, so they read as equally weighted siblings rather than one looking more important than the other. */
 function createFromTeachingIdeasButton(onClick) {
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = 'btn btn--text lesson-plan-builder__from-teaching-ideas-button';
+  button.className = 'btn btn--tonal btn--tonal-blue btn--pill lesson-plan-builder__from-teaching-ideas-button';
   button.appendChild(createIcon('search', { size: 12 }));
   button.append(' Browse Ideas');
   button.addEventListener('click', onClick);
@@ -2553,27 +2522,49 @@ function renderSparkSection(plan, handlers, state = null) {
   // whenever the frontier stage itself hasn't changed — see this
   // Builder's own persistOnly() doc comment) and Spark never changes
   // the frontier.
+  const headingRow = document.createElement('div');
+  headingRow.className = 'lesson-plan-builder__spark-heading-row';
   const heading = document.createElement('h3');
   heading.className = 'lesson-plan-builder__subheading';
   heading.textContent = 'Spark';
-  wrap.appendChild(heading);
+  headingRow.appendChild(heading);
+  if (handlers.editable) headingRow.appendChild(createFromTeachingIdeasButton(handlers.onOpenSparkPicker));
+  wrap.appendChild(headingRow);
 
-  if (handlers.editable) wrap.appendChild(createFromTeachingIdeasButton(handlers.onOpenSparkPicker));
+  // 2026-10 redesign: Spark uses the SAME conceptual Teacher<->Students
+  // pairing as a Learning Activity's own interactions (see
+  // renderInteractionSide() below) — never a second, incompatible
+  // pairing treatment just for Spark. Spark itself still has no
+  // `interactions[]` of its own (it's one fixed idea, not a sequence —
+  // nothing here adds an "+ Add Interaction" affordance to Spark), so
+  // this is purely a shared RENDERING component, not a data-model
+  // change: `plan.spark` stays exactly `{title, teacherAction,
+  // studentAction}` (models/LessonPlan.js, untouched).
+  const layout = document.createElement('div');
+  layout.className = 'lesson-plan-builder__spark-layout';
 
   const titleField = document.createElement('div');
-  titleField.className = 'lesson-plan-builder__field';
+  titleField.className = 'lesson-plan-builder__spark-title-field lesson-plan-builder__field';
+  const titleLabel = document.createElement('label');
+  titleLabel.className = 'lesson-plan-builder__field-label';
+  titleLabel.textContent = 'Spark idea / title';
+  titleField.appendChild(titleLabel);
   const titleInput = document.createElement('input');
   titleInput.type = 'text';
   titleInput.className = 'lesson-plan-builder__dynamic-input';
-  titleInput.placeholder = 'Spark title (e.g. Mystery Object)';
+  titleInput.placeholder = 'e.g. Mystery Object';
   titleInput.value = plan.spark.title;
   titleInput.disabled = !handlers.editable;
   titleInput.addEventListener('change', () => handlers.onSparkChange('title', titleInput.value));
   titleField.appendChild(titleInput);
-  wrap.appendChild(titleField);
+  layout.appendChild(titleField);
 
-  wrap.appendChild(
-    createLabeledTextarea({
+  const pair = document.createElement('div');
+  pair.className = 'lesson-plan-builder__interaction-pair lesson-plan-builder__spark-pair';
+  pair.appendChild(
+    renderInteractionSide({
+      side: 'teacher',
+      iconName: 'user',
       label: 'Teacher Action',
       placeholder: 'What does the teacher do?',
       value: plan.spark.teacherAction,
@@ -2581,8 +2572,10 @@ function renderSparkSection(plan, handlers, state = null) {
       disabled: !handlers.editable,
     })
   );
-  wrap.appendChild(
-    createLabeledTextarea({
+  pair.appendChild(
+    renderInteractionSide({
+      side: 'students',
+      iconName: 'users',
       label: 'Student Action',
       placeholder: 'What do students do?',
       value: plan.spark.studentAction,
@@ -2590,6 +2583,9 @@ function renderSparkSection(plan, handlers, state = null) {
       disabled: !handlers.editable,
     })
   );
+  layout.appendChild(pair);
+
+  wrap.appendChild(layout);
 
   return wrap;
 }
@@ -2737,7 +2733,13 @@ function renderActivityCard(plan, activity, index, total, isCollapsed, handlers,
 
     const deleteButton = document.createElement('button');
     deleteButton.type = 'button';
-    deleteButton.className = 'btn btn--icon-only';
+    // btn--danger, not plain btn--icon-only — a destructive action must
+    // read as destructive even as an icon-only control, not look
+    // identical to the adjacent, harmless Duplicate button (same
+    // existing `.btn--danger.btn--icon-only` combination already used
+    // elsewhere in this app, e.g. the Notebook Tracker's own reset
+    // button — never a new button treatment invented here).
+    deleteButton.className = 'btn btn--danger btn--icon-only';
     deleteButton.setAttribute('aria-label', 'Delete activity');
     deleteButton.appendChild(createIcon('trash-2', { size: 16 }));
     deleteButton.addEventListener('click', () => handlers.onDeleteActivity(activity.id));
@@ -2751,17 +2753,50 @@ function renderActivityCard(plan, activity, index, total, isCollapsed, handlers,
     const body = document.createElement('div');
     body.className = 'lesson-plan-builder__activity-body';
 
-    // Interaction sequence (2026-10 redesign) — "a lesson plan is a
-    // sequence of teacher<->student exchanges," per explicit product
-    // direction, never one giant Teacher Action block paired with one
-    // giant Student Action block for the whole Activity. Each pair
-    // renders as its own card via renderInteractionRow() below;
+    // Deliberate information hierarchy (2026-10 redesign): Resources
+    // used IN this activity come FIRST, before the interaction
+    // sequence — a resource attached here is something the teacher is
+    // about to USE while running these interactions, so it reads as
+    // preparation, not an afterthought tacked on at the bottom. Never
+    // confuse this with "Common Learning Resources" (renderCommonLearningResources()
+    // below renderActivitiesSection()) — that's shared across the
+    // whole lesson, not scoped to one activity; the two headings are
+    // worded to stay distinguishable ("used in this activity" vs.
+    // "common for the lesson").
+    if (state) {
+      const activitySectionKey = lessonPlanReviewService.buildActivitySectionKey(activity.id);
+      const resourcesSection = renderLearningResourcesSection(plan, state, handlers, {
+        slot: activity.id,
+        filter: (resource) => resource.sectionKey === activitySectionKey,
+        heading: 'Learning Resources (used in this activity)',
+        emptyText: 'Attach a resource this Activity specifically needs.',
+        defaultSectionKey: activitySectionKey,
+      });
+      resourcesSection.id = `lesson-plan-builder-activity-resources-${activity.id}`; // scroll target for this card's own header resource badge, see above
+      body.appendChild(resourcesSection);
+    }
+
+    // Interaction sequence — "a lesson plan is a sequence of
+    // teacher<->student exchanges," per explicit product direction,
+    // never one giant Teacher Action block paired with one giant
+    // Student Action block for the whole Activity. Each pair renders
+    // as its own card via renderInteractionRow() below;
     // getActivityInteractions() returns this Activity's real
     // `interactions[]` if it has one, or a single virtual interaction
     // built from its original teacherAction/studentAction fields if it
     // doesn't (an Activity untouched since this redesign) — so every
     // Activity, old or new, renders through this exact same path. See
     // models/LessonPlan.js's own header comment for the full story.
+    const interactionsBlock = document.createElement('div');
+    interactionsBlock.className = 'lesson-plan-builder__interactions-block';
+
+    const interactionsHeadingRow = document.createElement('div');
+    interactionsHeadingRow.className = 'lesson-plan-builder__interactions-heading-row';
+    const interactionsHeading = document.createElement('p');
+    interactionsHeading.className = 'lesson-plan-builder__primary-section-heading';
+    interactionsHeading.textContent = 'Interactions';
+    interactionsHeadingRow.appendChild(interactionsHeading);
+
     const interactions = getActivityInteractions(activity);
     const interactionsList = document.createElement('div');
     interactionsList.className = 'lesson-plan-builder__interactions';
@@ -2770,23 +2805,23 @@ function renderActivityCard(plan, activity, index, total, isCollapsed, handlers,
         renderInteractionRow(plan, activity, interaction, interactionIndex, interactions.length, handlers, interaction.id === state?.focusInteractionId)
       );
     });
-    body.appendChild(interactionsList);
 
     if (handlers.editable) {
       const addInteractionButton = document.createElement('button');
       addInteractionButton.type = 'button';
-      addInteractionButton.className = 'btn btn--ghost lesson-plan-builder__add-interaction-button';
+      addInteractionButton.className = 'btn btn--tonal btn--tonal-blue btn--pill lesson-plan-builder__add-interaction-button';
       addInteractionButton.appendChild(createIcon('plus', { size: 14 }));
       addInteractionButton.append(' Add Interaction');
       addInteractionButton.addEventListener('click', () => handlers.onAddActivityInteraction(activity.id));
-      body.appendChild(addInteractionButton);
+      interactionsHeadingRow.appendChild(addInteractionButton);
     }
+    interactionsBlock.appendChild(interactionsHeadingRow);
+    interactionsBlock.appendChild(interactionsList);
+    body.appendChild(interactionsBlock);
 
-    // Differentiation stays activity-level, below the interaction list
-    // — unchanged in meaning from before this redesign (a Red/Green/
-    // Others bucket varies the WHOLE activity for different student
-    // groups, never one single exchange within it), just no longer
-    // living inside what used to be the Student Action column.
+    // Differentiation stays activity-level, last in the card — an
+    // OPTIONAL planning layer on top of the interactions above, never
+    // a replacement for what students do within them.
     const differentiationWrap = document.createElement('div');
     differentiationWrap.className = 'lesson-plan-builder__differentiation-wrap';
     if (activity.differentiation) {
@@ -2794,31 +2829,13 @@ function renderActivityCard(plan, activity, index, total, isCollapsed, handlers,
     } else if (handlers.editable) {
       const addDiffButton = document.createElement('button');
       addDiffButton.type = 'button';
-      addDiffButton.className = 'btn btn--ghost lesson-plan-builder__add-differentiation-button';
-      addDiffButton.textContent = '+ Add differentiation';
+      addDiffButton.className = 'btn btn--tonal btn--tonal-blue btn--pill lesson-plan-builder__add-differentiation-button';
+      addDiffButton.appendChild(createIcon('plus', { size: 14 }));
+      addDiffButton.append(' Add Differentiation');
       addDiffButton.addEventListener('click', () => handlers.onAddActivityDifferentiation(activity.id));
       differentiationWrap.appendChild(addDiffButton);
     }
     body.appendChild(differentiationWrap);
-
-    // Activity-specific Learning Resources — right where the teacher
-    // needs them to actually teach this Activity, never in a separate
-    // section they'd have to scroll away to find. Same underlying
-    // resources[]/sectionKey model as Common Learning Resources above
-    // (see renderLearningResourcesSection()'s own doc comment) — this
-    // Activity's OWN id is simply this scope's filter/add-slot/default.
-    if (state) {
-      const activitySectionKey = lessonPlanReviewService.buildActivitySectionKey(activity.id);
-      const resourcesSection = renderLearningResourcesSection(plan, state, handlers, {
-        slot: activity.id,
-        filter: (resource) => resource.sectionKey === activitySectionKey,
-        heading: 'Learning Resources',
-        emptyText: 'Attach a resource this Activity specifically needs.',
-        defaultSectionKey: activitySectionKey,
-      });
-      resourcesSection.id = `lesson-plan-builder-activity-resources-${activity.id}`; // scroll target for this card's own header resource badge, see above
-      body.appendChild(resourcesSection);
-    }
 
     card.appendChild(body);
   }
@@ -2859,7 +2876,7 @@ function renderInteractionRow(plan, activity, interaction, index, total, handler
   if (handlers.editable && total > 1) {
     const removeButton = document.createElement('button');
     removeButton.type = 'button';
-    removeButton.className = 'btn btn--icon-only';
+    removeButton.className = 'btn btn--danger btn--icon-only'; // destructive action — must read as destructive, not identical to a neutral control
     removeButton.setAttribute('aria-label', `Remove Interaction ${index + 1}`);
     removeButton.appendChild(createIcon('trash-2', { size: 14 }));
     removeButton.addEventListener('click', () => handlers.onRemoveActivityInteraction(activity.id, interaction.id));
@@ -2872,7 +2889,7 @@ function renderInteractionRow(plan, activity, interaction, index, total, handler
   pairGrid.appendChild(
     renderInteractionSide({
       side: 'teacher',
-      iconName: 'chalkboard-easel',
+      iconName: 'user',
       label: 'Teacher',
       placeholder: 'What does the teacher do?',
       value: interaction.teacherAction,
@@ -2935,6 +2952,18 @@ function renderInteractionSide({ side, iconName, label, placeholder, value, onCh
   return sideEl;
 }
 
+/**
+ * Red / Yellow / Green Bucket — three visually distinct cards (per
+ * explicit 2026-10 product direction: "never display 'Others'"; the
+ * third bucket is a real, named bucket — Yellow — not a miscellaneous
+ * catch-all). The underlying field key stays `others` (never renamed —
+ * see models/LessonPlan.js's own createLessonPlanDifferentiation(),
+ * untouched): this is a display-label fix only, the same "terminology,
+ * not data model" scope every other Red/Green Bucket field already
+ * follows. An OPTIONAL planning layer, not another dense form section
+ * — icon + label per card (never colour alone), light tint only as
+ * secondary reinforcement.
+ */
 function renderDifferentiationFields(plan, activity, handlers) {
   const wrap = document.createElement('div');
   wrap.className = 'lesson-plan-builder__differentiation';
@@ -2956,18 +2985,24 @@ function renderDifferentiationFields(plan, activity, handlers) {
 
   wrap.appendChild(heading);
 
-  // Each bucket renders as a subdivision of the Student Action column
-  // (a colored accent + hairline divider), not as its own separate
-  // card — see css/styles.css's own `.lesson-plan-builder__differentiation-bucket`
-  // comment. Same Red Bucket / Green Bucket / Others fields, same
-  // order, same editing behavior as before this layout change.
+  const buckets = document.createElement('div');
+  buckets.className = 'lesson-plan-builder__differentiation-buckets';
+
   [
     { field: 'redBucket', label: 'Red Bucket', placeholder: 'Extra support', colorKey: 'red' },
+    { field: 'others', label: 'Yellow Bucket', placeholder: 'Extra scaffolding', colorKey: 'yellow' },
     { field: 'greenBucket', label: 'Green Bucket', placeholder: 'Extra stretch', colorKey: 'green' },
-    { field: 'others', label: 'Others', placeholder: 'Any other differentiation', colorKey: 'others' },
   ].forEach(({ field, label, placeholder, colorKey }) => {
     const bucketWrap = document.createElement('div');
     bucketWrap.className = `lesson-plan-builder__differentiation-bucket lesson-plan-builder__differentiation-bucket--${colorKey}`;
+
+    const labelRow = document.createElement('div');
+    labelRow.className = 'lesson-plan-builder__differentiation-bucket-label';
+    labelRow.appendChild(createIcon('users', { size: 14 }));
+    const labelText = document.createElement('span');
+    labelText.textContent = label;
+    labelRow.appendChild(labelText);
+    bucketWrap.appendChild(labelRow);
 
     const bucketField = createLabeledTextarea({
       label,
@@ -2982,9 +3017,10 @@ function renderDifferentiationFields(plan, activity, handlers) {
       bucketField.appendChild(createFromTeachingIdeasButton(() => handlers.onOpenDifferentiationPicker(activity.id, field)));
     }
     bucketWrap.appendChild(bucketField);
-    wrap.appendChild(bucketWrap);
+    buckets.appendChild(bucketWrap);
   });
 
+  wrap.appendChild(buckets);
   return wrap;
 }
 

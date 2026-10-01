@@ -374,7 +374,7 @@ function renderInteractionSegment(activity, interaction, index, plan, state, han
 
   const content = document.createElement('div');
   content.className = 'lesson-plan-review__interaction-pair';
-  content.appendChild(renderInteractionSide('Teacher', 'chalkboard-easel', interaction.teacherAction, 'teacher'));
+  content.appendChild(renderInteractionSide('Teacher', 'user', interaction.teacherAction, 'teacher'));
   content.appendChild(renderInteractionSide('Students', 'users', interaction.studentAction, 'students'));
 
   const { writeKey, readKeys } = lessonPlanReviewService.buildInteractionCommentKeys(activity.id, interaction.id);
@@ -746,8 +746,8 @@ function renderActivityCard(activity, index, plan, state, handlers) {
     diffWrap.className = 'lesson-plan-review__differentiation';
     [
       { field: 'redBucket', label: 'Red Bucket' },
+      { field: 'others', label: 'Yellow Bucket' },
       { field: 'greenBucket', label: 'Green Bucket' },
-      { field: 'others', label: 'Others' },
     ].forEach(({ field, label: fieldLabel }) => {
       diffWrap.appendChild(
         renderFieldSegment(fieldLabel, activity.differentiation[field], lessonPlanReviewService.buildActivitySectionKey(activity.id, `differentiation.${field}`), plan, state, handlers)
