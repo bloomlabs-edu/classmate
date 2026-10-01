@@ -31,7 +31,7 @@
  * plain `node --test` suite with no browser/URL-import shim.
  */
 
-import { LESSON_PLAN_STATUS } from '../models/LessonPlan.js';
+import { LESSON_PLAN_STATUS, getActivityInteractions } from '../models/LessonPlan.js';
 import { getCurrentIsoDate } from '../utils/dateHelpers.js';
 
 const DIFFERENTIATION_BUCKET_LABELS = Object.freeze({
@@ -195,13 +195,27 @@ export function extractElements(teachingIdea) {
   });
 
   teachingIdea.activities.forEach((activity) => {
-    if (!isBlank(activity.title) || !isBlank(activity.teacherAction) || !isBlank(activity.studentAction)) {
+    // getActivityInteractions() covers BOTH shapes — a real
+    // `interactions[]` (2026-10 paired-interactions redesign) and the
+    // pre-redesign single teacherAction/studentAction pair (synthesized
+    // as one virtual interaction) — so an Activity whose only real
+    // content lives in `interactions[]` is never wrongly treated as
+    // blank and silently dropped from the browsable element list.
+    const interactions = getActivityInteractions(activity);
+    const hasContent = !isBlank(activity.title) || interactions.some((interaction) => !isBlank(interaction.teacherAction) || !isBlank(interaction.studentAction));
+    if (hasContent) {
       elements.push(
         baseElement(teachingIdea, {
           elementType: 'activity',
           sourceActivityId: activity.id,
           title: activity.title || 'Untitled Activity',
-          content: { title: activity.title, teacherAction: activity.teacherAction, studentAction: activity.studentAction, differentiation: activity.differentiation },
+          content: {
+            title: activity.title,
+            teacherAction: activity.teacherAction,
+            studentAction: activity.studentAction,
+            differentiation: activity.differentiation,
+            interactions: activity.interactions,
+          },
         })
       );
     }

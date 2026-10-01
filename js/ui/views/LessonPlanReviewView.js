@@ -43,7 +43,7 @@ import * as teachingIdeasService from '../../services/teachingIdeasService.js';
 import * as teachingIdeasRepository from '../../repositories/teachingIdeasRepository.js';
 import * as weeklyPlanReviewIndexRepository from '../../repositories/weeklyPlanReviewIndexRepository.js';
 import * as weeklyPlanReviewIndexService from '../../services/weeklyPlanReviewIndexService.js';
-import { LESSON_PLAN_STATUS, LESSON_PLAN_SECTION_KEYS, LESSON_RESOURCE_TYPES } from '../../models/LessonPlan.js';
+import { LESSON_PLAN_STATUS, LESSON_PLAN_SECTION_KEYS, LESSON_RESOURCE_TYPES, getActivityInteractions } from '../../models/LessonPlan.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createIcon } from '../components/Icon.js';
 import { formatRelativeTimestamp } from '../../utils/dateHelpers.js';
@@ -352,6 +352,57 @@ function renderFieldSegment(label, value, sectionKey, plan, state, handlers) {
   return wrap;
 }
 
+/**
+ * One Teacher<->Students interaction pair, read-only, with its own
+ * single comment thread covering BOTH sides together — the review-side
+ * mirror of ui/views/LessonPlanBuilderView.js's own renderInteractionRow()
+ * (same icon+label, tinted-side visual language, so the rendered plan
+ * preserves the exact same paired structure the author sees). See
+ * services/lessonPlanReviewService.js's own buildInteractionCommentKeys()
+ * for why a pair, not a field, is the addressable review unit, and for
+ * how a pre-redesign Activity's old per-field comments stay visible
+ * here even though a NEW comment only ever writes to the new, unified
+ * key.
+ */
+function renderInteractionSegment(activity, interaction, index, plan, state, handlers) {
+  const wrap = document.createElement('div');
+  wrap.className = 'lesson-plan-review__interaction';
+
+  const labelEl = document.createElement('p');
+  labelEl.className = 'lesson-plan-review__interaction-label';
+  labelEl.textContent = `Interaction ${index + 1}`;
+
+  const content = document.createElement('div');
+  content.className = 'lesson-plan-review__interaction-pair';
+  content.appendChild(renderInteractionSide('Teacher', 'chalkboard-easel', interaction.teacherAction, 'teacher'));
+  content.appendChild(renderInteractionSide('Students', 'users', interaction.studentAction, 'students'));
+
+  const { writeKey, readKeys } = lessonPlanReviewService.buildInteractionCommentKeys(activity.id, interaction.id);
+  wrap.appendChild(renderCommentableSegment({ headingEl: labelEl, content, sectionKey: writeKey, plan, state, handlers, readSectionKeys: readKeys }));
+  return wrap;
+}
+
+function renderInteractionSide(label, iconName, value, side) {
+  const sideEl = document.createElement('div');
+  sideEl.className = `lesson-plan-review__interaction-side lesson-plan-review__interaction-side--${side}`;
+
+  const labelRow = document.createElement('div');
+  labelRow.className = 'lesson-plan-review__interaction-side-label';
+  labelRow.appendChild(createIcon(iconName, { size: 14 }));
+  const labelText = document.createElement('span');
+  labelText.textContent = label.toUpperCase();
+  labelRow.appendChild(labelText);
+  sideEl.appendChild(labelRow);
+
+  const valueEl = document.createElement('p');
+  valueEl.className = 'lesson-plan-review__field-value';
+  valueEl.textContent = value && value.trim() ? value : '—';
+  if (!value || !value.trim()) valueEl.classList.add('lesson-plan-review__field-value--empty');
+  sideEl.appendChild(valueEl);
+
+  return sideEl;
+}
+
 // ---- Comment panels — shared by every section/activity/sub-field ----
 // (see this file's own header comment: comments stay attached to
 // whichever section/activity/sub-field they're about; this restructure
@@ -370,7 +421,7 @@ function renderFieldSegment(label, value, sectionKey, plan, state, handlers) {
  * `.lesson-plan-review__field-segment`) since each already has its own
  * established container style this restructure isn't meant to change.
  */
-function renderCommentableSegment({ headingEl, content, sectionKey, plan, state, handlers }) {
+function renderCommentableSegment({ headingEl, content, sectionKey, plan, state, handlers, readSectionKeys }) {
   const headingRow = document.createElement('div');
   headingRow.className = 'lesson-plan-review__segment-heading-row';
   headingRow.appendChild(headingEl);
@@ -378,7 +429,7 @@ function renderCommentableSegment({ headingEl, content, sectionKey, plan, state,
   const trigger = renderCommentTrigger(sectionKey, state, handlers);
   if (trigger) headingRow.appendChild(trigger);
 
-  const panel = renderCommentPanel(sectionKey, plan, state, handlers);
+  const panel = renderCommentPanel(sectionKey, plan, state, handlers, readSectionKeys);
 
   const body = document.createElement('div');
   body.className = panel
@@ -427,12 +478,24 @@ function renderCommentTrigger(sectionKey, state, handlers) {
  * Returns `null` when there's truly nothing to show (zero existing,
  * zero pending, form closed) — per explicit product direction, an
  * empty panel is never rendered just to reserve the layout.
+ *
+ * `readSectionKeys` (optional, defaults to `[sectionKey]`) is every key
+ * this panel should DISPLAY comments from — a NEW comment is always
+ * WRITTEN under the single `sectionKey` regardless (see
+ * renderCommentForm()'s own onAddPendingComment(sectionKey, ...) call,
+ * unaffected by this). Only ever differs from `[sectionKey]` for the
+ * 2026-10 interactions redesign's own legacy virtual interaction (see
+ * services/lessonPlanReviewService.js's own buildInteractionCommentKeys()),
+ * so a pre-redesign reviewer comment stored under the old per-field
+ * key stays visible here even though new comments never use that key
+ * again.
  */
-function renderCommentPanel(sectionKey, plan, state, handlers) {
-  const existing = plan.activeComments.filter((comment) => comment.sectionKey === sectionKey);
+function renderCommentPanel(sectionKey, plan, state, handlers, readSectionKeys) {
+  const keys = readSectionKeys || [sectionKey];
+  const existing = plan.activeComments.filter((comment) => keys.includes(comment.sectionKey));
   const pending = state.pendingComments
     .map((comment, index) => ({ ...comment, index }))
-    .filter((comment) => comment.sectionKey === sectionKey);
+    .filter((comment) => keys.includes(comment.sectionKey));
   const formOpen = state.openCommentFormKey === sectionKey;
 
   if (existing.length === 0 && pending.length === 0 && !formOpen) return null;
@@ -674,8 +737,9 @@ function renderActivityCard(activity, index, plan, state, handlers) {
 
   const body = document.createElement('div');
   body.className = 'lesson-plan-review__activity-body';
-  body.appendChild(renderFieldSegment('Teacher Action', activity.teacherAction, lessonPlanReviewService.buildActivitySectionKey(activity.id, 'teacherAction'), plan, state, handlers));
-  body.appendChild(renderFieldSegment('Student Action', activity.studentAction, lessonPlanReviewService.buildActivitySectionKey(activity.id, 'studentAction'), plan, state, handlers));
+  getActivityInteractions(activity).forEach((interaction, interactionIndex) => {
+    body.appendChild(renderInteractionSegment(activity, interaction, interactionIndex, plan, state, handlers));
+  });
 
   if (activity.differentiation) {
     const diffWrap = document.createElement('div');

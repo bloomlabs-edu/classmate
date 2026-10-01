@@ -211,15 +211,74 @@ export function createLessonPlanObjective({ id, text = '' } = {}) {
  * them via "+ Add differentiation" — see lessonPlanService.js's
  * addActivityDifferentiation()) rather than three permanently-empty
  * inputs every activity shows whether or not it needs them.
+ *
+ * `teacherAction`/`studentAction` (a single pair) are the ORIGINAL,
+ * pre-2026-10 shape — kept exactly as-is, forever, for every Activity
+ * that predates (or has never been touched since) the paired-
+ * interactions redesign below. Never removed, never migrated by a
+ * script.
+ *
+ * `interactions` (added 2026-10, "a lesson plan is a sequence of
+ * teacher<->student exchanges, not one giant Teacher block and one
+ * giant Student block" — see explicit product direction) is the NEW
+ * shape: a Teacher+Students pair is one `createLessonPlanInteraction()`
+ * entry, and an Activity now holds a SEQUENCE of them. Starts `[]` —
+ * an Activity is never force-migrated into this shape just by existing;
+ * see getActivityInteractions() below for how every reader (authoring
+ * UI, reviewer UI, read-only previews, Teaching Ideas) treats an empty
+ * `interactions[]` and a populated one identically, and
+ * services/lessonPlanService.js's own materializeActivityInteractions()
+ * for the one, lazy, idempotent point real data ever moves from the
+ * old fields into this new array (the first edit, or the first "+ Add
+ * Interaction", whichever comes first — never eagerly, never for an
+ * Activity nobody has touched).
  */
-export function createLessonPlanActivity({ id, title = '', teacherAction = '', studentAction = '', differentiation = null } = {}) {
+export function createLessonPlanActivity({ id, title = '', teacherAction = '', studentAction = '', differentiation = null, interactions = [] } = {}) {
   return {
     id: id || generateId(),
     title,
     teacherAction,
     studentAction,
     differentiation,
+    interactions,
   };
+}
+
+/**
+ * One Teacher<->Students interaction pair within a Learning Activity —
+ * "Teacher: show the video. Students: watch and observe." is one of
+ * these, never two separate facts. See createLessonPlanActivity()'s
+ * own header comment for the full 2026-10 redesign story and
+ * getActivityInteractions() below for how an Activity exposes these
+ * uniformly whether or not it's ever had a real one created.
+ */
+export function createLessonPlanInteraction({ id, teacherAction = '', studentAction = '' } = {}) {
+  return {
+    id: id || generateId(),
+    teacherAction,
+    studentAction,
+  };
+}
+
+/**
+ * Every Teacher<->Students interaction pair this Activity actually
+ * has — ALWAYS at least one, so every caller (the authoring UI, the
+ * reviewer UI, read-only previews, the Teaching Ideas projection) can
+ * treat every Activity identically, old or new, without checking which
+ * shape it happens to be in. An Activity whose own `interactions[]` is
+ * still empty (never touched since the 2026-10 redesign) has its one
+ * real pair read here as a single VIRTUAL interaction, `id: 'legacy'`
+ * — a stable, reserved id (see services/lessonPlanReviewService.js's
+ * own buildInteractionCommentKeys(), which special-cases exactly this
+ * id to also surface pre-redesign per-field reviewer comments) — built
+ * live from the Activity's own top-level teacherAction/studentAction,
+ * never copied into real storage by this function itself (that only
+ * ever happens via services/lessonPlanService.js's own
+ * materializeActivityInteractions(), triggered by an actual edit).
+ */
+export function getActivityInteractions(activity) {
+  if (activity.interactions && activity.interactions.length > 0) return activity.interactions;
+  return [{ id: 'legacy', teacherAction: activity.teacherAction || '', studentAction: activity.studentAction || '' }];
 }
 
 /** The Red Bucket / Green Bucket / Others differentiation fields for one Activity — only ever created once, by addActivityDifferentiation(), never present from the start. */

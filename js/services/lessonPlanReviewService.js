@@ -246,6 +246,51 @@ export function getActivityIdFromSectionKey(sectionKey) {
 }
 
 /**
+ * `activity:{activityId}:interaction:{interactionId}` — the 2026-10
+ * paired-interactions redesign's own addressing unit (see
+ * models/LessonPlan.js's own header comment on createLessonPlanActivity()/
+ * createLessonPlanInteraction()). ONE comment thread per Teacher<->
+ * Students pair, never split into separate teacherAction/studentAction
+ * threads the way buildActivitySectionKey(activityId, field) used to —
+ * per explicit product direction, the pair together is the natural
+ * review unit, since a reviewer is responding to one instructional
+ * exchange, not to "the teacher's half" or "the student's half" of it
+ * in isolation. Still just `buildActivitySectionKey()`'s own existing
+ * `field` slot underneath (`interaction:{id}` is simply this key's own
+ * `field` value) — getActivityIdFromSectionKey() above already parses
+ * this correctly with no change, since it only ever reads index 1.
+ */
+export function buildActivityInteractionSectionKey(activityId, interactionId) {
+  return buildActivitySectionKey(activityId, `interaction:${interactionId}`);
+}
+
+/**
+ * The sectionKey a NEW comment on this interaction should be WRITTEN
+ * under (`writeKey`), plus every sectionKey its comments might already
+ * be stored under for READING (`readKeys`) — these differ ONLY for the
+ * reserved `interactionId: 'legacy'` (models/LessonPlan.js's own
+ * getActivityInteractions() — the virtual single pair an Activity
+ * exposes before it's ever been touched since this redesign), whose
+ * real pre-redesign comments are scattered across the OLD
+ * `teacherAction`/`studentAction` per-field keys. A genuinely new
+ * interaction (any other id) never had those old keys to begin with,
+ * so its `readKeys` is just `[writeKey]`.
+ *
+ * This is how "do not restore separate Teacher-field vs Student-field
+ * comments" (no NEW comment is ever written to the old per-field keys
+ * again) coexists with "preserve the existing review workflow" (an
+ * already-submitted plan's own pre-redesign comments stay fully
+ * visible, inline, right where a reviewer would look for them) —
+ * without a migration script rewriting any already-persisted comment's
+ * own `sectionKey`.
+ */
+export function buildInteractionCommentKeys(activityId, interactionId) {
+  const writeKey = buildActivityInteractionSectionKey(activityId, interactionId);
+  if (interactionId !== 'legacy') return { writeKey, readKeys: [writeKey] };
+  return { writeKey, readKeys: [writeKey, buildActivitySectionKey(activityId, 'teacherAction'), buildActivitySectionKey(activityId, 'studentAction')] };
+}
+
+/**
  * 'Submitted' for a plan's first-ever submission, 'Resubmitted' once at
  * least one earlier round already asked for changes — the same
  * distinction the Review Queue's own mockup calls out ("Anu · Fractions

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createLessonPlan, createLessonPlanActivity, createLessonPlanComment, LESSON_PLAN_STATUS, getLessonPlanActivityIndex, findLessonPlanActivity, getLessonPlanObjectiveIndex, findLessonPlanObjective } from '../../js/models/LessonPlan.js';
+import { createLessonPlan, createLessonPlanActivity, createLessonPlanComment, LESSON_PLAN_STATUS, getLessonPlanActivityIndex, findLessonPlanActivity, getLessonPlanObjectiveIndex, findLessonPlanObjective, getActivityInteractions } from '../../js/models/LessonPlan.js';
 import * as lessonPlanService from '../../js/services/lessonPlanService.js';
 import { buildActivitySectionKey } from '../../js/services/lessonPlanReviewService.js';
 
@@ -117,6 +117,114 @@ test('duplicateActivity: duplicates the COMPLETE structure, including differenti
   // the original — this must be a deep clone, not a shared reference.
   lessonPlanService.updateActivityDifferentiation(plan, duplicate.id, { redBucket: 'Changed' });
   assert.equal(findLessonPlanActivity(plan, original.id).differentiation.redBucket, 'Sentence starters');
+});
+
+// ---------------------------------------------------------------------
+// Interactions (2026-10 redesign) — "a lesson plan is a sequence of
+// teacher<->student exchanges," never one giant Teacher Action block
+// paired with one giant Student Action block for the whole Activity.
+// ---------------------------------------------------------------------
+
+test('getActivityInteractions: an Activity never touched since the redesign exposes its legacy teacherAction/studentAction as a single virtual interaction', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const activity = lessonPlanService.addActivity(plan);
+  lessonPlanService.updateActivity(plan, activity.id, { teacherAction: 'Show the video', studentAction: 'Watch and observe' });
+
+  const interactions = getActivityInteractions(findLessonPlanActivity(plan, activity.id));
+  assert.equal(interactions.length, 1);
+  assert.equal(interactions[0].id, 'legacy');
+  assert.equal(interactions[0].teacherAction, 'Show the video');
+  assert.equal(interactions[0].studentAction, 'Watch and observe');
+});
+
+test('getActivityInteractions: a brand-new, completely blank Activity still returns exactly one (empty) virtual interaction, never zero', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const activity = lessonPlanService.addActivity(plan);
+  const interactions = getActivityInteractions(findLessonPlanActivity(plan, activity.id));
+  assert.equal(interactions.length, 1);
+  assert.equal(interactions[0].teacherAction, '');
+  assert.equal(interactions[0].studentAction, '');
+});
+
+test('getActivityInteractions: once real interactions[] exist, they are returned verbatim — the legacy fields are never consulted again', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const activity = lessonPlanService.addActivity(plan);
+  lessonPlanService.updateActivity(plan, activity.id, { teacherAction: 'stale legacy value', studentAction: 'stale legacy value' });
+  lessonPlanService.addActivityInteraction(plan, activity.id); // materializes, then appends interaction #2
+
+  const interactions = getActivityInteractions(findLessonPlanActivity(plan, activity.id));
+  assert.equal(interactions.length, 2);
+  // The materialized first interaction took over the legacy content —
+  // the stale top-level fields are no longer what's actually read —
+  // and keeps the reserved 'legacy' id so any in-flight edit already
+  // addressing it as 'legacy' still finds it after materialization.
+  assert.equal(interactions[0].teacherAction, 'stale legacy value');
+  assert.equal(interactions[0].id, 'legacy');
+});
+
+test('addActivityInteraction: appends one new, blank interaction — never a fixed count', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const activity = lessonPlanService.addActivity(plan);
+  lessonPlanService.addActivityInteraction(plan, activity.id);
+  lessonPlanService.addActivityInteraction(plan, activity.id);
+  const interactions = getActivityInteractions(findLessonPlanActivity(plan, activity.id));
+  // The first call materializes the legacy pair into interactions[0]
+  // AND appends a new blank one — so two calls produce THREE total.
+  assert.equal(interactions.length, 3);
+  assert.equal(interactions[1].teacherAction, '');
+  assert.equal(interactions[2].teacherAction, '');
+});
+
+test('updateActivityInteraction: edits one interaction\'s own fields without touching any other interaction', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const activity = lessonPlanService.addActivity(plan);
+  const second = lessonPlanService.addActivityInteraction(plan, activity.id);
+
+  lessonPlanService.updateActivityInteraction(plan, activity.id, second.id, { teacherAction: 'Ask a question', studentAction: 'Discuss in pairs' });
+
+  const interactions = getActivityInteractions(findLessonPlanActivity(plan, activity.id));
+  assert.equal(interactions[1].teacherAction, 'Ask a question');
+  assert.equal(interactions[1].studentAction, 'Discuss in pairs');
+  assert.equal(interactions[0].teacherAction, ''); // the legacy-materialized first interaction is untouched
+});
+
+test('updateActivityInteraction: editing the legacy virtual interaction (id "legacy") materializes it into a real interactions[0] rather than writing to the old top-level fields', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const activity = lessonPlanService.addActivity(plan);
+  lessonPlanService.updateActivityInteraction(plan, activity.id, 'legacy', { teacherAction: 'Show the video' });
+
+  const stored = findLessonPlanActivity(plan, activity.id);
+  assert.equal(stored.interactions.length, 1);
+  assert.equal(stored.interactions[0].teacherAction, 'Show the video');
+});
+
+test('removeActivityInteraction: removes exactly that one interaction, leaving the others untouched', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const activity = lessonPlanService.addActivity(plan);
+  const second = lessonPlanService.addActivityInteraction(plan, activity.id);
+  lessonPlanService.addActivityInteraction(plan, activity.id);
+
+  lessonPlanService.removeActivityInteraction(plan, activity.id, second.id);
+
+  const interactions = getActivityInteractions(findLessonPlanActivity(plan, activity.id));
+  assert.equal(interactions.length, 2);
+  assert.ok(!interactions.some((interaction) => interaction.id === second.id));
+});
+
+test('duplicateActivity: deep-clones interactions[] too, with fresh ids for every interaction — editing the duplicate never leaks back into the original', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const original = lessonPlanService.addActivity(plan);
+  const secondInteraction = lessonPlanService.addActivityInteraction(plan, original.id);
+  lessonPlanService.updateActivityInteraction(plan, original.id, secondInteraction.id, { teacherAction: 'Ask a question', studentAction: 'Discuss' });
+
+  const duplicate = lessonPlanService.duplicateActivity(plan, original.id);
+
+  assert.equal(duplicate.interactions.length, 2);
+  assert.notEqual(duplicate.interactions[1].id, secondInteraction.id);
+  assert.equal(duplicate.interactions[1].teacherAction, 'Ask a question');
+
+  lessonPlanService.updateActivityInteraction(plan, duplicate.id, duplicate.interactions[1].id, { teacherAction: 'Changed on the copy' });
+  assert.equal(findLessonPlanActivity(plan, original.id).interactions[1].teacherAction, 'Ask a question');
 });
 
 test('deleteActivity: removes exactly that one Activity, including its differentiation — nothing else in the list is touched', () => {
@@ -285,6 +393,36 @@ test('addActivityFromTeachingIdea: copying twice from the same source produces t
   assert.equal(plan.activities.length, 2);
   lessonPlanService.updateActivity(plan, first.id, { title: 'Edited copy one' });
   assert.equal(findLessonPlanActivity(plan, second.id).title, 'Human Number Line');
+});
+
+test('addActivityFromTeachingIdea: a source with a real interactions[] sequence copies every interaction in, with fresh ids', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const source = {
+    title: 'Human Number Line',
+    teacherAction: 'stale, unused once interactions[] exists',
+    studentAction: 'stale, unused once interactions[] exists',
+    differentiation: null,
+    interactions: [
+      { id: 'source-interaction-1', teacherAction: 'Mark a line on the floor.', studentAction: "Stand at your fraction's position." },
+      { id: 'source-interaction-2', teacherAction: 'Ask who is closest to 1/2.', studentAction: 'Discuss and point.' },
+    ],
+  };
+  const activity = lessonPlanService.addActivityFromTeachingIdea(plan, source, { sourceLessonPlanId: 'p1', sourceActivityId: 'a1' });
+
+  assert.equal(activity.interactions.length, 2);
+  assert.notEqual(activity.interactions[0].id, 'source-interaction-1');
+  assert.equal(activity.interactions[0].teacherAction, 'Mark a line on the floor.');
+  assert.equal(activity.interactions[1].teacherAction, 'Ask who is closest to 1/2.');
+});
+
+test('addActivityFromTeachingIdea: a pre-redesign source with no interactions[] still lands as one real interaction, not left as a bare legacy pair', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const source = { title: 'Human Number Line', teacherAction: 'Mark a line on the floor.', studentAction: "Stand at your fraction's position.", differentiation: null };
+  const activity = lessonPlanService.addActivityFromTeachingIdea(plan, source, { sourceLessonPlanId: 'p1', sourceActivityId: 'a1' });
+
+  assert.equal(activity.interactions.length, 1);
+  assert.equal(activity.interactions[0].teacherAction, 'Mark a line on the floor.');
+  assert.notEqual(activity.interactions[0].id, 'legacy'); // a genuinely new, real interaction — not the virtual placeholder
 });
 
 test('applySparkFromTeachingIdea: replaces this plan\'s own Spark and records provenance', () => {

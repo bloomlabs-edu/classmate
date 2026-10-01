@@ -81,6 +81,38 @@ test('getLessonPlanReadiness: an Activity missing its Student Action is reported
   assert.ok(/Activity 1/.test(activityIssue.message));
 });
 
+// ---------------------------------------------------------------------
+// Interactions (2026-10 redesign) — getActivityInteractions() covers
+// both the pre-redesign single pair and the new interactions[]
+// sequence; the per-activity readiness check must do the same.
+// ---------------------------------------------------------------------
+
+test('getLessonPlanReadiness: an Activity with multiple interactions where AT LEAST ONE has a Teacher/Student Action is NOT flagged — the original single-field rule, generalized, not made stricter', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const activity = lessonPlanService.addActivity(plan);
+  lessonPlanService.updateActivity(plan, activity.id, { title: 'Group Debate' });
+  const second = lessonPlanService.addActivityInteraction(plan, activity.id);
+  lessonPlanService.updateActivityInteraction(plan, activity.id, second.id, { teacherAction: 'Ask a question', studentAction: 'Discuss' });
+  // interaction[0] (the materialized legacy pair) stays blank on purpose.
+
+  const readiness = getLessonPlanReadiness(plan);
+  const activityIssue = readiness.missing.find((item) => item.sectionKey === `activity:${activity.id}` && /action/i.test(item.message));
+  assert.equal(activityIssue, undefined, 'at least one interaction has content, so this activity should not be flagged as missing either side');
+});
+
+test('getLessonPlanReadiness: an Activity whose EVERY interaction is blank on one side is still flagged exactly once for that side, not once per interaction', () => {
+  const plan = createLessonPlan({ classroomId: 'c1' });
+  const activity = lessonPlanService.addActivity(plan);
+  lessonPlanService.updateActivity(plan, activity.id, { title: 'Group Debate', teacherAction: 'Facilitate.' }); // studentAction left blank
+  lessonPlanService.addActivityInteraction(plan, activity.id); // a second interaction, also blank on both sides
+
+  const readiness = getLessonPlanReadiness(plan);
+  const studentActionIssues = readiness.missing.filter((item) => item.sectionKey === `activity:${activity.id}` && /student action/i.test(item.message));
+  assert.equal(studentActionIssues.length, 1);
+  const teacherActionIssues = readiness.missing.filter((item) => item.sectionKey === `activity:${activity.id}` && /teacher action/i.test(item.message));
+  assert.equal(teacherActionIssues.length, 0, 'the first interaction already has a Teacher Action, so this side is not missing');
+});
+
 test('getLessonPlanReadiness: zero activities is itself reported as missing, dynamic count never assumed', () => {
   const plan = createLessonPlan({ classroomId: 'c1' });
   const readiness = getLessonPlanReadiness(plan);

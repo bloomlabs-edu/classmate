@@ -90,7 +90,7 @@ import * as personalHubService from '../../services/personalHubService.js';
 import * as workspaceService from '../../services/workspaceService.js';
 import { getGradeLabelForClassroom } from '../../services/classroomService.js';
 import { getTodayDateKey } from '../../utils/dateHelpers.js';
-import { LESSON_PLAN_STATUS, LESSON_PLAN_SECTION_KEYS, LESSON_RESOURCE_TYPES } from '../../models/LessonPlan.js';
+import { LESSON_PLAN_STATUS, LESSON_PLAN_SECTION_KEYS, LESSON_RESOURCE_TYPES, getActivityInteractions } from '../../models/LessonPlan.js';
 import { getLessonPlanReadiness, getLessonPlanStageCompletion, getLessonPlanReadinessByStage, canSubmitLessonPlan, LESSON_PLAN_STAGES } from '../../services/lessonPlanValidationService.js';
 import { getTimetableSubjectColor, getTimetableSubjectWash } from '../../config/timetableSubjectColors.js';
 import { createBackButton } from '../components/BackButton.js';
@@ -191,8 +191,10 @@ function getStatusMessage(plan, isPublished) {
 }
 
 /** Every OPEN comment addressed to exactly this sectionKey (a named section, or `activity:{id}`/`activity:{id}:{field}` — see lessonPlanReviewService.js's own buildActivitySectionKey()). */
-function getCommentsForSection(plan, sectionKey) {
-  return plan.activeComments.filter((comment) => comment.sectionKey === sectionKey);
+/** `sectionKeyOrKeys` may be a single string (every pre-existing call site) or an array (the 2026-10 interactions redesign's own "read this NEW key plus any OLD legacy keys" merge — see services/lessonPlanReviewService.js's own buildInteractionCommentKeys()). */
+function getCommentsForSection(plan, sectionKeyOrKeys) {
+  const keys = Array.isArray(sectionKeyOrKeys) ? sectionKeyOrKeys : [sectionKeyOrKeys];
+  return plan.activeComments.filter((comment) => keys.includes(comment.sectionKey));
 }
 
 function renderCommentsList(plan, sectionKey) {
@@ -248,6 +250,14 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
   // The guided stage that was the "current focus" as of the last real
   // render — see persistOnly() below for exactly why this is tracked.
   let lastRenderedFrontierStage = undefined;
+  // Which interaction's own Teacher textarea should receive focus on
+  // the VERY NEXT render — set only by onAddActivityInteraction below,
+  // cleared the instant that render happens (see renderInteractionRow()'s
+  // own use of this), so adding several interactions in a row (2026-10
+  // paired-interactions redesign) is one click + type, not click +
+  // re-find-and-click-into-the-new-textarea each time. Purely local UI
+  // state, never persisted.
+  let focusInteractionId = null;
 
   // Learning Resources — local UI state only (which add/edit form, if
   // any, is currently open); the resources themselves live on
@@ -371,7 +381,9 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
   function rerender() {
     const editable = plan ? lessonPlanReviewService.isLessonPlanEditable(plan) : false;
     lastRenderedFrontierStage = computeFrontierStage();
-    renderBuilder(container, { plan, loadError, collapsedActivityIds, saveIndicatorElement: saveIndicator.element, editable, classroom, isConceptPickerOpen, expandedConceptUnitId, isSchedulePickerOpen, pendingScheduleDate, reopenedStageKey, isSparkOpen, addingResourceSlot, editingResourceId, isPublished, isRetryingPublish, publishRetryError }, {
+    const focusInteractionIdForThisRender = focusInteractionId;
+    focusInteractionId = null; // one-shot — never re-steals focus on a later, unrelated rerender
+    renderBuilder(container, { plan, loadError, collapsedActivityIds, saveIndicatorElement: saveIndicator.element, editable, classroom, isConceptPickerOpen, expandedConceptUnitId, isSchedulePickerOpen, pendingScheduleDate, reopenedStageKey, isSparkOpen, addingResourceSlot, editingResourceId, isPublished, isRetryingPublish, publishRetryError, focusInteractionId: focusInteractionIdForThisRender }, {
       onBack,
       editable,
       onSubmitForReview: submitForReview,
@@ -689,6 +701,19 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
       onActivityDifferentiationChange: (activityId, field, value) => {
         lessonPlanService.updateActivityDifferentiation(plan, activityId, { [field]: value });
         persistOnly();
+      },
+      onAddActivityInteraction: (activityId) => {
+        const interaction = lessonPlanService.addActivityInteraction(plan, activityId);
+        focusInteractionId = interaction?.id || null;
+        persistAndRerender();
+      },
+      onUpdateActivityInteraction: (activityId, interactionId, field, value) => {
+        lessonPlanService.updateActivityInteraction(plan, activityId, interactionId, { [field]: value });
+        persistOnly();
+      },
+      onRemoveActivityInteraction: (activityId, interactionId) => {
+        lessonPlanService.removeActivityInteraction(plan, activityId, interactionId);
+        persistAndRerender();
       },
 
       // ---- 5. HELPING EACH OTHER LEARN ----
@@ -2726,73 +2751,55 @@ function renderActivityCard(plan, activity, index, total, isCollapsed, handlers,
     const body = document.createElement('div');
     body.className = 'lesson-plan-builder__activity-body';
 
-    const wholeActivityComments = renderCommentsList(plan, lessonPlanReviewService.buildActivitySectionKey(activity.id));
-    if (wholeActivityComments) body.appendChild(wholeActivityComments);
+    // Interaction sequence (2026-10 redesign) — "a lesson plan is a
+    // sequence of teacher<->student exchanges," per explicit product
+    // direction, never one giant Teacher Action block paired with one
+    // giant Student Action block for the whole Activity. Each pair
+    // renders as its own card via renderInteractionRow() below;
+    // getActivityInteractions() returns this Activity's real
+    // `interactions[]` if it has one, or a single virtual interaction
+    // built from its original teacherAction/studentAction fields if it
+    // doesn't (an Activity untouched since this redesign) — so every
+    // Activity, old or new, renders through this exact same path. See
+    // models/LessonPlan.js's own header comment for the full story.
+    const interactions = getActivityInteractions(activity);
+    const interactionsList = document.createElement('div');
+    interactionsList.className = 'lesson-plan-builder__interactions';
+    interactions.forEach((interaction, interactionIndex) => {
+      interactionsList.appendChild(
+        renderInteractionRow(plan, activity, interaction, interactionIndex, interactions.length, handlers, interaction.id === state?.focusInteractionId)
+      );
+    });
+    body.appendChild(interactionsList);
 
-    // Two-column planning grid: Teacher Action (left) spans the full
-    // height of whichever column ends up taller; Student Action (right)
-    // holds either one plain block or the differentiated buckets — never
-    // both at once, and Teacher Action is never repeated per bucket. See
-    // css/styles.css's own `.lesson-plan-builder__activity-grid` comment
-    // for why this reads correctly against AutoGrowTextarea's own
-    // per-textarea height management.
-    const grid = document.createElement('div');
-    grid.className = 'lesson-plan-builder__activity-grid';
+    if (handlers.editable) {
+      const addInteractionButton = document.createElement('button');
+      addInteractionButton.type = 'button';
+      addInteractionButton.className = 'btn btn--ghost lesson-plan-builder__add-interaction-button';
+      addInteractionButton.appendChild(createIcon('plus', { size: 14 }));
+      addInteractionButton.append(' Add Interaction');
+      addInteractionButton.addEventListener('click', () => handlers.onAddActivityInteraction(activity.id));
+      body.appendChild(addInteractionButton);
+    }
 
-    const teacherColumn = document.createElement('div');
-    teacherColumn.className = 'lesson-plan-builder__activity-grid-teacher';
-    teacherColumn.appendChild(
-      createLabeledTextarea({
-        label: 'Teacher Action',
-        placeholder: 'What does the teacher do?',
-        value: activity.teacherAction,
-        onChange: (value) => handlers.onActivityChange(activity.id, 'teacherAction', value),
-        disabled: !handlers.editable,
-        plan,
-        sectionKey: lessonPlanReviewService.buildActivitySectionKey(activity.id, 'teacherAction'),
-      })
-    );
-    grid.appendChild(teacherColumn);
-
-    const studentColumn = document.createElement('div');
-    studentColumn.className = 'lesson-plan-builder__activity-grid-student';
-
-    // Student Action always renders, regardless of Differentiation — a
-    // 2026-09 refactor (e861bc3, the two-column layout) accidentally
-    // made Differentiation REPLACE this field instead of supplementing
-    // it, which made `activity.studentAction` permanently unreadable/
-    // uneditable (and therefore permanently blank-if-blank) for any
-    // activity with differentiation already added, silently blocking
-    // getLessonPlanReadiness()'s own studentAction requirement forever
-    // — the real cause of a real, reported "Submit never appears" case.
-    // Differentiation is genuinely additional planning detail, not a
-    // replacement for what students do, so both coexist here exactly
-    // like they did before that refactor.
-    studentColumn.appendChild(
-      createLabeledTextarea({
-        label: 'Student Action',
-        placeholder: 'What do students do?',
-        value: activity.studentAction,
-        onChange: (value) => handlers.onActivityChange(activity.id, 'studentAction', value),
-        disabled: !handlers.editable,
-        plan,
-        sectionKey: lessonPlanReviewService.buildActivitySectionKey(activity.id, 'studentAction'),
-      })
-    );
-
+    // Differentiation stays activity-level, below the interaction list
+    // — unchanged in meaning from before this redesign (a Red/Green/
+    // Others bucket varies the WHOLE activity for different student
+    // groups, never one single exchange within it), just no longer
+    // living inside what used to be the Student Action column.
+    const differentiationWrap = document.createElement('div');
+    differentiationWrap.className = 'lesson-plan-builder__differentiation-wrap';
     if (activity.differentiation) {
-      studentColumn.appendChild(renderDifferentiationFields(plan, activity, handlers));
+      differentiationWrap.appendChild(renderDifferentiationFields(plan, activity, handlers));
     } else if (handlers.editable) {
       const addDiffButton = document.createElement('button');
       addDiffButton.type = 'button';
       addDiffButton.className = 'btn btn--ghost lesson-plan-builder__add-differentiation-button';
       addDiffButton.textContent = '+ Add differentiation';
       addDiffButton.addEventListener('click', () => handlers.onAddActivityDifferentiation(activity.id));
-      studentColumn.appendChild(addDiffButton);
+      differentiationWrap.appendChild(addDiffButton);
     }
-
-    grid.appendChild(studentColumn);
-    body.appendChild(grid);
+    body.appendChild(differentiationWrap);
 
     // Activity-specific Learning Resources — right where the teacher
     // needs them to actually teach this Activity, never in a separate
@@ -2817,6 +2824,115 @@ function renderActivityCard(plan, activity, index, total, isCollapsed, handlers,
   }
 
   return card;
+}
+
+/**
+ * One Teacher<->Students interaction pair — two clearly differentiated,
+ * tinted cards side by side (icon + label as the PRIMARY distinction,
+ * never colour alone, per explicit product direction — see
+ * css/styles.css's own `.lesson-plan-builder__interaction-side` rules),
+ * with its own reviewer-comment thread covering BOTH sides together:
+ * "Teacher: show the video. Students: watch and observe." is one
+ * instructional exchange, and a reviewer responds to the exchange, not
+ * to "the teacher's half" or "the student's half" of it in isolation
+ * (see services/lessonPlanReviewService.js's own
+ * buildInteractionCommentKeys() doc comment for the full reasoning,
+ * including how a pre-redesign Activity's old per-field comments stay
+ * visible here too, merged in by that same function).
+ *
+ * The very last remaining interaction can never be removed — an
+ * Activity always has at least one (see models/LessonPlan.js's own
+ * getActivityInteractions()) — so the remove button simply doesn't
+ * render at all when `total === 1`, rather than rendering disabled.
+ */
+function renderInteractionRow(plan, activity, interaction, index, total, handlers, shouldFocusTeacherSide = false) {
+  const row = document.createElement('div');
+  row.className = 'lesson-plan-builder__interaction';
+
+  const header = document.createElement('div');
+  header.className = 'lesson-plan-builder__interaction-header';
+  const label = document.createElement('span');
+  label.className = 'lesson-plan-builder__interaction-label';
+  label.textContent = `Interaction ${index + 1}`;
+  header.appendChild(label);
+
+  if (handlers.editable && total > 1) {
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'btn btn--icon-only';
+    removeButton.setAttribute('aria-label', `Remove Interaction ${index + 1}`);
+    removeButton.appendChild(createIcon('trash-2', { size: 14 }));
+    removeButton.addEventListener('click', () => handlers.onRemoveActivityInteraction(activity.id, interaction.id));
+    header.appendChild(removeButton);
+  }
+  row.appendChild(header);
+
+  const pairGrid = document.createElement('div');
+  pairGrid.className = 'lesson-plan-builder__interaction-pair';
+  pairGrid.appendChild(
+    renderInteractionSide({
+      side: 'teacher',
+      iconName: 'chalkboard-easel',
+      label: 'Teacher',
+      placeholder: 'What does the teacher do?',
+      value: interaction.teacherAction,
+      onChange: (value) => handlers.onUpdateActivityInteraction(activity.id, interaction.id, 'teacherAction', value),
+      disabled: !handlers.editable,
+      autofocus: shouldFocusTeacherSide,
+    })
+  );
+  pairGrid.appendChild(
+    renderInteractionSide({
+      side: 'students',
+      iconName: 'users',
+      label: 'Students',
+      placeholder: 'What do students do? (watch, discuss, write, predict, perform…)',
+      value: interaction.studentAction,
+      onChange: (value) => handlers.onUpdateActivityInteraction(activity.id, interaction.id, 'studentAction', value),
+      disabled: !handlers.editable,
+    })
+  );
+  row.appendChild(pairGrid);
+
+  const { readKeys } = lessonPlanReviewService.buildInteractionCommentKeys(activity.id, interaction.id);
+  const comments = renderCommentsList(plan, readKeys);
+  if (comments) row.appendChild(comments);
+
+  return row;
+}
+
+/** One side (Teacher or Students) of one interaction pair — a labeled, tinted card; see renderInteractionRow()'s own doc comment for why label+icon, not tint alone, is the real distinction. */
+function renderInteractionSide({ side, iconName, label, placeholder, value, onChange, disabled, autofocus = false }) {
+  const sideEl = document.createElement('div');
+  sideEl.className = `lesson-plan-builder__interaction-side lesson-plan-builder__interaction-side--${side}`;
+
+  const labelRow = document.createElement('div');
+  labelRow.className = 'lesson-plan-builder__interaction-side-label';
+  labelRow.appendChild(createIcon(iconName, { size: 14 }));
+  const labelText = document.createElement('span');
+  labelText.textContent = label.toUpperCase();
+  labelRow.appendChild(labelText);
+  sideEl.appendChild(labelRow);
+
+  const textarea = document.createElement('textarea');
+  textarea.className = 'lesson-plan-builder__textarea';
+  textarea.placeholder = placeholder;
+  textarea.value = value;
+  textarea.disabled = disabled;
+  textarea.addEventListener('change', () => onChange(textarea.value));
+  attachAutoGrowTextarea(textarea);
+  sideEl.appendChild(textarea);
+
+  // "+ Add Interaction" should read as one click + type, not click +
+  // hunt for the new textarea — see this whole redesign's own "FAST
+  // textbook-based entry" goal. Deferred one tick so this runs after
+  // the element is actually attached to the document (the caller
+  // appends this node right after renderInteractionSide() returns).
+  if (autofocus && !disabled) {
+    setTimeout(() => textarea.focus(), 0);
+  }
+
+  return sideEl;
 }
 
 function renderDifferentiationFields(plan, activity, handlers) {

@@ -40,6 +40,8 @@ import {
   createLessonPlanObjective,
   createLessonPlanSourceRef,
   createLessonPlanResource,
+  createLessonPlanInteraction,
+  getActivityInteractions,
   getLessonPlanActivityIndex,
   findLessonPlanActivity,
   getLessonPlanObjectiveIndex,
@@ -328,6 +330,60 @@ export function updateActivity(lessonPlan, activityId, { title, teacherAction, s
 }
 
 /**
+ * Copies this Activity's own top-level teacherAction/studentAction
+ * into a real `interactions[0]` the FIRST time it's actually needed —
+ * an edit to interaction 'legacy', or "+ Add Interaction" — never
+ * eagerly (see models/LessonPlan.js's own getActivityInteractions()
+ * doc comment). Idempotent: a no-op once `interactions` is already
+ * populated, so every caller below can call this unconditionally
+ * first rather than each re-deriving "is this still legacy?" itself.
+ */
+function materializeActivityInteractions(activity) {
+  if (activity.interactions && activity.interactions.length > 0) return;
+  // `id: 'legacy'` — the SAME reserved id models/LessonPlan.js's own
+  // getActivityInteractions() already assigns its virtual interaction
+  // (see that function's own doc comment) — not a fresh generated one,
+  // so a caller already addressing this interaction as 'legacy' (e.g.
+  // a UI mid-edit, or services/lessonPlanReviewService.js's own
+  // buildInteractionCommentKeys()) keeps correctly finding it the
+  // instant it materializes, with no id ever silently changing out
+  // from under an in-flight edit.
+  activity.interactions = [createLessonPlanInteraction({ id: 'legacy', teacherAction: activity.teacherAction, studentAction: activity.studentAction })];
+}
+
+/** Appends one new, blank Teacher<->Students interaction to this Activity — materializing its legacy single pair into `interactions[0]` first if this is the first interaction-level edit since the 2026-10 redesign. Never a fixed count, mirroring addActivity()'s own "never a fixed count" direction one level down. Returns the new interaction. */
+export function addActivityInteraction(lessonPlan, activityId) {
+  const activity = findLessonPlanActivity(lessonPlan, activityId);
+  if (!activity) return null;
+  materializeActivityInteractions(activity);
+  const interaction = createLessonPlanInteraction();
+  activity.interactions.push(interaction);
+  touch(lessonPlan);
+  return interaction;
+}
+
+/** Edits one interaction's own teacherAction/studentAction — materializes first (see materializeActivityInteractions()'s own doc comment), so editing interaction 'legacy' on an Activity that's never been touched since the redesign transparently upgrades it to a real, single-entry `interactions[]` rather than writing to the old top-level fields. */
+export function updateActivityInteraction(lessonPlan, activityId, interactionId, { teacherAction, studentAction } = {}) {
+  const activity = findLessonPlanActivity(lessonPlan, activityId);
+  if (!activity) return;
+  materializeActivityInteractions(activity);
+  const interaction = activity.interactions.find((candidate) => candidate.id === interactionId);
+  if (!interaction) return;
+  if (teacherAction !== undefined) interaction.teacherAction = teacherAction;
+  if (studentAction !== undefined) interaction.studentAction = studentAction;
+  touch(lessonPlan);
+}
+
+/** Removes one interaction from this Activity — the UI layer (see ui/views/LessonPlanBuilderView.js) is responsible for never offering this on the very last remaining interaction, the same "there must always be at least one" floor models/LessonPlan.js's own getActivityInteractions() already assumes. */
+export function removeActivityInteraction(lessonPlan, activityId, interactionId) {
+  const activity = findLessonPlanActivity(lessonPlan, activityId);
+  if (!activity) return;
+  materializeActivityInteractions(activity);
+  activity.interactions = activity.interactions.filter((candidate) => candidate.id !== interactionId);
+  touch(lessonPlan);
+}
+
+/**
  * Removes one Activity entirely — its differentiation (if any) is part
  * of the same array entry, so nothing is left orphaned. Also drops any
  * still-OPEN comment addressed to this activity (whole-activity or a
@@ -352,7 +408,7 @@ export function deleteActivity(lessonPlan, activityId) {
   touch(lessonPlan);
 }
 
-/** Duplicates one Activity's COMPLETE structure (title, TA, SA, and differentiation if present) with a fresh id, inserted immediately after the original — "if an activity is duplicated, its complete structure is duplicated," per explicit product direction. Returns the new Activity. */
+/** Duplicates one Activity's COMPLETE structure (title, TA, SA, interactions, and differentiation if present) with a fresh id — and fresh ids for every interaction too, never reusing the original's — inserted immediately after the original — "if an activity is duplicated, its complete structure is duplicated," per explicit product direction. Returns the new Activity. */
 export function duplicateActivity(lessonPlan, activityId) {
   const index = getLessonPlanActivityIndex(lessonPlan, activityId);
   if (index === -1) return null;
@@ -362,6 +418,9 @@ export function duplicateActivity(lessonPlan, activityId) {
     teacherAction: original.teacherAction,
     studentAction: original.studentAction,
     differentiation: original.differentiation ? { ...original.differentiation } : null,
+    interactions: (original.interactions || []).map((interaction) =>
+      createLessonPlanInteraction({ teacherAction: interaction.teacherAction, studentAction: interaction.studentAction })
+    ),
   });
   lessonPlan.activities.splice(index + 1, 0, duplicate);
   touch(lessonPlan);
@@ -443,13 +502,16 @@ export function recordSourceElement(lessonPlan, { resourceId, sourceLessonPlanId
 // file only ever deals with the DESTINATION plan.
 // ---------------------------------------------------------------------
 
-/** Copies a Teaching Idea Activity in as a brand-new Activity (own id, deep-cloned differentiation) — behaves exactly like a hand-authored Activity from the moment it lands; see duplicateActivity()'s own identical deep-clone reasoning above. */
-export function addActivityFromTeachingIdea(lessonPlan, { title, teacherAction, studentAction, differentiation }, { sourceLessonPlanId, sourceActivityId }) {
+/** Copies a Teaching Idea Activity in as a brand-new Activity (own id, deep-cloned differentiation, fresh-id interactions) — behaves exactly like a hand-authored Activity from the moment it lands; see duplicateActivity()'s own identical deep-clone reasoning above. `getActivityInteractions()` reads the source content's own real `interactions[]` if the Teaching Idea was published after the 2026-10 redesign, or synthesizes its single legacy pair if published before — either way, every interaction lands here as a genuinely new, real `interactions[]` entry, never a bare legacy pass-through. */
+export function addActivityFromTeachingIdea(lessonPlan, { title, teacherAction, studentAction, differentiation, interactions }, { sourceLessonPlanId, sourceActivityId }) {
   const activity = createLessonPlanActivity({
     title,
     teacherAction,
     studentAction,
     differentiation: differentiation ? { ...differentiation } : null,
+    interactions: getActivityInteractions({ teacherAction, studentAction, interactions }).map((interaction) =>
+      createLessonPlanInteraction({ teacherAction: interaction.teacherAction, studentAction: interaction.studentAction })
+    ),
   });
   lessonPlan.activities.push(activity);
   recordSourceElement(lessonPlan, { sourceLessonPlanId, sourceActivityId, elementType: 'activity' });

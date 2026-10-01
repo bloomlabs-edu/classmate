@@ -199,6 +199,32 @@ test('getActivityIdFromSectionKey: null (Whole Lesson/General), "spark", and "pa
 });
 
 // ---------------------------------------------------------------------
+// Interactions (2026-10 redesign) — one comment thread per Teacher<->
+// Students pair, never split into separate teacherAction/studentAction
+// threads.
+// ---------------------------------------------------------------------
+
+test('buildActivityInteractionSectionKey: one addressing unit per interaction pair, not per field', () => {
+  assert.equal(lessonPlanReviewService.buildActivityInteractionSectionKey('abc123', 'int-1'), 'activity:abc123:interaction:int-1');
+});
+
+test('getActivityIdFromSectionKey: still correctly recovers the activityId from an interaction-level key — no change needed for this new format', () => {
+  assert.equal(lessonPlanReviewService.getActivityIdFromSectionKey('activity:abc123:interaction:int-1'), 'abc123');
+});
+
+test('buildInteractionCommentKeys: a genuinely new interaction (any id other than "legacy") reads from and writes to the exact same single key', () => {
+  const { writeKey, readKeys } = lessonPlanReviewService.buildInteractionCommentKeys('abc123', 'int-2');
+  assert.equal(writeKey, 'activity:abc123:interaction:int-2');
+  assert.deepEqual(readKeys, ['activity:abc123:interaction:int-2']);
+});
+
+test('buildInteractionCommentKeys: the legacy virtual interaction writes to the new unified key but ALSO reads the two old pre-redesign per-field keys, so no existing reviewer comment goes missing', () => {
+  const { writeKey, readKeys } = lessonPlanReviewService.buildInteractionCommentKeys('abc123', 'legacy');
+  assert.equal(writeKey, 'activity:abc123:interaction:legacy');
+  assert.deepEqual(readKeys, ['activity:abc123:interaction:legacy', 'activity:abc123:teacherAction', 'activity:abc123:studentAction']);
+});
+
+// ---------------------------------------------------------------------
 // Editability + submission-vs-resubmission labeling
 // ---------------------------------------------------------------------
 

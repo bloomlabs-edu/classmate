@@ -29,7 +29,7 @@
  * said" — one addressing scheme, not two.
  */
 
-import { LESSON_PLAN_SECTION_KEYS } from '../models/LessonPlan.js';
+import { LESSON_PLAN_SECTION_KEYS, getActivityInteractions } from '../models/LessonPlan.js';
 import { buildActivitySectionKey, getActivityIdFromSectionKey } from './lessonPlanReviewService.js';
 
 function isBlank(value) {
@@ -98,9 +98,15 @@ export function getLessonPlanReadiness(lessonPlan) {
   lessonPlan.activities.forEach((activity, index) => {
     const sectionKey = buildActivitySectionKey(activity.id);
     const label = `Activity ${index + 1}`;
+    // getActivityInteractions() covers both the pre-2026-10 single pair
+    // and the new interactions[] sequence — "every interaction still
+    // blank on that side" is the direct equivalent of the old
+    // single-field check, just generalized to however many pairs this
+    // Activity now has (see that function's own doc comment).
+    const interactions = getActivityInteractions(activity);
     if (isBlank(activity.title)) missing.push({ sectionKey, message: `Add a title to ${label}.` });
-    if (isBlank(activity.teacherAction)) missing.push({ sectionKey, message: `Add a Teacher Action to ${label}.` });
-    if (isBlank(activity.studentAction)) missing.push({ sectionKey, message: `Add a Student Action to ${label}.` });
+    if (interactions.every((interaction) => isBlank(interaction.teacherAction))) missing.push({ sectionKey, message: `Add a Teacher Action to ${label}.` });
+    if (interactions.every((interaction) => isBlank(interaction.studentAction))) missing.push({ sectionKey, message: `Add a Student Action to ${label}.` });
   });
 
   // 5. HELPING EACH OTHER LEARN — Pair Explanation + Exit Ticket (the

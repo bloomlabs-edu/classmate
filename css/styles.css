@@ -3893,36 +3893,90 @@ textarea.reading-editor__block-input {
   padding-top: 0.75rem;
   border-top: 1px solid var(--color-border);
 }
-/* Teacher Action (left) / Student Action (right) planning grid. Grid
-   items stretch to the row's height by default, which is what makes
-   Teacher Action's column read as full-height next to a taller,
-   differentiated Student Action column — the Teacher Action textarea
-   itself still has its own AutoGrowTextarea-managed inline height
-   (see ui/components/AutoGrowTextarea.js), but `flex: 1` below lets it
-   grow further to fill any extra space that stretch creates, rather
-   than leaving a visually empty gap under a short textarea.
-   `minmax(0, 1fr)` (not a bare `1fr`) on both columns, plus
-   `min-width: 0` below, is what stops a long unbroken word/URL in
-   either column from forcing horizontal page overflow. */
-.lesson-plan-builder__activity-grid {
+/* Interaction sequence (2026-10 redesign) — a Learning Activity is a
+   sequence of Teacher<->Students exchanges (ui/views/LessonPlanBuilderView.js's
+   own renderInteractionRow()), never one giant Teacher Action block
+   paired with one giant Student Action block. Each interaction is its
+   own card; within it, the two sides sit side by side so the pairing
+   itself reads as structurally inseparable, not just visually adjacent.
+   `minmax(0, 1fr)` (not a bare `1fr`) on both columns, plus `min-width: 0`
+   below, is what stops a long unbroken word/URL in either side from
+   forcing horizontal page overflow — same reasoning the pre-redesign
+   grid already established. */
+.lesson-plan-builder__interactions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.lesson-plan-builder__interaction {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card, 14px);
+  padding: 0.85rem;
+}
+.lesson-plan-builder__interaction-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+}
+.lesson-plan-builder__interaction-label {
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+}
+.lesson-plan-builder__interaction-pair {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0.9rem;
 }
-.lesson-plan-builder__activity-grid-teacher,
-.lesson-plan-builder__activity-grid-student {
+/* Icon + label is the PRIMARY distinction between the two sides, per
+   explicit product direction ("do not rely on colour alone") — the
+   tint is a secondary, subtle reinforcement, reusing the exact same
+   teacher/student category colors ui/components/Icon.js's own
+   ICON_CATEGORIES already establishes app-wide (never a new palette
+   invented just for this card). */
+.lesson-plan-builder__interaction-side {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  border-radius: var(--radius-control);
+  padding: 0.6rem 0.7rem;
 }
-.lesson-plan-builder__activity-grid-teacher > .lesson-plan-builder__field {
+.lesson-plan-builder__interaction-side--teacher {
+  background-color: #E6F1FB;
+}
+.lesson-plan-builder__interaction-side--students {
+  background-color: #FDEEE0;
+}
+.lesson-plan-builder__interaction-side-label {
   display: flex;
-  flex-direction: column;
-  flex: 1;
-  margin-bottom: 0;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.03em;
+  margin-bottom: 0.4rem;
 }
-.lesson-plan-builder__activity-grid-teacher > .lesson-plan-builder__field > .lesson-plan-builder__textarea {
+.lesson-plan-builder__interaction-side--teacher .lesson-plan-builder__interaction-side-label {
+  color: #5ea6da;
+}
+.lesson-plan-builder__interaction-side--students .lesson-plan-builder__interaction-side-label {
+  color: #BF5F1A;
+}
+.lesson-plan-builder__interaction-side > .lesson-plan-builder__textarea {
+  background-color: var(--color-surface, #fff);
   flex: 1;
+}
+.lesson-plan-builder__add-interaction-button {
+  margin-top: 0.4rem;
+}
+.lesson-plan-builder__differentiation-wrap {
+  margin-top: 0.9rem;
+}
+@media (max-width: 640px) {
+  .lesson-plan-builder__interaction-pair {
+    grid-template-columns: 1fr;
+  }
 }
 .lesson-plan-builder__differentiation {
   display: flex;
@@ -4125,19 +4179,6 @@ textarea.reading-editor__block-input {
   }
   .lesson-plan-builder__stage--surface-tile:not(.lesson-plan-builder__stage--compact) {
     padding: 1.1rem 1.25rem;
-  }
-  /* Activity planning grid reflows to one column — Teacher Action
-     stacks above Student Action in document order, and the height-
-     stretch rules above become no-ops (each column is alone in its
-     own auto-sized row, so there's nothing taller to stretch to). */
-  .lesson-plan-builder__activity-grid {
-    grid-template-columns: 1fr;
-  }
-  .lesson-plan-builder__activity-grid-teacher > .lesson-plan-builder__field {
-    flex: initial;
-  }
-  .lesson-plan-builder__activity-grid-teacher > .lesson-plan-builder__field > .lesson-plan-builder__textarea {
-    flex: initial;
   }
 }
 
@@ -4605,6 +4646,62 @@ textarea.reading-editor__block-input {
    a whole-section one — same shell, lighter visual weight. */
 .lesson-plan-review__field-segment .lesson-plan-review__segment-heading-row {
   margin-bottom: 0.2rem;
+}
+
+/* Interaction sequence (2026-10 redesign) — the review-side mirror of
+   ui/views/LessonPlanBuilderView.js's own `.lesson-plan-builder__interaction*`
+   rules; same tint colors (ui/components/Icon.js's own ICON_CATEGORIES
+   teacher/student), so the rendered plan preserves the exact paired
+   structure the author sees. */
+.lesson-plan-review__interaction {
+  margin-bottom: 0.9rem;
+}
+.lesson-plan-review__interaction .lesson-plan-review__segment-heading-row {
+  margin-bottom: 0.2rem;
+}
+.lesson-plan-review__interaction-label {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+}
+.lesson-plan-review__interaction-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.9rem;
+}
+.lesson-plan-review__interaction-side {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: var(--radius-control);
+  padding: 0.6rem 0.7rem;
+}
+.lesson-plan-review__interaction-side--teacher {
+  background-color: #E6F1FB;
+}
+.lesson-plan-review__interaction-side--students {
+  background-color: #FDEEE0;
+}
+.lesson-plan-review__interaction-side-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.03em;
+  margin-bottom: 0.3rem;
+}
+.lesson-plan-review__interaction-side--teacher .lesson-plan-review__interaction-side-label {
+  color: #5ea6da;
+}
+.lesson-plan-review__interaction-side--students .lesson-plan-review__interaction-side-label {
+  color: #BF5F1A;
+}
+@media (max-width: 640px) {
+  .lesson-plan-review__interaction-pair {
+    grid-template-columns: 1fr;
+  }
 }
 
 .lesson-plan-review__add-comment-button {
@@ -5560,6 +5657,57 @@ textarea.chapter-plan-editor__field-input {
   border-radius: 10px;
   padding: 0.6rem 0.8rem;
   margin-top: 0.5rem;
+}
+/* Interaction sequence (2026-10 redesign) — same visual language as
+   ui/views/LessonPlanBuilderView.js's own `.lesson-plan-builder__interaction*`
+   rules, so a Teaching Idea preview shows the exact same paired
+   structure as the authoring/review surfaces. */
+.lesson-content-readonly__interaction {
+  margin-bottom: 0.75rem;
+}
+.lesson-content-readonly__interaction-label {
+  font-size: 0.78rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+  margin: 0 0 0.3rem;
+}
+.lesson-content-readonly__interaction-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.75rem;
+}
+.lesson-content-readonly__interaction-side {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: var(--radius-control);
+  padding: 0.55rem 0.65rem;
+}
+.lesson-content-readonly__interaction-side--teacher {
+  background-color: #E6F1FB;
+}
+.lesson-content-readonly__interaction-side--students {
+  background-color: #FDEEE0;
+}
+.lesson-content-readonly__interaction-side-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.03em;
+  margin-bottom: 0.3rem;
+}
+.lesson-content-readonly__interaction-side--teacher .lesson-content-readonly__interaction-side-label {
+  color: #5ea6da;
+}
+.lesson-content-readonly__interaction-side--students .lesson-content-readonly__interaction-side-label {
+  color: #BF5F1A;
+}
+@media (max-width: 640px) {
+  .lesson-content-readonly__interaction-pair {
+    grid-template-columns: 1fr;
+  }
 }
 .lesson-content-readonly__source {
   font-size: 0.82rem;
