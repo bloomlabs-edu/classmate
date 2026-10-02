@@ -20042,37 +20042,36 @@ button.recognition-bento__hero-winner-name {
   flex: 1;
 }
 
-/* Concepts tab cards (2026-10-02 redesign) — background-color IS the
-   teaching-status indicator (pending/covered), not a decorative
-   accent, per explicit product direction: a teacher should be able to
-   read a period's progress at a glance — but never the ONLY
-   indicator, see .period-detail-panel__concept-card-status below,
-   which always spells the status out in words too. Reuses the exact
-   --color-warning/--color-success tokens already established
-   elsewhere in this app for "pending"/"complete" states — never a new
-   color vocabulary. Column layout (title+⋮ row, then status, then an
-   optional usage-action row) — not a single flex-wrap row — is what
-   gives the concept name real visual dominance over everything else
-   on the card, per explicit product direction: a concept should read
-   as the main object, with status/actions clearly secondary. */
+/* Concepts tab cards (2026-10-02 redesign, simplified 2026-10-03) —
+   the card itself is always visually NEUTRAL (the normal card/surface
+   background, same --color-border as every other plain card in this
+   app) — never a yellow/green teaching-status background. Explicit
+   product direction: yellow is already a potential subject-code color
+   elsewhere in this product, so using it for "planned" created real
+   semantic ambiguity, and a concept itself should read as visually
+   neutral. The only color accent is the left border strip, set
+   per-card via inline style to the period's own SUBJECT color (see
+   ui/views/TimetableView.js's own renderConceptCard(), using the exact
+   same getTimetableSubjectColor() token already used for this period's
+   subject badge/lesson-header wash) — never teaching status, and never
+   a new color system. Teaching status is communicated by WORDS alone
+   (.period-detail-panel__concept-card-status below, shown only when it
+   carries real information) plus the presence/absence of the quick-
+   action icons — never by background color. Column layout (title+⋮
+   row, then an optional status line, then an optional quick-action
+   row) — not a single flex-wrap row — is what gives the concept name
+   real visual dominance over everything else on the card, per explicit
+   product direction: a concept should read as the main object, with
+   status/actions clearly secondary. */
 .period-detail-panel__concept-card {
   display: flex;
   flex-direction: column;
+  background-color: var(--color-surface);
   border: 1px solid var(--color-border);
   border-left: 4px solid var(--color-border);
   border-radius: var(--radius-control);
   padding: var(--space-3);
   margin-bottom: var(--space-3);
-}
-
-.period-detail-panel__concept-card--pending {
-  border-left-color: var(--color-warning);
-  background: color-mix(in srgb, var(--color-warning) 12%, var(--color-surface));
-}
-
-.period-detail-panel__concept-card--covered {
-  border-left-color: var(--color-success);
-  background: color-mix(in srgb, var(--color-success) 12%, var(--color-surface));
 }
 
 .period-detail-panel__concept-card-header {
@@ -20106,29 +20105,44 @@ button.recognition-bento__hero-winner-name {
 
 /* Secondary status line — plain text, never color/icon alone (matches
    this app's own established "never color alone" accessibility
-   convention) — reads "Planned for this lesson" / "Covered · …" /
-   "Carried forward to a later period" depending on state. */
+   convention) — reads "Covered · …" / "Carried forward to a later
+   period." Only rendered when it carries real information (2026-10-03
+   fix — a plain pending concept gets no status line at all; its
+   presence on this tab already implies "planned for this lesson,"
+   making that phrase redundant noise). */
 .period-detail-panel__concept-card-status {
   font-size: 0.8rem;
   color: var(--color-muted);
   margin-top: 0.25rem;
 }
 
-/* Usage/progress actions (Mark Covered / Carry Forward) — a separate,
-   visually distinct row from the planning actions tucked inside ⋮
-   above, per explicit product direction that these must never read as
-   the same action group as Edit/Move/Remove. The top border + its own
-   margin is what makes that separation visible, not just a
-   differently-styled button; filled/tonal pills, never the previous
-   plain-text-link treatment. */
-.period-detail-panel__concept-card-actions {
+/* Quick teaching/usage actions (Mark Covered / Carry Forward) —
+   compact circular icon buttons (2026-10-03 fix, replacing the
+   original large filled pills, which read as too visually dominant for
+   actions this small/frequent), right-aligned below the status line.
+   Still visually distinct from the ⋮ menu's planning actions by
+   position/spacing alone — no border divider needed once these are
+   small icon buttons rather than full-width pills. */
+.period-detail-panel__concept-quick-actions {
   display: flex;
-  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
   gap: var(--space-2);
-  margin-top: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  margin-top: var(--space-2);
+}
+
+/* `.btn--icon-only` already supplies the shared circular shape/hover/
+   focus treatment every icon-only button in this app uses — these two
+   modifiers only add a SUBTLE tint to the icon itself (currentColor),
+   never a new background/border color, matching this app's own
+   existing "tint the icon, not the control" principle (see e.g. the
+   Lesson Plan Builder's Teacher/Student interaction icons). Never a
+   new color palette — both reuse existing tokens. */
+.period-detail-panel__concept-quick-action--cover .icon {
+  color: var(--color-success);
+}
+.period-detail-panel__concept-quick-action--carry .icon {
+  color: var(--color-muted);
 }
 
 .period-detail-panel__concepts-footer-actions {

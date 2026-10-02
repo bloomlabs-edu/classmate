@@ -2570,44 +2570,41 @@ export async function renderTimetableView(
 
   /**
    * The Concepts tab — the PRIMARY place for managing a lesson's
-   * planned concepts (2026-10-02 redesign; this tab replaces the
-   * removed Overview tab as the default landing surface, see this
-   * function's own call site above).
+   * planned concepts (2026-10-02 redesign, simplified further
+   * 2026-10-03 per a screenshot review: the first pass's cards read as
+   * too visually heavy — a yellow "planned" background plus a
+   * redundant "Planned for this lesson" label plus two large filled
+   * pills added up to more visual weight than these small, frequent
+   * actions warrant).
    *
    * Strict separation of PLANNING from TEACHING/USAGE, per explicit
    * product direction: Edit / Move to… / Remove (tucked inside each
    * card's own ⋮ overflow menu — see renderConceptCard() below) are
    * planning actions, available regardless of status, that only ever
    * touch which concepts THIS Lesson references and where. Mark
-   * Covered / Carry Forward are a visually separate action row that
-   * only ever appears on a still-pending, not-yet-carried concept, and
-   * represent what actually happened while teaching — never the same
-   * code path as Move (see models/Lesson.js's own moveConcept() vs.
-   * carryForwardConcept() doc comments for exactly how these differ at
-   * the data-model level, not just the UI).
+   * Covered / Carry Forward are a visually separate, compact pair of
+   * icon buttons that only ever appear on a still-pending, not-yet-
+   * carried concept, and represent what actually happened while
+   * teaching — never the same code path as Move (see
+   * models/Lesson.js's own moveConcept() vs. carryForwardConcept() doc
+   * comments for exactly how these differ at the data-model level, not
+   * just the UI).
    *
-   * There are only two teaching-status COLORS — PENDING (yellow:
-   * assigned, not yet covered in this period) and COVERED (green:
-   * taught) — read straight off the existing lesson.executedConceptIds
-   * field (see models/Lesson.js); no new concept-state model.
-   * "Assigned to this period" (lesson.conceptIds membership, managed by
-   * renderConceptPicker()/openAddConceptFlow() above, or by Edit/Move/
-   * Remove below) and "taught status" (executedConceptIds) stay the two
-   * separate, independent things they already were.
-   *
-   * Carried-forward (lesson.carriedForwardConceptIds) is NOT a third
-   * color — per explicit product direction, and confirmed against
-   * models/Lesson.js's own carryForwardConcept(): that function throws
-   * if the concept is already executed, so a carried concept is
-   * guaranteed, by construction, to always still be un-executed here —
-   * exactly the same "not covered in this period" condition PENDING
-   * already means. A carried concept renders on the same yellow card,
-   * just with its status line reading "Carried forward" instead of
-   * showing the Mark Covered/Carry Forward action row — never both:
-   * marking a carried concept covered here would contradict it also
-   * being queued on a future lesson, and carrying it forward a second
-   * time is something carryForwardConcept() itself refuses. Move to…
-   * is similarly omitted from its ⋮ menu for the same reason.
+   * As of the 2026-10-03 simplification, a concept card is no longer
+   * status-color-coded at all — no yellow "pending" background, no
+   * green "covered" background. Reason (explicit product direction):
+   * yellow is already a potential subject-code color elsewhere in the
+   * product, so using it for "planned" created real semantic ambiguity,
+   * and a concept itself should read as visually neutral. The card's
+   * only color accent now is a narrow left border strip in the
+   * period's own SUBJECT color (config/timetableSubjectColors.js's own
+   * getTimetableSubjectColor() — the exact same token/helper already
+   * used for this period's subject badge and lesson-header wash above,
+   * never a new color system) — matching subject identity, not
+   * teaching status. Status is communicated by WORDS alone (the status
+   * line, shown only when it carries real information — see
+   * renderConceptCard() below) plus the presence/absence of the
+   * quick-action icons — never by background color.
    *
    * The per-concept positivePercent/respondedCount shown next to a
    * covered concept was already computed by
@@ -2677,26 +2674,28 @@ export async function renderTimetableView(
       addMoreButton.addEventListener('click', () => openAddConceptFlow(slot, lesson));
       footerActions.appendChild(addMoreButton);
 
-      // A secondary, low-emphasis bulk action — replaces the old
-      // checkbox-selection + "Mark concepts as covered" button entirely
-      // (per explicit product direction that a teacher should never have
-      // to select concepts just to mark them covered). Only shown once
-      // there's genuinely more than one pending concept to act on; never
+      // A real button, not plain text (2026-10-03 fix — "Mark all
+      // covered" is a genuine call to action and must look like one),
+      // but deliberately a QUIETER tonal hue than Add Concept above —
+      // per explicit product direction, Add Concept is the collection-
+      // level/portal-theme action (tonal-blue, this app's recurring
+      // "add/build" color — see .btn--tonal-blue's own CSS comment) and
+      // this is a rare bulk teaching shortcut (tonal-neutral, this
+      // app's own existing "supporting/utility action" hue — see
+      // .btn--tonal-neutral's own CSS comment for the identical
+      // reasoning already established elsewhere, e.g.
+      // AssessmentManagementView.js's "Import Spreadsheet" next to
+      // "Publish Assessment"). Both existing tiers, no new styling
+      // invented — the hierarchy comes from which existing hue is
+      // used, not from a new button system. Only shown once there's
+      // genuinely more than one pending concept to act on; never
       // touches an already-carried-forward concept (see below).
-      // Deliberately `.btn--text`, not a tonal pill — a QA pass on the
-      // 2026-10-02 redesign flagged this bulk shortcut reading as the
-      // same visual weight as Add Concept and the per-card Mark
-      // Covered/Carry Forward actions, flattening a hierarchy that
-      // should exist between "the collection-level action," "the
-      // concept-level teaching actions," and "a rare bulk utility" —
-      // this is the existing, established low-emphasis tier (see
-      // ui/views/TimetableView.js's own pre-2026-10 convention for this
-      // exact button), not a new one invented for this fix.
       if (pendingCount > 1) {
         const markAllButton = document.createElement('button');
         markAllButton.type = 'button';
-        markAllButton.className = 'btn btn--text';
-        markAllButton.textContent = 'Mark all covered';
+        markAllButton.className = 'btn btn--tonal btn--tonal-neutral btn--pill';
+        markAllButton.appendChild(createIcon('check', { size: 14 }));
+        markAllButton.append(' Mark all covered');
         markAllButton.addEventListener('click', () =>
           runAction(async () => {
             // Every non-carried concept, not literally every concept —
@@ -2722,30 +2721,45 @@ export async function renderTimetableView(
 
   /**
    * One concept card — the concept name is the visually dominant
-   * object (per explicit product direction); status, the ⋮ overflow
-   * menu, and the Mark Covered/Carry Forward action row are all
-   * secondary to it, never competing with it for attention.
+   * object (per explicit product direction); status (when present),
+   * the compact Mark Covered/Carry Forward icon actions, and the ⋮
+   * overflow menu are all secondary to it, never competing with it for
+   * attention.
    *
-   * PENDING (yellow) or COVERED (green), read off `executed` alone
-   * (see renderConceptsTab()'s own header comment for why carried-
-   * forward is never its own color). The background-color coding IS
-   * the status indicator, not a decorative accent — per explicit
-   * product direction, a teacher should be able to tell a period's
-   * teaching progress at a glance — but it is never the ONLY indicator:
-   * the status line below the title always spells it out in words too
-   * (icon/color alone is never sufficient — matches this app's own
-   * established accessibility convention elsewhere, e.g. the Lesson
-   * Plan Builder's Teacher/Student interaction cards).
+   * 2026-10-03 simplification (superseding the 2026-10-02 redesign's
+   * yellow/green status-color-coded background): the card itself is
+   * now always visually NEUTRAL — the normal card/surface background,
+   * no status color — with its only color accent being a narrow left
+   * border strip in the period's own SUBJECT color (not teaching
+   * status; see renderConceptsTab()'s own header comment). Status is
+   * communicated in two other ways instead: the status line (shown
+   * ONLY when it carries real information — "Covered · …" or "Carried
+   * forward to a later period" — never a redundant "Planned for this
+   * lesson" restating what's already implied by the concept simply
+   * being listed on this tab) and the presence/absence of the Mark
+   * Covered/Carry Forward icon pair below it.
    *
-   * A carried concept (`carried` true) is always PENDING-colored (the
-   * data model guarantees it's never `executed` — see
-   * models/Lesson.js's own carryForwardConcept()) but its status line
-   * reads "Carried forward…" INSTEAD of "Planned for this lesson," and
-   * it gets neither the Mark Covered/Carry Forward row nor a "Move
-   * to…" item in its own ⋮ menu — a carried concept has already been
-   * deferred to a future lesson, so there's nothing left to do with it
-   * here except Edit (the concept's own title) or Remove (this
-   * lesson's reference to it).
+   * Mark Covered (✓) / Carry Forward (↻) are compact, circular
+   * `.btn--icon-only` buttons — the one existing platform treatment
+   * for every icon-only action app-wide (Undo, Notebook, Reset
+   * Session, and others) — never large filled pills for these small,
+   * frequent, per-card actions. Each keeps its own `aria-label`/
+   * `title` (the button has no visible text at all), and inherits the
+   * shared `.btn:focus-visible` ring plus `.btn--icon-only:hover` state
+   * for free, the same as every other icon-only button in the app. A
+   * subtle semantic tint lives on the ICON itself (currentColor), not
+   * the button's own background/border — matching this same "tint the
+   * icon, not the control" principle already used for the ⋮ trigger
+   * and for Teacher/Student interaction icons elsewhere in this app —
+   * never a new color palette.
+   *
+   * A carried concept (`carried` true) is always un-executed (the data
+   * model guarantees it's never `executed` — see models/Lesson.js's
+   * own carryForwardConcept()) but gets neither the Mark Covered/Carry
+   * Forward icons nor a "Move to…" item in its own ⋮ menu — a carried
+   * concept has already been deferred to a future lesson, so there's
+   * nothing left to do with it here except Edit (the concept's own
+   * title) or Remove (this lesson's reference to it).
    *
    * The ⋮ overflow menu (ui/components/OverflowMenu.js — the one
    * existing platform pattern for standalone-object management
@@ -2755,13 +2769,18 @@ export async function renderTimetableView(
    * permitting), since editing a concept's title or removing this
    * lesson's reference to it are both always meaningful regardless of
    * teaching status; only "Move to…" is conditionally omitted (see
-   * above).
+   * above). Unchanged from the 2026-10-02 redesign.
    */
   function renderConceptCard({ slot, lesson, id, conceptTitle, executed, carried, stat }) {
-    const stateClass = executed ? 'period-detail-panel__concept-card--covered' : 'period-detail-panel__concept-card--pending';
-
     const card = document.createElement('div');
-    card.className = `period-detail-panel__concept-card ${stateClass}`;
+    card.className = 'period-detail-panel__concept-card';
+    // Subject identity, not teaching status — the exact same helper/
+    // token already used for this period's own subject badge and
+    // lesson-header wash above (getTimetableSubjectColor()), applied
+    // the same way row.style.borderLeftColor already is elsewhere in
+    // this file (e.g. Today's Schedule rows) — never a new color
+    // system invented for this card.
+    card.style.borderLeftColor = getTimetableSubjectColor(slot.subjectId).text;
 
     const header = document.createElement('div');
     header.className = 'period-detail-panel__concept-card-header';
@@ -2788,32 +2807,38 @@ export async function renderTimetableView(
     }
     card.appendChild(header);
 
-    const status = document.createElement('span');
-    status.className = 'period-detail-panel__concept-card-status';
-    if (carried) {
-      status.textContent = 'Carried forward to a later period';
-    } else if (executed) {
-      status.textContent = stat ? `Covered · ${stat.respondedCount}/${stat.totalStudents} responded · ${stat.positivePercent}%` : 'Covered';
-    } else {
-      status.textContent = 'Planned for this lesson';
+    // Only rendered when it carries real information — never a
+    // restatement of "this concept is planned here," which is already
+    // obvious from its presence on this tab at all (2026-10-03 fix).
+    if (carried || executed) {
+      const status = document.createElement('span');
+      status.className = 'period-detail-panel__concept-card-status';
+      if (carried) {
+        status.textContent = 'Carried forward to a later period';
+      } else {
+        status.textContent = stat ? `Covered · ${stat.respondedCount}/${stat.totalStudents} responded · ${stat.positivePercent}%` : 'Covered';
+      }
+      card.appendChild(status);
     }
-    card.appendChild(status);
 
-    // Usage/progress actions — visually separate from the planning
-    // actions tucked inside ⋮ above (a thin top border + its own
-    // margin, see css/styles.css's own `.period-detail-panel__concept-card-actions`
-    // rule), per explicit product direction that these must never read
-    // as part of the same action group as Edit/Move/Remove. Only ever
-    // appears for a still-pending, not-yet-carried concept — see this
-    // function's own header comment.
+    // Compact teaching/usage actions — visually separate from the
+    // planning actions tucked inside ⋮ above, per explicit product
+    // direction that these must never read as part of the same action
+    // group as Edit/Move/Remove, but compact icon buttons rather than
+    // large filled pills (2026-10-03 fix — the original pill treatment
+    // was too visually dominant for actions this small/frequent). Only
+    // ever appears for a still-pending, not-yet-carried concept — see
+    // this function's own header comment.
     if (!carried && !executed && isMutationAllowed()) {
       const actions = document.createElement('div');
-      actions.className = 'period-detail-panel__concept-card-actions';
+      actions.className = 'period-detail-panel__concept-quick-actions';
 
       const markCoveredButton = document.createElement('button');
       markCoveredButton.type = 'button';
-      markCoveredButton.className = 'btn btn--tonal btn--tonal-green btn--pill';
-      markCoveredButton.textContent = 'Mark Covered';
+      markCoveredButton.className = 'btn btn--icon-only period-detail-panel__concept-quick-action period-detail-panel__concept-quick-action--cover';
+      markCoveredButton.title = 'Mark Covered';
+      markCoveredButton.setAttribute('aria-label', `Mark ${conceptTitle} covered`);
+      markCoveredButton.appendChild(createIcon('check', { size: 16 }));
       markCoveredButton.addEventListener('click', () =>
         runAction(async () => {
           await timetableLessonService.markConceptsExecuted(classroom, lesson, [...lesson.executedConceptIds, id]);
@@ -2830,11 +2855,15 @@ export async function renderTimetableView(
       // refuses to carry a second time. Deliberately NOT the same
       // action as the ⋮ menu's "Move to…" above — see
       // openMoveConceptFlow()'s own header comment for exactly how
-      // these differ.
+      // these differ. Same 'undo-2' curved-arrow icon this app already
+      // used for Carry Forward before this redesign (the Overview
+      // tab's own now-removed carry-forward callout).
       const carryButton = document.createElement('button');
       carryButton.type = 'button';
-      carryButton.className = 'btn btn--tonal btn--tonal-neutral btn--pill';
-      carryButton.textContent = 'Carry Forward';
+      carryButton.className = 'btn btn--icon-only period-detail-panel__concept-quick-action period-detail-panel__concept-quick-action--carry';
+      carryButton.title = 'Carry Forward';
+      carryButton.setAttribute('aria-label', `Carry ${conceptTitle} forward to a later period`);
+      carryButton.appendChild(createIcon('undo-2', { size: 16 }));
       carryButton.addEventListener('click', () => openCarryForwardFlow(slot, lesson, id, conceptTitle));
       actions.appendChild(carryButton);
 
