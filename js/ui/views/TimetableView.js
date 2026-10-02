@@ -57,7 +57,7 @@ import * as schoolCalendarService from '../../services/schoolCalendarService.js'
 import * as scheduledEventService from '../../services/scheduledEventService.js';
 import * as scheduledEventRepository from '../../services/scheduledEventRepository.js';
 import { hydrateConceptRecordsForConcepts } from '../../services/conceptRecordHydrationService.js';
-import { getFeedbackEligibleConceptIds, resetLessonForUnitChange } from '../../models/Lesson.js';
+import { getFeedbackEligibleConceptIds, resetLessonForUnitChange, removeConceptFromLesson } from '../../models/Lesson.js';
 import { getWeeklyPlanReadiness } from '../../services/weeklyPlanValidationService.js';
 import * as weeklyPlanSubmissionService from '../../services/weeklyPlanSubmissionService.js';
 import * as weeklyPlanSubmissionRepository from '../../repositories/weeklyPlanSubmissionRepository.js';
@@ -77,6 +77,7 @@ import {
   getMondayStartOfWeek,
 } from '../../utils/dateHelpers.js';
 import { createIcon } from '../components/Icon.js';
+import { createOverflowMenu } from '../components/OverflowMenu.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { renderSubjectBadge, renderLessonTopicLabel } from '../components/ScheduleItemLabels.js';
@@ -156,7 +157,7 @@ export async function renderTimetableView(
           // services/schoolCalendarService.js), already in memory.
           eventsByDateKey: {},
           selectedTeachingSlotId: null,
-          activeDetailTab: 'overview', // 'overview' | 'concepts' | 'plan' | 'studentResources' | 'lessonPlan' | 'reflection' — Phase P; studentResources/lessonPlan were one combined 'resources' tab until the explicit IA split below (student-facing vs teacher-facing are two different tabs, never one "Resources" tab containing both). 'plan' (Weekly Plan objectives/Big Question + the Detailed Lesson Plan bridge) is additive, separate from the pre-existing 'lessonPlan' tab (which is actually a teacher-facing resource-link list, unrelated despite the name — see docs/CLASSMATE_WEEKLY_PLAN_AND_LESSON_PLAN_ARCHITECTURE.md).
+          activeDetailTab: 'concepts', // 'concepts' | 'plan' | 'studentResources' | 'lessonPlan' | 'reflection' — Phase P; studentResources/lessonPlan were one combined 'resources' tab until the explicit IA split below (student-facing vs teacher-facing are two different tabs, never one "Resources" tab containing both). 'plan' (Weekly Plan objectives/Big Question + the Detailed Lesson Plan bridge) is separate from 'lessonPlan' (a teacher-facing resource-link list, unrelated to the real Lesson Plan despite its internal id — see docs/CLASSMATE_WEEKLY_PLAN_AND_LESSON_PLAN_ARCHITECTURE.md). The `id`/function names below stayed `lessonPlan`/loadLessonPlanTab() on purpose (internal detail, not user-facing) when its own user-facing label was corrected to "Teacher Resources" 2026-10-01 — see loadLessonPlanTab()'s own updated header comment. The separate 'overview' tab (response rate/understanding ring/feedback cards/concept summary/carry-forward callout) was removed entirely 2026-10-02 — Concepts is now the primary, default-landing tab for managing a lesson's planned concepts; the feedback-metrics/Share-Feedback content that genuinely had no other home moved into Reflection (see renderReflectionSection()'s own updated header comment), and the rest (a plain concept list, a carry-forward shortcut) was dropped as redundant with the redesigned Concepts tab itself.
         };
   preservedState = { classroomId: classroom.id, state };
 
@@ -1613,7 +1614,7 @@ export async function renderTimetableView(
     card.addEventListener('click', async () => {
       const isNewSelection = state.selectedTeachingSlotId !== slot.id;
       state.selectedTeachingSlotId = isNewSelection ? slot.id : null;
-      if (isNewSelection) state.activeDetailTab = 'overview'; // always land on Overview for a freshly-opened period
+      if (isNewSelection) state.activeDetailTab = 'concepts'; // always land on Concepts for a freshly-opened period — the primary place for managing this lesson's planned concepts
       await hydrateSelectedLessonFeedback();
       rerenderCurrentRange();
     });
@@ -1837,26 +1838,33 @@ export async function renderTimetableView(
     lessonHeaderCard.appendChild(topicRow);
 
     // Phase P — tab navigation (Overview / Concepts / Student Resources /
-    // Lesson Plan / Reflection), per the approved reference. Reduces the
-    // previous single continuous scroll's visual density; no data is
-    // duplicated between tabs — each tab reads the same `lesson`/
-    // `classroom` objects and the same already-computed feedback
-    // summary, just scoped to what that tab actually needs.
+    // Teacher Resources / Reflection), per the approved reference.
+    // Reduces the previous single continuous scroll's visual density;
+    // no data is duplicated between tabs — each tab reads the same
+    // `lesson`/`classroom` objects and the same already-computed
+    // feedback summary, just scoped to what that tab actually needs.
     //
-    // Student Resources and Lesson Plan are deliberately two separate
-    // tabs, never one combined "Resources" tab — per explicit product
-    // direction, a lesson plan is exclusively teacher-facing ("what do
-    // I, the teacher, use to teach it?") while a resource here is
-    // student-facing ("what can/should students use?"), and those two
-    // questions must never share one nav destination even when visually
-    // adjacent. See loadStudentResourcesTab()/loadLessonPlanTab() below.
+    // Student Resources and Teacher Resources are deliberately two
+    // separate tabs, never one combined "Resources" tab — per explicit
+    // product direction, these answer two different questions ("what
+    // can/should students use?" vs. "what do I, the teacher, use to
+    // teach it?") that must never share one nav destination even when
+    // visually adjacent. See loadStudentResourcesTab()/
+    // loadLessonPlanTab() below — NEITHER of these is the real Lesson
+    // Plan; that's the separate "Plan" tab's own bridge into the
+    // Detailed Lesson Plan (see renderPlanTab() below and
+    // docs/CLASSMATE_WEEKLY_PLAN_AND_LESSON_PLAN_ARCHITECTURE.md).
+    // "Teacher Resources" was previously labeled "Lesson Plan" — a
+    // terminology/IA mismatch fixed 2026-10-01 (it was never anything
+    // but a plain, teacher-audience resource-link list; the internal
+    // `id`/function names below are left as `lessonPlan` deliberately,
+    // an implementation detail, not something this fix touches).
     const concepts = timetableDisplayService.resolveLessonConcepts(classroom, lesson);
     const tabs = [
-      { id: 'overview', label: 'Overview' },
       { id: 'concepts', label: `Concepts (${concepts.length})` },
       { id: 'plan', label: 'Plan' },
       { id: 'studentResources', label: 'Student Resources' },
-      { id: 'lessonPlan', label: 'Lesson Plan' },
+      { id: 'lessonPlan', label: 'Teacher Resources' },
       { id: 'reflection', label: 'Reflection' },
     ];
     const tabBar = document.createElement('div');
@@ -1877,9 +1885,7 @@ export async function renderTimetableView(
 
     const tabContent = document.createElement('div');
     tabContent.className = 'period-detail-panel__tab-content';
-    if (state.activeDetailTab === 'concepts') {
-      tabContent.appendChild(renderConceptsTab(slot, lesson));
-    } else if (state.activeDetailTab === 'plan') {
+    if (state.activeDetailTab === 'plan') {
       tabContent.appendChild(renderPlanTab(slot, lesson));
     } else if (state.activeDetailTab === 'studentResources') {
       tabContent.appendChild(renderResourcesTabPlaceholder());
@@ -1888,57 +1894,15 @@ export async function renderTimetableView(
       tabContent.appendChild(renderResourcesTabPlaceholder());
       loadLessonPlanTab(tabContent, slot, lesson);
     } else if (state.activeDetailTab === 'reflection') {
-      tabContent.appendChild(renderReflectionSection(lesson));
+      tabContent.appendChild(renderReflectionSection(slot, lesson, topic));
     } else {
-      tabContent.appendChild(renderOverviewTab(slot, lesson, topic));
+      // Default/fallback — Concepts is the primary tab (see this
+      // function's own tabs[] array above, now listed first).
+      tabContent.appendChild(renderConceptsTab(slot, lesson));
     }
     panel.appendChild(tabContent);
 
     return panel;
-  }
-
-  /**
-   * Overview — the highest-level summary of this period, per Phase P's
-   * own explicit content list: response rate, the Overall Understanding
-   * ring, the 4-tier breakdown, the combined Got it + Can teach metric,
-   * a concise concept summary, the carry-forward callout (if anything
-   * needs it), and the share-feedback action. Nothing here is computed
-   * separately from Concepts/Reflection's own data — same `lesson`,
-   * same conceptFeedbackService summary object.
-   */
-  function renderOverviewTab(slot, lesson, topic) {
-    const wrapper = document.createElement('div');
-    wrapper.className = 'period-detail-panel__overview';
-
-    if (lesson.executedConceptIds.length > 0) {
-      const summary = conceptFeedbackService.getLessonFeedbackSummary(classroom, lesson);
-
-      const responseRow = document.createElement('div');
-      responseRow.className = 'period-detail-panel__overview-top';
-
-      // RESPONSE RATE and UNDERSTANDING stay two visibly separate
-      // metrics, never collapsed into one number — per explicit
-      // product decision (see conceptFeedbackService.js's own header
-      // comment). The ring is a SUMMARY VISUALIZATION of the existing
-      // combinedPositivePercent metric — not a new calculation, and
-      // not a replacement for the 4-tier breakdown rendered below it.
-      const responseRate = document.createElement('p');
-      responseRate.className = 'period-detail-panel__responded';
-      responseRate.innerHTML = `<strong>Response Rate</strong> ${summary.respondedStudentCount}/${summary.totalStudents} responded`;
-      responseRow.appendChild(responseRate);
-      responseRow.appendChild(renderUnderstandingRing(summary.combinedPositivePercent));
-      wrapper.appendChild(responseRow);
-
-      wrapper.appendChild(renderFeedbackSummaryCards(summary));
-      wrapper.appendChild(renderShareFeedbackSection(slot, lesson, topic));
-    }
-
-    wrapper.appendChild(renderConceptSummaryList(lesson));
-
-    const carryCallout = renderCarryForwardCallout(slot, lesson);
-    if (carryCallout) wrapper.appendChild(carryCallout);
-
-    return wrapper;
   }
 
   /**
@@ -2228,85 +2192,7 @@ export async function renderTimetableView(
     return wrapper;
   }
 
-  /** A compact, read-only list of this lesson's own planned concepts and their taught status — the "concise concept summary" Overview needs; the full interactive picker (checkboxes, Carry Forward buttons) lives only in the Concepts tab, not duplicated here. */
-  function renderConceptSummaryList(lesson) {
-    const section = document.createElement('div');
-    section.className = 'period-detail-panel__concept-summary';
-    const title = document.createElement('h3');
-    title.textContent = `Planned Concepts (${lesson.conceptIds.length})`;
-    section.appendChild(title);
-
-    const concepts = timetableDisplayService.resolveLessonConcepts(classroom, lesson);
-    const executedSet = new Set(lesson.executedConceptIds);
-    const carriedSet = new Set(lesson.carriedForwardConceptIds || []);
-
-    concepts.forEach(({ id, title: conceptTitle }) => {
-      const row = document.createElement('div');
-      row.className = 'period-detail-panel__concept-row';
-      const label = document.createElement('span');
-      label.textContent = conceptTitle;
-      row.appendChild(label);
-
-      const status = document.createElement('span');
-      status.className = 'period-detail-panel__concept-status';
-      if (carriedSet.has(id)) {
-        status.classList.add('period-detail-panel__concept-status--carried');
-        status.textContent = 'Carried Forward';
-      } else if (executedSet.has(id)) {
-        status.classList.add('period-detail-panel__concept-status--taught');
-        status.textContent = 'Taught';
-      } else {
-        status.classList.add('period-detail-panel__concept-status--pending');
-        status.textContent = 'Not taught';
-      }
-      row.appendChild(status);
-      section.appendChild(row);
-    });
-
-    return section;
-  }
-
-  /** The Overview's own carry-forward callout — only rendered when at least one concept genuinely still needs a decision (unexecuted, not yet carried). Opens the same openCarryForwardFlow() the Concepts tab's own per-concept button does; never a second implementation. */
-  function renderCarryForwardCallout(slot, lesson) {
-    const executedSet = new Set(lesson.executedConceptIds);
-    const carriedSet = new Set(lesson.carriedForwardConceptIds || []);
-    const concepts = timetableDisplayService.resolveLessonConcepts(classroom, lesson);
-    const pending = concepts.filter(({ id }) => !executedSet.has(id) && !carriedSet.has(id));
-    if (pending.length === 0) return null;
-
-    const callout = document.createElement('div');
-    callout.className = 'period-detail-panel__carry-callout';
-
-    const iconBadge = document.createElement('span');
-    iconBadge.className = 'period-detail-panel__carry-callout-icon';
-    iconBadge.appendChild(createIcon('undo-2', { size: 18 }));
-    callout.appendChild(iconBadge);
-
-    const textWrap = document.createElement('div');
-    textWrap.className = 'period-detail-panel__carry-callout-text';
-    const title = document.createElement('strong');
-    title.textContent = 'Carry Forward';
-    const desc = document.createElement('span');
-    desc.textContent = `${pending.length} concept${pending.length === 1 ? '' : 's'} to carry forward`;
-    textWrap.append(title, desc);
-    callout.appendChild(textWrap);
-
-    // READ-ONLY: the callout's own informational text (how many
-    // concepts are pending) stays — only the "Move" mutation action is
-    // omitted.
-    if (pending.length === 1 && isMutationAllowed()) {
-      const moveButton = document.createElement('button');
-      moveButton.type = 'button';
-      moveButton.className = 'btn btn--secondary period-detail-panel__carry-callout-action';
-      moveButton.textContent = 'Move';
-      moveButton.addEventListener('click', () => openCarryForwardFlow(slot, lesson, pending[0].id, pending[0].title));
-      callout.appendChild(moveButton);
-    }
-
-    return callout;
-  }
-
-  /** "Share feedback with students" — becomes a confirmed, disabled state once lesson.feedbackSharedAt is set, per explicit instruction that the teacher must get clear confirmation and never re-trigger a duplicate share by accident. READ-ONLY: the confirmed state (already shared) stays visible as pure inspection; the action itself never renders unshared. */
+  /** "Share feedback with students" — becomes a confirmed, disabled state once lesson.feedbackSharedAt is set, per explicit instruction that the teacher must get clear confirmation and never re-trigger a duplicate share by accident. READ-ONLY: the confirmed state (already shared) stays visible as pure inspection; the action itself never renders unshared. Lives in the Reflection tab (see renderReflectionSection() below) since the 2026-10-02 Concepts panel redesign removed the separate Overview tab this used to live on. */
   function renderShareFeedbackSection(slot, lesson, topic) {
     const section = document.createElement('div');
     section.className = 'period-detail-panel__share';
@@ -2342,14 +2228,14 @@ export async function renderTimetableView(
   /**
    * STEP 1 of the period workflow — Assign Unit. Deliberately just the
    * unit picker plus one primary action; Concepts, Student Resources,
-   * and Lesson Plan are their own separate steps/tabs, reached only
-   * once a Unit is assigned (see renderConceptsTab()'s own STATE A
+   * and Teacher Resources are their own separate steps/tabs, reached
+   * only once a Unit is assigned (see renderConceptsTab()'s own STATE A
    * empty state and renderResourcesTabPlaceholder()/
    * loadStudentResourcesTab()/loadLessonPlanTab() below) — never
    * bundled into this same form. Per explicit product direction: a
    * Learning Hub concept card is a STUDENT-facing resource, not a
-   * teacher-facing "lesson plan," and belongs under Student Resources,
-   * never here and never under Lesson Plan.
+   * teacher-facing one, and belongs under Student Resources, never
+   * here and never under Teacher Resources.
    *
    * Still creates the same models/Lesson.js record
    * (services/timetableLessonService.js's attachLessonPlan(), unchanged)
@@ -2574,7 +2460,7 @@ export async function renderTimetableView(
   }
 
   /**
-   * The Concepts tab's "+ Add concept" action once at least one
+   * The Concepts tab's "+ Add Concept" action once at least one
    * concept is already attached (STATE C — see renderConceptsTab()
    * above). A modal, unlike the initial empty-state prompt (which can
    * safely replace itself in place, since there's nothing else on the
@@ -2589,7 +2475,7 @@ export async function renderTimetableView(
    * another date's Lesson" guarantee as openEditLessonUnitFlow() above.
    */
   /**
-   * "+ Add concept" from the normal (STATE B/C) Concepts list — a
+   * "+ Add Concept" from the normal (STATE B/C) Concepts list — a
    * temporary overlay, not a separate destination. Per explicit
    * product direction, picking or creating a concept inside
    * renderConceptPicker() below closes this overlay immediately
@@ -2683,15 +2569,31 @@ export async function renderTimetableView(
   }
 
   /**
-   * The Concepts tab. There are only two teaching-status COLORS —
-   * PENDING (yellow: assigned, not yet covered in this period) and
-   * COVERED (green: taught) — read straight off the existing
-   * lesson.executedConceptIds field (see models/Lesson.js); no new
-   * concept-state model. "Assigned to this period" (lesson.conceptIds
-   * membership, managed by renderConceptPicker()/openAddConceptFlow()
-   * above) and "taught status" (executedConceptIds) stay the two
-   * separate, independent things they already were — this tab just
-   * never conflates them the way a single "selected" checkbox did.
+   * The Concepts tab — the PRIMARY place for managing a lesson's
+   * planned concepts (2026-10-02 redesign; this tab replaces the
+   * removed Overview tab as the default landing surface, see this
+   * function's own call site above).
+   *
+   * Strict separation of PLANNING from TEACHING/USAGE, per explicit
+   * product direction: Edit / Move to… / Remove (tucked inside each
+   * card's own ⋮ overflow menu — see renderConceptCard() below) are
+   * planning actions, available regardless of status, that only ever
+   * touch which concepts THIS Lesson references and where. Mark
+   * Covered / Carry Forward are a visually separate action row that
+   * only ever appears on a still-pending, not-yet-carried concept, and
+   * represent what actually happened while teaching — never the same
+   * code path as Move (see models/Lesson.js's own moveConcept() vs.
+   * carryForwardConcept() doc comments for exactly how these differ at
+   * the data-model level, not just the UI).
+   *
+   * There are only two teaching-status COLORS — PENDING (yellow:
+   * assigned, not yet covered in this period) and COVERED (green:
+   * taught) — read straight off the existing lesson.executedConceptIds
+   * field (see models/Lesson.js); no new concept-state model.
+   * "Assigned to this period" (lesson.conceptIds membership, managed by
+   * renderConceptPicker()/openAddConceptFlow() above, or by Edit/Move/
+   * Remove below) and "taught status" (executedConceptIds) stay the two
+   * separate, independent things they already were.
    *
    * Carried-forward (lesson.carriedForwardConceptIds) is NOT a third
    * color — per explicit product direction, and confirmed against
@@ -2700,17 +2602,12 @@ export async function renderTimetableView(
    * guaranteed, by construction, to always still be un-executed here —
    * exactly the same "not covered in this period" condition PENDING
    * already means. A carried concept renders on the same yellow card,
-   * just with a small muted "Carried forward" tag INSTEAD of the
-   * Mark covered / Carry forward actions (see renderConceptCard()
-   * below) — never its own background color, and never both actions
-   * either: marking a carried concept covered here would contradict
-   * it also being queued on a future lesson, and carrying it forward a
-   * second time is something carryForwardConcept() itself refuses.
-   *
-   * This is the Concepts tab's own presentation choice only — the
-   * Overview tab's separate renderConceptSummaryList() keeps its own,
-   * unrelated "Taught / Carried Forward / Not taught" text-label
-   * styling exactly as it was, untouched by this redesign.
+   * just with its status line reading "Carried forward" instead of
+   * showing the Mark Covered/Carry Forward action row — never both:
+   * marking a carried concept covered here would contradict it also
+   * being queued on a future lesson, and carrying it forward a second
+   * time is something carryForwardConcept() itself refuses. Move to…
+   * is similarly omitted from its ⋮ menu for the same reason.
    *
    * The per-concept positivePercent/respondedCount shown next to a
    * covered concept was already computed by
@@ -2761,7 +2658,7 @@ export async function renderTimetableView(
       );
     });
 
-    // READ-ONLY: the whole footer (Add concept / Mark all covered) is
+    // READ-ONLY: the whole footer (Add Concept / Mark all covered) is
     // a mutation-only surface — omitted entirely rather than disabled.
     if (isMutationAllowed()) {
       const footerActions = document.createElement('div');
@@ -2774,8 +2671,9 @@ export async function renderTimetableView(
       // replaced by the picker the way the empty state can afford to.
       const addMoreButton = document.createElement('button');
       addMoreButton.type = 'button';
-      addMoreButton.className = 'btn btn--text';
-      addMoreButton.textContent = '+ Add concept';
+      addMoreButton.className = 'btn btn--tonal btn--tonal-blue btn--pill';
+      addMoreButton.appendChild(createIcon('plus', { size: 14 }));
+      addMoreButton.append(' Add Concept');
       addMoreButton.addEventListener('click', () => openAddConceptFlow(slot, lesson));
       footerActions.appendChild(addMoreButton);
 
@@ -2785,6 +2683,15 @@ export async function renderTimetableView(
       // to select concepts just to mark them covered). Only shown once
       // there's genuinely more than one pending concept to act on; never
       // touches an already-carried-forward concept (see below).
+      // Deliberately `.btn--text`, not a tonal pill — a QA pass on the
+      // 2026-10-02 redesign flagged this bulk shortcut reading as the
+      // same visual weight as Add Concept and the per-card Mark
+      // Covered/Carry Forward actions, flattening a hierarchy that
+      // should exist between "the collection-level action," "the
+      // concept-level teaching actions," and "a rare bulk utility" —
+      // this is the existing, established low-emphasis tier (see
+      // ui/views/TimetableView.js's own pre-2026-10 convention for this
+      // exact button), not a new one invented for this fix.
       if (pendingCount > 1) {
         const markAllButton = document.createElement('button');
         markAllButton.type = 'button';
@@ -2814,21 +2721,41 @@ export async function renderTimetableView(
   }
 
   /**
-   * One concept card — PENDING (yellow) or COVERED (green), read off
-   * `executed` alone (see renderConceptsTab()'s own header comment for
-   * why carried-forward is never its own color). The background-color
-   * coding IS the status indicator, not a decorative accent — per
-   * explicit product direction, a teacher should be able to tell a
-   * period's teaching progress at a glance without reading every row.
+   * One concept card — the concept name is the visually dominant
+   * object (per explicit product direction); status, the ⋮ overflow
+   * menu, and the Mark Covered/Carry Forward action row are all
+   * secondary to it, never competing with it for attention.
+   *
+   * PENDING (yellow) or COVERED (green), read off `executed` alone
+   * (see renderConceptsTab()'s own header comment for why carried-
+   * forward is never its own color). The background-color coding IS
+   * the status indicator, not a decorative accent — per explicit
+   * product direction, a teacher should be able to tell a period's
+   * teaching progress at a glance — but it is never the ONLY indicator:
+   * the status line below the title always spells it out in words too
+   * (icon/color alone is never sufficient — matches this app's own
+   * established accessibility convention elsewhere, e.g. the Lesson
+   * Plan Builder's Teacher/Student interaction cards).
    *
    * A carried concept (`carried` true) is always PENDING-colored (the
    * data model guarantees it's never `executed` — see
-   * models/Lesson.js's own carryForwardConcept()) but gets a small
-   * muted "Carried forward" tag INSTEAD of the Mark covered/Carry
-   * forward actions, never both: a carried concept has already been
+   * models/Lesson.js's own carryForwardConcept()) but its status line
+   * reads "Carried forward…" INSTEAD of "Planned for this lesson," and
+   * it gets neither the Mark Covered/Carry Forward row nor a "Move
+   * to…" item in its own ⋮ menu — a carried concept has already been
    * deferred to a future lesson, so there's nothing left to do with it
-   * here. A plain COVERED card (not carried) gets neither the tag nor
-   * any actions.
+   * here except Edit (the concept's own title) or Remove (this
+   * lesson's reference to it).
+   *
+   * The ⋮ overflow menu (ui/components/OverflowMenu.js — the one
+   * existing platform pattern for standalone-object management
+   * actions, never a bespoke one invented here) is what keeps Edit/
+   * Move/Remove from permanently cluttering every card — it renders
+   * for every concept regardless of status (isMutationAllowed()
+   * permitting), since editing a concept's title or removing this
+   * lesson's reference to it are both always meaningful regardless of
+   * teaching status; only "Move to…" is conditionally omitted (see
+   * above).
    */
   function renderConceptCard({ slot, lesson, id, conceptTitle, executed, carried, stat }) {
     const stateClass = executed ? 'period-detail-panel__concept-card--covered' : 'period-detail-panel__concept-card--pending';
@@ -2836,37 +2763,57 @@ export async function renderTimetableView(
     const card = document.createElement('div');
     card.className = `period-detail-panel__concept-card ${stateClass}`;
 
-    const main = document.createElement('div');
-    main.className = 'period-detail-panel__concept-card-main';
+    const header = document.createElement('div');
+    header.className = 'period-detail-panel__concept-card-header';
 
     const title = document.createElement('span');
     title.className = 'period-detail-panel__concept-card-title';
     title.textContent = conceptTitle;
-    main.appendChild(title);
+    header.appendChild(title);
 
-    if (stat) {
-      const feedback = document.createElement('span');
-      feedback.className = 'period-detail-panel__concept-feedback';
-      feedback.textContent = `${stat.respondedCount}/${stat.totalStudents} · ${stat.positivePercent}%`;
-      main.appendChild(feedback);
+    // READ-ONLY: the whole ⋮ menu is a mutation-only surface — omitted
+    // entirely (never rendered-but-disabled), matching every other
+    // mutation control in this file.
+    if (isMutationAllowed()) {
+      const menuActions = [{ label: 'Edit concept', onClick: () => openEditConceptFlow(lesson, id, conceptTitle) }];
+      if (!executed && !carried) {
+        menuActions.push({ label: 'Move to…', onClick: () => openMoveConceptFlow(slot, lesson, id, conceptTitle) });
+      }
+      menuActions.push({
+        label: 'Remove from lesson',
+        danger: true,
+        onClick: () => handleRemoveConceptFromLesson(lesson, id, conceptTitle, { executed, carried }),
+      });
+      header.appendChild(createOverflowMenu({ actions: menuActions, ariaLabel: `${conceptTitle} actions` }));
     }
+    card.appendChild(header);
 
+    const status = document.createElement('span');
+    status.className = 'period-detail-panel__concept-card-status';
     if (carried) {
-      const tag = document.createElement('span');
-      tag.className = 'period-detail-panel__concept-card-carried-tag';
-      tag.textContent = 'Carried forward';
-      main.appendChild(tag);
+      status.textContent = 'Carried forward to a later period';
+    } else if (executed) {
+      status.textContent = stat ? `Covered · ${stat.respondedCount}/${stat.totalStudents} responded · ${stat.positivePercent}%` : 'Covered';
+    } else {
+      status.textContent = 'Planned for this lesson';
     }
-    card.appendChild(main);
+    card.appendChild(status);
 
+    // Usage/progress actions — visually separate from the planning
+    // actions tucked inside ⋮ above (a thin top border + its own
+    // margin, see css/styles.css's own `.period-detail-panel__concept-card-actions`
+    // rule), per explicit product direction that these must never read
+    // as part of the same action group as Edit/Move/Remove. Only ever
+    // appears for a still-pending, not-yet-carried concept — see this
+    // function's own header comment.
     if (!carried && !executed && isMutationAllowed()) {
       const actions = document.createElement('div');
       actions.className = 'period-detail-panel__concept-card-actions';
 
       const markCoveredButton = document.createElement('button');
       markCoveredButton.type = 'button';
-      markCoveredButton.className = 'btn btn--text';
-      markCoveredButton.textContent = 'Mark covered';
+      markCoveredButton.className = 'btn btn--tonal btn--tonal-green btn--pill';
+      markCoveredButton.textContent = 'Mark Covered';
       markCoveredButton.addEventListener('click', () =>
         runAction(async () => {
           await timetableLessonService.markConceptsExecuted(classroom, lesson, [...lesson.executedConceptIds, id]);
@@ -2876,21 +2823,18 @@ export async function renderTimetableView(
       );
       actions.appendChild(markCoveredButton);
 
-      const separator = document.createElement('span');
-      separator.className = 'period-detail-panel__concept-card-actions-sep';
-      separator.setAttribute('aria-hidden', 'true');
-      separator.textContent = '·';
-      actions.appendChild(separator);
-
       // Carry Forward only ever appears here — a PENDING, not-yet-
       // carried concept — per explicit product direction: a COVERED
       // concept has already been taught, and an already-carried one is
       // something models/Lesson.js's own carryForwardConcept() itself
-      // refuses to carry a second time.
+      // refuses to carry a second time. Deliberately NOT the same
+      // action as the ⋮ menu's "Move to…" above — see
+      // openMoveConceptFlow()'s own header comment for exactly how
+      // these differ.
       const carryButton = document.createElement('button');
       carryButton.type = 'button';
-      carryButton.className = 'btn btn--text';
-      carryButton.textContent = 'Carry forward';
+      carryButton.className = 'btn btn--tonal btn--tonal-neutral btn--pill';
+      carryButton.textContent = 'Carry Forward';
       carryButton.addEventListener('click', () => openCarryForwardFlow(slot, lesson, id, conceptTitle));
       actions.appendChild(carryButton);
 
@@ -2901,8 +2845,246 @@ export async function renderTimetableView(
   }
 
   /**
+   * "Remove from lesson" — the ⋮ menu's destructive action. Removes
+   * the concept from THIS Lesson's own plan only
+   * (models/Lesson.js's own removeConceptFromLesson()) — never
+   * services/learningRecordTeacherService.js's deleteConcept(), which
+   * deletes the canonical LearningConcept for the whole unit; that is
+   * a deliberately different, much bigger action this menu item never
+   * reaches. Confirms first only when real teaching-history data
+   * (executed/carried-forward state) would be discarded along with
+   * it — a plain, never-taught concept removes immediately, matching
+   * this file's existing "don't manufacture confirmation friction for
+   * the common case" convention (see openEditLessonUnitFlow()'s own
+   * analogous unit-change guard).
+   */
+  function handleRemoveConceptFromLesson(lesson, conceptId, conceptTitle, { executed, carried }) {
+    if (executed || carried) {
+      const warning = carried
+        ? `"${conceptTitle}" has already been carried forward to a later lesson. Removing it here will also clear that carried-forward record. Continue?`
+        : `"${conceptTitle}" has already been marked covered in this lesson. Removing it will also clear that record. Continue?`;
+      if (!window.confirm(warning)) return;
+    }
+
+    runAction(async () => {
+      removeConceptFromLesson(lesson, conceptId);
+      await plannerRepository.saveLesson(classroom.id, lesson);
+      rerenderCurrentRange();
+    });
+  }
+
+  /**
+   * "Edit concept" — the ⋮ menu's rename action. Per explicit product
+   * direction ("do not imply this edits the canonical Knowledge Model
+   * unless that's actually what the architecture supports"): the
+   * architecture has no separate per-lesson concept-assignment record
+   * at all — models/Lesson.js's own `conceptIds` is a bare array of
+   * canonical LearningConcept ids, nothing more — so there is
+   * genuinely nothing else here TO edit. This openly renames the
+   * canonical concept itself, via the exact same
+   * learningRecordTeacherService.renameConcept() Learning Management's
+   * own syllabus editor already uses (never a second, parallel rename
+   * path) — the modal's own copy discloses that plainly rather than
+   * implying this is somehow scoped to just this one lesson.
+   */
+  function openEditConceptFlow(lesson, conceptId, currentTitle) {
+    const overlay = document.createElement('div');
+    overlay.className = 'carry-forward-overlay';
+    const box = document.createElement('div');
+    box.className = 'carry-forward-overlay__box';
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    const eyebrow = document.createElement('p');
+    eyebrow.className = 'carry-forward-overlay__eyebrow';
+    eyebrow.textContent = 'EDIT CONCEPT';
+    box.appendChild(eyebrow);
+
+    const hint = document.createElement('p');
+    hint.className = 'period-detail-panel__attach-hint';
+    hint.textContent = 'This concept is shared across every lesson that uses it — renaming it updates it everywhere, not just here.';
+    box.appendChild(hint);
+
+    const titleInput = document.createElement('input');
+    titleInput.type = 'text';
+    titleInput.className = 'period-detail-panel__concept-search';
+    titleInput.value = currentTitle;
+    box.appendChild(titleInput);
+
+    const actions = document.createElement('div');
+    actions.className = 'carry-forward-overlay__actions';
+
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'btn btn--ghost';
+    cancelButton.textContent = 'Cancel';
+    cancelButton.addEventListener('click', () => overlay.remove());
+    actions.appendChild(cancelButton);
+
+    const saveButton = document.createElement('button');
+    saveButton.type = 'button';
+    saveButton.className = 'btn btn--primary';
+    saveButton.textContent = 'Save';
+    saveButton.addEventListener('click', () =>
+      runAction(async () => {
+        const newTitle = titleInput.value.trim();
+        if (newTitle && newTitle !== currentTitle) {
+          learningRecordTeacherService.renameConcept(classroom, conceptId, newTitle);
+          workspaceService.save(classroom);
+        }
+        overlay.remove();
+        rerenderCurrentRange();
+      })
+    );
+    actions.appendChild(saveButton);
+    box.appendChild(actions);
+  }
+
+  /**
+   * "Move to…" — the ⋮ menu's PLANNING rearrangement action.
+   * Deliberately a separate implementation from openCarryForwardFlow()
+   * below, even though the two share the exact same target-finding
+   * mechanism (timetableService.suggestCarryForwardTargets() — reused
+   * verbatim, never a second targeting system) — per explicit product
+   * direction, ordinary timetable rearrangement during planning must
+   * stay completely distinct from Carry Forward's teaching-history
+   * semantics, all the way down to which model function and which
+   * Lesson fields end up mutated (see models/Lesson.js's own
+   * moveConcept() vs. carryForwardConcept() doc comments). Mirrors
+   * openCarryForwardFlow()'s own overlay shell structurally (same
+   * reason openEditLessonUnitFlow() does) — not a shared helper,
+   * matching this file's own existing convention of independent modal
+   * implementations per distinct action.
+   */
+  function openMoveConceptFlow(slot, lesson, conceptId, conceptTitle) {
+    const { primary, others } = timetableService.suggestCarryForwardTargets(classroom, {
+      subjectId: slot.subjectId,
+      afterDateKey: slot.date,
+      afterPeriodNumber: slot.periodNumber,
+    });
+    const periods = timetableService.getPeriods(classroom);
+    const subjectTitle = timetableDisplayService.resolveSubjectTitle(classroom, slot.subjectId);
+
+    const overlay = document.createElement('div');
+    overlay.className = 'carry-forward-overlay';
+    const box = document.createElement('div');
+    box.className = 'carry-forward-overlay__box';
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    let selected = primary || null;
+
+    function timeLabel(option) {
+      const period = periods.find((p) => p.periodNumber === option.periodNumber);
+      return period ? `${formatCarryForwardOptionDate(option.date)} · ${period.startTime}` : formatCarryForwardOptionDate(option.date);
+    }
+
+    function renderBox() {
+      box.innerHTML = '';
+
+      const eyebrow = document.createElement('p');
+      eyebrow.className = 'carry-forward-overlay__eyebrow';
+      eyebrow.textContent = 'MOVE CONCEPT';
+      box.appendChild(eyebrow);
+
+      const conceptLabel = document.createElement('h3');
+      conceptLabel.className = 'carry-forward-overlay__concept';
+      conceptLabel.textContent = conceptTitle;
+      box.appendChild(conceptLabel);
+
+      if (!primary) {
+        const none = document.createElement('p');
+        none.textContent = 'No future period for this subject is scheduled yet.';
+        box.appendChild(none);
+      } else {
+        const suggestedLabel = document.createElement('p');
+        suggestedLabel.className = 'carry-forward-overlay__section-label';
+        suggestedLabel.textContent = 'Suggested';
+        box.appendChild(suggestedLabel);
+        box.appendChild(renderOptionRow(primary, `Next ${subjectTitle} period`));
+
+        if (others.length > 0) {
+          const otherLabel = document.createElement('p');
+          otherLabel.className = 'carry-forward-overlay__section-label';
+          otherLabel.textContent = `Other ${subjectTitle} periods`;
+          box.appendChild(otherLabel);
+          others.forEach((option) => box.appendChild(renderOptionRow(option)));
+        }
+      }
+
+      const actions = document.createElement('div');
+      actions.className = 'carry-forward-overlay__actions';
+
+      const cancelButton = document.createElement('button');
+      cancelButton.type = 'button';
+      cancelButton.className = 'btn btn--ghost';
+      cancelButton.textContent = 'Cancel';
+      cancelButton.addEventListener('click', () => overlay.remove());
+      actions.appendChild(cancelButton);
+
+      if (selected) {
+        const moveButton = document.createElement('button');
+        moveButton.type = 'button';
+        moveButton.className = 'btn btn--primary carry-forward-overlay__move';
+        moveButton.textContent = `Move to ${formatCarryForwardOptionDate(selected.date)}`;
+        moveButton.addEventListener('click', () => doMove(selected));
+        actions.appendChild(moveButton);
+      }
+
+      box.appendChild(actions);
+    }
+
+    function renderOptionRow(option, overrideLabel) {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'carry-forward-overlay__option';
+      const isSelected = selected && selected.id === option.id;
+      row.classList.toggle('carry-forward-overlay__option--selected', isSelected);
+
+      const radio = document.createElement('span');
+      radio.className = 'carry-forward-overlay__option-radio';
+      row.appendChild(radio);
+
+      const textWrap = document.createElement('span');
+      textWrap.className = 'carry-forward-overlay__option-text';
+      if (overrideLabel) {
+        const strong = document.createElement('strong');
+        strong.textContent = overrideLabel;
+        textWrap.appendChild(strong);
+      }
+      const timeEl = document.createElement('span');
+      timeEl.textContent = timeLabel(option);
+      textWrap.appendChild(timeEl);
+      row.appendChild(textWrap);
+
+      row.addEventListener('click', () => {
+        selected = option;
+        renderBox();
+      });
+      return row;
+    }
+
+    async function doMove(targetSlot) {
+      await runAction(async () => {
+        const existingTargetLesson = await plannerRepository.getLessonByTeachingSlotId(classroom.id, targetSlot.id);
+        await timetableLessonService.moveConceptToTeachingSlot(classroom, {
+          sourceLesson: lesson,
+          conceptId,
+          targetTeachingSlotId: targetSlot.id,
+          targetDate: targetSlot.date,
+          existingTargetLesson,
+        });
+        overlay.remove();
+        await loadAndRender();
+      });
+    }
+
+    renderBox();
+  }
+
+  /**
    * STATE A's empty state — "No concepts added yet." + an explicit
-   * "+ Add concept" action, reusing the exact same
+   * "+ Add Concept" action, reusing the exact same
    * `.period-detail-panel__attach-hint` / `.period-detail-panel__concept-picker`
    * classes Phase T's Attach Lesson form already established, so this
    * reads as the same mechanism rather than a second one. The lesson's
@@ -2930,8 +3112,9 @@ export async function renderTimetableView(
 
       const addButton = document.createElement('button');
       addButton.type = 'button';
-      addButton.className = 'btn btn--text';
-      addButton.textContent = '+ Add concept';
+      addButton.className = 'btn btn--tonal btn--tonal-blue btn--pill';
+      addButton.appendChild(createIcon('plus', { size: 14 }));
+      addButton.append(' Add Concept');
       addButton.addEventListener('click', renderPicker);
       wrapper.appendChild(addButton);
     }
@@ -2959,7 +3142,7 @@ export async function renderTimetableView(
 
   /**
    * The one shared concept-picker UI — used by the Concepts tab's
-   * initial "+ Add concept" prompt (this lesson has no concepts yet)
+   * initial "+ Add Concept" prompt (this lesson has no concepts yet)
    * and openAddConceptFlow() above (adding more once at least one is
    * already attached). One unified search-or-create box, per explicit
    * product direction that a teacher should never have to think about
@@ -3081,7 +3264,7 @@ export async function renderTimetableView(
     return wrapper;
   }
 
-  /** Shared loading placeholder for both the Student Resources and Lesson Plan tabs, filled in by loadStudentResourcesTab()/loadLessonPlanTab() once the (async) resource fetch resolves. Matches this file's own "grid data renders instantly, network data fills in" convention already used for lessons. */
+  /** Shared loading placeholder for both the Student Resources and Teacher Resources tabs, filled in by loadStudentResourcesTab()/loadLessonPlanTab() once the (async) resource fetch resolves. Matches this file's own "grid data renders instantly, network data fills in" convention already used for lessons. */
   function renderResourcesTabPlaceholder() {
     const section = document.createElement('div');
     section.className = 'period-detail-panel__resources';
@@ -3157,9 +3340,9 @@ export async function renderTimetableView(
    * (models/Resource.js) is 'student' or 'both'. A teacher-only
    * resource (audience 'teacher', or no audience at all — the
    * pre-existing default) never appears here; it belongs on the
-   * separate Lesson Plan tab instead (see loadLessonPlanTab()) — per
-   * explicit product direction, these are two different tabs, never
-   * one combined "Resources" tab containing both.
+   * separate Teacher Resources tab instead (see loadLessonPlanTab()) —
+   * per explicit product direction, these are two different tabs,
+   * never one combined "Resources" tab containing both.
    */
   async function loadStudentResourcesTab(container, slot, lesson) {
     const { entries, activityEntries } = await fetchLessonResourceEntries(lesson);
@@ -3187,20 +3370,24 @@ export async function renderTimetableView(
   }
 
   /**
-   * LESSON PLAN tab — "what do I, the teacher, use to teach it?"
-   * Exclusively teacher-facing planning material: every plain Resource
-   * whose audience is 'teacher' (or unset). Never shows Learning Hub
-   * concept cards (those are always student-facing — see
+   * TEACHER RESOURCES tab (previously mislabeled "Lesson Plan" — fixed
+   * 2026-10-01; see this function's own name/the `lessonPlan` tab id,
+   * left untouched as an internal detail) — "what do I, the teacher,
+   * use to teach it?" Exclusively teacher-facing material: every plain
+   * Resource whose audience is 'teacher' (or unset). Never shows
+   * Learning Hub concept cards (those are always student-facing — see
    * loadStudentResourcesTab() above) and is a fully separate tab from
    * Student Resources, not a subsection of it, per explicit product
-   * direction that a lesson plan must never be presented as one more
-   * resource alongside student-facing material.
+   * direction that a teacher-facing resource must never be presented
+   * as one more resource alongside student-facing material. This is
+   * NOT the real Lesson Plan — see the separate "Plan" tab/
+   * renderPlanTab() for the actual Objectives/Big Question/Detailed
+   * Lesson Plan bridge.
    *
-   * "Upload Lesson Plan" has no backing file-storage yet anywhere in
-   * this codebase, so it's shown disabled rather than half-built —
-   * "Share Lesson Plan" (a link, via the same openAddResourceFlow()
-   * plain-link path, forced to audience 'teacher') is the one real
-   * action for now.
+   * "Upload Resource" has no backing file-storage yet anywhere in this
+   * codebase, so it's shown disabled rather than half-built — "+ Add
+   * Resource" (a link, via the same openAddResourceFlow() plain-link
+   * path, forced to audience 'teacher') is the one real action for now.
    */
   async function loadLessonPlanTab(container, slot, lesson) {
     const { entries } = await fetchLessonResourceEntries(lesson);
@@ -3213,11 +3400,11 @@ export async function renderTimetableView(
 
     container.appendChild(
       renderResourceTabBody({
-        description: 'Teacher-facing planning material.',
-        emptyMessage: 'No lesson plan material added for this lesson yet.',
+        description: 'Resources only you (the teacher) can see for this period.',
+        emptyMessage: 'No teacher resources added for this lesson yet.',
         buttons: [
-          { label: 'Share Lesson Plan', className: 'btn btn--text', onClick: () => openAddResourceFlow(slot, lesson, reload, { mode: 'lessonPlan' }) },
-          { label: 'Upload Lesson Plan', className: 'btn btn--text', disabled: true, title: 'Coming soon' },
+          { label: '+ Add Resource', className: 'btn btn--text', onClick: () => openAddResourceFlow(slot, lesson, reload, { mode: 'lessonPlan' }) },
+          { label: 'Upload Resource', className: 'btn btn--text', disabled: true, title: 'Coming soon' },
         ],
         activityEntries: [],
         entries: lessonPlanEntries,
@@ -3227,11 +3414,12 @@ export async function renderTimetableView(
   }
 
   /**
-   * Shared body shell for both the Student Resources and Lesson Plan
-   * tabs — heading/actions/list/empty-state render identically; only
-   * the content passed in differs. No title element here: the tab bar
-   * itself already names which tab this is (see the Phase P tab list
-   * above) — repeating it inside the content would just duplicate it.
+   * Shared body shell for both the Student Resources and Teacher
+   * Resources tabs — heading/actions/list/empty-state render
+   * identically; only the content passed in differs. No title element
+   * here: the tab bar itself already names which tab this is (see the
+   * Phase P tab list above) — repeating it inside the content would
+   * just duplicate it.
    */
   function renderResourceTabBody({ description, emptyMessage, buttons, activityEntries, entries, reload }) {
     const section = document.createElement('div');
@@ -3242,9 +3430,9 @@ export async function renderTimetableView(
     desc.textContent = description;
     section.appendChild(desc);
 
-    // READ-ONLY: every button passed in here (+Add Resource, Share
-    // Lesson Plan, Upload Lesson Plan) either attaches or would attach
-    // a resource — a mutation — so none of them render at all.
+    // READ-ONLY: every button passed in here (+Add Resource, Upload
+    // Resource) either attaches or would attach a resource — a
+    // mutation — so none of them render at all.
     if (isMutationAllowed()) {
       const actionsRow = document.createElement('div');
       actionsRow.className = 'period-detail-panel__resource-group-actions';
@@ -3281,7 +3469,7 @@ export async function renderTimetableView(
     return section;
   }
 
-  /** One plain-link resource row — extracted from this file's former single Resources-tab list so both the Student Resources and Lesson Plan groups render it identically. */
+  /** One plain-link resource row — extracted from this file's former single Resources-tab list so both the Student Resources and Teacher Resources groups render it identically. */
   function renderPlainResourceItem(resource, concept, reload) {
     const item = document.createElement('div');
     item.className = 'period-detail-panel__resource-item';
@@ -3427,9 +3615,9 @@ export async function renderTimetableView(
   }
 
   /**
-   * The "+ Add Resource" (Student Resources) / "Share Lesson Plan"
-   * (Lesson Plan) action — a simple manual entry form (title / URL /
-   * optional description), not ConceptWorkspaceView.js's own full
+   * The "+ Add Resource" (Student Resources) / "+ Add Resource"
+   * (Teacher Resources) action — a simple manual entry form (title /
+   * URL / optional description), not ConceptWorkspaceView.js's own full
    * resource editor (a separate, heavier multi-type workflow
    * deliberately not pulled in here — see this file's own header
    * comment on staying a minimal, real form rather than a second
@@ -3458,11 +3646,11 @@ export async function renderTimetableView(
    * opened from — it decides the resource's `audience`
    * (models/Resource.js) and whether the Learning Hub option is
    * offered at all, since a Learning Hub concept card is always
-   * student-facing and never belongs in Lesson Plan.
+   * student-facing and never belongs in Teacher Resources.
    */
   function openAddResourceFlow(slot, lesson, onSaved, { mode = 'student' } = {}) {
     const concepts = timetableDisplayService.resolveLessonConcepts(classroom, lesson);
-    const eyebrowText = mode === 'lessonPlan' ? 'ADD TO LESSON PLAN' : 'ADD RESOURCE';
+    const eyebrowText = mode === 'lessonPlan' ? 'ADD TEACHER RESOURCE' : 'ADD RESOURCE';
     const audience = mode === 'lessonPlan' ? 'teacher' : 'student';
 
     const overlay = document.createElement('div');
@@ -3571,7 +3759,7 @@ export async function renderTimetableView(
 
       // A Learning Hub concept card is always student-facing (per this
       // function's own header comment) — offered only from the
-      // Student Resources entry point, never from Lesson Plan.
+      // Student Resources entry point, never from Teacher Resources.
       if (mode === 'student') {
         const learningHubLabel = document.createElement('p');
         learningHubLabel.className = 'period-detail-panel__attach-label';
@@ -3633,7 +3821,7 @@ export async function renderTimetableView(
       const addButton = document.createElement('button');
       addButton.type = 'button';
       addButton.className = 'btn btn--primary';
-      addButton.textContent = mode === 'lessonPlan' ? 'Add to Lesson Plan' : 'Add resource';
+      addButton.textContent = 'Add Resource'; // same label either way — only the modal's own eyebrow/tab context distinguishes audience (see openAddResourceFlow()'s own header comment); a 2026-10-01 fix caught these two branches having silently drifted to different letter-casing ("Add Resource" vs "Add resource") with no intentional meaning behind the difference
 
       function updateAddButtonState() {
         addButton.disabled = !getSelectedConceptId() || !titleInput.value.trim() || !urlInput.value.trim();
@@ -5305,9 +5493,50 @@ export async function renderTimetableView(
     renderBox();
   }
 
-  function renderReflectionSection(lesson) {
+  /**
+   * Reflection — the post-lesson tab. Also hosts the lesson feedback
+   * summary (Response Rate, the Overall Understanding ring, the 4-tier
+   * breakdown) and the "Share feedback with students" action
+   * (renderShareFeedbackSection() above), relocated here 2026-10-02
+   * when the separate Overview tab was removed: this content only ever
+   * renders once at least one concept has been executed, which makes
+   * Reflection — not Concepts, which is now purely a planning/usage
+   * surface — its natural home. Nothing here is computed separately
+   * from Concepts's own data — same `lesson`, same
+   * conceptFeedbackService summary object Concepts's per-card feedback
+   * stat already reads.
+   */
+  function renderReflectionSection(slot, lesson, topic) {
     const section = document.createElement('div');
     section.className = 'period-detail-panel__reflection';
+
+    if (lesson.executedConceptIds.length > 0) {
+      const summary = conceptFeedbackService.getLessonFeedbackSummary(classroom, lesson);
+
+      const feedbackHeading = document.createElement('h3');
+      feedbackHeading.textContent = 'Lesson Feedback';
+      section.appendChild(feedbackHeading);
+
+      const responseRow = document.createElement('div');
+      responseRow.className = 'period-detail-panel__overview-top';
+
+      // RESPONSE RATE and UNDERSTANDING stay two visibly separate
+      // metrics, never collapsed into one number — per explicit
+      // product decision (see conceptFeedbackService.js's own header
+      // comment). The ring is a SUMMARY VISUALIZATION of the existing
+      // combinedPositivePercent metric — not a new calculation, and
+      // not a replacement for the 4-tier breakdown rendered below it.
+      const responseRate = document.createElement('p');
+      responseRate.className = 'period-detail-panel__responded';
+      responseRate.innerHTML = `<strong>Response Rate</strong> ${summary.respondedStudentCount}/${summary.totalStudents} responded`;
+      responseRow.appendChild(responseRate);
+      responseRow.appendChild(renderUnderstandingRing(summary.combinedPositivePercent));
+      section.appendChild(responseRow);
+
+      section.appendChild(renderFeedbackSummaryCards(summary));
+      section.appendChild(renderShareFeedbackSection(slot, lesson, topic));
+    }
+
     const title = document.createElement('h3');
     title.textContent = 'Teacher Reflection';
     section.appendChild(title);

@@ -24,7 +24,7 @@
  * itself already follows.
  */
 
-import { createLesson, findInvalidExecutedConceptIds, getFeedbackEligibleConceptIds } from '../models/Lesson.js';
+import { createLesson, findInvalidExecutedConceptIds, getFeedbackEligibleConceptIds, moveConcept } from '../models/Lesson.js';
 import { createLessonPlan, createLessonPlanObjective, getLessonPlanObjectiveIndex, findLessonPlanObjective } from '../models/LessonPlan.js';
 import * as plannerRepository from './plannerRepository.js';
 import * as lessonPlanRepository from './lessonPlanRepository.js';
@@ -70,6 +70,36 @@ export async function attachLessonPlan(classroom, { teachingSlotId, date, curric
  * taught." The caller still owns workspaceService.save(classroom)
  * afterward — see this file's own header comment for why.
  */
+/**
+ * Orchestrates a PLANNING move of one concept to a different Teaching
+ * Slot's Lesson — deliberately separate from
+ * services/carryForwardService.js's carryForwardToTeachingSlot(), which
+ * this mirrors structurally (find-or-create the target Lesson, persist
+ * both atomically) but calls models/Lesson.js's own moveConcept()
+ * instead of carryForwardConcept() — see that function's own doc
+ * comment for exactly what differs and why; this never creates
+ * carriedForwardConceptIds/conceptProvenance state. Caller resolves
+ * `existingTargetLesson` first via
+ * plannerRepository.getLessonByTeachingSlotId(), same convention
+ * carryForwardToTeachingSlot() already uses.
+ */
+export async function moveConceptToTeachingSlot(classroom, { sourceLesson, conceptId, targetTeachingSlotId, targetDate, existingTargetLesson = null }) {
+  const targetLesson =
+    existingTargetLesson ||
+    createLesson({
+      classroomId: classroom.id,
+      date: targetDate,
+      teachingSlotId: targetTeachingSlotId,
+      curriculumUnitId: sourceLesson.curriculumUnitId,
+    });
+
+  moveConcept({ sourceLesson, targetLesson, conceptId });
+
+  await plannerRepository.saveLessons(classroom.id, [sourceLesson, targetLesson]);
+
+  return { sourceLesson, targetLesson };
+}
+
 export async function markConceptsExecuted(classroom, lesson, executedConceptIds) {
   const invalid = findInvalidExecutedConceptIds(lesson, executedConceptIds);
   if (invalid.length > 0) {

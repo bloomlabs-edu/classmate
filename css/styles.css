@@ -20042,30 +20042,27 @@ button.recognition-bento__hero-winner-name {
   flex: 1;
 }
 
-.period-detail-panel__concept-status--carried {
-  font-size: 0.75rem;
-  color: var(--color-danger);
-  font-weight: 600;
-}
-
-/* Concepts tab cards (Phase U redesign) — background-color IS the
-   teaching-status indicator (pending/covered/carried), not a
-   decorative accent, per explicit product direction: a teacher should
-   be able to read a period's progress at a glance. Reuses the exact
+/* Concepts tab cards (2026-10-02 redesign) — background-color IS the
+   teaching-status indicator (pending/covered), not a decorative
+   accent, per explicit product direction: a teacher should be able to
+   read a period's progress at a glance — but never the ONLY
+   indicator, see .period-detail-panel__concept-card-status below,
+   which always spells the status out in words too. Reuses the exact
    --color-warning/--color-success tokens already established
    elsewhere in this app for "pending"/"complete" states — never a new
-   color vocabulary. */
+   color vocabulary. Column layout (title+⋮ row, then status, then an
+   optional usage-action row) — not a single flex-wrap row — is what
+   gives the concept name real visual dominance over everything else
+   on the card, per explicit product direction: a concept should read
+   as the main object, with status/actions clearly secondary. */
 .period-detail-panel__concept-card {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--space-2);
+  flex-direction: column;
   border: 1px solid var(--color-border);
   border-left: 4px solid var(--color-border);
   border-radius: var(--radius-control);
-  padding: var(--space-2) var(--space-3);
-  margin-bottom: var(--space-2);
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
 }
 
 .period-detail-panel__concept-card--pending {
@@ -20078,39 +20075,60 @@ button.recognition-bento__hero-winner-name {
   background: color-mix(in srgb, var(--color-success) 12%, var(--color-surface));
 }
 
-.period-detail-panel__concept-card-main {
+.period-detail-panel__concept-card-header {
   display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
 }
 
-.period-detail-panel__concept-card-title {
-  font-weight: var(--font-weight-medium);
-}
-
-/* A carried-forward concept stays on the same pending (yellow) card —
-   this is only a small, muted secondary tag, never its own background
-   color (see ui/views/TimetableView.js's own renderConceptCard() doc
-   comment for why: the data model guarantees a carried concept is
-   always still un-executed, i.e. still genuinely pending). */
-.period-detail-panel__concept-card-carried-tag {
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: var(--color-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.period-detail-panel__concept-card-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
+/* The ⋮ overflow trigger must never shrink/wrap away even when the
+   title next to it wraps to two lines (see
+   .period-detail-panel__concept-card-title below) — it stays pinned
+   top-right, unobtrusive but always reachable. */
+.period-detail-panel__concept-card-header .overflow-menu {
   flex-shrink: 0;
 }
 
-.period-detail-panel__concept-card-actions-sep {
+/* Visually dominant — the concept IS the main object on this card, per
+   explicit product direction; status/⋮/the usage-action row below are
+   all deliberately smaller and quieter than this. `min-width: 0` is
+   what actually lets a flex child wrap a long name onto a second line
+   instead of overflowing its row or forcing the card wider than the
+   narrow side panel. */
+.period-detail-panel__concept-card-title {
+  font-size: 1rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+  min-width: 0;
+  word-break: break-word;
+}
+
+/* Secondary status line — plain text, never color/icon alone (matches
+   this app's own established "never color alone" accessibility
+   convention) — reads "Planned for this lesson" / "Covered · …" /
+   "Carried forward to a later period" depending on state. */
+.period-detail-panel__concept-card-status {
+  font-size: 0.8rem;
   color: var(--color-muted);
+  margin-top: 0.25rem;
+}
+
+/* Usage/progress actions (Mark Covered / Carry Forward) — a separate,
+   visually distinct row from the planning actions tucked inside ⋮
+   above, per explicit product direction that these must never read as
+   the same action group as Edit/Move/Remove. The top border + its own
+   margin is what makes that separation visible, not just a
+   differently-styled button; filled/tonal pills, never the previous
+   plain-text-link treatment. */
+.period-detail-panel__concept-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
 }
 
 .period-detail-panel__concepts-footer-actions {
@@ -20230,8 +20248,9 @@ button.recognition-bento__hero-winner-name {
 }
 
 /* ---------------------------------------------------------------------
-   Period Detail — tab navigation (Phase P). Reference: Overview /
-   Concepts (n) / Resources / Reflection.
+   Period Detail — tab navigation (Phase P). Concepts (n) / Plan /
+   Student Resources / Teacher Resources / Reflection — Concepts is now
+   first/default (the separate Overview tab was removed 2026-10-02).
    --------------------------------------------------------------------- */
 
 .period-detail-panel__tabs {
@@ -20265,7 +20284,12 @@ button.recognition-bento__hero-winner-name {
 }
 
 /* ---------------------------------------------------------------------
-   Period Detail — Overview tab (Phase P).
+   Period Detail — Lesson Feedback (response rate / understanding ring
+   / 4-tier breakdown / Share Feedback), now rendered inside the
+   Reflection tab (see ui/views/TimetableView.js's own
+   renderReflectionSection()) — the separate Overview tab this used to
+   live on was removed 2026-10-02 in favor of Concepts as the primary
+   tab; these class names are kept as-is, only their mount point moved.
    --------------------------------------------------------------------- */
 
 .period-detail-panel__overview-top {
@@ -20312,58 +20336,6 @@ button.recognition-bento__hero-winner-name {
   color: var(--color-muted);
   line-height: 1.1;
   max-width: 52px;
-}
-
-.period-detail-panel__concept-summary {
-  margin: var(--space-4) 0;
-}
-
-.period-detail-panel__concept-status {
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.period-detail-panel__concept-status--taught { color: var(--color-success); }
-.period-detail-panel__concept-status--pending { color: var(--color-muted); }
-.period-detail-panel__concept-feedback {
-  font-size: 0.75rem;
-  color: var(--color-primary-strong);
-  margin: 0 var(--space-2);
-}
-
-.period-detail-panel__carry-callout {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));
-  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
-  border-radius: var(--radius-card);
-  padding: var(--space-3) var(--space-4);
-  margin: var(--space-4) 0;
-}
-
-.period-detail-panel__carry-callout-icon {
-  flex-shrink: 0;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: color-mix(in srgb, var(--color-accent) 25%, var(--color-surface));
-  color: var(--color-gold);
-}
-
-.period-detail-panel__carry-callout-text {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  font-size: 0.85rem;
-}
-
-.period-detail-panel__carry-callout-action {
-  flex-shrink: 0;
 }
 
 /* ---------------------------------------------------------------------

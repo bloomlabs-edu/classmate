@@ -288,3 +288,79 @@ export function carryForwardConcept({ sourceLesson, targetLesson, conceptId, sou
 
   return { sourceLesson, targetLesson };
 }
+
+/**
+ * Moves one planned concept from `sourceLesson` to `targetLesson` as a
+ * pure PLANNING rearrangement — deliberately NOT carryForwardConcept()
+ * above, and never to be confused with it (2026-10 Concepts panel
+ * redesign, per explicit product direction: "Move to..." is a planning
+ * action, Carry Forward is a teaching/progress action, and moving a
+ * concept during planning must never create a teaching-history/
+ * carry-forward state). The concept is fully removed from
+ * sourceLesson.conceptIds (not kept there and tagged, the way
+ * carryForwardConcept() deliberately does) and no conceptProvenance
+ * entry is recorded on the target — after this call, the concept reads
+ * exactly as if it had always been planned on targetLesson and never
+ * planned on sourceLesson at all, with no trace left behind of the
+ * rearrangement ever happening.
+ *
+ * Same eligibility guards as carryForwardConcept() (not planned on the
+ * source / already executed / already carried forward / already on the
+ * target), for analogous reasons: a concept that's already been taught
+ * or is already mid-carry-forward is teaching history, not something
+ * still open to ordinary planning rearrangement.
+ */
+export function moveConcept({ sourceLesson, targetLesson, conceptId }) {
+  if (!sourceLesson.conceptIds.includes(conceptId)) {
+    throw new Error(`Concept ${conceptId} is not planned on the source lesson`);
+  }
+  if (sourceLesson.executedConceptIds.includes(conceptId)) {
+    throw new Error(`Concept ${conceptId} was already executed — nothing to move`);
+  }
+  if (sourceLesson.carriedForwardConceptIds.includes(conceptId)) {
+    throw new Error(`Concept ${conceptId} has already been carried forward`);
+  }
+  if (targetLesson.conceptIds.includes(conceptId)) {
+    throw new Error(`Concept ${conceptId} is already planned on the target lesson`);
+  }
+
+  sourceLesson.conceptIds = sourceLesson.conceptIds.filter((existingId) => existingId !== conceptId);
+  // Defensive only — a concept still eligible to move (per the guards
+  // above) can't actually have arrived on the source via carry-forward
+  // and also still be unexecuted/uncarried there in a way that would
+  // leave a stale provenance entry, but cleared here anyway for the
+  // same "every concept-keyed field stays in sync" discipline
+  // removeConceptFromLesson() below always applies.
+  if (sourceLesson.conceptProvenance[conceptId]) {
+    const { [conceptId]: _removed, ...rest } = sourceLesson.conceptProvenance;
+    sourceLesson.conceptProvenance = rest;
+  }
+
+  targetLesson.conceptIds = [...targetLesson.conceptIds, conceptId];
+
+  return { sourceLesson, targetLesson };
+}
+
+/**
+ * Removes one concept from a Lesson's own plan entirely — "Remove from
+ * lesson," never "delete the concept" (see
+ * services/learningRecordTeacherService.js's own deleteConcept() for
+ * that separate, unit-wide, canonical-Knowledge-Model action this
+ * function never calls or duplicates — this only ever edits which
+ * concepts THIS Lesson references, never the LearningConcept itself).
+ * Clears every concept-keyed field, not just conceptIds — the same
+ * "every field resets together" discipline resetLessonForUnitChange()
+ * above follows — so executedConceptIds/carriedForwardConceptIds/
+ * conceptProvenance never end up referencing a concept id this Lesson
+ * no longer plans at all.
+ */
+export function removeConceptFromLesson(lesson, conceptId) {
+  lesson.conceptIds = lesson.conceptIds.filter((existingId) => existingId !== conceptId);
+  lesson.executedConceptIds = lesson.executedConceptIds.filter((existingId) => existingId !== conceptId);
+  lesson.carriedForwardConceptIds = lesson.carriedForwardConceptIds.filter((existingId) => existingId !== conceptId);
+  if (lesson.conceptProvenance[conceptId]) {
+    const { [conceptId]: _removed, ...rest } = lesson.conceptProvenance;
+    lesson.conceptProvenance = rest;
+  }
+  return lesson;
+}

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createLesson, findInvalidExecutedConceptIds, getFeedbackEligibleConceptIds, carryForwardConcept, resetLessonForUnitChange } from '../../js/models/Lesson.js';
+import { createLesson, findInvalidExecutedConceptIds, getFeedbackEligibleConceptIds, carryForwardConcept, resetLessonForUnitChange, moveConcept, removeConceptFromLesson } from '../../js/models/Lesson.js';
 
 test('createLesson: executedConceptIds/carriedForwardConceptIds/conceptProvenance default to empty, planningCycleId to null', () => {
   const lesson = createLesson({ classroomId: 'c1', date: '2026-08-25', teachingSlotId: 'slot-1', conceptIds: ['A', 'B'] });
@@ -135,6 +135,108 @@ test('carryForwardConcept: throws if the concept has already been carried forwar
   const thursday = createLesson({ id: 'lesson-thu', classroomId: 'c1', conceptIds: [] });
 
   assert.throws(() => carryForwardConcept({ sourceLesson: tuesday, targetLesson: thursday, conceptId: 'D', sourceTeachingSlotId: 's1', carriedAt: 'now' }));
+});
+
+// ---------------------------------------------------------------------
+// moveConcept — the Concepts panel redesign's PLANNING rearrangement
+// ("Move to..."), deliberately distinct from carryForwardConcept()
+// above: no teaching-history trace left behind on either lesson.
+// Monday Hazards -> moved to Wednesday during planning, nothing taught
+// yet anywhere.
+// ---------------------------------------------------------------------
+
+test('moveConcept: moves the SAME concept id to the target lesson, never cloning it', () => {
+  const monday = createLesson({ id: 'lesson-mon', classroomId: 'c1', conceptIds: ['Hazards', 'Disasters'] });
+  const wednesday = createLesson({ id: 'lesson-wed', classroomId: 'c1', conceptIds: [] });
+
+  moveConcept({ sourceLesson: monday, targetLesson: wednesday, conceptId: 'Hazards' });
+
+  assert.ok(wednesday.conceptIds.includes('Hazards'));
+  assert.equal(wednesday.conceptIds.filter((id) => id === 'Hazards').length, 1);
+});
+
+test('moveConcept: unlike carryForwardConcept, the concept is REMOVED from the source lesson entirely — not kept and tagged', () => {
+  const monday = createLesson({ id: 'lesson-mon', classroomId: 'c1', conceptIds: ['Hazards', 'Disasters'] });
+  const wednesday = createLesson({ id: 'lesson-wed', classroomId: 'c1', conceptIds: [] });
+
+  moveConcept({ sourceLesson: monday, targetLesson: wednesday, conceptId: 'Hazards' });
+
+  assert.ok(!monday.conceptIds.includes('Hazards'), 'Hazards must be gone from the source lesson\'s own conceptIds');
+  assert.deepEqual(monday.carriedForwardConceptIds, [], 'moving must never populate carriedForwardConceptIds — that would make this indistinguishable from Carry Forward');
+  assert.deepEqual(monday.conceptIds, ['Disasters']);
+});
+
+test('moveConcept: no conceptProvenance entry is created on the target — a moved concept reads as if always planned there', () => {
+  const monday = createLesson({ id: 'lesson-mon', classroomId: 'c1', conceptIds: ['Hazards'] });
+  const wednesday = createLesson({ id: 'lesson-wed', classroomId: 'c1', conceptIds: [] });
+
+  moveConcept({ sourceLesson: monday, targetLesson: wednesday, conceptId: 'Hazards' });
+
+  assert.deepEqual(wednesday.conceptProvenance, {});
+});
+
+test('moveConcept: throws if the concept was already executed on the source (not open to ordinary planning rearrangement anymore)', () => {
+  const monday = createLesson({ id: 'lesson-mon', classroomId: 'c1', conceptIds: ['Hazards'], executedConceptIds: ['Hazards'] });
+  const wednesday = createLesson({ id: 'lesson-wed', classroomId: 'c1', conceptIds: [] });
+
+  assert.throws(() => moveConcept({ sourceLesson: monday, targetLesson: wednesday, conceptId: 'Hazards' }));
+});
+
+test('moveConcept: throws if the concept isn\'t actually planned on the source lesson at all', () => {
+  const monday = createLesson({ id: 'lesson-mon', classroomId: 'c1', conceptIds: ['Disasters'] });
+  const wednesday = createLesson({ id: 'lesson-wed', classroomId: 'c1', conceptIds: [] });
+
+  assert.throws(() => moveConcept({ sourceLesson: monday, targetLesson: wednesday, conceptId: 'Hazards' }));
+});
+
+test('moveConcept: throws if the concept has already been carried forward (teaching history, not an ordinary planning move anymore)', () => {
+  const monday = createLesson({ id: 'lesson-mon', classroomId: 'c1', conceptIds: ['Hazards'], carriedForwardConceptIds: ['Hazards'] });
+  const wednesday = createLesson({ id: 'lesson-wed', classroomId: 'c1', conceptIds: [] });
+
+  assert.throws(() => moveConcept({ sourceLesson: monday, targetLesson: wednesday, conceptId: 'Hazards' }));
+});
+
+test('moveConcept: throws if the concept is already planned on the target lesson (would silently duplicate it)', () => {
+  const monday = createLesson({ id: 'lesson-mon', classroomId: 'c1', conceptIds: ['Hazards'] });
+  const wednesday = createLesson({ id: 'lesson-wed', classroomId: 'c1', conceptIds: ['Hazards'] });
+
+  assert.throws(() => moveConcept({ sourceLesson: monday, targetLesson: wednesday, conceptId: 'Hazards' }));
+});
+
+// ---------------------------------------------------------------------
+// removeConceptFromLesson — "Remove from lesson" in the Concepts
+// panel's overflow menu. Never touches the canonical LearningConcept
+// (see services/learningRecordTeacherService.js's own deleteConcept()
+// for that separate action) — only this one Lesson's own references.
+// ---------------------------------------------------------------------
+
+test('removeConceptFromLesson: removes the concept from conceptIds, leaves other concepts untouched', () => {
+  const lesson = createLesson({ classroomId: 'c1', conceptIds: ['Hazards', 'Disasters', 'Mitigation'] });
+  removeConceptFromLesson(lesson, 'Disasters');
+  assert.deepEqual(lesson.conceptIds, ['Hazards', 'Mitigation']);
+});
+
+test('removeConceptFromLesson: also clears the concept out of executedConceptIds/carriedForwardConceptIds/conceptProvenance, so nothing references an id this lesson no longer plans', () => {
+  const lesson = createLesson({
+    classroomId: 'c1',
+    conceptIds: ['Hazards', 'Disasters'],
+    executedConceptIds: ['Hazards'],
+    carriedForwardConceptIds: ['Disasters'],
+    conceptProvenance: { Disasters: { fromLessonId: 'other-lesson', fromTeachingSlotId: 'slot-x', carriedAt: '2026-08-01T00:00:00.000Z' } },
+  });
+
+  removeConceptFromLesson(lesson, 'Disasters');
+
+  assert.deepEqual(lesson.conceptIds, ['Hazards']);
+  assert.deepEqual(lesson.carriedForwardConceptIds, []);
+  assert.deepEqual(lesson.conceptProvenance, {});
+  assert.deepEqual(lesson.executedConceptIds, ['Hazards'], 'an unrelated concept\'s executed status must survive');
+});
+
+test('removeConceptFromLesson: removing a concept not actually on the lesson is a safe no-op', () => {
+  const lesson = createLesson({ classroomId: 'c1', conceptIds: ['Hazards'] });
+  removeConceptFromLesson(lesson, 'DoesNotExist');
+  assert.deepEqual(lesson.conceptIds, ['Hazards']);
 });
 
 // ---------------------------------------------------------------------
