@@ -135,6 +135,12 @@ test('SOCIAL SCIENCE NOT YET SET UP: the subject still appears as a column, with
   const socialScienceSubject = scorecard.subjects.find((s) => s.subjectTitle === 'Social Science');
 
   assert.equal(socialScienceSubject.linkedAssessment, null);
+  assert.ok(
+    socialScienceSubject.scheduledEvent,
+    'Social Science DOES have a Timetable exam event in this cycle — ui/views/ScorecardView.js uses this to offer one-click "Set Up Assessment" instead of a plain inert "Not set up" note'
+  );
+  assert.equal(socialScienceSubject.scheduledEvent.subjectId, 'social_science');
+  assert.equal(socialScienceSubject.learningSubject.title, 'Social Science');
   scorecard.rows.forEach((row) => {
     const cell = row.cells[scorecard.subjects.indexOf(socialScienceSubject)];
     assert.equal(cell.hasResult, false);
@@ -227,6 +233,11 @@ test('LEARNING ACTIVITIES IS THE SUBJECT SOURCE: a Subject in Learning Activitie
   );
   const csSubject = scorecard.subjects.find((s) => s.subjectTitle === 'Computer Science');
   assert.equal(csSubject.linkedAssessment, null);
+  assert.equal(
+    csSubject.scheduledEvent,
+    null,
+    'no Timetable exam at all for this Subject in this cycle — ui/views/ScorecardView.js must fall back to the plain "Not set up" note, never offer one-click Timetable setup with nothing to link to'
+  );
   scorecard.rows.forEach((row) => {
     const cell = row.cells[scorecard.subjects.indexOf(csSubject)];
     assert.equal(cell.hasResult, false);

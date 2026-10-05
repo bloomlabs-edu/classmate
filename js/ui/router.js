@@ -17,8 +17,9 @@
  *   #/classroom/{id}/student/{studentId}/{tab?} -> student profile
  *   #/classroom/{id}/activities               -> learning activities list
  *   #/classroom/{id}/activities/{activityId}  -> one activity's roster
- *   #/classroom/{id}/assessments/{assessmentId?}/{view?} -> Assessment Management — no assessmentId = the list; an assessmentId with no view defaults to the Gradebook (see ui/views/AssessmentManagementView.js)
- *   #/classroom/{id}/assessments/scorecard/{cycleKey?}    -> the Scorecard — no cycleKey = the list of eligible exam cycles; a cycleKey opens that one cycle's student-by-subject table (see ui/views/ScorecardView.js)
+ *   #/classroom/{id}/assessments/{assessmentId?}/{view?} -> no assessmentId = the Scorecard (see ui/views/ScorecardView.js, same as the /scorecard alias below); an assessmentId with no view defaults to the Gradebook (see ui/views/AssessmentManagementView.js) — assessmentId-present routes are entirely unchanged
+ *   #/classroom/{id}/assessments/scorecard/{cycleKey?}    -> the Scorecard, kept as a backward-compatible alias of the bare route above — no cycleKey = the list of eligible exam cycles; a cycleKey opens that one cycle's student-by-subject table (see ui/views/ScorecardView.js)
+ *   #/classroom/{id}/assessments/manage                   -> the old card-based Assessment Management home (Scheduled from Timetable + Existing Assessments, see ui/views/AssessmentManagementView.js's own 'home' mode) — demoted from default landing page to this explicit address
  *   #/classroom/{id}/goals                     -> Goal Management
  *   #/classroom/{id}/learning                  -> Learning Management
  *   #/classroom/{id}/lesson-plans              -> Lesson Plans list (see ui/views/LessonPlansListView.js)
@@ -177,6 +178,15 @@ export function resolvePathParts(parts) {
       // key) identifying one specific cycle's own table; absent for
       // the Scorecard's own cycle-picker list.
       return { name: 'assessmentsScorecard', classroomId: parts[1], cycleKey: parts[4] ? decodeURIComponent(parts[4]) : null };
+    }
+    if (parts[2] === 'assessments' && parts[3] === 'manage') {
+      // A second reserved literal, same precedent as 'scorecard' just
+      // above: the bare `assessments` route now opens the Scorecard
+      // directly (see js/main.js), so the old card-based "Scheduled
+      // from Timetable" + "Existing Assessments" list (still
+      // ui/views/AssessmentManagementView.js's own 'home' mode,
+      // unchanged) needs its own explicit address to stay reachable.
+      return { name: 'assessmentsManage', classroomId: parts[1] };
     }
     if (parts[2] === 'assessments') {
       return { name: 'assessments', classroomId: parts[1], assessmentId: parts[3] || null, view: parts[4] || null };

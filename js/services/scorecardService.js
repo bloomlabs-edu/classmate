@@ -101,6 +101,18 @@ export function getEligibleExamCycles(classroom, examEvents, assessments) {
  * graded Subject rather than silently omitting it (same "Not set up"
  * treatment as before).
  *
+ * Each returned subject also carries its own `learningSubject` (the
+ * real Learning Record record) and `scheduledEvent` (that matching
+ * `items` entry's own ScheduledEvent, or `null`) — not used by the
+ * aggregation below, but what ui/views/ScorecardView.js needs to offer
+ * a one-click "Set Up Assessment" action for a `linkedAssessment: null`
+ * Subject that DOES have a Timetable exam in this cycle, the exact
+ * same services/assessmentService.js's own
+ * createAssessmentFromScheduledEvent() call
+ * ui/views/AssessmentManagementView.js's "Scheduled from Timetable"
+ * card already uses — never a second, independent setup path.
+ *
+
  * AGGREGATION — "Overall %" is `sum(obtained marks) / sum(maximum
  * marks)`, summed ONLY over subjects where THIS student has a usable
  * mark (not absent, not blank) — never a per-subject average of
@@ -133,6 +145,8 @@ export function buildScorecardForCycle(classroom, items, cycleTitle) {
       subjectTitle: learningSubject.title,
       linkedAssessment,
       assessmentSubject,
+      learningSubject,
+      scheduledEvent: matchingItem ? matchingItem.event : null,
     };
   });
 

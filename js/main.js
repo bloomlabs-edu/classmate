@@ -1323,6 +1323,19 @@ function renderRoute(route, reason = 'unspecified') {
             ? () => router.navigate(`/classroom/${classroom.id}/chapter-plans/${timetableReturnChapterPlanId}?tab=lessons`)
             : null,
       });
+    } else if (route.name === 'assessments' && !route.assessmentId) {
+      // The Scorecard is now the default Assessments experience — see
+      // ui/views/ScorecardView.js's own header comment and this
+      // route's own entry in ui/router.js. An assessmentId-present
+      // request (Gradebook/Details/Subject/Import) still falls through
+      // to the unchanged branch below, exactly as before.
+      renderScorecardView(appContainer, {
+        classroom,
+        cycleKey: null,
+        onBack: () => router.navigate(`/classroom/${classroom.id}`),
+        onNavigate: (path) => router.navigate(path),
+        onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
+      });
     } else if (route.name === 'assessments') {
       renderAssessmentManagementView(appContainer, {
         classroom,
@@ -1338,6 +1351,20 @@ function renderRoute(route, reason = 'unspecified') {
         onBack: () => router.navigate(`/classroom/${classroom.id}/assessments`),
         onNavigate: (path) => router.navigate(path),
         onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
+      });
+    } else if (route.name === 'assessmentsManage') {
+      // The old card-based home (Scheduled from Timetable + Existing
+      // Assessments) — same renderAssessmentManagementView 'home' mode
+      // as always (initialAssessmentId null), just reached from its
+      // own explicit address now that the bare /assessments route
+      // opens the Scorecard instead. Back goes to the Scorecard (its
+      // new parent in the IA), not all the way to the Dashboard.
+      renderAssessmentManagementView(appContainer, {
+        classroom,
+        onBack: () => router.navigate(`/classroom/${classroom.id}/assessments`),
+        initialAssessmentId: null,
+        initialView: null,
+        onNavigate: (path) => router.navigate(path),
       });
     } else if (route.name === 'goalManagement') {
       // /goals now opens the Goal Dashboard directly once an active

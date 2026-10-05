@@ -1,16 +1,21 @@
 /**
  * ui/views/ScorecardView.js
  *
- * The Scorecard — a read-only reporting layer over the same
- * Assessment records ui/views/AssessmentManagementView.js's own
- * Gradebook already owns (see services/scorecardService.js's own
+ * The Scorecard — now the default Assessments experience (see
+ * ui/router.js's own route comment and js/main.js's `assessments`
+ * branch: the bare `/classroom/{id}/assessments` route renders this
+ * view directly, `cycleKey: null`). A read-only reporting layer over
+ * the same Assessment records ui/views/AssessmentManagementView.js's
+ * own Gradebook already owns (see services/scorecardService.js's own
  * header comment for the full architecture: cycles are grouped by
  * ScheduledEvent title, subjects are gated through Learning
  * Activities, nothing here stores a duplicate mark). Two steps:
  *
  *   - No cycleKey: the list of eligible exam cycles (a cycle only
  *     appears here once it has at least one Learning-Activities-
- *     eligible subject — see getEligibleExamCycles()).
+ *     eligible subject — see getEligibleExamCycles()). Never a blank
+ *     screen even with zero cycles — see renderCycleList()'s own
+ *     empty-state message.
  *   - A cycleKey given: that one cycle's own student-by-subject table.
  *
  * Never replaces the individual Assessment page — every subject
@@ -18,13 +23,32 @@
  * straight to that exact page's own Gradebook (the same route/URL
  * every other "open this Assessment" action in this app already
  * uses), and marks themselves are still only ever entered/edited
- * there, never here.
+ * there, never here. Three capabilities the old card-based Assessment
+ * Management home used to be the only way to reach now live here
+ * too, reusing the exact same underlying service calls/components
+ * (never a second implementation of any of them):
+ *   - "+ Create Assessment" (renderScorecardActionsRow()) — the same
+ *     ui/components/CreateAssessmentModal.js AssessmentManagementView
+ *     already used.
+ *   - A "Set Up Assessment" action on a `linkedAssessment: null`
+ *     Subject header that DOES have a matching Timetable exam this
+ *     cycle (see renderTable()) — the same
+ *     services/assessmentService.js's own
+ *     createAssessmentFromScheduledEvent() the old "Scheduled from
+ *     Timetable" card used.
+ *   - "Manage All Assessments" (renderScorecardActionsRow()) — the old
+ *     card-based home itself, demoted to its own explicit address
+ *     (`/assessments/manage`, see ui/router.js), not removed, for the
+ *     one capability still broader than any Scorecard cycle can show:
+ *     browsing every Assessment this classroom has regardless of
+ *     cycle/subject eligibility.
  */
 
 import { createBackButton } from '../components/BackButton.js';
 import { createStudentNameElement } from '../components/StudentNameElement.js';
 import { createNavigationRow } from '../components/NavigationRow.js';
 import { createRollNumberCell } from '../components/RollNumberCell.js';
+import { openCreateAssessmentModal } from '../components/CreateAssessmentModal.js';
 import * as scheduledEventRepository from '../../services/scheduledEventRepository.js';
 import { getEventsByType, SCHEDULED_EVENT_TYPES } from '../../services/scheduledEventService.js';
 import * as scorecardService from '../../services/scorecardService.js';
@@ -109,22 +133,62 @@ export function renderScorecardView(container, { classroom, cycleKey, onBack, on
       empty.textContent =
         'No exam cycles yet — a cycle appears here once a Timetable exam exists for a subject already in your Learning Activities.';
       listWrapper.appendChild(empty);
-      return listWrapper;
+    } else {
+      const list = document.createElement('div');
+      list.className = 'learning-management__subject-card-list';
+      cycles.forEach((cycle) => {
+        const subjectNames = cycle.items.map((item) => item.subjectTitle).join(', ');
+        list.appendChild(
+          createNavigationRow({
+            label: `${cycle.title} — ${subjectNames}`,
+            onClick: () => onNavigate(`/classroom/${classroom.id}/assessments/scorecard/${encodeURIComponent(cycle.cycleKey)}`),
+          })
+        );
+      });
+      listWrapper.appendChild(list);
     }
 
-    const list = document.createElement('div');
-    list.className = 'learning-management__subject-card-list';
-    cycles.forEach((cycle) => {
-      const subjectNames = cycle.items.map((item) => item.subjectTitle).join(', ');
-      list.appendChild(
-        createNavigationRow({
-          label: `${cycle.title} — ${subjectNames}`,
-          onClick: () => onNavigate(`/classroom/${classroom.id}/assessments/scorecard/${encodeURIComponent(cycle.cycleKey)}`),
-        })
-      );
-    });
-    listWrapper.appendChild(list);
+    // Present with zero cycles too — a teacher with no Timetable exam
+    // set up yet still needs a way to create their first Assessment.
+    listWrapper.appendChild(renderScorecardActionsRow());
     return listWrapper;
+  }
+
+  /**
+   * "+ Create Assessment" / "Manage All Assessments" — the two actions
+   * the old card-based Assessment Management home offered alongside
+   * its own "Scheduled from Timetable" cards (see this file's own
+   * header comment). Shown on both the cycle-list screen (so they're
+   * reachable even with zero cycles) and every cycle's own table.
+   */
+  function renderScorecardActionsRow() {
+    const actionsRow = document.createElement('div');
+    actionsRow.className = 'assessment-home__actions';
+
+    const createButton = document.createElement('button');
+    createButton.type = 'button';
+    createButton.className = 'btn btn--primary';
+    createButton.textContent = '+ Create Assessment';
+    createButton.addEventListener('click', () => {
+      openCreateAssessmentModal({
+        classroom,
+        onAssessmentCreated: () => {
+          cycles = null;
+          render();
+          loadCycles();
+        },
+      });
+    });
+    actionsRow.appendChild(createButton);
+
+    const manageButton = document.createElement('button');
+    manageButton.type = 'button';
+    manageButton.className = 'btn btn--secondary';
+    manageButton.textContent = 'Manage All Assessments';
+    manageButton.addEventListener('click', () => onNavigate(`/classroom/${classroom.id}/assessments/manage`));
+    actionsRow.appendChild(manageButton);
+
+    return actionsRow;
   }
 
   function renderCycleTable(cycle) {
@@ -140,6 +204,8 @@ export function renderScorecardView(container, { classroom, cycleKey, onBack, on
     tableContainer.className = 'scorecard__table-container';
     tableContainer.appendChild(renderTable(scorecard));
     sectionFragment.appendChild(tableContainer);
+
+    sectionFragment.appendChild(renderScorecardActionsRow());
 
     return sectionFragment;
   }
@@ -333,10 +399,34 @@ export function renderScorecardView(container, { classroom, cycleKey, onBack, on
       } else {
         titleEl.textContent = subject.subjectTitle;
         th.appendChild(titleEl);
-        const note = document.createElement('span');
-        note.className = 'scorecard__subject-header-note';
-        note.textContent = 'Not set up';
-        th.appendChild(note);
+
+        if (subject.scheduledEvent) {
+          // The same one-click flow AssessmentManagementView.js's own
+          // "Scheduled from Timetable" card used
+          // (onSetUpAssessmentFromEvent) — never a second, independent
+          // setup path. Only offered when THIS cycle actually has a
+          // matching Timetable exam for this Subject (see
+          // services/scorecardService.js's own `scheduledEvent` field);
+          // a Subject with no Timetable exam at all still falls through
+          // to the plain "Not set up" note below — "+ Create
+          // Assessment" (see renderScorecardActionsRow()) is the only
+          // way to cover that one, same as it always was.
+          const setupButton = document.createElement('button');
+          setupButton.type = 'button';
+          setupButton.className = 'scorecard__subject-header-link';
+          setupButton.textContent = 'Set Up Assessment';
+          setupButton.addEventListener('click', () => {
+            const assessment = assessmentService.createAssessmentFromScheduledEvent(classroom, subject.scheduledEvent, subject.learningSubject);
+            workspaceService.save(classroom);
+            onNavigate(`/classroom/${classroom.id}/assessments/${assessment.id}/gradebook`);
+          });
+          th.appendChild(setupButton);
+        } else {
+          const note = document.createElement('span');
+          note.className = 'scorecard__subject-header-note';
+          note.textContent = 'Not set up';
+          th.appendChild(note);
+        }
       }
       headerRow.appendChild(th);
     });

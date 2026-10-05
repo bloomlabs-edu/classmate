@@ -42,6 +42,8 @@ export const CLASSROOM_ROUTE_NAMES = [
   'notebookCheckpoints',
   'notebookDailyCheck',
   'assessments',
+  'assessmentsScorecard',
+  'assessmentsManage',
   'goalManagement',
   'learningManagement',
   'lessonPlansList',

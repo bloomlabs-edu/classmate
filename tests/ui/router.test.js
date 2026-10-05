@@ -244,3 +244,34 @@ test('weekly reports detail route: a Monday date key opens that week specificall
     week: '2026-08-24',
   });
 });
+
+// ---------------------------------------------------------------------
+// ASSESSMENTS — Scorecard as the default route, /manage as the
+// demoted-but-still-reachable old card-based home, /scorecard kept as
+// a backward-compatible alias
+// ---------------------------------------------------------------------
+
+test('assessments bare route: no assessmentId, no view — this is what now opens the Scorecard (see js/main.js)', () => {
+  const route = resolvePathParts(parts('classroom/classroom-1/assessments'));
+  assert.deepEqual(route, { name: 'assessments', classroomId: 'classroom-1', assessmentId: null, view: null });
+});
+
+test('assessments route with an assessmentId still resolves exactly as before — Gradebook/Details/Subject/Import are unaffected', () => {
+  const route = resolvePathParts(parts('classroom/classroom-1/assessments/asm-1/gradebook'));
+  assert.deepEqual(route, { name: 'assessments', classroomId: 'classroom-1', assessmentId: 'asm-1', view: 'gradebook' });
+});
+
+test('assessments/manage route: the old card-based home, reserved literal checked before the generic assessmentId slot', () => {
+  const route = resolvePathParts(parts('classroom/classroom-1/assessments/manage'));
+  assert.deepEqual(route, { name: 'assessmentsManage', classroomId: 'classroom-1' });
+});
+
+test('assessments/scorecard route (no cycleKey): unchanged backward-compatible alias', () => {
+  const route = resolvePathParts(parts('classroom/classroom-1/assessments/scorecard'));
+  assert.deepEqual(route, { name: 'assessmentsScorecard', classroomId: 'classroom-1', cycleKey: null });
+});
+
+test('assessments/scorecard/{cycleKey} route: unchanged backward-compatible alias', () => {
+  const route = resolvePathParts(parts('classroom/classroom-1/assessments/scorecard/Quarterly%20Examinations'));
+  assert.deepEqual(route, { name: 'assessmentsScorecard', classroomId: 'classroom-1', cycleKey: 'Quarterly Examinations' });
+});
