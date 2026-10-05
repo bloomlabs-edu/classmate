@@ -98,8 +98,8 @@ test('CLASSROOM ISOLATION: identical teacher + identical exam title + identical 
   const cycles6A = scorecardService.getEligibleExamCycles(grade6A, examEvents6A, assessmentService.getAssessments(grade6A));
   const cycles8A = scorecardService.getEligibleExamCycles(grade8A, examEvents8A, assessmentService.getAssessments(grade8A));
 
-  const scorecard6A = scorecardService.buildScorecardForCycle(grade6A, cycles6A[0].items);
-  const scorecard8A = scorecardService.buildScorecardForCycle(grade8A, cycles8A[0].items);
+  const scorecard6A = scorecardService.buildScorecardForCycle(grade6A, cycles6A[0].items, cycles6A[0].title);
+  const scorecard8A = scorecardService.buildScorecardForCycle(grade8A, cycles8A[0].items, cycles8A[0].title);
 
   // Grade 6A's Scorecard contains ONLY Grade 6A's own 3 students — never Grade 8A's 2.
   assert.equal(scorecard6A.rows.length, 3);
@@ -111,8 +111,10 @@ test('CLASSROOM ISOLATION: identical teacher + identical exam title + identical 
   assert.deepEqual(scorecard8A.rows.map((r) => r.student.name).sort(), ['Priya K', 'Rahul V']);
 
   // The marks themselves never cross over, even though both used the identical subject/title/date/teacher.
-  const grade6AScience = scorecard6A.rows.find((r) => r.student.name === 'Ananya M').cells[0];
-  const grade8AScience = scorecard8A.rows.find((r) => r.student.name === 'Priya K').cells[0];
+  const science6AIndex = scorecard6A.subjects.findIndex((s) => s.subjectTitle === 'Science');
+  const science8AIndex = scorecard8A.subjects.findIndex((s) => s.subjectTitle === 'Science');
+  const grade6AScience = scorecard6A.rows.find((r) => r.student.name === 'Ananya M').cells[science6AIndex];
+  const grade8AScience = scorecard8A.rows.find((r) => r.student.name === 'Priya K').cells[science8AIndex];
   assert.equal(grade6AScience.marks, 90);
   assert.equal(grade8AScience.marks, 12);
 });
@@ -151,7 +153,7 @@ test('MANUAL ASSESSMENT NON-LEAKAGE: a manually-created, unlinked Assessment for
     !cycles[0].items.some((item) => item.subjectTitle === 'PE' || item.subjectTitle === 'Physical Education'),
     'a manually created, unlinked PE Assessment must never surface as a Scorecard subject column'
   );
-  const scorecard = scorecardService.buildScorecardForCycle(classroom, cycles[0].items);
+  const scorecard = scorecardService.buildScorecardForCycle(classroom, cycles[0].items, cycles[0].title);
   assert.ok(
     !scorecard.subjects.some((s) => s.subjectTitle.toLowerCase().includes('pe') || s.subjectTitle === 'Physical Education'),
     'PE must not appear as a Scorecard column merely because a manual Assessment exists for it'
@@ -167,7 +169,7 @@ test("NO MUTATION: building a Scorecard never writes to the classroom object it 
   const before = JSON.stringify(classroom);
 
   const cycles = scorecardService.getEligibleExamCycles(classroom, examEvents, assessmentService.getAssessments(classroom));
-  scorecardService.buildScorecardForCycle(classroom, cycles[0].items);
+  scorecardService.buildScorecardForCycle(classroom, cycles[0].items, cycles[0].title);
   scorecardService.getSubjectAssessedCounts(classroom, cycles[0].items.map((item) => ({ subjectTitle: item.subjectTitle, linkedAssessment: null })));
 
   assert.equal(JSON.stringify(classroom), before, 'reading the Scorecard must never change the classroom object');
@@ -208,7 +210,7 @@ test('FULL FIXTURE (21 students, Grade 6A): normal Scorecard columns are exactly
   const cycles = scorecardService.getEligibleExamCycles(classroom, examEvents, assessmentService.getAssessments(classroom));
   assert.equal(cycles.length, 1);
 
-  const scorecard = scorecardService.buildScorecardForCycle(classroom, cycles[0].items);
+  const scorecard = scorecardService.buildScorecardForCycle(classroom, cycles[0].items, cycles[0].title);
 
   assert.equal(scorecard.rows.length, 21, 'every classroom student gets exactly one row, regardless of who has marks');
   assert.deepEqual(

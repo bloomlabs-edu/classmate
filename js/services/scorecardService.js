@@ -43,6 +43,7 @@
 import { groupEventsByTitle } from './scheduledEventService.js';
 import { getSurfaceableExamAssessments } from './assessmentTimetableLinkService.js';
 import * as assessmentService from './assessmentService.js';
+import * as learningRecordService from './learningRecordService.js';
 
 /**
  * Every exam cycle with at least one Learning-Activities-eligible
@@ -72,13 +73,33 @@ export function getEligibleExamCycles(classroom, examEvents, assessments) {
 }
 
 /**
- * The actual student-by-subject table for one cycle's own `items`
- * (see getEligibleExamCycles() above). Every subject column is
- * included as long as it's eligible (Learning-Activities gated) and
- * has a ScheduledEvent in this cycle — even one whose Assessment
- * hasn't been "Set up" yet (`linkedAssessment: null`), so the
- * Scorecard honestly shows an expected-but-not-yet-graded subject
- * rather than silently omitting it.
+ * The actual student-by-subject table for one cycle. Columns are
+ * EVERY Subject currently in this classroom's own Learning Activities
+ * (services/learningRecordService.js's getSubjects()) — never derived
+ * from the Timetable, and never limited to subjects that happen to
+ * have marks already. A Timetable-only subject (e.g. Physical
+ * Education, when it hasn't been added to Learning Activities) is
+ * excluded for the same reason it always was: it's simply not in that
+ * list. This is deliberately wider than `items` (the cycle's own
+ * Timetable-exam-linked subjects, see getEligibleExamCycles() above) —
+ * `items` still decides which cycles exist at all, but no longer
+ * decides which Subjects appear as columns once a cycle is open.
+ *
+ * Each Subject's marks are resolved for THIS cycle in two steps, in
+ * order:
+ *   1. A matching `items` entry (a Timetable exam in this cycle for
+ *      that Subject) — its own `linkedAssessment`, unchanged from
+ *      before.
+ *   2. Otherwise, any Assessment on this classroom whose `title`
+ *      exactly matches this cycle's own title and which already
+ *      includes that Subject as one of its AssessmentSubjects — the
+ *      manually-bundled-Assessment case (e.g. one "Quarterly
+ *      Examinations" Assessment a teacher created by hand with several
+ *      Subjects attached at once, never linked to any ScheduledEvent).
+ * A Subject matching neither still gets a column — `linkedAssessment:
+ * null` — so the Scorecard honestly shows an expected-but-not-yet-
+ * graded Subject rather than silently omitting it (same "Not set up"
+ * treatment as before).
  *
  * AGGREGATION — "Overall %" is `sum(obtained marks) / sum(maximum
  * marks)`, summed ONLY over subjects where THIS student has a usable
@@ -93,14 +114,24 @@ export function getEligibleExamCycles(classroom, examEvents, assessments) {
  * `null` (never a fabricated 0%) when the student has no usable mark
  * in ANY subject yet.
  */
-export function buildScorecardForCycle(classroom, items) {
-  const subjects = items.map((item) => {
-    const assessmentSubject = item.linkedAssessment
-      ? item.linkedAssessment.assessmentSubjects.find((as) => as.subjectId === item.learningSubject.id) || null
+export function buildScorecardForCycle(classroom, items, cycleTitle) {
+  const allAssessments = assessmentService.getAssessments(classroom);
+
+  const subjects = learningRecordService.getSubjects(classroom).map((learningSubject) => {
+    const matchingItem = items.find((item) => item.learningSubject.id === learningSubject.id);
+    const linkedAssessment =
+      (matchingItem ? matchingItem.linkedAssessment : null) ||
+      allAssessments.find(
+        (assessment) =>
+          assessment.title === cycleTitle && assessment.assessmentSubjects.some((as) => as.subjectId === learningSubject.id)
+      ) ||
+      null;
+    const assessmentSubject = linkedAssessment
+      ? linkedAssessment.assessmentSubjects.find((as) => as.subjectId === learningSubject.id) || null
       : null;
     return {
-      subjectTitle: item.subjectTitle,
-      linkedAssessment: item.linkedAssessment,
+      subjectTitle: learningSubject.title,
+      linkedAssessment,
       assessmentSubject,
     };
   });

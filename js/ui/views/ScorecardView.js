@@ -129,7 +129,7 @@ export function renderScorecardView(container, { classroom, cycleKey, onBack, on
 
   function renderCycleTable(cycle) {
     const sectionFragment = document.createDocumentFragment();
-    const scorecard = scorecardService.buildScorecardForCycle(classroom, cycle.items);
+    const scorecard = scorecardService.buildScorecardForCycle(classroom, cycle.items, cycle.title);
     const subjectCounts = scorecardService.getSubjectAssessedCounts(classroom, scorecard.subjects);
 
     sectionFragment.appendChild(renderHeaderCard(cycle, scorecard, subjectCounts));

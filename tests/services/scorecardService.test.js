@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createClassroom } from '../../js/models/Classroom.js';
 import { createScheduledEvent } from '../../js/models/ScheduledEvent.js';
+import { createAssessment } from '../../js/models/Assessment.js';
+import { createAssessmentSubject } from '../../js/models/AssessmentSubject.js';
 import * as assessmentService from '../../js/services/assessmentService.js';
 import * as scorecardService from '../../js/services/scorecardService.js';
 import { getEventsByType, SCHEDULED_EVENT_TYPES } from '../../js/services/scheduledEventService.js';
@@ -106,7 +108,7 @@ function buildFullScorecardFixture() {
 
 test('EACH STUDENT APPEARS ONCE, MARKS UNDER THE CORRECT SUBJECT, MAXIMUM MARKS RESPECTED', () => {
   const { classroom, cycle } = buildFullScorecardFixture();
-  const scorecard = scorecardService.buildScorecardForCycle(classroom, cycle.items);
+  const scorecard = scorecardService.buildScorecardForCycle(classroom, cycle.items, cycle.title);
 
   assert.equal(scorecard.rows.length, 2, 'exactly one row per student, no duplicates');
 
@@ -129,7 +131,7 @@ test('EACH STUDENT APPEARS ONCE, MARKS UNDER THE CORRECT SUBJECT, MAXIMUM MARKS 
 
 test('SOCIAL SCIENCE NOT YET SET UP: the subject still appears as a column, with no linked Assessment and no marks for anyone', () => {
   const { classroom, cycle } = buildFullScorecardFixture();
-  const scorecard = scorecardService.buildScorecardForCycle(classroom, cycle.items);
+  const scorecard = scorecardService.buildScorecardForCycle(classroom, cycle.items, cycle.title);
   const socialScienceSubject = scorecard.subjects.find((s) => s.subjectTitle === 'Social Science');
 
   assert.equal(socialScienceSubject.linkedAssessment, null);
@@ -142,7 +144,7 @@ test('SOCIAL SCIENCE NOT YET SET UP: the subject still appears as a column, with
 
 test('MISSING MARKS ARE NOT TREATED AS ZERO: a student with no Science mark is excluded from that subject entirely, not scored as 0', () => {
   const { classroom, cycle } = buildFullScorecardFixture();
-  const scorecard = scorecardService.buildScorecardForCycle(classroom, cycle.items);
+  const scorecard = scorecardService.buildScorecardForCycle(classroom, cycle.items, cycle.title);
   const blessyRow = scorecard.rows.find((r) => r.student.name === 'Blessy');
   const scienceCell = blessyRow.cells[scorecard.subjects.findIndex((s) => s.subjectTitle === 'Science')];
 
@@ -152,7 +154,7 @@ test('MISSING MARKS ARE NOT TREATED AS ZERO: a student with no Science mark is e
 
 test('OVERALL AGGREGATION: total-obtained/total-maximum across only the subjects a student actually has marks for — never per-subject-percentage averaging, never treating a missing subject as 0', () => {
   const { classroom, cycle } = buildFullScorecardFixture();
-  const scorecard = scorecardService.buildScorecardForCycle(classroom, cycle.items);
+  const scorecard = scorecardService.buildScorecardForCycle(classroom, cycle.items, cycle.title);
 
   const bhavaniRow = scorecard.rows.find((r) => r.student.name === 'Bhavani');
   // English 42/50 + Mathematics 38/50 + Science 53.5/100 = 133.5/200 = 66.75% -> rounded to 1 decimal place: 66.8%
@@ -176,7 +178,7 @@ test('a student with no usable mark in any subject of the cycle has a null Overa
     return { cycle: cycles[0] };
   })();
 
-  const scorecard = scorecardService.buildScorecardForCycle(classroom, cycle.items);
+  const scorecard = scorecardService.buildScorecardForCycle(classroom, cycle.items, cycle.title);
   const newStudentRow = scorecard.rows.find((r) => r.student.name === 'NewStudent');
   assert.equal(newStudentRow.overallPercent, null);
   assert.equal(newStudentRow.subjectsAssessedCount, 0);
@@ -184,7 +186,7 @@ test('a student with no usable mark in any subject of the cycle has a null Overa
 
 test('getSubjectAssessedCounts: reflects exactly how many students have a usable mark per subject, independent of the Overall calculation', () => {
   const { classroom, cycle } = buildFullScorecardFixture();
-  const scorecard = scorecardService.buildScorecardForCycle(classroom, cycle.items);
+  const scorecard = scorecardService.buildScorecardForCycle(classroom, cycle.items, cycle.title);
   const counts = scorecardService.getSubjectAssessedCounts(classroom, scorecard.subjects);
 
   const byTitle = Object.fromEntries(counts.map((c) => [c.subjectTitle, c]));
@@ -195,7 +197,7 @@ test('getSubjectAssessedCounts: reflects exactly how many students have a usable
 
 test('getOverallAssessedPercent: the header stat sums assessed/total across every subject column, using the same per-(student,subject) convention as the Gradebook\'s own "Marks Entered" line', () => {
   const { classroom, cycle } = buildFullScorecardFixture();
-  const scorecard = scorecardService.buildScorecardForCycle(classroom, cycle.items);
+  const scorecard = scorecardService.buildScorecardForCycle(classroom, cycle.items, cycle.title);
   const counts = scorecardService.getSubjectAssessedCounts(classroom, scorecard.subjects);
   // English 2/2 + Mathematics 2/2 + Science 1/2 + Social Science 0/2 = 5/8 = 62.5% -> rounded to 63%
   assert.equal(scorecardService.getOverallAssessedPercent(counts), 63);
@@ -203,4 +205,87 @@ test('getOverallAssessedPercent: the header stat sums assessed/total across ever
 
 test('getOverallAssessedPercent: null (never a fabricated 0%) when there are no subjects/students to measure', () => {
   assert.equal(scorecardService.getOverallAssessedPercent([]), null);
+});
+
+test('LEARNING ACTIVITIES IS THE SUBJECT SOURCE: a Subject in Learning Activities with NO Timetable exam event in this cycle at all still appears as a column (Not set up)', () => {
+  const classroom = buildClassroomWithFourSubjects();
+  classroom.learningRecord.subjects.push({ id: 'record-cs', subjectId: 'computer_science', title: 'Computer Science', units: [] });
+
+  // Only the original 4 subjects get a Timetable exam event — Computer Science has none at all.
+  const events = buildQuarterlyEvents({ includePE: false });
+  const examEvents = getEventsByType(events, SCHEDULED_EVENT_TYPES.EXAM);
+  const cycles = scorecardService.getEligibleExamCycles(classroom, examEvents, []);
+  assert.equal(cycles.length, 1);
+  assert.equal(cycles[0].items.length, 4, 'the cycle picker list itself is still only Timetable-event-driven');
+
+  const scorecard = scorecardService.buildScorecardForCycle(classroom, cycles[0].items, cycles[0].title);
+
+  assert.deepEqual(
+    scorecard.subjects.map((s) => s.subjectTitle).sort(),
+    ['Computer Science', 'English', 'Mathematics', 'Science', 'Social Science'],
+    'every Learning Activities subject is a column, even one with no Timetable exam event at all'
+  );
+  const csSubject = scorecard.subjects.find((s) => s.subjectTitle === 'Computer Science');
+  assert.equal(csSubject.linkedAssessment, null);
+  scorecard.rows.forEach((row) => {
+    const cell = row.cells[scorecard.subjects.indexOf(csSubject)];
+    assert.equal(cell.hasResult, false);
+    assert.equal(cell.marks, null);
+  });
+});
+
+test('MANUALLY BUNDLED ASSESSMENT: a Learning Activities subject with no Timetable event resolves its marks from an Assessment sharing this cycle\'s own title', () => {
+  const classroom = buildClassroomWithFourSubjects();
+  const csRecord = { id: 'record-cs', subjectId: 'computer_science', title: 'Computer Science', units: [] };
+  classroom.learningRecord.subjects.push(csRecord);
+
+  const events = buildQuarterlyEvents({ includePE: false });
+  const examEvents = getEventsByType(events, SCHEDULED_EVENT_TYPES.EXAM);
+
+  // Manually created — never linked to any ScheduledEvent — but its title matches this cycle exactly,
+  // the same way a teacher might bundle several Subjects into one hand-made Assessment.
+  const bundledAssessment = createAssessment({
+    classroomId: 'c1',
+    title: CYCLE_TITLE,
+    type: 'Custom',
+    assessmentSubjects: [createAssessmentSubject({ subjectId: csRecord.id, maximumMarks: 50 })],
+  });
+  classroom.assessments.push(bundledAssessment);
+  assessmentService.recordStudentMarks(bundledAssessment.assessmentSubjects[0], 'student-bhavani', { marks: 45 });
+
+  const cycles = scorecardService.getEligibleExamCycles(classroom, examEvents, assessmentService.getAssessments(classroom));
+  const scorecard = scorecardService.buildScorecardForCycle(classroom, cycles[0].items, cycles[0].title);
+
+  const csSubject = scorecard.subjects.find((s) => s.subjectTitle === 'Computer Science');
+  assert.equal(csSubject.linkedAssessment.id, bundledAssessment.id);
+
+  const bhavaniRow = scorecard.rows.find((r) => r.student.name === 'Bhavani');
+  const csCell = bhavaniRow.cells[scorecard.subjects.indexOf(csSubject)];
+  assert.deepEqual({ marks: csCell.marks, max: csCell.maximumMarks, hasResult: csCell.hasResult }, { marks: 45, max: 50, hasResult: true });
+
+  const blessyRow = scorecard.rows.find((r) => r.student.name === 'Blessy');
+  const blessyCsCell = blessyRow.cells[scorecard.subjects.indexOf(csSubject)];
+  assert.equal(blessyCsCell.hasResult, false, 'a student with no entered mark in the bundled Assessment must show as missing, never 0');
+});
+
+test('A TIMETABLE-ONLY SUBJECT NOT IN LEARNING ACTIVITIES IS STILL EXCLUDED even when a same-titled manual Assessment exists for it', () => {
+  const classroom = buildClassroomWithFourSubjects(); // PE is NOT in Learning Activities
+  const events = buildQuarterlyEvents({ includePE: true });
+  const examEvents = getEventsByType(events, SCHEDULED_EVENT_TYPES.EXAM);
+
+  const bundledPeAssessment = createAssessment({
+    classroomId: 'c1',
+    title: CYCLE_TITLE,
+    type: 'Custom',
+    assessmentSubjects: [createAssessmentSubject({ subjectId: 'physical_education', maximumMarks: 50 })],
+  });
+  classroom.assessments.push(bundledPeAssessment);
+
+  const cycles = scorecardService.getEligibleExamCycles(classroom, examEvents, assessmentService.getAssessments(classroom));
+  const scorecard = scorecardService.buildScorecardForCycle(classroom, cycles[0].items, cycles[0].title);
+
+  assert.ok(
+    !scorecard.subjects.some((s) => s.subjectTitle === 'PE' || s.subjectTitle === 'Physical Education'),
+    'PE must never appear as a Scorecard column merely because a same-titled manual Assessment exists for it'
+  );
 });
