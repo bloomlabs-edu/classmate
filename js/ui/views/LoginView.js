@@ -7,7 +7,7 @@
  * inside this (or any) view directly.
  */
 
-export function renderLoginView(container, { onSignIn }) {
+export function renderLoginView(container, { onSignIn, onUseTvSignIn }) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
@@ -53,5 +53,21 @@ export function renderLoginView(container, { onSignIn }) {
 
   button.append(icon, label);
   wrapper.append(title, subtitle, button);
+
+  // "Sign in with Phone" (see
+  // docs/architecture/TV_PHONE_SIGNIN_DESIGN.md) — for a shared
+  // classroom TV/display where no one wants to type a Google password.
+  // Purely additive: every existing device keeps using the Google
+  // button above exactly as before; `onUseTvSignIn` is optional so any
+  // other existing caller of this view is unaffected.
+  if (onUseTvSignIn) {
+    const tvSignInLink = document.createElement('button');
+    tvSignInLink.type = 'button';
+    tvSignInLink.className = 'btn btn--text login-view__tv-signin-link';
+    tvSignInLink.textContent = 'Using a shared TV or display? Sign in with your phone instead';
+    tvSignInLink.addEventListener('click', onUseTvSignIn);
+    wrapper.appendChild(tvSignInLink);
+  }
+
   container.appendChild(wrapper);
 }

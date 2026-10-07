@@ -355,6 +355,29 @@ export function resolvePathParts(parts) {
     return { name: 'visitorAccess', code };
   }
 
+  // "Sign in with Phone" (see
+  // docs/architecture/TV_PHONE_SIGNIN_DESIGN.md) — the shared TV/display
+  // side. No classroomId: the TV has no identity of any kind yet, let
+  // alone a classroom. Checked in js/main.js BEFORE the normal
+  // `!currentUser` auth gate, same "no sign-in required yet" shape as
+  // `visitorAccess` above, since this route's entire purpose is to run
+  // while nothing is signed in.
+  if (parts[0] === 'tv-signin') {
+    return { name: 'tvSignIn' };
+  }
+
+  // The teacher's own phone — reached via the TV's QR deep link, or a
+  // manual "Approve a device" entry point from Settings — to approve or
+  // deny one specific pairing session, identified by its own pairing
+  // code. Requires a signed-in teacher (the ordinary `!currentUser` auth
+  // gate in js/main.js applies here unmodified, per design decision #3:
+  // the teacher authenticates with Google on her phone first, exactly
+  // as she always has).
+  if (parts[0] === 'approve-sign-in') {
+    const pairingCode = parts[1] || null;
+    return { name: 'approveDeviceSignIn', pairingCode };
+  }
+
   if (parts.length === 0) {
     return { name: 'landing' };
   }

@@ -33,10 +33,12 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithCustomToken,
   signOut,
   onAuthStateChanged,
   setPersistence,
   browserLocalPersistence,
+  browserSessionPersistence,
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 import { getFirebaseApp } from './firebaseApp.js';
 import { logPersistenceEvent } from './persistenceLogger.js';
@@ -111,12 +113,53 @@ export async function signInWithGoogle() {
   return toSafeProfile(credential.user);
 }
 
+/**
+ * "Sign in with Phone" (see docs/architecture/TV_PHONE_SIGNIN_DESIGN.md)
+ * — redeems the one-time Firebase custom token a Cloud Function minted
+ * for the teacher's own real uid (services/deviceSignInTvService.js)
+ * after her explicit approval on her phone. The resulting session has
+ * the exact same uid, role, and Firestore permissions as any other
+ * sign-in method for that account — `signInWithCustomToken` itself
+ * guarantees that; nothing else in this app needs to know this session
+ * didn't come from `signInWithGoogle()`.
+ *
+ * Deliberately sets `browserSessionPersistence`, NOT this module's own
+ * `initAuth()` default of `browserLocalPersistence` — a shared TV/
+ * classroom display staying silently signed in as one specific
+ * teacher indefinitely is a materially different risk than her own
+ * laptop doing so (design decision #1). This persistence choice is
+ * scoped to THIS sign-in call only, via `setPersistence()` immediately
+ * before it — every other sign-in path (`signInWithGoogle()`) is
+ * completely unaffected and keeps using the module-wide local
+ * persistence `initAuth()` already set up.
+ */
+export async function signInWithCustomTokenForSharedDevice(customToken) {
+  await setPersistence(auth, browserSessionPersistence);
+  const credential = await signInWithCustomToken(auth, customToken);
+  return toSafeProfile(credential.user);
+}
+
 export async function signOutUser() {
   await signOut(auth);
 }
 
 export function getCurrentUser() {
   return auth?.currentUser ? toSafeProfile(auth.currentUser) : null;
+}
+
+/**
+ * The raw Firebase ID token (a signed JWT proving "this really is
+ * uid X," not a contact detail) for the signed-in teacher — needed so
+ * a trusted backend endpoint can verify who's calling it (see
+ * services/deviceSignInApprovalService.js, which sends this as a
+ * Bearer header to the getDeviceSignInRequestInfo/approveDeviceSignIn/
+ * denyDeviceSignIn Cloud Functions). This is the one place outside
+ * toSafeProfile() that reads anything off the raw Firebase user, but
+ * it never touches email or any other field this module's own header
+ * comment excludes.
+ */
+export async function getIdToken() {
+  return auth?.currentUser ? auth.currentUser.getIdToken() : null;
 }
 
 /**

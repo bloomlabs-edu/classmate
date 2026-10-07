@@ -112,6 +112,9 @@ import { renderReportsView } from './ui/views/ReportsView.js';
 import { renderWeeklyReportsListView } from './ui/views/WeeklyReportsListView.js';
 import { renderWeeklyReportDetailView } from './ui/views/WeeklyReportDetailView.js';
 import { renderLoginView } from './ui/views/LoginView.js';
+import { renderTvSignInView } from './ui/views/TvSignInView.js';
+import { renderApproveDeviceSignInView } from './ui/views/ApproveDeviceSignInView.js';
+import * as deviceSignInTvService from './services/deviceSignInTvService.js';
 import { renderUserBar } from './ui/components/UserBar.js';
 import { openNewClassroomModal } from './ui/components/NewClassroomModal.js';
 import { openJoinClassroomModal } from './ui/components/JoinClassroomModal.js';
@@ -962,9 +965,69 @@ function renderRoute(route, reason = 'unspecified') {
     return;
   }
 
+  // "Sign in with Phone" — TV/shared-device side (see
+  // docs/architecture/TV_PHONE_SIGNIN_DESIGN.md). Checked BEFORE the
+  // `!currentUser` gate below, same "no sign-in required yet" shape as
+  // `visitorAccess` above, since this route's entire purpose is to run
+  // while nothing is signed in. If a device reaches this route while
+  // ALREADY signed in (e.g. someone previously signed in with Google
+  // directly on it), there is nothing to pair — send it to the normal
+  // teacher home instead of showing a pairing screen with no purpose.
+  //
+  // QA FINDING (2026-10-07): `currentUser` also becomes truthy the
+  // instant TvSignInView's own post-approval redemption succeeds — the
+  // EXACT moment that view is trying to show its own brief "✓ Signed in
+  // as..." confirmation (decision #7). Without the
+  // isTransitioningAfterApproval() check below, THIS branch's own
+  // immediate redirect always won that race (it's wired directly into
+  // the primary auth-state listener that drives this whole re-render),
+  // so the confirmation screen was never actually visible even though
+  // the real sign-in itself succeeded correctly every time. While that
+  // flag is set, this branch does nothing at all — no re-render, no
+  // redirect — deliberately deferring to TvSignInView's own
+  // already-rendered confirmation and its own subsequent
+  // `onSignedIn()` navigation once its brief display window elapses.
+  if (route.name === 'tvSignIn') {
+    if (currentUser && !deviceSignInTvService.isTransitioningAfterApproval()) {
+      router.navigate('/teacher');
+      return;
+    }
+    if (currentUser) {
+      return; // mid-transition — leave TvSignInView's own confirmation on screen untouched
+    }
+    userBarContainer.innerHTML = '';
+    renderTvSignInView(appContainer, {
+      onSignedIn: () => router.navigate('/teacher'),
+      onBack: () => router.navigate('/teacher'),
+    });
+    return;
+  }
+
   if (!currentUser) {
     userBarContainer.innerHTML = '';
-    renderLoginView(appContainer, { onSignIn: handleSignIn });
+    renderLoginView(appContainer, { onSignIn: handleSignIn, onUseTvSignIn: () => router.navigate('/tv-signin') });
+    return;
+  }
+
+  // The teacher's own phone approving a TV/shared device (see
+  // docs/architecture/TV_PHONE_SIGNIN_DESIGN.md). Requires a signed-in
+  // teacher — the `!currentUser` gate above already guarantees that by
+  // the time this branch is reached, per design decision #3. Checked
+  // before `workspaceLoading` below: this screen needs no classroom
+  // data at all, so it must never sit behind a classroom-sync spinner.
+  // Clears the normal teacher chrome (QA finding: left un-cleared, the
+  // ordinary nav bar/notification bell/Sign Out remained visible
+  // alongside the approval screen, confusing but not a security issue
+  // since nothing in that leftover chrome could affect the approval
+  // decision itself) — same `userBarContainer.innerHTML = ''` every
+  // other full-screen, non-dashboard view in this file already does.
+  if (route.name === 'approveDeviceSignIn') {
+    userBarContainer.innerHTML = '';
+    renderApproveDeviceSignInView(appContainer, {
+      pairingCode: route.pairingCode,
+      getIdToken: () => authService.getIdToken(),
+      onDone: () => router.navigate('/teacher'),
+    });
     return;
   }
 

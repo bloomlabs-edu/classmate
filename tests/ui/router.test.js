@@ -229,6 +229,18 @@ test('visitor access route: no code falls back to null, not a thrown error — t
   assert.deepEqual(resolvePathParts(parts('visitor')), { name: 'visitorAccess', code: null });
 });
 
+test('tv-signin route: resolves to tvSignIn with no classroomId — the TV has no identity yet', () => {
+  assert.deepEqual(resolvePathParts(parts('tv-signin')), { name: 'tvSignIn' });
+});
+
+test('approve-sign-in route: a pairing code in the path resolves to approveDeviceSignIn with that code', () => {
+  assert.deepEqual(resolvePathParts(parts('approve-sign-in/12345678')), { name: 'approveDeviceSignIn', pairingCode: '12345678' });
+});
+
+test('approve-sign-in route: no code falls back to null — the view itself prompts for manual entry', () => {
+  assert.deepEqual(resolvePathParts(parts('approve-sign-in')), { name: 'approveDeviceSignIn', pairingCode: null });
+});
+
 test('weekly reports list route: no week segment resolves to the week picker', () => {
   assert.deepEqual(resolvePathParts(parts('classroom/classroom-1/weekly-reports')), {
     name: 'weeklyReports',
