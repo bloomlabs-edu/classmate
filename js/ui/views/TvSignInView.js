@@ -13,6 +13,24 @@
  * some other view's render() replaced this screen's DOM) — there is no
  * existing app-wide "view teardown" hook in js/main.js to plug into, so
  * this is a deliberately self-contained safeguard rather than a new one.
+ *
+ * SYNCHRONIZED STATE MACHINE (added 2026-10-08, first real two-device QA
+ * round): the TV now distinguishes "nobody has scanned yet" (`pending`)
+ * from "a phone has loaded the approval screen but hasn't decided yet"
+ * (`connected`) — see deviceSignInTvService.js's pollPairingSession()
+ * and the server's own deviceSignInRepository.js for where this comes
+ * from. `connected` is non-terminal and pending-equivalent: the SAME
+ * poll loop keeps running across the pending->connected transition,
+ * only the on-screen copy changes (QR/code/instructions are replaced
+ * with "Phone connected — waiting for approval", since they have no
+ * further purpose once a phone has already loaded this exact session).
+ *
+ * Also changed: an expired session used to be silently, automatically
+ * replaced with a fresh one (decision #7's original "never leave a dead
+ * code on screen"). Per this round's explicit UX spec, expiry is now a
+ * real, visible state with its own "Try Again" action — a teacher who
+ * was mid-flow on her phone otherwise has no visible explanation for why
+ * the code on the TV suddenly changed underneath her.
  */
 import {
   startPairingSession,
@@ -46,20 +64,33 @@ export function renderTvSignInView(container, { onSignedIn, onBack }) {
     countdownTimer = null;
   }
 
-  function renderShell(bodyContent) {
+  /**
+   * `title`/`subtitle` are now per-state (previously hardcoded to the
+   * initial "Sign in to ClassMate" copy for every single screen this
+   * view ever showed, including denial/expiry/error — see this file's
+   * own header comment). Defaults preserve exactly that original copy,
+   * so the only states that ever need to override them are the ones
+   * with their own distinct heading per the UX spec.
+   */
+  function renderShell(bodyContent, { title = 'Sign in to ClassMate', subtitle = 'Use your phone to sign in — no password needed on this screen.', showBack = true } = {}) {
     wrapper.innerHTML = '';
 
-    const title = document.createElement('h1');
-    title.className = 'tv-signin-view__title';
-    title.textContent = 'Sign in to ClassMate';
+    const titleEl = document.createElement('h1');
+    titleEl.className = 'tv-signin-view__title';
+    titleEl.textContent = title;
 
-    const subtitle = document.createElement('p');
-    subtitle.className = 'tv-signin-view__subtitle';
-    subtitle.textContent = 'Use your phone to sign in — no password needed on this screen.';
+    wrapper.appendChild(titleEl);
 
-    wrapper.append(title, subtitle, bodyContent);
+    if (subtitle) {
+      const subtitleEl = document.createElement('p');
+      subtitleEl.className = 'tv-signin-view__subtitle';
+      subtitleEl.textContent = subtitle;
+      wrapper.appendChild(subtitleEl);
+    }
 
-    if (onBack) {
+    wrapper.appendChild(bodyContent);
+
+    if (onBack && showBack) {
       const backButton = document.createElement('button');
       backButton.type = 'button';
       backButton.className = 'btn btn--text tv-signin-view__back';
@@ -69,7 +100,7 @@ export function renderTvSignInView(container, { onSignedIn, onBack }) {
     }
   }
 
-  function renderPending({ pairingCode, tvSessionToken, expiresAt }) {
+  function renderWaitingBody({ pairingCode, expiresAt }) {
     const body = document.createElement('div');
     body.className = 'tv-signin-view__pending';
 
@@ -93,12 +124,11 @@ export function renderTvSignInView(container, { onSignedIn, onBack }) {
     instructions.textContent = 'On your phone: open ClassMate, sign in with Google if needed, then scan this code or enter it to approve this device.';
 
     body.append(qrContainer, codeLabel, code, countdown, instructions);
-    renderShell(body);
 
     function updateCountdown() {
       const remainingMs = new Date(expiresAt).getTime() - Date.now();
       if (remainingMs <= 0) {
-        countdown.textContent = 'Expired — getting a new code…';
+        countdown.textContent = 'Expired';
         return;
       }
       const totalSeconds = Math.ceil(remainingMs / 1000);
@@ -107,10 +137,43 @@ export function renderTvSignInView(container, { onSignedIn, onBack }) {
       countdown.textContent = `Expires in ${minutes}:${String(seconds).padStart(2, '0')}`;
     }
     updateCountdown();
+    if (countdownTimer) clearInterval(countdownTimer);
     countdownTimer = setInterval(() => {
       if (!stillMounted()) return stopTimers();
       updateCountdown();
     }, COUNTDOWN_TICK_MS);
+
+    return body;
+  }
+
+  function renderConnectedBody() {
+    const body = document.createElement('div');
+    body.className = 'tv-signin-view__connected';
+
+    const spinner = document.createElement('div');
+    spinner.className = 'tv-signin-view__spinner';
+    spinner.setAttribute('aria-hidden', 'true');
+
+    const note = document.createElement('p');
+    note.className = 'tv-signin-view__instructions';
+    note.textContent = 'Check your phone to finish signing in.';
+
+    body.append(spinner, note);
+    return body;
+  }
+
+  /**
+   * One active pairing session: starts in the `waiting` phase (QR/code/
+   * countdown), moves forward to `connected` the first time a poll
+   * reports it (never backward — see this file's own header comment on
+   * why `connected` is pending-equivalent but still a forward-only UI
+   * transition), and keeps the SAME poll/countdown timers running across
+   * that transition. Only a terminal poll outcome (approved/denied/
+   * expired) ever stops them.
+   */
+  function renderPending({ pairingCode, tvSessionToken, expiresAt }) {
+    let phase = 'waiting';
+    renderShell(renderWaitingBody({ pairingCode, expiresAt }));
 
     pollTimer = setInterval(async () => {
       if (!stillMounted()) return stopTimers();
@@ -118,8 +181,28 @@ export function renderTvSignInView(container, { onSignedIn, onBack }) {
       const result = await pollPairingSession(pairingCode, tvSessionToken);
       if (!stillMounted()) return stopTimers();
 
-      if (result.status === 'pending' || result.status === 'rate_limited' || result.status === 'network_error') {
-        return; // keep waiting — a transient rate-limit/network hiccup is not a terminal state for the TV
+      if (result.status === 'rate_limited' || result.status === 'network_error') {
+        return; // transient — not a terminal state for the TV, keep the current phase on screen
+      }
+      if (result.status === 'pending') {
+        return; // still phase 'waiting' — nothing changes
+      }
+      if (result.status === 'connected') {
+        if (phase !== 'connected') {
+          phase = 'connected';
+          // The waiting phase's own countdown display has no further
+          // purpose once a phone has connected (QR/code are gone from
+          // screen) -- stop it rather than leaving it silently ticking
+          // against a now-detached DOM node. The poll loop itself (this
+          // very setInterval) is what actually detects a real expiry
+          // from here on, same as it always has.
+          if (countdownTimer) {
+            clearInterval(countdownTimer);
+            countdownTimer = null;
+          }
+          renderShell(renderConnectedBody(), { title: 'Phone connected', subtitle: 'Waiting for approval on your phone…' });
+        }
+        return;
       }
       if (result.status === 'denied') {
         stopTimers();
@@ -127,7 +210,7 @@ export function renderTvSignInView(container, { onSignedIn, onBack }) {
       }
       if (result.status === 'expired') {
         stopTimers();
-        return beginPairing(); // decision #7: automatically invalidate and refresh after expiry, never leave a dead code on screen
+        return renderExpired();
       }
       if (result.status === 'approved') {
         stopTimers();
@@ -136,45 +219,39 @@ export function renderTvSignInView(container, { onSignedIn, onBack }) {
     }, POLL_INTERVAL_MS);
   }
 
-  function renderDenied() {
+  function renderRetryBody(retryLabel = 'Try Again') {
     const body = document.createElement('div');
-    body.className = 'tv-signin-view__denied';
-
-    const message = document.createElement('p');
-    message.textContent = 'Sign-in request was denied on your phone.';
+    body.className = 'tv-signin-view__retry-body';
 
     const retryButton = document.createElement('button');
     retryButton.type = 'button';
     retryButton.className = 'btn btn--primary';
-    retryButton.textContent = 'Try again';
+    retryButton.textContent = retryLabel;
     retryButton.addEventListener('click', beginPairing);
 
-    body.append(message, retryButton);
-    renderShell(body);
+    body.appendChild(retryButton);
+    return body;
+  }
+
+  function renderDenied() {
+    renderShell(renderRetryBody(), { title: 'Sign-in cancelled', subtitle: '' });
+  }
+
+  function renderExpired() {
+    renderShell(renderRetryBody(), { title: 'Sign-in request expired', subtitle: 'Start a new request to continue.' });
   }
 
   function renderStartError() {
-    const body = document.createElement('div');
-    body.className = 'tv-signin-view__error';
-
-    const message = document.createElement('p');
-    message.textContent = "Couldn't reach ClassMate. Check this device's internet connection and try again.";
-
-    const retryButton = document.createElement('button');
-    retryButton.type = 'button';
-    retryButton.className = 'btn btn--primary';
-    retryButton.textContent = 'Retry';
-    retryButton.addEventListener('click', beginPairing);
-
-    body.append(message, retryButton);
-    renderShell(body);
+    renderShell(renderRetryBody('Retry'), {
+      title: 'Something went wrong',
+      subtitle: "Couldn't reach ClassMate. Check this device's internet connection and try again.",
+    });
   }
 
   async function renderApproved(customToken) {
     const body = document.createElement('div');
     body.className = 'tv-signin-view__approved';
-    body.textContent = 'Signing in…';
-    renderShell(body);
+    renderShell(body, { title: '✓ Signed in', subtitle: 'Opening ClassMate…' });
 
     // MUST be set before signInWithCustomTokenForSharedDevice() below —
     // that call is what triggers the Firebase auth-state change js/main.js's
@@ -191,14 +268,11 @@ export function renderTvSignInView(container, { onSignedIn, onBack }) {
         setTransitioningAfterApproval(false);
         return;
       }
+      const line = document.createElement('p');
+      line.className = 'tv-signin-view__success-line';
+      line.textContent = `Signed in as ${profile.displayName}`;
       body.innerHTML = '';
-      const line1 = document.createElement('p');
-      line1.className = 'tv-signin-view__success-line';
-      line1.textContent = `✓ Signed in as ${profile.displayName}`;
-      const line2 = document.createElement('p');
-      line2.className = 'tv-signin-view__success-line';
-      line2.textContent = 'Opening your classroom…';
-      body.append(line1, line2);
+      body.appendChild(line);
       setTimeout(() => {
         setTransitioningAfterApproval(false);
         if (stillMounted()) onSignedIn(profile);
@@ -207,10 +281,10 @@ export function renderTvSignInView(container, { onSignedIn, onBack }) {
       console.error('[TvSignInView] signInWithCustomTokenForSharedDevice() failed:', error);
       setTransitioningAfterApproval(false);
       if (!stillMounted()) return;
-      body.textContent = 'Something went wrong finishing sign-in. Please try again.';
-      setTimeout(() => {
-        if (stillMounted()) beginPairing();
-      }, 2000);
+      renderShell(renderRetryBody(), {
+        title: 'Something went wrong',
+        subtitle: 'Please start a new sign-in request.',
+      });
     }
   }
 
@@ -218,8 +292,11 @@ export function renderTvSignInView(container, { onSignedIn, onBack }) {
     stopTimers();
     const body = document.createElement('div');
     body.className = 'tv-signin-view__starting';
-    body.textContent = 'Preparing your sign-in code…';
-    renderShell(body);
+    const spinner = document.createElement('div');
+    spinner.className = 'tv-signin-view__spinner';
+    spinner.setAttribute('aria-hidden', 'true');
+    body.appendChild(spinner);
+    renderShell(body, { subtitle: 'Preparing your sign-in code…' });
 
     const result = await startPairingSession();
     if (!stillMounted()) return;

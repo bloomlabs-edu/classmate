@@ -22636,3 +22636,304 @@ button.knowledge-authoring__row:hover {
   justify-content: space-between;
   gap: 0.5rem;
 }
+
+/* =========================================================================
+   "Sign in with Phone" — TV/display, phone approval, and in-app QR scanner
+   (see docs/architecture/TV_PHONE_SIGNIN_DESIGN.md and
+   js/ui/views/TvSignInView.js / ApproveDeviceSignInView.js /
+   ui/components/QrScannerView.js). Added 2026-10-08: these three screens
+   previously had NO rules here at all — every element rendered with
+   nothing but the browser's own default block layout, which is exactly
+   why the reported CTAs read as "floating, left-aligned text" rather than
+   real buttons (the buttons themselves already used .btn/.btn--primary/
+   .btn--secondary — see each file's own markup — the MISSING piece was
+   purely layout: no centering, no spacing, no button-row treatment).
+   ========================================================================= */
+
+.tv-signin-view,
+.approve-device-signin-view {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 2.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  font-family: var(--font-body);
+  color: var(--color-ink);
+}
+
+.tv-signin-view__title,
+.approve-device-signin-view > h1 {
+  font-size: 1.6rem;
+  font-weight: var(--font-weight-bold);
+  margin: 0 0 0.5rem;
+}
+
+.tv-signin-view__subtitle,
+.approve-device-signin-view__subtitle,
+.approve-device-signin-view > p {
+  color: var(--color-muted);
+  font-size: 0.98rem;
+  margin: 0 0 1.5rem;
+  max-width: 36ch;
+}
+
+/* Shared button-row treatment — centered, consistent height/padding/
+   spacing, real touch targets (min 44px tall, per mobile accessibility
+   guidance) — used by the TV's own retry/approve-style actions, the
+   phone's entry-choice/code-entry/confirm actions, and the "Done" action
+   on every terminal message screen. Replaces what used to be plain
+   buttons dropped directly into the page flow with no shared spacing
+   rule at all. */
+.tv-signin-view__retry-body,
+.approve-device-signin-view__actions,
+.approve-device-signin-view__buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 320px;
+  margin-top: 0.5rem;
+}
+.tv-signin-view__retry-body .btn,
+.approve-device-signin-view__actions .btn,
+.approve-device-signin-view__buttons .btn {
+  width: 100%;
+  min-height: 44px;
+  font-size: 1rem;
+}
+/* The confirm screen's Approve/Deny pair reads better side-by-side on
+   anything wider than a narrow phone — still centered as a group, still
+   full-height/touch-friendly, just not full-width-stacked once there's
+   room for two. */
+@media (min-width: 420px) {
+  .approve-device-signin-view__buttons {
+    flex-direction: row;
+    justify-content: center;
+  }
+  .approve-device-signin-view__buttons .btn {
+    width: auto;
+    min-width: 140px;
+  }
+}
+
+.tv-signin-view__qr {
+  margin: 0 auto 1.25rem;
+  display: flex;
+  justify-content: center;
+}
+.tv-signin-view__qr svg {
+  width: 220px;
+  height: 220px;
+}
+.tv-signin-view__code-label {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  margin: 0 0 0.25rem;
+}
+.tv-signin-view__code {
+  font-size: 2rem;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.08em;
+  margin: 0 0 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.tv-signin-view__countdown {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  margin: 0 0 1rem;
+  font-variant-numeric: tabular-nums;
+}
+.tv-signin-view__countdown--expired {
+  color: var(--color-danger);
+}
+.tv-signin-view__instructions {
+  color: var(--color-muted);
+  font-size: 0.92rem;
+  max-width: 40ch;
+  margin: 0 auto;
+}
+.tv-signin-view__back {
+  margin-top: 2rem;
+}
+.tv-signin-view__success-line {
+  font-size: 1rem;
+  color: var(--color-muted);
+  margin: 0.25rem 0;
+}
+
+/* Simple CSS spinner shared by the TV's own "preparing code"/"phone
+   connected" states — same visual language as index.html's own
+   #app-boot-loading spinner (see that file's own comment on why a
+   loading state must always be visible, never a blank gap). */
+.tv-signin-view__spinner {
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-primary-deep);
+  border-radius: 50%;
+  animation: tv-signin-spin 0.8s linear infinite;
+  margin: 0 auto 1rem;
+}
+@keyframes tv-signin-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.approve-device-signin-view__code-input {
+  font: inherit;
+  font-size: 1.4rem;
+  letter-spacing: 0.15em;
+  text-align: center;
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-control);
+  width: 100%;
+  max-width: 280px;
+  margin: 0 0 1.25rem;
+}
+.approve-device-signin-view__code-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.approve-device-signin-view__device {
+  font-size: 1.1rem;
+  font-weight: var(--font-weight-bold);
+  margin: 0.5rem 0 0.1rem;
+}
+.approve-device-signin-view__time {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  margin: 0 0 0.75rem;
+}
+.approve-device-signin-view__countdown {
+  font-size: 0.9rem;
+  color: var(--color-muted);
+  margin: 0 0 0.5rem;
+  font-variant-numeric: tabular-nums;
+  min-height: 1.2em;
+}
+.approve-device-signin-view__warning {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  max-width: 34ch;
+  margin: 0 0 1.25rem;
+}
+.approve-device-signin-view__message {
+  font-size: 1.25rem;
+  font-weight: var(--font-weight-bold);
+  margin: 0 0 0.5rem;
+}
+.approve-device-signin-view__detail {
+  color: var(--color-muted);
+  font-size: 0.95rem;
+  max-width: 36ch;
+  margin: 0 0 1rem;
+}
+.approve-device-signin-view__error {
+  color: var(--color-danger);
+  font-size: 0.92rem;
+  max-width: 36ch;
+  margin: 0.5rem 0 0;
+}
+
+/* Full-screen in-app QR scanner (ui/components/QrScannerView.js) —
+   `position: fixed` deliberately escapes whatever element it happens to
+   be mounted inside (ApproveDeviceSignInView.js opens it nested inside
+   its OWN wrapper, not the app's top-level #app container directly —
+   see that file's own header comment) so this still reads as a true
+   dedicated full-screen scanner regardless of that nesting. */
+.qr-scanner-view {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: #0b0d10;
+  color: #ffffff;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-body);
+}
+.qr-scanner-view__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  gap: 1rem;
+}
+.qr-scanner-view__title {
+  font-size: 1.15rem;
+  font-weight: var(--font-weight-bold);
+  margin: 0;
+}
+.qr-scanner-view__cancel,
+.qr-scanner-view .btn--text {
+  color: #ffffff;
+}
+.qr-scanner-view__cancel:hover {
+  color: var(--color-primary);
+}
+.qr-scanner-view__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem 1.5rem 2rem;
+  gap: 1rem;
+  text-align: center;
+}
+.qr-scanner-view__frame {
+  position: relative;
+  width: min(80vw, 320px);
+  height: min(80vw, 320px);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  background: #000;
+}
+.qr-scanner-view__video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.qr-scanner-view__guide {
+  position: absolute;
+  inset: 10%;
+  border: 3px solid rgba(255, 255, 255, 0.85);
+  border-radius: 16px;
+  box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.qr-scanner-view__instructions {
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.85);
+  max-width: 32ch;
+  margin: 0;
+}
+.qr-scanner-view__notice {
+  min-height: 1.2em;
+  font-size: 0.88rem;
+  color: var(--color-warning);
+  margin: 0;
+}
+.qr-scanner-view__use-code {
+  margin-top: 0.5rem;
+}
+.qr-scanner-view__message-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  text-align: center;
+}
+.qr-scanner-view__message {
+  max-width: 34ch;
+  font-size: 1rem;
+  margin: 0;
+}

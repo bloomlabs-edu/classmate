@@ -19,7 +19,7 @@
  * surface: none. See docs/architecture/TV_PHONE_SIGNIN_DESIGN.md §4.
  *
  * Document shape:
- *   status            - 'pending' | 'approved' | 'denied' | 'expired'
+ *   status            - 'pending' | 'connected' | 'approved' | 'denied' | 'expired'
  *   tvSessionTokenHash - sha256 of the TV's own private binding secret
  *                        (see pairingSecret.js) — checked before ANY
  *                        other field is ever revealed to a caller
@@ -42,6 +42,25 @@
  *   pending --(explicit Approve, before expiresAt)--> approved --(one successful poll)--> [deleted]
  *   pending --(explicit Deny, before expiresAt)-----> denied   --(one successful poll)--> [deleted]
  *   pending --(ANY caller notices expiresAt elapsed)-> expired --(one successful poll)--> [deleted]
+ *   pending --(phone successfully loads getDeviceSignInRequestInfo)--> connected
+ *
+ * `connected` (added for the synchronized TV/phone UX — see
+ * docs/architecture/TV_PHONE_SIGNIN_DESIGN.md's UX states) is a NON-
+ * TERMINAL, PENDING-EQUIVALENT status: it exists purely so the TV can
+ * show "Phone connected — waiting for approval" instead of the generic
+ * "waiting for a phone to connect" the instant a phone has actually
+ * loaded this exact session's own confirm screen (via deep link, the
+ * in-app scanner, or manual code entry — all three funnel through the
+ * same getPendingSessionInfo() call, so this is always the real signal,
+ * never a separate/parallel mechanism). Every place that treats
+ * `pending` as "still awaiting a decision, not yet expired" (TTL
+ * enforcement, approve/deny eligibility) treats `connected` identically
+ * — the two are EXACTLY equivalent for every security-relevant purpose,
+ * differing only in what the TV displays while waiting. A session can
+ * also go straight from `pending` to `approved`/`denied`/`expired`
+ * without ever passing through `connected` (e.g. the phone's own
+ * getDeviceSignInRequestInfo call itself fails or is never made) — that
+ * is a perfectly normal path, not an error.
  *
  * `expired` is a REAL, terminal status now — reached by an ordinary
  * Firestore UPDATE, never a delete, whichever caller (an explicit
@@ -143,25 +162,44 @@ export async function createSession(adminDb, { codeHash, tvSessionTokenHash, dev
 }
 
 /**
- * Read-only lookup for the phone's own "what am I about to approve?"
- * screen — deliberately returns null for a missing OR expired session
- * (collapsed identically; an expired session is not meaningfully
- * different from a nonexistent one to a caller who can't un-expire it)
- * and for anything not currently 'pending' (nothing useful to preview
- * about a session already resolved one way or the other).
+ * Read-only(-ish) lookup for the phone's own "what am I about to
+ * approve?" screen — deliberately returns null for a missing OR expired
+ * session (collapsed identically; an expired session is not
+ * meaningfully different from a nonexistent one to a caller who can't
+ * un-expire it) and for anything not currently 'pending'/'connected'
+ * (nothing useful to preview about a session already resolved one way
+ * or the other).
+ *
+ * NOT purely read-only: a successful lookup against a still-`pending`
+ * session is ALSO the one and only signal that marks it `connected` —
+ * see this file's own header comment on the state machine. This is a
+ * single transaction (not a separate write afterward) so "read the
+ * info" and "record that a phone just read it" can never observe two
+ * different states of the same document. Calling this again on an
+ * already-`connected` session is safe and idempotent (just re-reads;
+ * no duplicate transition, no extra field churn).
  */
 export async function getPendingSessionInfo(adminDb, codeHash, nowIso) {
-  const snapshot = await sessionRef(adminDb, codeHash).get();
-  if (!snapshot.exists) return null;
-  const data = snapshot.data();
-  if (data.status !== 'pending') return null;
-  if (data.expiresAt < nowIso) return null;
-  // `expiresAt` is returned alongside the rest so the phone's own
-  // approval screen can show a real, authoritative countdown (UX only —
-  // see ApproveDeviceSignInView.js's own comment; the server remains the
-  // sole authority at actual Approve/Deny time regardless of what this
-  // value says by then).
-  return { deviceLabel: data.deviceLabel, createdAt: data.createdAt, expiresAt: data.expiresAt };
+  return adminDb.runTransaction(async (tx) => {
+    const ref = sessionRef(adminDb, codeHash);
+    const snapshot = await tx.get(ref);
+    if (!snapshot.exists) return null;
+
+    const data = snapshot.data();
+    if (lazilyExpireIfPastTtl(tx, ref, data, nowIso)) return null;
+    if (data.status !== 'pending' && data.status !== 'connected') return null;
+
+    if (data.status === 'pending') {
+      tx.update(ref, { status: 'connected', connectedAt: nowIso });
+    }
+
+    // `expiresAt` is returned alongside the rest so the phone's own
+    // approval screen can show a real, authoritative countdown (UX only —
+    // see ApproveDeviceSignInView.js's own comment; the server remains the
+    // sole authority at actual Approve/Deny time regardless of what this
+    // value says by then).
+    return { deviceLabel: data.deviceLabel, createdAt: data.createdAt, expiresAt: data.expiresAt };
+  });
 }
 
 /**
@@ -172,11 +210,12 @@ export async function getPendingSessionInfo(adminDb, codeHash, nowIso) {
  * be called from within an already-open transaction, on a snapshot that
  * transaction itself just read. Returns `true` (and queues the update)
  * if this call is the one deciding "this session is now expired";
- * `false` if the session is not `pending` at all (already resolved one
- * way or another, by this same check or by a real approve/deny).
+ * `false` if the session is not `pending`/`connected` at all (already
+ * resolved one way or another, by this same check or by a real
+ * approve/deny).
  */
 function lazilyExpireIfPastTtl(tx, ref, data, nowIso) {
-  if (data.status === 'pending' && data.expiresAt < nowIso) {
+  if ((data.status === 'pending' || data.status === 'connected') && data.expiresAt < nowIso) {
     tx.update(ref, { status: 'expired' });
     return true;
   }
@@ -211,7 +250,7 @@ export async function approveSession(adminDb, { codeHash, approvedByUid, customT
     if (lazilyExpireIfPastTtl(tx, ref, data, nowIso)) {
       return { ok: false, reason: 'expired', createdAt: data.createdAt };
     }
-    if (data.status !== 'pending') {
+    if (data.status !== 'pending' && data.status !== 'connected') {
       return { ok: false, reason: data.status === 'expired' ? 'expired' : 'not_pending', createdAt: data.createdAt, status: data.status };
     }
 
@@ -242,7 +281,7 @@ export async function denySession(adminDb, { codeHash, nowIso }) {
     if (lazilyExpireIfPastTtl(tx, ref, data, nowIso)) {
       return { ok: false, reason: 'expired', createdAt: data.createdAt };
     }
-    if (data.status !== 'pending') {
+    if (data.status !== 'pending' && data.status !== 'connected') {
       return { ok: false, reason: data.status === 'expired' ? 'expired' : 'not_pending', createdAt: data.createdAt, status: data.status };
     }
 
@@ -317,7 +356,7 @@ export async function denySession(adminDb, { codeHash, nowIso }) {
  *
  * @returns {Promise<
  *   {ok: true, customToken: string} |
- *   {ok: false, reason: 'not_found'|'expired'|'denied'|'pending'}
+ *   {ok: false, reason: 'not_found'|'expired'|'denied'|'pending'|'connected'}
  * >}
  */
 export async function consumeApprovedSession(adminDb, { codeHash, tvSessionTokenHash, nowIso }) {
@@ -357,6 +396,15 @@ export async function consumeApprovedSession(adminDb, { codeHash, tvSessionToken
     if (data.status === 'pending') {
       return { ok: false, reason: 'pending', createdAt: data.createdAt }; // keep polling — not a terminal state, nothing to delete
     }
+    if (data.status === 'connected') {
+      // Same "keep polling, nothing to delete" shape as `pending` above —
+      // `connected` is pending-equivalent for every purpose except what
+      // the TV displays while it waits (see this file's own header
+      // comment). Surfaced as its own distinct reason so the TV can show
+      // "Phone connected — waiting for approval" instead of the generic
+      // "waiting for a phone to connect".
+      return { ok: false, reason: 'connected', createdAt: data.createdAt };
+    }
 
     // status === 'approved' — expiresAt is deliberately not consulted here; see point 4 above.
     const { customToken } = data;
@@ -364,10 +412,10 @@ export async function consumeApprovedSession(adminDb, { codeHash, tvSessionToken
     return { ok: true, customToken, createdAt: data.createdAt };
   });
 
-  // The one high-frequency, no-op outcome ("still pending, keep
-  // waiting") is deliberately never logged — see this file's own header
-  // comment on why.
-  if (result.reason !== 'pending') {
+  // The two high-frequency, no-op outcomes ("still pending"/"still
+  // connected, keep waiting") are deliberately never logged — see this
+  // file's own header comment on why.
+  if (result.reason !== 'pending' && result.reason !== 'connected') {
     logOutcome('poll', {
       codeHash,
       ok: result.ok,

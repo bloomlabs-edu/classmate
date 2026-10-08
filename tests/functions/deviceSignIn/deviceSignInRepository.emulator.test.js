@@ -81,6 +81,87 @@ test('getPendingSessionInfo: returns null for an expired session (EXPIRED PAIRIN
   assert.equal(info, null);
 });
 
+test('getPendingSessionInfo: a successful lookup on a pending session marks it CONNECTED (raw Firestore status), for the TV\'s own "Phone connected" state', async () => {
+  const codeHash = freshCodeHash();
+  await createSession(db, { codeHash, tvSessionTokenHash: freshTokenHash(), deviceLabel: 'TV', nowIso: NOW, expiresAtIso: LATER });
+
+  const info = await getPendingSessionInfo(db, codeHash, NOW);
+  assert.deepEqual(info, { deviceLabel: 'TV', createdAt: NOW, expiresAt: LATER });
+
+  const snap = await db.collection(SESSIONS_COLLECTION).doc(codeHash).get();
+  assert.equal(snap.data().status, 'connected');
+});
+
+test('getPendingSessionInfo: calling it again on an already-CONNECTED session is idempotent (still returns the same info, stays connected)', async () => {
+  const codeHash = freshCodeHash();
+  await createSession(db, { codeHash, tvSessionTokenHash: freshTokenHash(), deviceLabel: 'TV', nowIso: NOW, expiresAtIso: LATER });
+
+  const first = await getPendingSessionInfo(db, codeHash, NOW);
+  const second = await getPendingSessionInfo(db, codeHash, NOW);
+  assert.deepEqual(first, second);
+
+  const snap = await db.collection(SESSIONS_COLLECTION).doc(codeHash).get();
+  assert.equal(snap.data().status, 'connected');
+});
+
+test('approveSession: a CONNECTED session (phone already loaded the info screen) still approves successfully', async () => {
+  const codeHash = freshCodeHash();
+  await createSession(db, { codeHash, tvSessionTokenHash: freshTokenHash(), deviceLabel: 'TV', nowIso: NOW, expiresAtIso: LATER });
+  await getPendingSessionInfo(db, codeHash, NOW); // phone connects first
+
+  const result = await approveSession(db, { codeHash, approvedByUid: 'teacher-1', customToken: 'tok', nowIso: NOW });
+  assert.deepEqual(result, { ok: true });
+});
+
+test('denySession: a CONNECTED session still denies successfully', async () => {
+  const codeHash = freshCodeHash();
+  const tvSessionTokenHash = freshTokenHash();
+  await createSession(db, { codeHash, tvSessionTokenHash, deviceLabel: 'TV', nowIso: NOW, expiresAtIso: LATER });
+  await getPendingSessionInfo(db, codeHash, NOW); // phone connects first
+
+  const result = await denySession(db, { codeHash, nowIso: NOW });
+  assert.deepEqual(result, { ok: true });
+
+  const poll = await consumeApprovedSession(db, { codeHash, tvSessionTokenHash, nowIso: NOW });
+  assert.deepEqual(poll, { ok: false, reason: 'denied' });
+});
+
+test('consumeApprovedSession: a CONNECTED (not yet approved/denied) session reports "connected" and is NOT deleted — the TV keeps polling it', async () => {
+  const codeHash = freshCodeHash();
+  const tvSessionTokenHash = freshTokenHash();
+  await createSession(db, { codeHash, tvSessionTokenHash, deviceLabel: 'TV', nowIso: NOW, expiresAtIso: LATER });
+  await getPendingSessionInfo(db, codeHash, NOW); // phone connects first
+
+  const result = await consumeApprovedSession(db, { codeHash, tvSessionTokenHash, nowIso: NOW });
+  assert.deepEqual(result, { ok: false, reason: 'connected' });
+
+  // Still there for the next poll, and the phone's own screen still works too.
+  const info = await getPendingSessionInfo(db, codeHash, NOW);
+  assert.ok(info);
+});
+
+test('consumeApprovedSession: a CONNECTED session whose TTL has elapsed is transitioned to real `expired` status (same lazy-expire fix as `pending`), never silently deleted out from under an in-flight approval', async () => {
+  const codeHash = freshCodeHash();
+  const tvSessionTokenHash = freshTokenHash();
+  await createSession(db, { codeHash, tvSessionTokenHash, deviceLabel: 'TV', nowIso: NOW, expiresAtIso: LATER });
+  await getPendingSessionInfo(db, codeHash, NOW); // phone connects first, while still valid
+
+  const poll = await consumeApprovedSession(db, { codeHash, tvSessionTokenHash, nowIso: '2026-10-07T10:05:00.000Z' }); // well past LATER
+  assert.deepEqual(poll, { ok: false, reason: 'expired' });
+
+  const snap = await db.collection(SESSIONS_COLLECTION).doc(codeHash).get();
+  assert.equal(snap.data().status, 'expired');
+});
+
+test('getPendingSessionInfo: returns null for a CONNECTED session whose TTL has since elapsed (same as an expired pending session)', async () => {
+  const codeHash = freshCodeHash();
+  await createSession(db, { codeHash, tvSessionTokenHash: freshTokenHash(), deviceLabel: 'TV', nowIso: NOW, expiresAtIso: LATER });
+  await getPendingSessionInfo(db, codeHash, NOW); // connects while valid
+
+  const info = await getPendingSessionInfo(db, codeHash, '2026-10-07T10:05:00.000Z'); // now past LATER
+  assert.equal(info, null);
+});
+
 test('createSession: a hash collision with an already-live session throws (never silently overwrites a different TV\'s session)', async () => {
   const codeHash = freshCodeHash();
   await createSession(db, { codeHash, tvSessionTokenHash: freshTokenHash(), deviceLabel: 'TV 1', nowIso: NOW, expiresAtIso: LATER });

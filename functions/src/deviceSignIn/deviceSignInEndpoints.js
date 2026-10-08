@@ -186,6 +186,12 @@ const POLL_REASON_TO_STATUS = Object.freeze({
   expired: 'expired',
   denied: 'denied',
   pending: 'pending',
+  // A phone has successfully loaded getDeviceSignInRequestInfo for this
+  // exact session (deep link, in-app scanner, or manual code entry — all
+  // three funnel through the same call) but hasn't approved/denied yet.
+  // Non-terminal, pending-equivalent — see deviceSignInRepository.js's
+  // own header comment on the state machine.
+  connected: 'connected',
 });
 
 /**

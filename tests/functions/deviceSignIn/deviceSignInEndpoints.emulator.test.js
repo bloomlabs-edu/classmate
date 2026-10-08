@@ -133,6 +133,41 @@ test('SUCCESSFUL END-TO-END PAIRING: start -> approve -> poll -> redeem yields t
   assert.equal(redeemedUid, teacherUid, 'SUCCESSFUL CUSTOM-TOKEN REDEMPTION: the TV ends up authenticated as the teacher\'s own existing uid, not a new/different one');
 });
 
+test('STATE SYNC: a TV poll before the phone has ever loaded the info screen reports "pending"; after the phone loads it (deep link, scanner, or manual code -- all funnel through the same call), the SAME poll loop reports "connected" instead, still with no token, and approval still succeeds afterward', async () => {
+  const start = await handleStartDeviceSignIn({ body: { deviceLabel: 'Classroom TV' }, clientKey: '203.0.113.30', deps: baseDeps() });
+  const { pairingCode, tvSessionToken } = start.body;
+
+  const beforePhone = await handlePollDeviceSignIn({ body: { pairingCode, tvSessionToken }, clientKey: '203.0.113.30', deps: baseDeps() });
+  assert.deepEqual(beforePhone.body, { ok: true, status: 'pending' });
+
+  const idToken = await mintTeacherIdToken('teacher-connected-state');
+  const info = await handleGetDeviceSignInRequestInfo({ authorizationHeader: `Bearer ${idToken}`, body: { pairingCode }, deps: baseDeps() });
+  assert.equal(info.body.ok, true);
+
+  const afterPhone = await handlePollDeviceSignIn({ body: { pairingCode, tvSessionToken }, clientKey: '203.0.113.30', deps: baseDeps() });
+  assert.deepEqual(afterPhone.body, { ok: true, status: 'connected' });
+
+  const approve = await handleApproveDeviceSignIn({ authorizationHeader: `Bearer ${idToken}`, body: { pairingCode }, deps: baseDeps() });
+  assert.deepEqual(approve.body, { ok: true });
+
+  const finalPoll = await handlePollDeviceSignIn({ body: { pairingCode, tvSessionToken }, clientKey: '203.0.113.30', deps: baseDeps() });
+  assert.equal(finalPoll.body.status, 'approved');
+  assert.ok(finalPoll.body.customToken);
+});
+
+test('STATE SYNC: denial after the phone has connected still reaches the TV as "denied", not "connected" (terminal state wins)', async () => {
+  const start = await handleStartDeviceSignIn({ body: {}, clientKey: '203.0.113.31', deps: baseDeps() });
+  const { pairingCode, tvSessionToken } = start.body;
+  const idToken = await mintTeacherIdToken('teacher-connected-deny');
+
+  await handleGetDeviceSignInRequestInfo({ authorizationHeader: `Bearer ${idToken}`, body: { pairingCode }, deps: baseDeps() });
+  const deny = await handleDenyDeviceSignIn({ authorizationHeader: `Bearer ${idToken}`, body: { pairingCode }, deps: baseDeps() });
+  assert.deepEqual(deny.body, { ok: true });
+
+  const poll = await handlePollDeviceSignIn({ body: { pairingCode, tvSessionToken }, clientKey: '203.0.113.31', deps: baseDeps() });
+  assert.equal(poll.body.status, 'denied');
+});
+
 test('INVALID PAIRING CODE -> rejected: getDeviceSignInRequestInfo for a code that was never issued', async () => {
   const idToken = await mintTeacherIdToken('teacher-invalid');
   const result = await handleGetDeviceSignInRequestInfo({

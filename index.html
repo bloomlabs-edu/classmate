@@ -75,12 +75,75 @@
       />
     </noscript>
     <link rel="stylesheet" href="css/styles.css" />
+    <!--
+      Inline, not in css/styles.css: this must render even if that
+      stylesheet itself is slow/blocked, since its whole job is to cover
+      the gap before ANY of this app's own CSS/JS has necessarily taken
+      effect yet (see js/main.js's own init()/onAuthStateChange() —
+      nothing is painted into #app until the FIRST auth-state callback
+      resolves, which on a cold mobile load over a flaky network can
+      take several real seconds). Root cause of the 2026-10-08 "phone
+      goes blank after scanning the TV QR code" report: this exact
+      window previously showed nothing at all. #app-boot-loading is
+      removed automatically the instant any real view renders, because
+      every view's own render function starts with
+      `container.innerHTML = ''` (see e.g. ui/views/LoginView.js) --
+      nothing here needs to explicitly clear it.
+    -->
+    <style>
+      #app-boot-loading {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.9rem;
+        min-height: 60vh;
+        padding: 2rem 1.5rem;
+        text-align: center;
+        font-family: 'Open Sans', sans-serif;
+        color: #475569;
+      }
+      #app-boot-loading__spinner {
+        width: 2.25rem;
+        height: 2.25rem;
+        border: 3px solid #d7e2f1;
+        border-top-color: #2563eb;
+        border-radius: 50%;
+        animation: app-boot-spin 0.8s linear infinite;
+      }
+      #app-boot-loading__retry {
+        display: none;
+        margin-top: 0.5rem;
+        font: inherit;
+        font-weight: 700;
+        padding: 0.6rem 1.2rem;
+        border-radius: 8px;
+        border: none;
+        background-color: #2563eb;
+        color: #fff;
+        cursor: pointer;
+      }
+      #app-boot-loading[data-slow='true'] #app-boot-loading__retry {
+        display: inline-block;
+      }
+      @keyframes app-boot-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
   </head>
   <body>
     <div id="user-bar"></div>
     <div class="app-shell">
       <div id="teacher-sidebar"></div>
-      <div id="app"></div>
+      <div id="app">
+        <div id="app-boot-loading">
+          <div id="app-boot-loading__spinner" aria-hidden="true"></div>
+          <p id="app-boot-loading__message">Loading ClassMate…</p>
+          <button type="button" id="app-boot-loading__retry" onclick="window.location.reload()">Reload</button>
+        </div>
+      </div>
     </div>
     <div id="teacher-mobile-nav"></div>
 
@@ -113,18 +176,77 @@
           'border-radius:6px;padding:0.75rem;">' + navigator.userAgent + '</pre>';
         document.body.appendChild(banner);
       }
-      window.addEventListener('error', function (event) {
-        showStartupError(
-          'A script error occurred before the app could load.',
-          (event.error && event.error.stack) || event.message
-        );
-      });
+      // `true` (capture phase) is load-bearing here, not decorative: a
+      // resource that fails to load -- including a <script type="module">
+      // itself, or any file it imports -- fires a non-bubbling 'error'
+      // event that only reaches `window` in the CAPTURE phase, never the
+      // default bubble phase a plain addEventListener('error', fn) call
+      // listens on. Without capture:true, exactly this class of failure
+      // (e.g. a network hiccup fetching js/main.js or one of its imports,
+      // plausible right as a phone switches from the camera app to the
+      // browser) left the page blank with NEITHER this banner NOR any
+      // console output reachable on a phone -- the other confirmed
+      // contributor to the 2026-10-08 blank-screen report, alongside the
+      // missing #app-boot-loading state above.
+      window.addEventListener(
+        'error',
+        function (event) {
+          var isResourceLoadFailure = !event.error && !event.message && event.target && event.target !== window;
+          if (isResourceLoadFailure) {
+            // Scoped deliberately narrow: only a SCRIPT/stylesheet LINK
+            // failing to load WHILE the app hasn't rendered its first
+            // real view yet (the boot placeholder below is still the
+            // only thing in #app) is treated as a startup failure worth
+            // a full-page banner. Any other resource failure (a broken
+            // student avatar <img>, a missing icon, anything AFTER the
+            // app is already running) is common, benign, and unrelated
+            // to startup -- showing this same full-page red banner for
+            // those would itself be a regression, so those are only
+            // logged, never surfaced this way.
+            var bootEl = document.getElementById('app-boot-loading');
+            var appEl = document.getElementById('app');
+            var appStillBooting = !!(bootEl && appEl && appEl.contains(bootEl));
+            var tag = event.target.tagName;
+            var isCriticalTag = tag === 'SCRIPT' || (tag === 'LINK' && event.target.rel === 'stylesheet');
+            if (!appStillBooting || !isCriticalTag) {
+              console.error('[startup] non-critical resource failed to load:', event.target.src || event.target.href);
+              return;
+            }
+            showStartupError(
+              'A required file failed to load (check your connection and try again).',
+              event.target.src || event.target.href || ''
+            );
+            return;
+          }
+          showStartupError(
+            'A script error occurred before the app could load.',
+            (event.error && event.error.stack) || event.message
+          );
+        },
+        true
+      );
       window.addEventListener('unhandledrejection', function (event) {
         showStartupError(
           'A background operation failed before the app could finish loading.',
           (event.reason && event.reason.stack) || String(event.reason)
         );
       });
+
+      // Watchdog for the OTHER confirmed cause of a blank screen: nothing
+      // failed, but the normal boot sequence (fetch every module cold,
+      // then Firebase Auth's own session restore) is simply taking a long
+      // time -- realistic on a flaky school WiFi/cellular connection on a
+      // phone's first-ever visit. #app-boot-loading above already shows a
+      // spinner immediately; if it is STILL the only thing in #app after
+      // a generous timeout, reveal a manual Reload action rather than
+      // leaving an unexplained spinner running forever.
+      window.setTimeout(function () {
+        var boot = document.getElementById('app-boot-loading');
+        if (!boot || !document.getElementById('app').contains(boot)) return; // a real view already rendered -- nothing to do
+        boot.setAttribute('data-slow', 'true');
+        var message = document.getElementById('app-boot-loading__message');
+        if (message) message.textContent = "This is taking longer than usual. Check your connection, or reload.";
+      }, 10000);
     </script>
 
     <script type="module" src="js/main.js"></script>
