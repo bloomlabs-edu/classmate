@@ -49,7 +49,8 @@ beforeEach(async () => {
 });
 
 const NOW = '2026-10-07T10:00:00.000Z';
-const LATER = '2026-10-07T10:02:00.000Z'; // +2 minutes, matching PAIRING_SESSION_TTL_MS
+const LATER = '2026-10-07T10:02:00.000Z'; // +2 minutes — an arbitrary not-yet-expired future instant; these repository functions take expiresAtIso/nowIso as explicit params, so this need not track PAIRING_SESSION_TTL_MS itself (that constant is only consumed in deviceSignInEndpoints.js)
+const JUST_BEFORE_EXPIRY = '2026-10-07T10:01:59.000Z'; // 1s before LATER, when LATER is used as expiresAtIso
 const PAST_EXPIRY = '2026-10-07T09:59:59.000Z';
 
 function freshCodeHash() {
@@ -64,7 +65,7 @@ test('createSession + getPendingSessionInfo: a brand-new session is pending and 
   await createSession(db, { codeHash, tvSessionTokenHash: freshTokenHash(), deviceLabel: 'Classroom TV', nowIso: NOW, expiresAtIso: LATER });
 
   const info = await getPendingSessionInfo(db, codeHash, NOW);
-  assert.deepEqual(info, { deviceLabel: 'Classroom TV', createdAt: NOW });
+  assert.deepEqual(info, { deviceLabel: 'Classroom TV', createdAt: NOW, expiresAt: LATER });
 });
 
 test('getPendingSessionInfo: returns null for a nonexistent code (INVALID PAIRING CODE -> rejected)', async () => {
@@ -162,13 +163,128 @@ test('consumeApprovedSession: a still-pending session reports "pending" and is N
   assert.ok(info);
 });
 
-test('consumeApprovedSession: EXPIRED PAIRING CODE -> rejected, and the session is cleaned up', async () => {
+test('consumeApprovedSession: EXPIRED PAIRING CODE -> rejected; the FIRST poll to notice records real `expired` status (an UPDATE, NOT a delete — this is the actual race fix)', async () => {
   const codeHash = freshCodeHash();
   const tvSessionTokenHash = freshTokenHash();
   await createSession(db, { codeHash, tvSessionTokenHash, deviceLabel: 'TV', nowIso: NOW, expiresAtIso: PAST_EXPIRY });
 
   const result = await consumeApprovedSession(db, { codeHash, tvSessionTokenHash, nowIso: LATER });
   assert.deepEqual(result, { ok: false, reason: 'expired' });
+
+  // The document must still exist, now as the real terminal `expired`
+  // status — NOT deleted. This is what closes the production race: a
+  // concurrent Approve attempt landing right after this poll must find
+  // a real, observable `expired` state, never a vanished document it
+  // would otherwise misreport as `not_found`.
+  const snap = await db.collection(SESSIONS_COLLECTION).doc(codeHash).get();
+  assert.ok(snap.exists, 'a routine poll discovering expiry must record it via UPDATE, never DELETE the document');
+  assert.equal(snap.data().status, 'expired');
+
+  // A SECOND poll, now observing the already-recorded terminal state, is
+  // the one that performs cleanup.
+  const second = await consumeApprovedSession(db, { codeHash, tvSessionTokenHash, nowIso: LATER });
+  assert.deepEqual(second, { ok: false, reason: 'expired' });
+  const snapAfterSecondPoll = await db.collection(SESSIONS_COLLECTION).doc(codeHash).get();
+  assert.equal(snapAfterSecondPoll.exists, false, 'cleanup happens once the terminal state has already been observed once, not on the poll that discovers it');
+});
+
+test('REQUIREMENT A — pending + before expiry: a routine TV poll does not expire the session, and Approve still succeeds afterward', async () => {
+  const codeHash = freshCodeHash();
+  const tvSessionTokenHash = freshTokenHash();
+  await createSession(db, { codeHash, tvSessionTokenHash, deviceLabel: 'TV', nowIso: NOW, expiresAtIso: LATER });
+
+  // A routine poll, still comfortably before expiresAt.
+  const poll = await consumeApprovedSession(db, { codeHash, tvSessionTokenHash, nowIso: JUST_BEFORE_EXPIRY });
+  assert.deepEqual(poll, { ok: false, reason: 'pending' });
+
+  const snap = await db.collection(SESSIONS_COLLECTION).doc(codeHash).get();
+  assert.equal(snap.data().status, 'pending', 'a poll before expiry must never alter status');
+
+  // Approve, moments later but still before expiresAt, must still succeed.
+  const approve = await approveSession(db, { codeHash, approvedByUid: 'teacher-1', customToken: 'tok-a', nowIso: JUST_BEFORE_EXPIRY });
+  assert.deepEqual(approve, { ok: true });
+});
+
+test('REQUIREMENT B — pending + after expiry: a TV poll transitions the session to EXPIRED (not deleted), and a subsequent Approve attempt fails cleanly, never silently', async () => {
+  const codeHash = freshCodeHash();
+  const tvSessionTokenHash = freshTokenHash();
+  await createSession(db, { codeHash, tvSessionTokenHash, deviceLabel: 'TV', nowIso: NOW, expiresAtIso: LATER });
+
+  const pollAfterExpiry = await consumeApprovedSession(db, { codeHash, tvSessionTokenHash, nowIso: '2026-10-07T10:03:00.000Z' });
+  assert.deepEqual(pollAfterExpiry, { ok: false, reason: 'expired' });
+
+  const snap = await db.collection(SESSIONS_COLLECTION).doc(codeHash).get();
+  assert.ok(snap.exists, 'the poll must not silently delete the session');
+  assert.equal(snap.data().status, 'expired');
+
+  const approveAfterward = await approveSession(db, { codeHash, approvedByUid: 'teacher-1', customToken: 'tok-b', nowIso: '2026-10-07T10:03:00.000Z' });
+  assert.deepEqual(approveAfterward, { ok: false, reason: 'expired' }, 'approval after authoritative server expiry must still be rejected — cleanly, with a real reason, never a misleading not_found');
+});
+
+test('REQUIREMENT C1 — a legitimate approval that commits BEFORE a concurrent poll observes expiry must not be destroyed by that poll', async () => {
+  const codeHash = freshCodeHash();
+  const tvSessionTokenHash = freshTokenHash();
+  await createSession(db, { codeHash, tvSessionTokenHash, deviceLabel: 'TV', nowIso: NOW, expiresAtIso: LATER });
+
+  // Approve commits first, still before expiresAt.
+  const approve = await approveSession(db, { codeHash, approvedByUid: 'teacher-1', customToken: 'tok-c1', nowIso: JUST_BEFORE_EXPIRY });
+  assert.deepEqual(approve, { ok: true });
+
+  // A poll arriving AFTER expiresAt must still find and deliver the
+  // already-approved token — an approved session is never re-subject to
+  // the TTL check (see consumeApprovedSession()'s own point 4).
+  const pollAfterExpiry = await consumeApprovedSession(db, { codeHash, tvSessionTokenHash, nowIso: '2026-10-07T10:03:00.000Z' });
+  assert.deepEqual(pollAfterExpiry, { ok: true, customToken: 'tok-c1' });
+});
+
+test('REQUIREMENT C2 — once a poll has recorded expiry, approval deterministically fails; it can never "win" after the server has already observed the TTL elapsed', async () => {
+  const codeHash = freshCodeHash();
+  const tvSessionTokenHash = freshTokenHash();
+  await createSession(db, { codeHash, tvSessionTokenHash, deviceLabel: 'TV', nowIso: NOW, expiresAtIso: LATER });
+
+  const poll = await consumeApprovedSession(db, { codeHash, tvSessionTokenHash, nowIso: '2026-10-07T10:03:00.000Z' });
+  assert.deepEqual(poll, { ok: false, reason: 'expired' });
+
+  const approve = await approveSession(db, { codeHash, approvedByUid: 'teacher-1', customToken: 'tok-c2', nowIso: '2026-10-07T10:03:00.000Z' });
+  assert.deepEqual(approve, { ok: false, reason: 'expired' });
+});
+
+test('REQUIREMENT C3 — a genuine concurrent race between Approve and a just-past-expiry poll produces exactly one deterministic, safe outcome', async () => {
+  const codeHash = freshCodeHash();
+  const tvSessionTokenHash = freshTokenHash();
+  await createSession(db, { codeHash, tvSessionTokenHash, deviceLabel: 'TV', nowIso: NOW, expiresAtIso: LATER });
+
+  // Both transactions start from the same still-pending snapshot and
+  // race to commit: one observes "just before expiry" (approve), the
+  // other "just after" (poll). Firestore's transaction retry-on-conflict
+  // semantics guarantee exactly one of these commits first and the other
+  // retries against the now-changed document — never a lost update, and
+  // never a state where the poll destroys a decision the approve call
+  // already made (or vice versa).
+  const [approveResult, pollResult] = await Promise.all([
+    approveSession(db, { codeHash, approvedByUid: 'teacher-1', customToken: 'tok-c3', nowIso: JUST_BEFORE_EXPIRY }),
+    consumeApprovedSession(db, { codeHash, tvSessionTokenHash, nowIso: '2026-10-07T10:03:00.000Z' }),
+  ]);
+
+  // Exactly two safe, mutually-consistent outcomes are possible
+  // depending on commit order — approve-wins (poll then immediately
+  // collects the real token) or expiry-wins (approve is cleanly
+  // rejected as expired). Both are secure; what must NEVER happen is a
+  // lost/ambiguous update, a thrown error reaching the caller, or the
+  // poll reporting anything other than 'pending'/'expired'/ok:true.
+  const approveWon = approveResult.ok === true;
+  if (approveWon) {
+    assert.deepEqual(pollResult, { ok: true, customToken: 'tok-c3' }, 'if approve committed first, the poll must deliver that exact token');
+  } else {
+    assert.deepEqual(approveResult, { ok: false, reason: 'expired' }, 'if approve lost the race to expiry, it must fail with a real, clean reason — never not_found');
+    assert.ok(pollResult.reason === 'expired' || pollResult.ok === true, 'the poll itself must land on a well-defined terminal outcome either way');
+  }
+
+  // Whichever outcome occurred, the pairing session must never be left
+  // retrievable as a usable, unconsumed token afterward (single-use
+  // guarantee preserved under real concurrency).
+  const followUpPoll = await consumeApprovedSession(db, { codeHash, tvSessionTokenHash, nowIso: '2026-10-07T10:04:00.000Z' });
+  assert.notEqual(followUpPoll.ok, true, 'no token may be collectible twice, regardless of which side of the race won');
 });
 
 test('consumeApprovedSession: ALREADY-CONSUMED PAIRING CODE -> rejected (session deleted on first successful claim)', async () => {

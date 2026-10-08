@@ -36,10 +36,14 @@ async function postJson(path, idToken, body) {
 
 /**
  * What the teacher is about to approve — `{ok: true, deviceLabel,
- * requestedAt}` for a real, still-pending session, or `{ok: false,
- * reason}` (`'unauthenticated'`, `'invalid_request'`, `'rate_limited'`,
- * `'invalid_or_expired'`, or `'error'`) for every other case — never
- * throws.
+ * requestedAt, expiresAt}` for a real, still-pending session, or
+ * `{ok: false, reason}` (`'unauthenticated'`, `'invalid_request'`,
+ * `'rate_limited'`, `'invalid_or_expired'`, or `'error'`) for every
+ * other case — never throws. `expiresAt` is the session's own
+ * authoritative expiry (an ISO string), returned so the approval screen
+ * can show a real countdown — display only; the server independently
+ * re-validates expiry on the actual approve/deny call regardless of
+ * what this value says by then.
  */
 export async function getDeviceSignInRequestInfo(idToken, pairingCode) {
   if (!idToken) return { ok: false, reason: 'unauthenticated' };
@@ -49,7 +53,7 @@ export async function getDeviceSignInRequestInfo(idToken, pairingCode) {
     if (httpStatus === 429) return { ok: false, reason: 'rate_limited' };
     if (httpStatus === 400) return { ok: false, reason: 'invalid_request' };
     if (!data?.ok) return { ok: false, reason: data?.error || 'invalid_or_expired' };
-    return { ok: true, deviceLabel: data.deviceLabel, requestedAt: data.requestedAt };
+    return { ok: true, deviceLabel: data.deviceLabel, requestedAt: data.requestedAt, expiresAt: data.expiresAt };
   } catch (error) {
     console.error('[deviceSignInApprovalService] getDeviceSignInRequestInfo() failed:', error);
     return { ok: false, reason: 'error' };

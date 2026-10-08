@@ -13,8 +13,22 @@
  * these numbers implement.
  */
 
-/** Decision #2: pairing sessions live for exactly 2 minutes. */
-export const PAIRING_SESSION_TTL_MS = 2 * 60 * 1000;
+/**
+ * CHANGED 2026-10-08, first real physical-device QA round (see
+ * docs/architecture/TV_PHONE_SIGNIN_RACE_INVESTIGATION.md): raised from
+ * the original 2 minutes to 5. A first-time real flow genuinely needs
+ * that long — unlock the phone, open the camera, scan the QR (or type
+ * the code by hand), get through Google's own account chooser if she
+ * isn't already signed in on her phone, read the confirm screen, then
+ * explicitly tap Approve. 2 minutes proved too tight for that in
+ * practice; 5 minutes is still a deliberately short-lived window, not a
+ * loosening of the security model — the pairing code is still single-
+ * use, still hashed-only at rest, still rate-limited, and still bound
+ * to one specific TV session (see deviceSignInRepository.js). This is
+ * the ONE place this value is defined — every TTL comparison in this
+ * feature reads it from here, never a duplicated literal.
+ */
+export const PAIRING_SESSION_TTL_MS = 5 * 60 * 1000;
 
 /** Decision #2: an 8-digit numeric code, shown on the TV as both the QR payload and a plain typeable string. */
 export const PAIRING_CODE_DIGITS = 8;
@@ -38,9 +52,12 @@ export const TV_SESSION_TOKEN_BYTES = 32;
  * keyed by caller IP (fully unauthenticated endpoints); `info`/
  * `approve`/`deny` are keyed by the caller's own verified Firebase uid
  * (authenticated endpoints — accountable, so a slightly more generous
- * budget is fine). `poll`'s own budget assumes a legitimate TV polling
- * roughly every 2s for up to the full 2-minute TTL (~60 requests) and
- * leaves real headroom above that for jitter/retries, while still
+ * budget is fine). `poll`'s own window is per 60 seconds (not per
+ * session lifetime), so a legitimate TV polling roughly every 2s (~30
+ * requests per 60s window) stays comfortably under budget regardless of
+ * how long PAIRING_SESSION_TTL_MS itself is — raising that TTL does not
+ * widen this budget. `maxAttempts: 90` leaves real headroom above that
+ * ~30 for jitter/retries, while still
  * bounding how many pairing-code GUESSES a single source can attempt
  * per minute against `pollDeviceSignIn` specifically — see this
  * feature's own README section in the design doc on why entropy alone

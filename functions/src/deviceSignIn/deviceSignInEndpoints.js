@@ -132,7 +132,10 @@ export async function handleGetDeviceSignInRequestInfo({ authorizationHeader, bo
   const info = await getPendingSessionInfo(deps.adminDb, hashSecret(pairingCode), nowIso);
   if (!info) return { httpStatus: 200, body: INVALID_OR_EXPIRED };
 
-  return { httpStatus: 200, body: { ok: true, deviceLabel: info.deviceLabel, requestedAt: info.createdAt } };
+  // `expiresAt` lets the phone show a real countdown (UX only — the
+  // server below still independently re-validates expiresAt at the
+  // actual Approve/Deny call; this is never trusted for authorization).
+  return { httpStatus: 200, body: { ok: true, deviceLabel: info.deviceLabel, requestedAt: info.createdAt, expiresAt: info.expiresAt } };
 }
 
 const REASON_TO_MESSAGE = Object.freeze({

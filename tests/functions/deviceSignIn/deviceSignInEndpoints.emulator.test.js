@@ -148,20 +148,59 @@ test('EXPIRED PAIRING CODE -> rejected: approve fails once the session\'s own TT
   const start = await handleStartDeviceSignIn({ body: {}, clientKey: '203.0.113.2', deps: baseDeps() });
   const { pairingCode } = start.body;
 
-  nowMs += 3 * 60 * 1000; // advance past the 2-minute TTL
+  nowMs += 6 * 60 * 1000; // advance past the 5-minute TTL (PAIRING_SESSION_TTL_MS)
   const approve = await handleApproveDeviceSignIn({ authorizationHeader: `Bearer ${idToken}`, body: { pairingCode }, deps: baseDeps() });
   assert.deepEqual(approve.body, { ok: false, error: 'invalid_or_expired' });
 });
 
-test('EXPIRED SESSION: a TV polling after expiry gets a clear expired/invalid response, never a token', async () => {
+test('EXPIRED SESSION: a TV polling after expiry gets a clear expired/invalid response, never a token, and the session is recorded as expired rather than silently vanishing', async () => {
   const start = await handleStartDeviceSignIn({ body: {}, clientKey: '203.0.113.3', deps: baseDeps() });
   const { pairingCode, tvSessionToken } = start.body;
 
-  nowMs += 3 * 60 * 1000;
+  nowMs += 6 * 60 * 1000;
   const poll = await handlePollDeviceSignIn({ body: { pairingCode, tvSessionToken }, clientKey: '203.0.113.3', deps: baseDeps() });
   assert.equal(poll.body.ok, true);
   assert.equal(poll.body.status, 'expired');
   assert.equal(poll.body.customToken, undefined);
+});
+
+test('REQUIREMENT E — the server uses the new 5-minute TTL exactly: still valid at 4:59, expired at 5:01', async () => {
+  const idToken = await mintTeacherIdToken('teacher-ttl');
+  const start = await handleStartDeviceSignIn({ body: {}, clientKey: '203.0.113.21', deps: baseDeps() });
+  const { pairingCode: stillValidCode } = start.body;
+
+  nowMs += 4 * 60 * 1000 + 59 * 1000; // 4:59 after creation — must still be approvable
+  const stillValid = await handleApproveDeviceSignIn({ authorizationHeader: `Bearer ${idToken}`, body: { pairingCode: stillValidCode }, deps: baseDeps() });
+  assert.deepEqual(stillValid.body, { ok: true }, 'a session must remain approvable right up to (but not including) the 5-minute mark');
+
+  nowMs = Date.parse('2026-10-07T10:00:00.000Z'); // reset for a fresh independent session
+  const secondStart = await handleStartDeviceSignIn({ body: {}, clientKey: '203.0.113.22', deps: baseDeps() });
+  const { pairingCode: expiredCode } = secondStart.body;
+
+  nowMs += 5 * 60 * 1000 + 1000; // 5:01 after creation — must now be expired
+  const idToken2 = await mintTeacherIdToken('teacher-ttl-2');
+  const expired = await handleApproveDeviceSignIn({ authorizationHeader: `Bearer ${idToken2}`, body: { pairingCode: expiredCode }, deps: baseDeps() });
+  assert.deepEqual(expired.body, { ok: false, error: 'invalid_or_expired' }, 'a session must be rejected once the 5-minute TTL has elapsed');
+});
+
+test('REQUIREMENT C (handler level) — a poll that discovers expiry does not destroy a concurrent, genuinely-in-time Approve call', async () => {
+  const idToken = await mintTeacherIdToken('teacher-race');
+  const start = await handleStartDeviceSignIn({ body: {}, clientKey: '203.0.113.23', deps: baseDeps() });
+  const { pairingCode, tvSessionToken } = start.body;
+
+  // Approve commits just under the TTL boundary.
+  nowMs += 4 * 60 * 1000 + 59 * 1000;
+  const approve = await handleApproveDeviceSignIn({ authorizationHeader: `Bearer ${idToken}`, body: { pairingCode }, deps: baseDeps() });
+  assert.deepEqual(approve.body, { ok: true });
+
+  // A routine TV poll arrives moments later, now past the TTL boundary —
+  // this must still deliver the already-approved token, never report
+  // invalid_or_expired for a decision that was already made in time.
+  nowMs += 2000;
+  const poll = await handlePollDeviceSignIn({ body: { pairingCode, tvSessionToken }, clientKey: '203.0.113.23', deps: baseDeps() });
+  assert.equal(poll.body.ok, true);
+  assert.equal(poll.body.status, 'approved');
+  assert.ok(poll.body.customToken, 'a poll crossing the expiry boundary after a legitimate in-time approval must still deliver the token — this is exactly the production race this feature fixes');
 });
 
 test('ALREADY-CONSUMED PAIRING CODE -> rejected: approving an already-approved session a second time', async () => {
