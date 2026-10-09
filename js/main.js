@@ -98,6 +98,8 @@ import { renderNotebookTrackerView } from './ui/views/NotebookTrackerView.js';
 import { renderWorkRequestCreateView } from './ui/views/WorkRequestCreateView.js';
 import { renderNotebookCheckpointsView } from './ui/views/NotebookCheckpointsView.js';
 import { renderNotebookDailyCheckView } from './ui/views/NotebookDailyCheckView.js';
+import { renderAssignmentTrackerView } from './ui/views/AssignmentTrackerView.js';
+import { renderAssignmentCategoryView } from './ui/views/AssignmentCategoryView.js';
 import * as workRequestService from './services/workRequestService.js';
 import { renderDashboardView } from './ui/views/DashboardView.js';
 import { renderLearningProgrammesListView } from './ui/views/LearningProgrammesListView.js';
@@ -1868,6 +1870,27 @@ function renderRoute(route, reason = 'unspecified') {
         subjectId: route.subjectId,
         notebookTypeId: route.notebookTypeId,
         onBack: () => router.navigate(route.query?.returnTo || `/classroom/${classroom.id}/notebooks`),
+        onGoToClassMode: () => router.navigate(`/classroom/${classroom.id}/class-mode`),
+      });
+    } else if (route.name === 'assignmentTracker') {
+      // Mirrors the 'notebookTracker' wiring above exactly — see
+      // ui/views/AssignmentTrackerView.js's own header comment.
+      renderAssignmentTrackerView(appContainer, {
+        classroom,
+        onBack: () => router.navigate(`/classroom/${classroom.id}`),
+        onNavigate: (path) => router.navigate(path),
+        onOpenAssignmentConfiguration: () => router.navigate(`/classroom/${classroom.id}/settings/learning`),
+        onGoToClassMode: () => router.navigate(`/classroom/${classroom.id}/class-mode`),
+      });
+    } else if (route.name === 'assignmentCategory') {
+      renderAssignmentCategoryView(appContainer, {
+        classroom,
+        categoryId: route.categoryId,
+        onBack: () => router.navigate(`/classroom/${classroom.id}/assignments`),
+        onSelectStudent: (studentId) => {
+          const returnTo = `/classroom/${classroom.id}/assignments/${route.categoryId}`;
+          router.navigate(`/classroom/${classroom.id}/student/${studentId}?returnTo=${encodeURIComponent(returnTo)}`);
+        },
         onGoToClassMode: () => router.navigate(`/classroom/${classroom.id}/class-mode`),
       });
     }

@@ -89,6 +89,26 @@ export function setDailyCheck(classroom, { subjectId, notebookTypeId, studentId,
   return record;
 }
 
+/** How many DailyCheck records one Notebook (Subject + Notebook Type) owns — for building an honest delete-confirmation message, same purpose as checkpointService.js's own countCheckpointImpactForNotebook(). Pure read. */
+export function countDailyCheckImpactForNotebook(classroom, subjectId, notebookTypeId) {
+  return listDailyChecksForNotebook(classroom, subjectId, notebookTypeId).length;
+}
+
+/**
+ * Deletes every DailyCheck record belonging to one Notebook — the
+ * 'daily' trackingMode counterpart to checkpointService.js's own
+ * deleteAllCheckpointsForNotebook(), for the identical reason (a
+ * Subject/Notebook Type delete must not silently orphan this data).
+ * No scoreboard-point reversal needed here — unlike checkpoints,
+ * DailyCheck records never award a completion point of their own (see
+ * this file's own header comment: streaks are derived, never scored).
+ */
+export function deleteAllDailyChecksForNotebook(classroom, subjectId, notebookTypeId) {
+  classroom.dailyChecks = listDailyChecks(classroom).filter(
+    (record) => !(record.subjectId === subjectId && record.notebookTypeId === notebookTypeId)
+  );
+}
+
 /** Sunday=0 ... Saturday=6, parsed the same "YYYY-MM-DD" way shiftDateKey()/toDateKey() already do — kept local since timetableService.js's own equivalent isn't exported and this is a one-line utility, not something worth threading a new export through for. */
 function weekdayOfDateKey(dateKey) {
   const [year, month, day] = dateKey.split('-').map(Number);

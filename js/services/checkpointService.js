@@ -74,6 +74,38 @@ export function deleteCheckpoint(classroom, checkpointId) {
   classroom.checkpoints = classroom.checkpoints.filter((c) => c.id !== checkpointId);
 }
 
+/**
+ * Everything this Notebook's own checkpoints would lose if the Subject
+ * or Notebook Type that owns them were deleted right now — the data a
+ * caller (ui/views/SettingsView.js) needs to build an honest,
+ * SPECIFIC confirmation message rather than the old generic "this
+ * cannot be undone," which said nothing about checkpoints at all. Pure
+ * read, no mutation.
+ */
+export function countCheckpointImpactForNotebook(classroom, subjectId, notebookTypeId) {
+  const checkpoints = listCheckpointsForNotebook(classroom, subjectId, notebookTypeId);
+  const recordCount = checkpoints.reduce((sum, c) => sum + (c.records || []).length, 0);
+  return { checkpointCount: checkpoints.length, recordCount };
+}
+
+/**
+ * Cascade-deletes every checkpoint belonging to one Notebook (Subject +
+ * Notebook Type) — the safe-delete half of fixing "deleting a Subject/
+ * Notebook Type silently orphans its checkpoints" (see
+ * notebookConfigService.js's removeSubject()/removeNotebookType(),
+ * which only ever strip the config entry and never touch
+ * `classroom.checkpoints` at all). Must be called BEFORE that removal,
+ * while subjectId/notebookTypeId can still resolve this Notebook's own
+ * checkpoints. Reuses deleteCheckpoint() per checkpoint rather than a
+ * bespoke bulk filter, so this stays exactly as safe as deleting one
+ * checkpoint by hand, just applied to all of them.
+ */
+export function deleteAllCheckpointsForNotebook(classroom, subjectId, notebookTypeId) {
+  listCheckpointsForNotebook(classroom, subjectId, notebookTypeId).forEach((checkpoint) => {
+    deleteCheckpoint(classroom, checkpoint.id);
+  });
+}
+
 /** Reassigns `order` for every checkpoint in one Notebook to match `orderedIds`'s own sequence — a checkpoint id present in this Notebook but omitted from `orderedIds` keeps its own existing order, rather than being silently dropped or reset. */
 export function reorderCheckpoints(classroom, subjectId, notebookTypeId, orderedIds) {
   const checkpointsInNotebook = listCheckpointsForNotebook(classroom, subjectId, notebookTypeId);

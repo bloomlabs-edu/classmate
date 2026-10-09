@@ -28,9 +28,14 @@ import * as memberService from '../../services/memberService.js';
 import * as workspaceService from '../../services/workspaceService.js';
 import * as setupProgressService from '../../services/setupProgressService.js';
 import * as notebookConfigService from '../../services/notebookConfigService.js';
+import * as checkpointService from '../../services/checkpointService.js';
+import * as dailyCheckService from '../../services/dailyCheckService.js';
+import * as assignmentConfigService from '../../services/assignmentConfigService.js';
+import * as assignmentService from '../../services/assignmentService.js';
 import { getDisplayName, ClassroomValidationError } from '../../services/classroomService.js';
 import { createIcon } from '../components/Icon.js';
 import { createBackButton } from '../components/BackButton.js';
+import { createOverflowMenu } from '../components/OverflowMenu.js';
 import { renderTrackingEditor } from '../components/NotebookTrackingModal.js';
 import { MEMBER_ROLES, PERMISSIONS, ROLE_PERMISSIONS } from '../../config/memberRoles.js';
 import { showToast } from '../components/Toast.js';
@@ -125,9 +130,10 @@ function renderClassSection(content, classroom, rerender, onOpenStudentAccess, c
   renderTeachersSection(content, classroom, rerender, currentUser, onOpenStudentAccess);
 }
 
-/** Subjects, Notebook Types, and learning-related settings together — everything about instruction, not administration. */
+/** Subjects, Notebook Types, Assignment Categories, and learning-related settings together — everything about instruction, not administration. */
 function renderLearningSection(content, classroom, rerender) {
   renderNotebooksSection(content, classroom, rerender);
+  renderAssignmentCategoriesSection(content, classroom, rerender);
 }
 
 /**
@@ -185,32 +191,83 @@ function renderNotebooksSection(content, classroom, rerender) {
   content.appendChild(section);
 }
 
+/**
+ * Everything this Subject's own Notebook Types would lose if deleted
+ * right now — summed across every Notebook Type it owns, so the
+ * confirmation prompt below can state the real impact instead of a
+ * generic "this cannot be undone." Pure read.
+ */
+function countSubjectDeleteImpact(classroom, subjectId) {
+  const types = notebookConfigService.listNotebookTypes(classroom, subjectId);
+  return types.reduce(
+    (totals, type) => {
+      const checkpointImpact = checkpointService.countCheckpointImpactForNotebook(classroom, subjectId, type.id);
+      const dailyCount = dailyCheckService.countDailyCheckImpactForNotebook(classroom, subjectId, type.id);
+      return {
+        checkpointCount: totals.checkpointCount + checkpointImpact.checkpointCount,
+        recordCount: totals.recordCount + checkpointImpact.recordCount,
+        dailyCheckCount: totals.dailyCheckCount + dailyCount,
+      };
+    },
+    { checkpointCount: 0, recordCount: 0, dailyCheckCount: 0 }
+  );
+}
+
+/** The actual "remove a Notebook Type" body — cascades to that type's own checkpoints/daily checks BEFORE stripping it from config, so neither is ever left silently orphaned (see checkpointService.js's own deleteAllCheckpointsForNotebook() and dailyCheckService.js's own deleteAllDailyChecksForNotebook()). Shared by both the per-type delete action and the per-subject delete's own cascade below. */
+function removeNotebookTypeSafely(classroom, subjectId, typeId) {
+  checkpointService.deleteAllCheckpointsForNotebook(classroom, subjectId, typeId);
+  dailyCheckService.deleteAllDailyChecksForNotebook(classroom, subjectId, typeId);
+  notebookConfigService.removeNotebookType(classroom, typeId);
+}
+
+/** Builds an honest confirmation message naming the real impact of a delete — never the old generic "this cannot be undone" alone, per explicit product direction ("do not silently orphan or destroy student records" — the destruction itself is allowed, but it must never be silent about what it actually does). */
+function buildDeleteImpactMessage(subjectOrTypeLabel, { checkpointCount, recordCount, dailyCheckCount }) {
+  const parts = [];
+  if (checkpointCount > 0) parts.push(`${checkpointCount} checkpoint${checkpointCount === 1 ? '' : 's'} (${recordCount} student record${recordCount === 1 ? '' : 's'})`);
+  if (dailyCheckCount > 0) parts.push(`${dailyCheckCount} daily check record${dailyCheckCount === 1 ? '' : 's'}`);
+  if (parts.length === 0) return `Delete "${subjectOrTypeLabel}"? This cannot be undone.`;
+  return `Delete "${subjectOrTypeLabel}"? This also permanently deletes ${parts.join(' and ')}. This cannot be undone.`;
+}
+
 function createNotebookSubjectRow(classroom, subject, rerender) {
   const item = document.createElement('li');
   item.className = 'settings-editable-list__item settings-notebook-subject';
 
   const header = document.createElement('div');
   header.className = 'settings-notebook-subject__header';
-  header.appendChild(createInlineEditableLabel(subject.name, (newName) => {
+
+  const { element: nameLabel, startEditing } = createInlineEditableLabel(subject.name, (newName) => {
     notebookConfigService.renameSubject(classroom, subject.id, newName);
     workspaceService.markDirty(classroom.id);
     workspaceService.saveExplicitly(classroom).catch(() => {});
     rerender();
-  }));
-
-  const removeButton = document.createElement('button');
-  removeButton.type = 'button';
-  removeButton.className = 'btn btn--text settings-notebook-subject__remove';
-  removeButton.textContent = 'Remove';
-  removeButton.addEventListener('click', () => {
-    const confirmed = window.confirm(`Remove "${subject.name}" and all its Notebook Types? This cannot be undone.`);
-    if (!confirmed) return;
-    notebookConfigService.removeSubject(classroom, subject.id);
-    workspaceService.markDirty(classroom.id);
-    workspaceService.saveExplicitly(classroom).catch(() => {});
-    rerender();
   });
-  header.appendChild(removeButton);
+  header.appendChild(nameLabel);
+
+  header.appendChild(
+    createOverflowMenu({
+      ariaLabel: `${subject.name} actions`,
+      actions: [
+        { label: 'Edit subject', onClick: startEditing },
+        {
+          label: 'Delete subject',
+          danger: true,
+          onClick: () => {
+            const impact = countSubjectDeleteImpact(classroom, subject.id);
+            const confirmed = window.confirm(buildDeleteImpactMessage(subject.name, impact));
+            if (!confirmed) return;
+            notebookConfigService.listNotebookTypes(classroom, subject.id).forEach((type) => {
+              removeNotebookTypeSafely(classroom, subject.id, type.id);
+            });
+            notebookConfigService.removeSubject(classroom, subject.id);
+            workspaceService.markDirty(classroom.id);
+            workspaceService.saveExplicitly(classroom).catch(() => {});
+            rerender();
+          },
+        },
+      ],
+    })
+  );
   item.appendChild(header);
 
   const notebookTypes = notebookConfigService.listNotebookTypes(classroom, subject.id);
@@ -255,12 +312,13 @@ function createNotebookTypeRow(classroom, type, rerender) {
 
   const topRow = document.createElement('div');
   topRow.className = 'settings-notebook-type-card__top';
-  topRow.appendChild(createInlineEditableLabel(type.name, (newName) => {
+  const { element: typeNameLabel, startEditing: startEditingType } = createInlineEditableLabel(type.name, (newName) => {
     notebookConfigService.renameNotebookType(classroom, type.id, newName);
     workspaceService.markDirty(classroom.id);
     workspaceService.saveExplicitly(classroom).catch(() => {});
     rerender();
-  }));
+  });
+  topRow.appendChild(typeNameLabel);
 
   const trackingMode = notebookConfigService.getTrackingMode(type);
   const isDaily = trackingMode === 'daily';
@@ -305,20 +363,31 @@ function createNotebookTypeRow(classroom, type, rerender) {
   });
   actionsRow.appendChild(trackingButton);
 
-  const removeButton = document.createElement('button');
-  removeButton.type = 'button';
-  removeButton.className = 'btn btn--text settings-notebook-subject__remove';
-  removeButton.textContent = 'Remove';
-  removeButton.addEventListener('click', () => {
-    const confirmed = window.confirm(`Remove "${type.name}"? This cannot be undone.`);
-    if (!confirmed) return;
-    notebookConfigService.removeNotebookType(classroom, type.id);
-    workspaceService.markDirty(classroom.id);
-    workspaceService.saveExplicitly(classroom).catch(() => {});
-    expandedTrackingRows.delete(type.id);
-    rerender();
-  });
-  actionsRow.appendChild(removeButton);
+  actionsRow.appendChild(
+    createOverflowMenu({
+      ariaLabel: `${type.name} actions`,
+      actions: [
+        { label: 'Edit notebook type', onClick: startEditingType },
+        {
+          label: 'Delete notebook type',
+          danger: true,
+          onClick: () => {
+            const checkpointImpact = checkpointService.countCheckpointImpactForNotebook(classroom, type.subjectId, type.id);
+            const dailyCount = dailyCheckService.countDailyCheckImpactForNotebook(classroom, type.subjectId, type.id);
+            const confirmed = window.confirm(
+              buildDeleteImpactMessage(type.name, { ...checkpointImpact, dailyCheckCount: dailyCount })
+            );
+            if (!confirmed) return;
+            removeNotebookTypeSafely(classroom, type.subjectId, type.id);
+            workspaceService.markDirty(classroom.id);
+            workspaceService.saveExplicitly(classroom).catch(() => {});
+            expandedTrackingRows.delete(type.id);
+            rerender();
+          },
+        },
+      ],
+    })
+  );
   item.appendChild(actionsRow);
 
   if (isExpanded) {
@@ -331,7 +400,197 @@ function createNotebookTypeRow(classroom, type, rerender) {
   return item;
 }
 
-/** A name that becomes a text input on click, saving on Enter/blur and reverting on Escape — used for both Subject and Notebook Type names above. */
+/**
+ * Settings > Assignment Categories — the Assignments counterpart to
+ * renderNotebooksSection() above, same "only place this taxonomy is
+ * ever added/renamed/removed" rule, same reasoning for why
+ * configuration lives here rather than on Assignment Tracker's own
+ * operational landing page (ui/views/AssignmentTrackerView.js mirrors
+ * NotebookTrackerView.js's own "pure launcher" design exactly, down to
+ * its own "Configure Categories" doorway panel linking back here).
+ *
+ * One level, not Notebook's nested Subject -> Notebook Type — each
+ * category's own Aspects (the teacher-defined tracking dimensions, see
+ * models/AssignmentCategory.js) are shown directly beneath it instead,
+ * always visible rather than collapsed behind an "Edit tracking"
+ * toggle — unlike Notebook Type's daily/checkpoint mode switch, a
+ * category's aspect list IS its core configuration, not an advanced
+ * option most categories never touch.
+ */
+function renderAssignmentCategoriesSection(content, classroom, rerender) {
+  const section = document.createElement('div');
+  section.className = 'settings-section';
+
+  const heading = document.createElement('h3');
+  heading.className = 'settings-team-block__heading';
+  heading.textContent = 'Assignment Categories';
+  section.appendChild(heading);
+
+  const categories = assignmentConfigService.listCategories(classroom);
+
+  if (categories.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'settings-section__meta';
+    empty.textContent = 'No assignment categories yet — add one below to start setting up Assignments.';
+    section.appendChild(empty);
+  } else {
+    const list = document.createElement('ul');
+    list.className = 'settings-editable-list';
+    categories.forEach((category) => {
+      list.appendChild(createAssignmentCategoryRow(classroom, category, rerender));
+    });
+    section.appendChild(list);
+  }
+
+  section.appendChild(
+    createAddRow({
+      placeholder: 'New category name',
+      buttonLabel: '+ Add Category',
+      suggestions: ['Worksheets', 'Case Studies', 'Projects', 'Research Tasks', 'Practice Tasks', 'Graphic Organizers'],
+      helperText: 'Assignment categories help you organize different kinds of teacher-given learning tasks — in class or at home.',
+      onAdd: (name) => {
+        assignmentConfigService.addCategory(classroom, name);
+        workspaceService.markDirty(classroom.id);
+        workspaceService.saveExplicitly(classroom).catch(() => {});
+        rerender();
+      },
+    })
+  );
+
+  content.appendChild(section);
+}
+
+function createAssignmentCategoryRow(classroom, category, rerender) {
+  const item = document.createElement('li');
+  item.className = 'settings-editable-list__item settings-notebook-subject';
+
+  const header = document.createElement('div');
+  header.className = 'settings-notebook-subject__header';
+
+  const { element: nameLabel, startEditing } = createInlineEditableLabel(category.name, (newName) => {
+    assignmentConfigService.renameCategory(classroom, category.id, newName);
+    workspaceService.markDirty(classroom.id);
+    workspaceService.saveExplicitly(classroom).catch(() => {});
+    rerender();
+  });
+  header.appendChild(nameLabel);
+
+  header.appendChild(
+    createOverflowMenu({
+      ariaLabel: `${category.name} actions`,
+      actions: [
+        { label: 'Edit category', onClick: startEditing },
+        {
+          label: 'Delete category',
+          danger: true,
+          onClick: () => {
+            const impact = assignmentService.countAssignmentImpactForCategory(classroom, category.id);
+            const confirmed = window.confirm(
+              impact.assignmentCount > 0
+                ? `Delete "${category.name}"? This also permanently deletes ${impact.assignmentCount} assignment${impact.assignmentCount === 1 ? '' : 's'} (${impact.recordCount} student record${impact.recordCount === 1 ? '' : 's'}). This cannot be undone.`
+                : `Delete "${category.name}"? This cannot be undone.`
+            );
+            if (!confirmed) return;
+            assignmentService.deleteAllAssignmentsForCategory(classroom, category.id);
+            assignmentConfigService.removeCategory(classroom, category.id);
+            workspaceService.markDirty(classroom.id);
+            workspaceService.saveExplicitly(classroom).catch(() => {});
+            rerender();
+          },
+        },
+      ],
+    })
+  );
+  item.appendChild(header);
+
+  item.appendChild(createAspectsEditor(classroom, category, rerender));
+
+  return item;
+}
+
+/**
+ * A category's own Aspect list, rendered as compact, renameable chips
+ * (not full cards — an Aspect is a single short label, not an object
+ * with its own metadata the way a Checkpoint/Assignment is) plus a
+ * small add-row. Each chip's own "×" removes it directly — a `⋮` menu
+ * for a one-word tag would be more chrome than the object it manages;
+ * the `⋮` pattern this task calls for is reserved for the heavier
+ * category/checkpoint/assignment cards above, consistent with
+ * ui/components/OverflowMenu.js's own "standalone objects" scope.
+ */
+function createAspectsEditor(classroom, category, rerender) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'settings-assignment-aspects';
+
+  const label = document.createElement('p');
+  label.className = 'settings-assignment-aspects__label';
+  label.textContent = 'Tracked aspects';
+  wrapper.appendChild(label);
+
+  const chipRow = document.createElement('div');
+  chipRow.className = 'settings-assignment-aspects__chips';
+
+  assignmentConfigService.listAspects(category).forEach((aspect) => {
+    const chip = document.createElement('span');
+    chip.className = 'settings-assignment-aspect-chip';
+
+    const { element: aspectLabel } = createInlineEditableLabel(aspect.name, (newName) => {
+      assignmentConfigService.renameAspect(category, aspect.id, newName);
+      workspaceService.markDirty(classroom.id);
+      workspaceService.saveExplicitly(classroom).catch(() => {});
+      rerender();
+    });
+    chip.appendChild(aspectLabel);
+
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'settings-assignment-aspect-chip__remove';
+    removeButton.setAttribute('aria-label', `Remove ${aspect.name}`);
+    removeButton.textContent = '×';
+    removeButton.addEventListener('click', () => {
+      assignmentConfigService.removeAspect(category, aspect.id);
+      workspaceService.markDirty(classroom.id);
+      workspaceService.saveExplicitly(classroom).catch(() => {});
+      rerender();
+    });
+    chip.appendChild(removeButton);
+
+    chipRow.appendChild(chip);
+  });
+
+  wrapper.appendChild(chipRow);
+
+  wrapper.appendChild(
+    createAddRow({
+      placeholder: 'New aspect (e.g. Accuracy)',
+      buttonLabel: '+ Add Aspect',
+      compact: true,
+      suggestions: ['Participation', 'Completion', 'Accuracy', 'Quality', 'Collaboration'],
+      onAdd: (name) => {
+        assignmentConfigService.addAspect(category, name);
+        workspaceService.markDirty(classroom.id);
+        workspaceService.saveExplicitly(classroom).catch(() => {});
+        rerender();
+      },
+    })
+  );
+
+  return wrapper;
+}
+
+/**
+ * A name that becomes a text input, saving on Enter/blur and reverting
+ * on Escape — used for Subject, Notebook Type, and Assignment Category
+ * names. Editing can be triggered two ways: clicking the name itself
+ * (kept for anyone used to the old behavior), or externally via the
+ * returned `startEditing()` — what each row's own `⋮` "Edit" action
+ * calls now, so there is exactly one editing code path regardless of
+ * which affordance triggered it.
+ *
+ * Returns `{element, startEditing}` rather than just the element — the
+ * caller mounts `element` same as before, and wires `startEditing` into
+ * its own overflow menu.
+ */
 function createInlineEditableLabel(currentName, onSave) {
   const wrapper = document.createElement('span');
   wrapper.className = 'settings-inline-editable-label';
@@ -342,7 +601,8 @@ function createInlineEditableLabel(currentName, onSave) {
   label.textContent = currentName;
   label.title = 'Click to rename';
 
-  label.addEventListener('click', () => {
+  function startEditing() {
+    if (wrapper.contains(label) === false) return; // already editing
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'settings-inline-editable-label__input';
@@ -367,10 +627,12 @@ function createInlineEditableLabel(currentName, onSave) {
     wrapper.replaceChild(input, label);
     input.focus();
     input.select();
-  });
+  }
+
+  label.addEventListener('click', startEditing);
 
   wrapper.appendChild(label);
-  return wrapper;
+  return { element: wrapper, startEditing };
 }
 
 /** A text input + button for adding a new Subject or Notebook Type — clears itself and refocuses after a successful add, so adding several in a row doesn't require re-clicking into the field each time. */

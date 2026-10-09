@@ -35,8 +35,10 @@ import * as learningActivityService from '../../services/learningActivityService
 import * as goalService from '../../services/goalService.js';
 import * as studentGoalsService from '../../services/studentGoalsService.js';
 import * as workRequestService from '../../services/workRequestService.js';
+import * as assignmentService from '../../services/assignmentService.js';
 import * as notebookConfigService from '../../services/notebookConfigService.js';
 import { getStatusMeta } from './WorkRequestRosterView.js';
+import { getAssignmentCellMeta } from './AssignmentCategoryView.js';
 import * as studentEventService from '../../services/studentEventService.js';
 import { STUDENT_EVENT_CATEGORIES } from '../../config/studentEventCategories.js';
 import { formatDateKey, getMondayStartOfWeek, getTodayDateKey, shiftDateKey, getWeekLabel } from '../../utils/dateHelpers.js';
@@ -51,12 +53,13 @@ import { openLogParticipationModal } from '../components/LogParticipationModal.j
 import { createBackButton } from '../components/BackButton.js';
 import { canOpenTeamProfile } from '../../services/teamStatisticsService.js';
 
-const TABS = ['overview', 'achievements', 'learning', 'notebooks', 'activity', 'access', 'notes'];
+const TABS = ['overview', 'achievements', 'learning', 'notebooks', 'assignments', 'activity', 'access', 'notes'];
 const TAB_LABELS = {
   overview: 'Overview',
   achievements: 'Recognition',
   learning: 'Learning',
   notebooks: 'Notebooks',
+  assignments: 'Assignments',
   activity: 'Timeline',
   access: 'Parent Access',
   notes: 'Notes',
@@ -108,6 +111,7 @@ export function renderStudentProfileView(container, { classroom, studentId, tab,
     achievements: renderAchievementsTab,
     learning: renderLearningTab,
     notebooks: renderNotebooksTab,
+    assignments: renderAssignmentsTab,
     activity: renderActivityTab,
     access: renderAccessTab,
     notes: renderNotesTab,
@@ -996,6 +1000,73 @@ function createNotebookCard(classroom, notebook) {
   supportingLine.className = 'profile-notebook-activity__date';
   const lastCheckedText = notebook.lastChecked ? `Last reviewed ${formatDateKey(notebook.lastChecked.slice(0, 10))}` : 'Never reviewed';
   supportingLine.textContent = `${lastCheckedText} \u00b7 Reviewed ${notebook.totalReviewed} time${notebook.totalReviewed === 1 ? '' : 's'} overall`;
+  card.appendChild(supportingLine);
+
+  return card;
+}
+
+// ---------------------------------------------------------------------
+// Assignments (interconnectivity gate: Assignment -> Student Profile)
+// ---------------------------------------------------------------------
+
+/**
+ * Derived evidence ONLY — reads straight back out of
+ * services/assignmentService.js's own Assignment records (the source
+ * record), same shape as renderNotebooksTab() just above for Notebook
+ * evidence. Deliberately distinct from the "Learning" tab (concept
+ * understanding, student-self-reported): completion/participation here
+ * is never written to `student.learningRecord`, and must never be read
+ * as a proxy for concept mastery — see
+ * services/assignmentService.js's own header comment on this section.
+ */
+function renderAssignmentsTab(content, classroom, student) {
+  const section = document.createElement('div');
+  section.className = 'profile-section';
+
+  const heading = document.createElement('h2');
+  heading.className = 'profile-section__heading';
+  heading.textContent = 'Assignments';
+  section.appendChild(heading);
+
+  const summary = assignmentService.getStudentAssignmentSummary(classroom, student.id);
+  const statsRow = document.createElement('div');
+  statsRow.className = 'profile-overview';
+  statsRow.appendChild(createStatCard('Complete', summary.completeCount));
+  statsRow.appendChild(createStatCard('Needs Attention', summary.needsAttentionCount));
+  statsRow.appendChild(createStatCard('In Progress', summary.inProgressCount));
+  section.appendChild(statsRow);
+
+  const entries = assignmentService.getAssignmentsForStudent(classroom, student.id);
+  if (entries.length === 0) {
+    section.appendChild(createEmptyStateElement({ message: 'No assignment activity recorded yet for this student.' }));
+  } else {
+    const list = document.createElement('div');
+    list.className = 'profile-notebook-activity';
+    entries.forEach((entry) => list.appendChild(createAssignmentEvidenceCard(entry)));
+    section.appendChild(list);
+  }
+
+  content.appendChild(section);
+}
+
+function createAssignmentEvidenceCard({ assignment, category, status }) {
+  const card = document.createElement('div');
+  card.className = 'profile-notebook-activity__card';
+
+  const title = document.createElement('p');
+  title.className = 'profile-notebook-activity__title';
+  title.textContent = [category?.name, assignment.title].filter(Boolean).join(' · ');
+  card.appendChild(title);
+
+  const meta = getAssignmentCellMeta(status);
+  const chip = document.createElement('span');
+  chip.className = `work-request-roster__chip work-request-roster__chip--${meta.chipClass}`;
+  chip.textContent = meta.label;
+  card.appendChild(chip);
+
+  const supportingLine = document.createElement('p');
+  supportingLine.className = 'profile-notebook-activity__date';
+  supportingLine.textContent = assignment.dueDate ? `Due ${formatDate(assignment.dueDate)}` : `Given ${formatDate(assignment.givenDate)}`;
   card.appendChild(supportingLine);
 
   return card;

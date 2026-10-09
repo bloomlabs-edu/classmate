@@ -22937,3 +22937,62 @@ button.knowledge-authoring__row:hover {
   font-size: 1rem;
   margin: 0;
 }
+
+/* Assignment <-> Concept linking (ui/views/AssignmentCategoryView.js) —
+   interconnectivity gate: the "Link concepts" checklist in the Add
+   Assignment form, and the resulting chips/resource-link shown on an
+   Assignment's own card. */
+.assignment-form__concept-section {
+  margin-top: 0.75rem;
+}
+.assignment-form__concept-empty {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+.assignment-form__concept-list {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: 0.5rem 0.75rem;
+}
+.assignment-form__concept-subject-heading {
+  font-weight: var(--font-weight-bold);
+  font-size: 0.85rem;
+  margin: 0.6rem 0 0.1rem;
+}
+.assignment-form__concept-subject-heading:first-child {
+  margin-top: 0;
+}
+.assignment-form__concept-unit-heading {
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  margin: 0.2rem 0 0.1rem 0.5rem;
+}
+.assignment-form__concept-option {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  padding: 0.15rem 0 0.15rem 1rem;
+  cursor: pointer;
+}
+.assignment-form__concept-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0.3rem 0;
+}
+.assignment-form__concept-chip {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-pill);
+  background-color: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface));
+  color: var(--color-primary-strong);
+}
+.assignment-form__resource-link {
+  display: inline-block;
+  font-size: 0.8rem;
+  color: var(--color-primary-strong);
+  margin: 0.2rem 0;
+}
