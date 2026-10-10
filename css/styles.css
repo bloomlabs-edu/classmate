@@ -22996,3 +22996,45 @@ button.knowledge-authoring__row:hover {
   color: var(--color-primary-strong);
   margin: 0.2rem 0;
 }
+/* Discoverability fix (2026-10-10 bug report): ".overflow-menu__trigger"
+   itself (ui/components/OverflowMenu.js) is a deliberately plain "⋮"
+   platform-wide — Curriculum/Assessment/Recognition cards all share
+   that exact minimal look, and this rule does NOT change that shared
+   default. Scoped to ONLY this row (Notebook Subject rows AND
+   Assignment Category rows, which reuse this same class — see
+   SettingsView.js's createAssignmentCategoryRow()) because real-browser
+   verification showed the bare glyph, with no persistent background,
+   was too easy to miss as "the rename control" against a plain white
+   row — not a broken control, an undiscoverable one. A permanent
+   (not hover-only) tinted circular background makes it read as a real
+   button at rest, without adding a second, competing affordance. */
+.settings-notebook-subject__header .overflow-menu__trigger {
+  background-color: var(--color-hover, #F2F5F7);
+  border-radius: 50%;
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.settings-notebook-subject__header .overflow-menu__trigger:hover {
+  background-color: var(--color-border, #e2e8ed);
+}
+/* Same discoverability fix as .settings-notebook-subject__header's own
+   identical rule above — the Notebook Type level's own ⋮ (renames
+   "Homework"/"Classwork"/etc., one level below the Subject) had the
+   identical bare-glyph problem. */
+.settings-notebook-type-card__actions .overflow-menu__trigger {
+  background-color: var(--color-hover, #F2F5F7);
+  border-radius: 50%;
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.settings-notebook-type-card__actions .overflow-menu__trigger:hover {
+  background-color: var(--color-border, #e2e8ed);
+}

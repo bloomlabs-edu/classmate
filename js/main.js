@@ -1315,6 +1315,7 @@ function renderRoute(route, reason = 'unspecified') {
         onOpenSettingsNotebooks: () => router.navigate(`/classroom/${classroom.id}/settings/learning`),
         onOpenStudentAccess: () => router.navigate(`/classroom/${classroom.id}/student-access`),
         onOpenNotebookTracker: () => router.navigate(`/classroom/${classroom.id}/notebooks`),
+        onOpenAssignmentTracker: () => router.navigate(`/classroom/${classroom.id}/assignments`),
         onOpenGroups: () => router.navigate(`/classroom/${classroom.id}/settings/class`),
         onStartClassMode: () => router.navigate(`/classroom/${classroom.id}/class-mode`),
         onSelectNotebook: (subjectId, notebookTypeId) =>

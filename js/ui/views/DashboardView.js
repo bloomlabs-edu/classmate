@@ -101,6 +101,7 @@ export function renderDashboardView(container, props) {
     onOpenSettingsNotebooks,
     onOpenStudentAccess,
     onOpenNotebookTracker,
+    onOpenAssignmentTracker,
     onOpenGroups,
     onStartClassMode,
     onOpenRecognition,
@@ -358,6 +359,7 @@ export function renderDashboardView(container, props) {
       onOpenAssessmentManagement: openAssessmentManagement,
       onOpenGoalManagement: openGoalManagement,
       onOpenNotebookTracker,
+      onOpenAssignmentTracker,
       onOpenLearningProgrammes: openLearningProgrammes,
       attentionById,
     })
@@ -542,6 +544,26 @@ const DASHBOARD_MODULES = [
     tier: 'daily',
     accentColor: '#B8630F', // warm amber-orange, distinct from every other card's own color; this screen's existing Notebook Tracker, unchanged, is the destination
   },
+  {
+    // Assignments shipped (Assignment/AssignmentCategory models,
+    // AssignmentTrackerView.js/AssignmentCategoryView.js, the
+    // 'assignmentTracker'/'assignmentCategory' routes) without ever
+    // being added here — the actual root cause of "Assignments has no
+    // visible entry point from the Classroom Hub." Same bento-card
+    // module pattern as every sibling card, not a new mechanism.
+    id: 'assignments',
+    title: 'Assignments',
+    icon: 'pencil',
+    description: 'Track worksheets and other learning tasks',
+    tier: 'daily',
+    // Reuses ICON_CATEGORIES.activities (Icon.js) — the exact same
+    // rose/pink AssignmentTrackerView.js's own page-intro badge already
+    // uses, so this card and its own destination agree on one color
+    // rather than inventing a second one. Distinct from every other
+    // module's own accentColor (teal/purple/slate-indigo/terracotta/
+    // forest-green/amber-orange/blue).
+    accentColor: '#D8546F',
+  },
 ];
 
 /**
@@ -572,6 +594,7 @@ function renderPrimaryModulesSection({
   onOpenAssessmentManagement,
   onOpenGoalManagement,
   onOpenNotebookTracker,
+  onOpenAssignmentTracker,
   onOpenLearningProgrammes,
   attentionById = {},
 }) {
@@ -586,6 +609,7 @@ function renderPrimaryModulesSection({
     assessments: onOpenAssessmentManagement,
     goals: onOpenGoalManagement,
     notebooks: onOpenNotebookTracker,
+    assignments: onOpenAssignmentTracker,
     learningProgrammes: onOpenLearningProgrammes,
   };
 

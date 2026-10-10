@@ -299,14 +299,23 @@ function createConfigureNotebookTypesPanel(onOpenNotebookConfiguration) {
 
   panel.appendChild(createIcon('settings', { size: 24, className: 'notebook-tracker__configure-panel-icon' }));
 
+  // Discoverability fix (2026-10-10 bug report): this panel is the ONLY
+  // doorway from this screen into Settings > Learning, where BOTH the
+  // Subject name (e.g. "Science") and the Notebook Type name (e.g.
+  // "Homework") shown on every card above can actually be renamed (via
+  // each row's own ⋮ menu — see SettingsView.js's createNotebookSubjectRow()/
+  // createNotebookTypeRow()). The copy previously said only "notebook
+  // types," never mentioning Subjects at all — a real teacher reading
+  // "Science" as the card's own identity had no textual cue that THIS
+  // is where "Science" itself gets renamed, not just "Homework."
   const heading = document.createElement('p');
   heading.className = 'notebook-tracker__configure-panel-heading';
-  heading.textContent = 'Configure Notebook Types';
+  heading.textContent = 'Configure Subjects & Notebook Types';
   panel.appendChild(heading);
 
   const description = document.createElement('p');
   description.className = 'notebook-tracker__configure-panel-description';
-  description.textContent = 'Add, edit or remove notebook types for your classrooms.';
+  description.textContent = 'Rename or remove subjects (like "Science") and notebook types (like "Homework") for your classrooms.';
   panel.appendChild(description);
 
   const button = document.createElement('button');
