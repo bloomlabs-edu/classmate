@@ -41,6 +41,8 @@ export const CLASSROOM_ROUTE_NAMES = [
   'workRequestCreate',
   'notebookCheckpoints',
   'notebookDailyCheck',
+  'assignmentTracker',
+  'assignmentCategory',
   'assessments',
   'assessmentsScorecard',
   'assessmentsManage',
