@@ -69,6 +69,8 @@ function normalizeClassroom(classroom) {
   classroom.notebookConfig = classroom.notebookConfig || { subjects: [], notebookTypes: [] };
   classroom.notebookConfig.subjects = classroom.notebookConfig.subjects || [];
   classroom.notebookConfig.notebookTypes = classroom.notebookConfig.notebookTypes || [];
+  classroom.assignmentConfig = classroom.assignmentConfig || { categories: [] };
+  classroom.assignmentConfig.categories = classroom.assignmentConfig.categories || [];
   // Legacy, pre-timeline shape — left in place, unused, read only once by
   // the migration fold below.
   classroom.notebookCheckTemplates = classroom.notebookCheckTemplates || {};
