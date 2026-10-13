@@ -42,6 +42,23 @@
  * all — there is nothing for it to open. `onTap` itself stays
  * required: every context this row appears in needs at least one
  * meaningful thing to happen on tap.
+ *
+ * Explicit remove-star button (desktop star-removal gap, 2026-10):
+ * swipe-left/left-drag already deducts a point via `onSwipeLeft`, but
+ * nothing discoverable triggers it with a mouse on a laptop trackpad —
+ * a click-and-drag gesture isn't something a desktop user naturally
+ * tries. Rather than inventing a second action, this button calls the
+ * exact same `onSwipeLeft` callback the gesture already calls — same
+ * rule (services/classModeService.js's own deductPoint(), no clamping,
+ * works at positive/zero/negative scores), same toast, same undo
+ * stack entry. It renders only when `onSwipeLeft` is itself provided,
+ * same "never claim an action that isn't actually wired" rule
+ * `onLongPress`'s own "more actions" button already follows — and it
+ * lives outside `.student-row__surface` (the gesture's own pointer
+ * target), the same structural separation that already lets the
+ * "more actions" button coexist with tap/swipe/long-press without
+ * ever double-firing; clicking this button cannot also trigger the
+ * swipe gesture, by construction, not by an added guard.
  */
 
 import { getBucketRowStyle } from '../../config/bucketConfig.js';
@@ -88,6 +105,20 @@ export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongP
   surface.append(name, trailing);
 
   item.appendChild(surface);
+
+  if (onSwipeLeft) {
+    const removeStarButton = document.createElement('button');
+    removeStarButton.type = 'button';
+    removeStarButton.className = 'student-row__remove-star';
+    removeStarButton.textContent = '−'; // U+2212 minus sign — same plain-glyph approach as the '⋮' more-actions button below, not an SVG icon
+    removeStarButton.setAttribute('aria-label', `Remove a star from ${student.name}`);
+    removeStarButton.title = 'Remove a star';
+    removeStarButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      onSwipeLeft(student);
+    });
+    item.appendChild(removeStarButton);
+  }
 
   if (onLongPress) {
     const moreButton = document.createElement('button');

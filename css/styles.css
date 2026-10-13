@@ -511,6 +511,7 @@ input:focus-visible,
 select:focus-visible,
 .student-row__surface:focus-visible,
 .student-row__more:focus-visible,
+.student-row__remove-star:focus-visible,
 .wizard-checklist__row:focus-visible,
 .dashboard-widget__chip:focus-visible,
 .waypoint-list__chip:focus-visible,
@@ -2148,6 +2149,33 @@ select:focus-visible,
   border-radius: var(--radius-control);
 }
 .student-row__more:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+  color: var(--color-ink);
+}
+
+/* Explicit desktop remove-star control (2026-10) — same compact,
+   subtly-surfaced icon-button treatment as .student-row__more just
+   above (same footprint, same hover fill), not a large wireframe
+   button, per explicit product decision to keep this visually
+   consistent with the row's existing action button rather than
+   introducing a second visual language. */
+.student-row__remove-star {
+  flex-shrink: 0;
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--color-muted);
+  font-size: 1.3rem;
+  font-weight: var(--font-weight-black);
+  line-height: 1;
+  cursor: pointer;
+  border-radius: var(--radius-control);
+}
+.student-row__remove-star:hover {
   background-color: rgba(0, 0, 0, 0.05);
   color: var(--color-ink);
 }

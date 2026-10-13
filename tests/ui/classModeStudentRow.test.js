@@ -150,3 +150,115 @@ test('existing interaction preserved: the "more actions" control still calls onL
   assert.equal(result.calls.longPress, 'row-student-1');
   assert.equal(result.calls.tap, null);
 });
+
+// ---------------------------------------------------------------------
+// Explicit desktop remove-star button (2026-10) — reuses the exact same
+// onSwipeLeft callback the swipe/drag gesture already calls (see this
+// file's own header comment on classModeService.deductPoint() reuse).
+// These tests only assert the BUTTON wiring; deductPoint()'s own scoring
+// behavior (positive/zero/negative, no clamping) is covered directly in
+// tests/services/classModeService.test.js.
+// ---------------------------------------------------------------------
+
+/**
+ * Renders the row with a call counter (not just last-id, like
+ * driveGesture() above) on onSwipeLeft/onTap specifically so repeated
+ * clicks and "did a single click fire more than once" can be asserted
+ * precisely — driveGesture()'s own recorder only needed last-call
+ * identity for its existing single-call assertions.
+ */
+async function driveRemoveStarButton({ withOnSwipeLeft = true, clicks = 1, useKeyboard = false } = {}) {
+  return page.evaluate(
+    async ({ withOnSwipeLeft, clicks, useKeyboard }) => {
+      const { createClassModeStudentRow } = await import('/js/ui/components/ClassModeStudentRow.js');
+      const student = { id: 'row-student-2', name: 'Meena', bucket: 'green' };
+      const calls = { tapCount: 0, swipeLeftCount: 0, swipeLeftStudentId: null };
+      const row = createClassModeStudentRow(student, {
+        onTap: () => { calls.tapCount += 1; },
+        onSwipeLeft: withOnSwipeLeft
+          ? (s) => { calls.swipeLeftCount += 1; calls.swipeLeftStudentId = s.id; }
+          : undefined,
+        onLongPress: () => {},
+        displayScore: 5,
+      });
+      document.body.appendChild(row);
+
+      const button = row.querySelector('.student-row__remove-star');
+      const buttonExists = !!button;
+      const ariaLabel = button?.getAttribute('aria-label') || null;
+
+      if (button) {
+        for (let i = 0; i < clicks; i++) {
+          if (useKeyboard) {
+            button.focus();
+            // Real browsers natively activate a <button> on Enter/Space —
+            // dispatching 'click' here mirrors exactly what the browser
+            // itself does after a native keydown on a focused button,
+            // the same assumption every other native <button> in this
+            // app already relies on (none hand-roll keydown handling).
+            button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+          } else {
+            button.click();
+          }
+        }
+      }
+
+      const result = { buttonExists, ariaLabel, calls, focusable: button ? button.tabIndex >= -1 && document.activeElement === button : false };
+      row.remove();
+      return result;
+    },
+    { withOnSwipeLeft, clicks, useKeyboard }
+  );
+}
+
+test('remove-star button: renders with a correct, student-specific aria-label when onSwipeLeft is provided', async () => {
+  const result = await driveRemoveStarButton();
+  assert.equal(result.buttonExists, true);
+  assert.equal(result.ariaLabel, 'Remove a star from Meena');
+});
+
+test('remove-star button: does NOT render when onSwipeLeft is not provided — never claims an action that is not wired', async () => {
+  const result = await driveRemoveStarButton({ withOnSwipeLeft: false });
+  assert.equal(result.buttonExists, false);
+});
+
+test('remove-star button: a mouse click calls onSwipeLeft with the correct student, exactly once, and never calls onTap', async () => {
+  const result = await driveRemoveStarButton({ clicks: 1 });
+  assert.equal(result.calls.swipeLeftCount, 1);
+  assert.equal(result.calls.swipeLeftStudentId, 'row-student-2');
+  assert.equal(result.calls.tapCount, 0);
+});
+
+test('remove-star button: is a real, focusable <button> reachable by keyboard, and activating it calls onSwipeLeft', async () => {
+  const result = await driveRemoveStarButton({ useKeyboard: true });
+  assert.equal(result.focusable, true);
+  assert.equal(result.calls.swipeLeftCount, 1);
+});
+
+test('remove-star button: repeated clicks fire onSwipeLeft once per click (no accidental double-fire, no accidental debounce)', async () => {
+  const result = await driveRemoveStarButton({ clicks: 3 });
+  assert.equal(result.calls.swipeLeftCount, 3);
+});
+
+test('remove-star button and swipe gesture coexist without double-firing: clicking the button alone never also triggers the swipe/tap path', async () => {
+  // Reuses driveGesture's own recorder shape to confirm the button click
+  // path and the gesture path are fully independent call sites.
+  const result = await page.evaluate(async () => {
+    const { createClassModeStudentRow } = await import('/js/ui/components/ClassModeStudentRow.js');
+    const student = { id: 'row-student-3', name: 'Arjun', bucket: 'green' };
+    const calls = { tap: 0, swipeLeft: 0 };
+    const row = createClassModeStudentRow(student, {
+      onTap: () => { calls.tap += 1; },
+      onSwipeLeft: () => { calls.swipeLeft += 1; },
+      onLongPress: () => {},
+      displayScore: 5,
+    });
+    document.body.appendChild(row);
+    row.querySelector('.student-row__remove-star').click();
+    const out = { ...calls };
+    row.remove();
+    return out;
+  });
+  assert.equal(result.swipeLeft, 1);
+  assert.equal(result.tap, 0);
+});
