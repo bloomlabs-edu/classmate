@@ -36,9 +36,10 @@ import * as goalService from '../../services/goalService.js';
 import * as studentGoalsService from '../../services/studentGoalsService.js';
 import * as workRequestService from '../../services/workRequestService.js';
 import * as assignmentService from '../../services/assignmentService.js';
+import * as assignmentCheckpointService from '../../services/assignmentCheckpointService.js';
 import * as notebookConfigService from '../../services/notebookConfigService.js';
 import { getStatusMeta } from './WorkRequestRosterView.js';
-import { getAssignmentCellMeta } from './AssignmentCategoryView.js';
+import { getAssignmentCellMeta } from './AssignmentDetailView.js';
 import * as studentEventService from '../../services/studentEventService.js';
 import { STUDENT_EVENT_CATEGORIES } from '../../config/studentEventCategories.js';
 import { formatDateKey, getMondayStartOfWeek, getTodayDateKey, shiftDateKey, getWeekLabel } from '../../utils/dateHelpers.js';
@@ -1042,14 +1043,28 @@ function renderAssignmentsTab(content, classroom, student) {
   } else {
     const list = document.createElement('div');
     list.className = 'profile-notebook-activity';
-    entries.forEach((entry) => list.appendChild(createAssignmentEvidenceCard(entry)));
+    entries.forEach((entry) => list.appendChild(createAssignmentEvidenceCard(classroom, student, entry)));
     section.appendChild(list);
   }
 
   content.appendChild(section);
 }
 
-function createAssignmentEvidenceCard({ assignment, category, status }) {
+/**
+ * `checkpointProgress` (Assignment Tracker redesign, 2026-10) — additive
+ * only, never replacing the existing Overall Rating chip above it. Two
+ * independent, clearly separate evidence lines on the same card, same
+ * "never conflate checkpoint completion with Overall Rating" rule
+ * services/assignmentCheckpointService.js's own header comment
+ * establishes. Known, deliberate scope limit: this card itself only
+ * ever appears for an Assignment the student has an Overall Rating
+ * record on (see assignmentService.getAssignmentsForStudent()'s own
+ * sparse-record filter, unchanged by this redesign) — an Assignment
+ * with ONLY checkpoint activity and no Overall Rating yet does not yet
+ * surface here. Widening that filter is a separate, deliberately
+ * deferred follow-up, not attempted in this step.
+ */
+function createAssignmentEvidenceCard(classroom, student, { assignment, category, status }) {
   const card = document.createElement('div');
   card.className = 'profile-notebook-activity__card';
 
@@ -1061,8 +1076,16 @@ function createAssignmentEvidenceCard({ assignment, category, status }) {
   const meta = getAssignmentCellMeta(status);
   const chip = document.createElement('span');
   chip.className = `work-request-roster__chip work-request-roster__chip--${meta.chipClass}`;
-  chip.textContent = meta.label;
+  chip.textContent = `Overall: ${meta.label}`;
   card.appendChild(chip);
+
+  const checkpointProgress = assignmentCheckpointService.getStudentCheckpointProgress(classroom, assignment.id, student.id);
+  if (checkpointProgress.totalCount > 0) {
+    const checkpointChip = document.createElement('span');
+    checkpointChip.className = 'work-request-roster__chip work-request-roster__chip--purple';
+    checkpointChip.textContent = `Checkpoints: ${checkpointProgress.submittedCount}/${checkpointProgress.totalCount} submitted`;
+    card.appendChild(checkpointChip);
+  }
 
   const supportingLine = document.createElement('p');
   supportingLine.className = 'profile-notebook-activity__date';

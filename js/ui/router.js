@@ -43,8 +43,8 @@
  *   #/classroom/{id}/feed                      -> Class Feed (teacher view)
  *   #/classroom/{id}/timetable                 -> Timetable — Week/Day/Calendar grid of TeachingSlots, Period Detail, Carry Forward (see ui/views/TimetableView.js)
  *   #/classroom/{id}/notebooks                                       -> notebook tracker list (Subject × Notebook Type)
- *   #/classroom/{id}/assignments                                      -> assignment tracker list (one flat Category level — see js/models/AssignmentCategory.js's own header comment for why this has no Subject/Type split)
- *   #/classroom/{id}/assignments/{categoryId}                        -> the Student x Assignment grid for one Assignment Category (see ui/views/AssignmentCategoryView.js)
+ *   #/classroom/{id}/assignments                                      -> Assignment Tracker landing page — one card per individual Assignment (Category/Type is metadata on each card, not the navigation structure — see ui/views/AssignmentTrackerView.js's own header comment for the 2026-10 redesign)
+ *   #/classroom/{id}/assignments/{assignmentId}                      -> the Student x Checkpoint grid for ONE Assignment (see ui/views/AssignmentDetailView.js) — retired alias: this used to be {categoryId}, opening a grid of assignments-as-columns within one category (ui/views/AssignmentCategoryView.js, removed)
  *   #/classroom/{id}/work-requests/{requestId}                        -> WorkRequest checking + inline history, one page (see WorkRequestRosterView.js) — no separate Timeline route exists anymore
  *   #/classroom/{id}/notebooks/{subjectId}/{typeId}                  -> create a new WorkRequest (only reached when none is currently open for this Subject x Notebook Type)
  *   #/classroom/{id}/notebooks/{subjectId}/{typeId}/checkpoints       -> the Checkpoint grid for this exact Notebook (Subject x Notebook Type) — 'checkpoint' trackingMode only
@@ -168,11 +168,16 @@ export function resolvePathParts(parts) {
       return { name: 'workRequestCreate', classroomId: parts[1], subjectId, notebookTypeId };
     }
     if (parts[2] === 'assignments') {
-      const categoryId = parts[3];
-      if (!categoryId) {
+      // Assignment Tracker redesign (2026-10) — `{assignmentId}` here
+      // used to be `{categoryId}` (the old per-category grid-of-
+      // assignments screen, now retired). An Assignment is now the
+      // primary navigation item; this route opens its own checkpoint
+      // tracker (see ui/views/AssignmentDetailView.js).
+      const assignmentId = parts[3];
+      if (!assignmentId) {
         return { name: 'assignmentTracker', classroomId: parts[1] };
       }
-      return { name: 'assignmentCategory', classroomId: parts[1], categoryId };
+      return { name: 'assignmentDetail', classroomId: parts[1], assignmentId };
     }
     if (parts[2] === 'assessments' && parts[3] === 'scorecard') {
       // Deliberately its own route name, not folded into the generic

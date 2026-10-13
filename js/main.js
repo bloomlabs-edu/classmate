@@ -99,7 +99,7 @@ import { renderWorkRequestCreateView } from './ui/views/WorkRequestCreateView.js
 import { renderNotebookCheckpointsView } from './ui/views/NotebookCheckpointsView.js';
 import { renderNotebookDailyCheckView } from './ui/views/NotebookDailyCheckView.js';
 import { renderAssignmentTrackerView } from './ui/views/AssignmentTrackerView.js';
-import { renderAssignmentCategoryView } from './ui/views/AssignmentCategoryView.js';
+import { renderAssignmentDetailView } from './ui/views/AssignmentDetailView.js';
 import * as workRequestService from './services/workRequestService.js';
 import { renderDashboardView } from './ui/views/DashboardView.js';
 import { renderLearningProgrammesListView } from './ui/views/LearningProgrammesListView.js';
@@ -1883,13 +1883,17 @@ function renderRoute(route, reason = 'unspecified') {
         onOpenAssignmentConfiguration: () => router.navigate(`/classroom/${classroom.id}/settings/learning`),
         onGoToClassMode: () => router.navigate(`/classroom/${classroom.id}/class-mode`),
       });
-    } else if (route.name === 'assignmentCategory') {
-      renderAssignmentCategoryView(appContainer, {
+    } else if (route.name === 'assignmentDetail') {
+      // Assignment Tracker redesign (2026-10) — the per-assignment
+      // checkpoint tracker (see ui/views/AssignmentDetailView.js's own
+      // header comment); replaces the retired 'assignmentCategory'
+      // route/view (AssignmentCategoryView.js, removed).
+      renderAssignmentDetailView(appContainer, {
         classroom,
-        categoryId: route.categoryId,
+        assignmentId: route.assignmentId,
         onBack: () => router.navigate(`/classroom/${classroom.id}/assignments`),
         onSelectStudent: (studentId) => {
-          const returnTo = `/classroom/${classroom.id}/assignments/${route.categoryId}`;
+          const returnTo = `/classroom/${classroom.id}/assignments/${route.assignmentId}`;
           router.navigate(`/classroom/${classroom.id}/student/${studentId}?returnTo=${encodeURIComponent(returnTo)}`);
         },
         onGoToClassMode: () => router.navigate(`/classroom/${classroom.id}/class-mode`),

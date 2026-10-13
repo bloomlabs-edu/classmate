@@ -16618,6 +16618,43 @@ button.recognition-bento__hero-winner-name {
   font-weight: 700;
   flex-shrink: 0;
 }
+/* Assignment Tracker redesign (2026-10) — the Overall Rating compact
+   action (ui/views/AssignmentDetailView.js's own buildOverallRatingPill()),
+   a small pill under the student's name, deliberately smaller/quieter
+   than the checkpoint-grid status chips to its right so it never
+   competes visually with the primary checkpoint tracking — reuses the
+   exact same color tokens as .notebook-checkpoints__status-icon--*
+   just above, for the same four-state chip language, applied here as
+   a text+background pill instead of a solid icon badge. */
+.notebook-checkpoints__overall-rating-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.3rem;
+  margin-left: 1.75rem; /* roughly aligns under the name, past the avatar */
+  padding: 0.15rem 0.5rem;
+  border: none;
+  border-radius: var(--radius-pill);
+  font-size: 0.7rem;
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+  color: #fff;
+}
+.notebook-checkpoints__overall-rating-pill--gray { background-color: #78909c; }
+.notebook-checkpoints__overall-rating-pill--purple { background-color: #6D5AC4; }
+.notebook-checkpoints__overall-rating-pill--green { background-color: #4FAF78; }
+.notebook-checkpoints__overall-rating-pill--orange { background-color: #b7691a; }
+.notebook-checkpoints__overall-rating-pill--red { background-color: #D95C5C; }
+
+/* The Assignment's own Type/Subject/date meta-line, shown under this
+   screen's own header title (ui/views/AssignmentDetailView.js) —
+   plain, muted, single line, same restrained treatment
+   .tracker-header__title's own sibling text already uses elsewhere. */
+.notebook-checkpoints__assignment-meta-line {
+  margin: 0.2rem 0 0;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
 /* NOTE: this used to force `display: flex` on the <td> itself to line
    up the avatar+name pair. That's redundant — .notebook-checkpoints__
    student above is already `display: flex; align-items: center;` and
@@ -16723,6 +16760,33 @@ button.recognition-bento__hero-winner-name {
   display: flex;
   gap: 0.5rem;
   margin-top: 0.5rem;
+}
+
+/* Assignment cell editor's own per-aspect rating control (see
+   ui/views/AssignmentDetailView.js's own renderOverallRatingEditor(),
+   relocated here from the retired AssignmentCategoryView.js) — reuses
+   the same .notebook-checkpoints__cell-editor shell above, just adds
+   this one new control type for its generalized, teacher-defined
+   aspect list. */
+.assignment-cell-editor__rating-group {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.3rem;
+}
+.assignment-cell-editor__rating-button {
+  flex: 1;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface, #fff);
+  padding: 0.4rem 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.assignment-cell-editor__rating-button--selected {
+  background: #6D5AC4;
+  border-color: #6D5AC4;
+  color: #fff;
 }
 
 @media (max-width: 640px) {
@@ -17713,6 +17777,47 @@ button.recognition-bento__hero-winner-name {
   color: var(--color-muted);
 }
 
+/* Assignment Tracker redesign (2026-10) — the landing-page card is no
+   longer itself a single <button> (a resource link and an overflow
+   menu now also live on it, and interactive content can't nest inside
+   a <button>/<a>). `.notebook-tracker__bento-card--assignment` keeps
+   the outer div's own hover lift/shadow from the shared rule above;
+   `.notebook-tracker__bento-card-open-area` is the actual click target
+   for "open this assignment," reset to look exactly like the plain
+   card content it replaces (no default button chrome). */
+.notebook-tracker__bento-card--assignment {
+  position: relative;
+  cursor: default;
+}
+.notebook-tracker__bento-card-open-area {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+.notebook-tracker__bento-card-menu {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+}
+.assignment-tracker__pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.notebook-tracker__bento-pill--subject {
+  background-color: #e8f3ee; /* a distinct, muted tint from the Type pill's own purple, so the two metadata pills read as separate categories at a glance */
+  color: #2f7a5c;
+}
 .notebook-tracker__configure-panel {
   display: flex;
   flex-direction: column;

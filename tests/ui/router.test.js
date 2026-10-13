@@ -213,6 +213,21 @@ test('pre-existing route: notebooks checkpoints', () => {
   });
 });
 
+test('assignments route: no assignmentId resolves to the Assignment Tracker landing page', () => {
+  assert.deepEqual(resolvePathParts(parts('classroom/classroom-1/assignments')), {
+    name: 'assignmentTracker',
+    classroomId: 'classroom-1',
+  });
+});
+
+test('assignments route (2026-10 redesign): an assignmentId resolves to that one Assignment\'s own checkpoint tracker — retired alias of the old per-category grid route', () => {
+  assert.deepEqual(resolvePathParts(parts('classroom/classroom-1/assignments/assignment-1')), {
+    name: 'assignmentDetail',
+    classroomId: 'classroom-1',
+    assignmentId: 'assignment-1',
+  });
+});
+
 test('pre-existing route: teacher home', () => {
   assert.deepEqual(resolvePathParts(parts('teacher')), { name: 'home' });
 });

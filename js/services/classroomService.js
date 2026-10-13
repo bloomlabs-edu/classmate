@@ -71,6 +71,14 @@ function normalizeClassroom(classroom) {
   classroom.notebookConfig.notebookTypes = classroom.notebookConfig.notebookTypes || [];
   classroom.assignmentConfig = classroom.assignmentConfig || { categories: [] };
   classroom.assignmentConfig.categories = classroom.assignmentConfig.categories || [];
+  // Assignment Tracker redesign (2026-10) — classroom.assignmentCheckpoints
+  // is a brand-new top-level array; every classroom saved before this
+  // redesign shipped has no such field at all. Backfilling it here, the
+  // same way assignmentConfig itself is backfilled just above, is a
+  // deliberate, explicit line item learned directly from two real
+  // production incidents this same backfill pattern already fixed
+  // (CLASSROOM_ROUTE_NAMES, assignmentConfig) — never an afterthought.
+  classroom.assignmentCheckpoints = classroom.assignmentCheckpoints || [];
   // Legacy, pre-timeline shape — left in place, unused, read only once by
   // the migration fold below.
   classroom.notebookCheckTemplates = classroom.notebookCheckTemplates || {};

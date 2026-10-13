@@ -31,26 +31,28 @@ export function getAssignmentById(classroom, assignmentId) {
   return (classroom.assignments || []).find((a) => a.id === assignmentId) || null;
 }
 
-/** `order` defaults to one past the current highest order within this exact category, mirroring checkpointService.js's own createNewCheckpoint(). */
-export function createNewAssignment(classroom, { categoryId, title, description, givenDate, dueDate, conceptIds, resourceUrl }) {
+/** `order` defaults to one past the current highest order within this exact category, mirroring checkpointService.js's own createNewCheckpoint(). `subjectId` is the Assignment Tracker redesign's own addition — optional, `null`-safe, same reference-not-copy convention as `conceptIds`. */
+export function createNewAssignment(classroom, { categoryId, title, description, givenDate, dueDate, conceptIds, resourceUrl, subjectId }) {
   if (!classroom.assignments) classroom.assignments = [];
 
   const existingInCategory = listAssignmentsForCategory(classroom, categoryId);
   const nextOrder = existingInCategory.length > 0 ? Math.max(...existingInCategory.map((a) => a.order)) + 1 : 0;
 
-  const assignment = createAssignment({ categoryId, title, description, givenDate, dueDate, order: nextOrder, conceptIds, resourceUrl });
+  const assignment = createAssignment({ categoryId, title, description, givenDate, dueDate, order: nextOrder, conceptIds, resourceUrl, subjectId });
   classroom.assignments.push(assignment);
   return assignment;
 }
 
-/** Metadata only — title/description/givenDate/dueDate/conceptIds/resourceUrl. Never touches `records`, `order`, or `id`; use reorderAssignments() for ordering. */
-export function updateAssignment(assignment, { title, description, givenDate, dueDate, conceptIds, resourceUrl }) {
+/** Metadata only — title/description/givenDate/dueDate/conceptIds/resourceUrl/subjectId/categoryId. Never touches `records`, `order`, or `id`; use reorderAssignments() for ordering. `categoryId` is included here (unlike the retired per-category creation flow) because the redesigned landing page lets a teacher change an Assignment's own Type after creation, not just at creation time. */
+export function updateAssignment(assignment, { title, description, givenDate, dueDate, conceptIds, resourceUrl, subjectId, categoryId }) {
   if (title !== undefined) assignment.title = title;
   if (description !== undefined) assignment.description = description;
   if (givenDate !== undefined) assignment.givenDate = givenDate;
   if (dueDate !== undefined) assignment.dueDate = dueDate;
   if (conceptIds !== undefined) assignment.conceptIds = conceptIds;
   if (resourceUrl !== undefined) assignment.resourceUrl = resourceUrl;
+  if (subjectId !== undefined) assignment.subjectId = subjectId;
+  if (categoryId !== undefined) assignment.categoryId = categoryId;
 }
 
 /**

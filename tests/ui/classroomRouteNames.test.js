@@ -49,7 +49,7 @@ const CLASSROOM_SCOPED_PATHS = [
   `classroom/${CLASSROOM_ID}/notebooks/sub1/type1/daily`,
   `classroom/${CLASSROOM_ID}/notebooks/sub1/type1/new`,
   `classroom/${CLASSROOM_ID}/assignments`,
-  `classroom/${CLASSROOM_ID}/assignments/cat1`,
+  `classroom/${CLASSROOM_ID}/assignments/assign1`,
   `classroom/${CLASSROOM_ID}/assessments`,
   `classroom/${CLASSROOM_ID}/assessments/scorecard`,
   `classroom/${CLASSROOM_ID}/assessments/scorecard/cycle1`,
@@ -107,15 +107,16 @@ test('the specific reported regression: /scoreboard-archive/{archiveId} resolves
  * the Assignments Dashboard card navigates here, ui/router.js's
  * resolvePathParts() already resolved it to `assignmentTracker` correctly,
  * and js/main.js already had a real render branch for it -- but
- * `assignmentTracker`/`assignmentCategory` were missing from
- * CLASSROOM_ROUTE_NAMES, so the route silently fell through to the
- * Personal Hub fallback instead, in every case (Dashboard card click,
- * direct URL navigation, and page refresh alike) -- confirmed via a real
- * browser/emulator session, not just this unit test. The generic test
- * above would have caught this too, once `/assignments` was added to
- * CLASSROOM_SCOPED_PATHS -- this dedicated pair exists for the same
- * "name the specific regression" reason the scoreboard-archive pair
- * above does.
+ * `assignmentTracker`/`assignmentDetail` (named `assignmentCategory`
+ * before the 2026-10 Assignment Tracker redesign renamed this route)
+ * were missing from CLASSROOM_ROUTE_NAMES, so the route silently fell
+ * through to the Personal Hub fallback instead, in every case (Dashboard
+ * card click, direct URL navigation, and page refresh alike) -- confirmed
+ * via a real browser/emulator session, not just this unit test. The
+ * generic test above would have caught this too, once `/assignments`
+ * was added to CLASSROOM_SCOPED_PATHS -- this dedicated pair exists for
+ * the same "name the specific regression" reason the scoreboard-archive
+ * pair above does.
  */
 test('the specific reported regression: /assignments resolves to assignmentTracker and is registered', () => {
   const route = resolvePathParts(['classroom', CLASSROOM_ID, 'assignments']);
@@ -123,8 +124,8 @@ test('the specific reported regression: /assignments resolves to assignmentTrack
   assert.ok(CLASSROOM_ROUTE_NAMES.includes('assignmentTracker'));
 });
 
-test('the specific reported regression: /assignments/{categoryId} resolves to assignmentCategory and is registered', () => {
-  const route = resolvePathParts(['classroom', CLASSROOM_ID, 'assignments', 'cat1']);
-  assert.equal(route.name, 'assignmentCategory');
-  assert.ok(CLASSROOM_ROUTE_NAMES.includes('assignmentCategory'));
+test('the specific reported regression: /assignments/{assignmentId} resolves to assignmentDetail and is registered', () => {
+  const route = resolvePathParts(['classroom', CLASSROOM_ID, 'assignments', 'assign1']);
+  assert.equal(route.name, 'assignmentDetail');
+  assert.ok(CLASSROOM_ROUTE_NAMES.includes('assignmentDetail'));
 });

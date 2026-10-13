@@ -42,7 +42,7 @@ export const CLASSROOM_ROUTE_NAMES = [
   'notebookCheckpoints',
   'notebookDailyCheck',
   'assignmentTracker',
-  'assignmentCategory',
+  'assignmentDetail',
   'assessments',
   'assessmentsScorecard',
   'assessmentsManage',

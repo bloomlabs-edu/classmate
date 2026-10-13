@@ -68,6 +68,20 @@
  * upload SDK), and inventing one was out of scope for this pass. A
  * link-only field mirrors models/Resource.js's own existing
  * 'external_link' type rather than building new infrastructure.
+ *
+ * `subjectId` — the Assignment Tracker redesign's own addition: an
+ * optional reference to one of this classroom's own
+ * models/LearningSubject.js records (`learningRecordService.getSubjects()`),
+ * resolved live at read time, NEVER copied/denormalized — the exact
+ * same reference-not-copy convention `conceptIds` above already
+ * establishes. `null` for every Assignment created before this field
+ * existed (and for a new one until a teacher explicitly sets it) — a
+ * missing subject is a normal, always-handled display state ("No
+ * subject set"), never backfilled to a guessed value. Unlike
+ * `categoryId` below, this is NOT the primary navigation structure
+ * either — it's one more metadata pill on the Assignment card, per the
+ * explicit product instruction that "assignment type is metadata, not
+ * the primary navigation structure," extended to Subject too.
  */
 
 import { generateId } from '../utils/idGenerator.js';
@@ -85,6 +99,7 @@ export function createAssignment({
   records = [],
   conceptIds = [],
   resourceUrl = '',
+  subjectId = null,
 } = {}) {
   return {
     id: id || generateId(),
@@ -98,5 +113,6 @@ export function createAssignment({
     records,
     conceptIds,
     resourceUrl,
+    subjectId,
   };
 }
