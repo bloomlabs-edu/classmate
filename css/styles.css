@@ -15264,6 +15264,14 @@ button.recognition-bento__hero-winner-name {
 .performance-legend-chip--green .performance-legend-swatch {
   background-color: var(--color-success);
 }
+/* `not_assessed` — Academic Progress tab's own fourth band (a subject
+   with no result at all in the current cycle), never produced by
+   ScorecardView's own renderLegend() above (red/yellow/green only) —
+   same neutral gray already used for "Not Assigned" elsewhere (e.g.
+   .work-request-roster__chip--gray). */
+.performance-legend-chip--not_assessed .performance-legend-swatch {
+  background-color: #78909c;
+}
 .performance-legend-chip-label {
   font-weight: var(--font-weight-bold);
   font-size: 0.8rem;

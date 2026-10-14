@@ -37,6 +37,8 @@ import * as studentGoalsService from '../../services/studentGoalsService.js';
 import * as workRequestService from '../../services/workRequestService.js';
 import * as assignmentService from '../../services/assignmentService.js';
 import * as assignmentCheckpointService from '../../services/assignmentCheckpointService.js';
+import * as academicProgressService from '../../services/academicProgressService.js';
+import { getPerformanceBucketLabel, NOT_ASSESSED_LABEL } from '../../config/assessmentMarksColorConfig.js';
 import * as notebookConfigService from '../../services/notebookConfigService.js';
 import { getStatusMeta } from './WorkRequestRosterView.js';
 import { getAssignmentCellMeta } from './AssignmentDetailView.js';
@@ -54,13 +56,14 @@ import { openLogParticipationModal } from '../components/LogParticipationModal.j
 import { createBackButton } from '../components/BackButton.js';
 import { canOpenTeamProfile } from '../../services/teamStatisticsService.js';
 
-const TABS = ['overview', 'achievements', 'learning', 'notebooks', 'assignments', 'activity', 'access', 'notes'];
+const TABS = ['overview', 'achievements', 'learning', 'notebooks', 'assignments', 'academics', 'activity', 'access', 'notes'];
 const TAB_LABELS = {
   overview: 'Overview',
   achievements: 'Recognition',
   learning: 'Learning',
   notebooks: 'Notebooks',
   assignments: 'Assignments',
+  academics: 'Academic Progress',
   activity: 'Timeline',
   access: 'Parent Access',
   notes: 'Notes',
@@ -113,6 +116,7 @@ export function renderStudentProfileView(container, { classroom, studentId, tab,
     learning: renderLearningTab,
     notebooks: renderNotebooksTab,
     assignments: renderAssignmentsTab,
+    academics: renderAcademicProgressTab,
     activity: renderActivityTab,
     access: renderAccessTab,
     notes: renderNotesTab,
@@ -1091,6 +1095,86 @@ function createAssignmentEvidenceCard(classroom, student, { assignment, category
   supportingLine.className = 'profile-notebook-activity__date';
   supportingLine.textContent = assignment.dueDate ? `Due ${formatDate(assignment.dueDate)}` : `Given ${formatDate(assignment.givenDate)}`;
   card.appendChild(supportingLine);
+
+  return card;
+}
+
+// ---------------------------------------------------------------------
+// Academic Progress (published examination results only — see
+// services/academicProgressService.js's own header comment on why this
+// stays strictly separate from Notebooks/Assignments evidence above)
+// ---------------------------------------------------------------------
+
+/**
+ * Read-only: every number shown here comes straight from
+ * academicProgressService.getCurrentPerformance(), recomputed fresh on
+ * every render — nothing is stored on `classroom`/`student` by this tab.
+ * The source cycle (title + academic year) is shown as plain text, not
+ * a link — no Student Profile tab currently has a way to navigate to
+ * another screen (no `onNavigate` prop is threaded through this view),
+ * so click-through to the Gradebook is deliberately deferred rather
+ * than half-built here.
+ */
+function renderAcademicProgressTab(content, classroom, student) {
+  const section = document.createElement('div');
+  section.className = 'profile-section';
+
+  const heading = document.createElement('h2');
+  heading.className = 'profile-section__heading';
+  heading.textContent = 'Academic Progress';
+  section.appendChild(heading);
+
+  const performance = academicProgressService.getCurrentPerformance(classroom, student.id);
+
+  if (!performance.asOfCycleKey) {
+    section.appendChild(createEmptyStateElement({ message: 'No published examination results yet for this student.' }));
+    content.appendChild(section);
+    return;
+  }
+
+  const cycle = academicProgressService.listExaminationCycles(classroom).find((c) => c.cycleKey === performance.asOfCycleKey);
+  const caption = document.createElement('p');
+  caption.className = 'profile-notebook-activity__date';
+  caption.textContent = cycle ? [cycle.title, cycle.academicYear].filter(Boolean).join(' · ') : '';
+  section.appendChild(caption);
+
+  const statsRow = document.createElement('div');
+  statsRow.className = 'profile-overview';
+  statsRow.appendChild(createStatCard('Overall', performance.overallPercent !== null ? `${performance.overallPercent}%` : NOT_ASSESSED_LABEL));
+  section.appendChild(statsRow);
+
+  const list = document.createElement('div');
+  list.className = 'profile-notebook-activity';
+  performance.bySubject.forEach((entry) => list.appendChild(createSubjectPerformanceRow(entry)));
+  section.appendChild(list);
+
+  content.appendChild(section);
+}
+
+function createSubjectPerformanceRow(entry) {
+  const card = document.createElement('div');
+  card.className = 'profile-notebook-activity__card';
+
+  const title = document.createElement('p');
+  title.className = 'profile-notebook-activity__title';
+  title.textContent = entry.subjectTitle;
+  card.appendChild(title);
+
+  const percentLine = document.createElement('p');
+  percentLine.className = 'profile-notebook-activity__date';
+  percentLine.textContent = entry.percent !== null ? `${entry.percent}%` : NOT_ASSESSED_LABEL;
+  card.appendChild(percentLine);
+
+  const chip = document.createElement('div');
+  chip.className = `performance-legend-chip performance-legend-chip--${entry.band}`;
+  const swatch = document.createElement('span');
+  swatch.className = 'performance-legend-swatch';
+  swatch.setAttribute('aria-hidden', 'true');
+  const chipLabel = document.createElement('span');
+  chipLabel.className = 'performance-legend-chip-label';
+  chipLabel.textContent = getPerformanceBucketLabel(entry.band);
+  chip.append(swatch, chipLabel);
+  card.appendChild(chip);
 
   return card;
 }
