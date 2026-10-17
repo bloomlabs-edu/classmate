@@ -1,18 +1,19 @@
 /**
- * server/learnerVerification/verifyLearnerConnection.js
+ * functions/src/learnerVerification/verifyLearnerConnection.js
  *
  * The trusted-server half of the Learner Identity Bridge — the actual
- * logic that would run inside the authenticated, IAM-gated Cloud
- * Function described in
- * docs/architecture/STUDENT_PROFILE_BRIDGE_SECURITY_REVIEW.md (§A/§B)
- * and docs/architecture/LEARNER_IDENTITY_BRIDGE_IMPLEMENTATION_PLAN.md.
- * Deploying that Cloud Function (provisioning the dedicated GCP service
- * account, the IAM invoker binding, the actual `firebase deploy
- * --only functions` call) is explicitly out of scope for this phase —
- * see this repo's own CLASSROOM_INVITATION_VERIFICATION_BRIDGE.md for
- * why. This file is the logic that function will wrap, written and
- * tested now against the Firestore emulator via firebase-admin, so it
- * is real, executable, and verifiable — not a design sketch.
+ * logic that runs inside the authenticated, IAM-gated Cloud Function
+ * (see ../verifyLearnerConnectionEndpoint.js and ../../index.js) and is
+ * wrapped and tested here independently, against the Firestore
+ * emulator via firebase-admin, so it is real, executable, and
+ * verifiable without deploying anything.
+ *
+ * Lives inside functions/ (not a sibling server/ directory, where it
+ * originally lived) because Cloud Functions only packages the
+ * functions/ directory at deploy time — see ../../index.js's own
+ * header comment for the packaging failure this move fixes. Its
+ * LearnerConnection shape dependencies come from ./learnerConnectionShared.js
+ * for the same reason — see that file's own header comment.
  *
  * Uses firebase-admin deliberately, not the client SDK
  * (repositories/firestoreLearnerConnectionRepository.js's own file):
@@ -26,8 +27,7 @@
  */
 
 import { sha256Hex } from './hashUtils.js';
-import { buildRelationshipId, RELATIONSHIP_STATUS, CODE_STATUS } from '../../js/models/LearnerConnection.js';
-import { findTrustedAutomaticMatch } from '../../js/models/LearnerConnection.js';
+import { buildRelationshipId, RELATIONSHIP_STATUS, CODE_STATUS, findTrustedAutomaticMatch } from './learnerConnectionShared.js';
 
 /** Every failure returns this exact, generic shape — never a specific reason — matching the security review's own anti-oracle requirement (never let a caller distinguish "not found" from "expired" from "already used" from "wrong classroom"). */
 const GENERIC_FAILURE = Object.freeze({ ok: false, error: 'verification_failed' });

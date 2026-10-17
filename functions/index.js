@@ -1,15 +1,15 @@
 /**
  * functions/index.js
  *
- * The `verifyLearnerConnection` function (Learner Identity Bridge) is
- * deliberately NOT defined here right now: its own dependency,
- * src/verifyLearnerConnectionEndpoint.js, imports
+ * `verifyLearnerConnection` (Learner Identity Bridge) previously
+ * couldn't be defined here: its dependency,
+ * src/verifyLearnerConnectionEndpoint.js, imported
  * ../../server/learnerVerification/verifyLearnerConnection.js — a path
  * outside functions/, which Cloud Functions never packages, so its
  * container crashed on startup and took every other function in this
- * file down with it (they all share one module load). Pulled out so
- * the Slack functions below can deploy; re-add it once that import is
- * fixed to point at a module actually inside functions/.
+ * file down with it (they all share one module load). Fixed by moving
+ * that module (and its hashUtils/shape dependencies) into
+ * src/learnerVerification/ — see that directory's own header comments.
  */
 import { onRequest } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
@@ -29,6 +29,7 @@ import {
   handleDenyDeviceSignIn,
   handlePollDeviceSignIn,
 } from './src/deviceSignIn/deviceSignInEndpoints.js';
+import { handleVerifyLearnerConnectionRequest } from './src/verifyLearnerConnectionEndpoint.js';
 
 if (getApps().length === 0) {
   initializeApp();
@@ -312,3 +313,40 @@ export const pollDeviceSignIn = onRequest(
     res.status(httpStatus).json(body);
   }
 );
+
+// -----------------------------------------------------------------------
+// Learner Identity Bridge — the trusted endpoint Learning Hub's own
+// backend calls (never a browser directly, so no CORS handling here,
+// matching the server-to-server trust boundary documented in
+// docs/architecture/CLASSROOM_INVITATION_VERIFICATION_BRIDGE.md).
+// `invoker: 'public'` because this endpoint's real security boundary is
+// the Learning Hub Firebase ID token check inside
+// handleVerifyLearnerConnectionRequest (src/learningHubAuth.js), the
+// same pattern already used for the Slack identity-link endpoints
+// above — not IAM allowlisting.
+//
+// `serviceAccount` is REQUIRED here, not optional: this function calls
+// learnerProfileOwnership.js, which mints a service-to-service OIDC
+// token using its own ambient runtime identity (see that file's own
+// header comment). Learning Hub's cross-project endpoint only grants
+// `roles/run.invoker` to this one dedicated, narrowly-scoped service
+// account — running under any other identity (e.g. the project's
+// default compute service account) would make every ownership check
+// fail closed in production, silently, with no error surfaced here.
+// -----------------------------------------------------------------------
+export const verifyLearnerConnection = onRequest(
+  {
+    cors: false,
+    invoker: 'public',
+    serviceAccount: 'learning-hub-profile-verifier@classmate-302c2.iam.gserviceaccount.com',
+  },
+  async (req, res) => {
+  if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'method_not_allowed' });
+
+  const { httpStatus, body } = await handleVerifyLearnerConnectionRequest({
+    authorizationHeader: req.get('Authorization'),
+    body: await readJsonBody(req),
+    deps: { adminDb: getFirestore() },
+  });
+  res.status(httpStatus).json(body);
+});

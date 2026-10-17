@@ -2,7 +2,7 @@
  * tests/server/verifyLearnerConnection.test.js
  *
  * Real Firestore emulator + firebase-admin tests for the trusted
- * server module (server/learnerVerification/verifyLearnerConnection.js)
+ * server module (functions/src/learnerVerification/verifyLearnerConnection.js)
  * — the actual redemption/activation transaction, run exactly as it
  * would run inside the future Cloud Function (Admin SDK, bypassing
  * rules, since rules cannot compute the SHA-256 hash this step depends
@@ -18,8 +18,8 @@ import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import admin from 'firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';
-import { sha256Hex } from '../../server/learnerVerification/hashUtils.js';
-import { createConnectionRequest, verifyStudentCode } from '../../server/learnerVerification/verifyLearnerConnection.js';
+import { sha256Hex } from '../../functions/src/learnerVerification/hashUtils.js';
+import { createConnectionRequest, verifyStudentCode } from '../../functions/src/learnerVerification/verifyLearnerConnection.js';
 import { RELATIONSHIP_STATUS } from '../../js/models/LearnerConnection.js';
 
 process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';

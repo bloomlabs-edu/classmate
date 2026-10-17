@@ -10,7 +10,7 @@
  *
  * Wraps, and does not modify or duplicate, the already-implemented and
  * already-tested transaction logic in
- * server/learnerVerification/verifyLearnerConnection.js. Everything
+ * ./learnerVerification/verifyLearnerConnection.js. Everything
  * this file adds is strictly upstream of that module: authenticate the
  * caller, bind their claimed learnerProfileId to that authenticated
  * identity, validate the request shape, then delegate.
@@ -31,11 +31,11 @@
  * anyway is rejected outright (not silently ignored) — see step 2.
  */
 
-import { createConnectionRequest, verifyStudentCode } from '../../server/learnerVerification/verifyLearnerConnection.js';
+import { createConnectionRequest, verifyStudentCode } from './learnerVerification/verifyLearnerConnection.js';
 import { verifyLearningHubIdToken as defaultVerifyLearningHubIdToken } from './learningHubAuth.js';
 import { verifyLearnerProfileOwnership as defaultVerifyLearnerProfileOwnership } from './learnerProfileOwnership.js';
 
-/** Identical generic failure shape to server/learnerVerification/verifyLearnerConnection.js's own GENERIC_FAILURE — every domain-level rejection from this endpoint is indistinguishable from every other, by design (anti-oracle). Transport-level rejections (401/400, below) are a different, deliberate layer — see this file's own inline notes at each return site for why those are safe to distinguish. */
+/** Identical generic failure shape to ./learnerVerification/verifyLearnerConnection.js's own GENERIC_FAILURE — every domain-level rejection from this endpoint is indistinguishable from every other, by design (anti-oracle). Transport-level rejections (401/400, below) are a different, deliberate layer — see this file's own inline notes at each return site for why those are safe to distinguish. */
 const GENERIC_FAILURE = Object.freeze({ ok: false, error: 'verification_failed' });
 const UNAUTHENTICATED = Object.freeze({ ok: false, error: 'unauthenticated' });
 const INVALID_REQUEST = Object.freeze({ ok: false, error: 'invalid_request' });
