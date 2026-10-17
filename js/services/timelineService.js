@@ -21,16 +21,69 @@
 import { generateId } from '../utils/idGenerator.js';
 import { getCurrentIsoDate } from '../utils/dateHelpers.js';
 
-export function logEntry(student, { kind, label, delta = 0 }) {
+/**
+ * `id` — defaults to a random id (every existing caller's own
+ * behavior, unchanged), but a caller MAY pass a stable, deterministic
+ * id instead, specifically to make its own entry findable/removable
+ * later via findEntryById()/removeEntryById() below — see
+ * services/checkpointService.js's syncCheckpointCompletionPoint() for
+ * the first real use of this.
+ *
+ * `source`/`sourceId`/`studentId` — optional, additive provenance
+ * fields (same "additive fields on an existing shape" convention
+ * already used for models/Student.js's own `submissions` entries —
+ * see that model's own header comment). Only populated by a caller
+ * that needs its entries to be identifiable by something sturdier
+ * than `label` text (see checkpointService.js's
+ * syncCheckpointCompletionPoint()) — every existing caller (badges,
+ * Class Mode stars/points, Log Participation) omits them, unchanged.
+ * `studentId` is redundant with which student's own `history` array
+ * this entry already lives in — included anyway so a single entry
+ * remains self-identifying if it's ever read outside that per-student
+ * array context (e.g. a flattened export).
+ */
+export function logEntry(student, { id, kind, label, delta = 0, source, sourceId, studentId } = {}) {
   if (!student.history) student.history = [];
-  const entry = { id: generateId(), kind, label, delta, recordedAt: getCurrentIsoDate() };
+  const entry = { id: id || generateId(), kind, label, delta, recordedAt: getCurrentIsoDate() };
+  if (source !== undefined) entry.source = source;
+  if (sourceId !== undefined) entry.sourceId = sourceId;
+  if (studentId !== undefined) entry.studentId = studentId;
   student.history.push(entry);
   if (kind === 'points') student.score += delta;
   return entry;
 }
 
-export function logPoints(student, delta, label) {
-  return logEntry(student, { kind: 'points', label, delta });
+export function logPoints(student, delta, label, extra = {}) {
+  return logEntry(student, { kind: 'points', label, delta, ...extra });
+}
+
+/** The one entry with this exact id, or null — the read half of the findable-by-id contract logPoints()'s own optional `id` override exists for. */
+export function findEntryById(student, id) {
+  return (student.history || []).find((entry) => entry.id === id) || null;
+}
+
+/**
+ * Removes exactly the entry with this id and reverses exactly its own
+ * `delta` — never a blind ±1 — mirroring services/classModeService.js's
+ * own removeHistoryEntry()/undo-callback pattern (`student.score -=
+ * delta; removeHistoryEntry(student, entry.id)`), promoted here as a
+ * shared, DURABLE primitive: that file's own version only lives in a
+ * session-only, in-memory undo stack (wiped on reload, by its own
+ * explicit design — see that file's own header comment), which can't
+ * satisfy a caller that needs to find and reverse a SPECIFIC entry
+ * keyed by a stable id at any later point, including after a reload.
+ * Returns the removed entry (so a caller can log/inspect what was
+ * reversed), or `null` if no entry with this id exists — a safe no-op,
+ * not an error, since a caller reversing an already-absent award is an
+ * expected, idempotent case (see checkpointService.js's own
+ * syncCheckpointCompletionPoint()).
+ */
+export function removeEntryById(student, id) {
+  const entry = findEntryById(student, id);
+  if (!entry) return null;
+  student.history = (student.history || []).filter((existing) => existing.id !== id);
+  if (entry.kind === 'points') student.score -= entry.delta;
+  return entry;
 }
 
 /**

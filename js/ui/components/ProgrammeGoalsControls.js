@@ -41,7 +41,7 @@ const OUTCOME_OPTIONS = [
   { value: 'try_again', label: 'Try again' },
 ];
 
-export function buildGoalsSection(programme, session, roster, editable, persistPatch, redraw, saveGoal) {
+export function buildGoalsSection(programme, session, roster, editable, persistPatch, redraw, saveGoal, onSelectStudent) {
   const section = document.createElement('section');
   section.className = 'profile-section programme-session-view__section';
 
@@ -56,7 +56,9 @@ export function buildGoalsSection(programme, session, roster, editable, persistP
     const studentBlock = document.createElement('div');
     studentBlock.className = 'programme-session-view__goal-student-block';
 
-    studentBlock.appendChild(createStudentNameElement({ student, team, leadingMarker: 'avatar', size: 32 }));
+    studentBlock.appendChild(
+      createStudentNameElement({ student, team, leadingMarker: 'avatar', size: 32, onSelect: onSelectStudent ? () => onSelectStudent(student.id) : undefined })
+    );
 
     const categoryList = document.createElement('div');
     categoryList.className = 'programme-session-view__goal-category-list';

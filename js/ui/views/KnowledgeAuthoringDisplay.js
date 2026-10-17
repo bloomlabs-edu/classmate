@@ -264,3 +264,99 @@ export function findConceptByExactTitle(concepts, title) {
   if (!trimmed) return null;
   return (concepts || []).find((concept) => concept.title.trim().toLowerCase() === trimmed) || null;
 }
+
+// ---------------------------------------------------------------------
+// Hierarchy (fast "sub-concept of" authoring) — a READ-ONLY, derived
+// view over existing IS_A KnowledgeRelationships. Adds no schema, no
+// new field anywhere: "sub-concept of X" IS an IS_A relationship
+// (fromConceptId: the new Concept, toConceptId: X), the exact same
+// fact models/KnowledgeRelationship.js's own RELATIONSHIP_TYPES.IS_A
+// already represents — see this feature's own 2026-10-01 UX
+// simplification: the author never sees the word "IS_A" or "type,"
+// only "Sub-concept of."
+// ---------------------------------------------------------------------
+
+/**
+ * Every root KnowledgeConcept (one with no outgoing IS_A relationship)
+ * together with its full nested descendant tree — `{ concept,
+ * children: [...] }`, children sorted alphabetically at every level so
+ * the tree reads predictably regardless of Firestore's own return
+ * order. A relationship pointing at a Concept that no longer exists
+ * (deleted elsewhere) is silently excluded rather than rendered as a
+ * broken node — same "never crash on stale data" convention
+ * resolveConceptTitle() above already follows.
+ *
+ * Cycle-safe: a Concept can in principle have more than one outgoing
+ * IS_A (this screen only ever authors one at a time, but the
+ * underlying model doesn't forbid a second one being added later via
+ * the Relationships tab) — each is walked independently, and a
+ * `visiting` set per-path stops recursion dead rather than hanging the
+ * UI if a genuine cycle ever existed.
+ */
+export function buildConceptHierarchyForest(concepts, relationships) {
+  const conceptsById = new Map((concepts || []).map((concept) => [concept.id, concept]));
+  const childIdsByParentId = new Map();
+
+  (relationships || [])
+    .filter((relationship) => relationship.type === 'IS_A' && conceptsById.has(relationship.fromConceptId) && conceptsById.has(relationship.toConceptId))
+    .forEach((relationship) => {
+      if (!childIdsByParentId.has(relationship.toConceptId)) childIdsByParentId.set(relationship.toConceptId, []);
+      childIdsByParentId.get(relationship.toConceptId).push(relationship.fromConceptId);
+    });
+
+  const idsWithAParent = new Set();
+  childIdsByParentId.forEach((childIds) => childIds.forEach((id) => idsWithAParent.add(id)));
+
+  function buildNode(conceptId, visiting) {
+    const concept = conceptsById.get(conceptId);
+    if (!concept || visiting.has(conceptId)) return null;
+    const nextVisiting = new Set(visiting).add(conceptId);
+    const children = (childIdsByParentId.get(conceptId) || [])
+      .map((childId) => buildNode(childId, nextVisiting))
+      .filter(Boolean)
+      .sort((a, b) => a.concept.title.localeCompare(b.concept.title));
+    return { concept, children };
+  }
+
+  return (concepts || [])
+    .map((concept) => concept.id)
+    .filter((id) => !idsWithAParent.has(id))
+    .map((id) => buildNode(id, new Set()))
+    .filter(Boolean)
+    .sort((a, b) => a.concept.title.localeCompare(b.concept.title));
+}
+
+/**
+ * Every ancestor id on `conceptId`'s own IS_A chain, nearest first —
+ * used only to auto-expand a newly-added Concept's branch so it's
+ * immediately visible in an otherwise-collapsed tree (see
+ * ui/views/KnowledgeHierarchyView.js), never to enforce or display
+ * "the" single parent as if a Concept only ever had one. If a Concept
+ * happens to have more than one outgoing IS_A (see
+ * buildConceptHierarchyForest()'s own header comment on why that's
+ * possible), this follows the first one found — adequate for "reveal
+ * ONE real path to the new node," not a claim that it's the only path.
+ * Cycle-safe: stops the moment an id would repeat.
+ */
+export function getConceptAncestorIds(relationships, conceptId) {
+  const parentIdByChildId = new Map();
+  (relationships || [])
+    .filter((relationship) => relationship.type === 'IS_A')
+    .forEach((relationship) => {
+      if (!parentIdByChildId.has(relationship.fromConceptId)) {
+        parentIdByChildId.set(relationship.fromConceptId, relationship.toConceptId);
+      }
+    });
+
+  const ancestors = [];
+  const seen = new Set([conceptId]);
+  let current = conceptId;
+  while (parentIdByChildId.has(current)) {
+    const parentId = parentIdByChildId.get(current);
+    if (seen.has(parentId)) break;
+    ancestors.push(parentId);
+    seen.add(parentId);
+    current = parentId;
+  }
+  return ancestors;
+}

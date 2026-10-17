@@ -119,6 +119,18 @@
  *                    services/notebookConfigService.js). Kept separate
  *                    from `notebooks` since this is near-static setup,
  *                    edited from Settings, not accumulated day by day.
+ *   assignmentConfig - { categories: [{id, name, aspects: [{id, name}]}] }
+ *                    — Assignments' own configurable taxonomy, sibling
+ *                    to notebookConfig (see
+ *                    services/assignmentConfigService.js and
+ *                    models/AssignmentCategory.js). One level, not
+ *                    Notebook's Subject+Type pair — see that model's own
+ *                    header comment for why. `classroom.assignments`
+ *                    (the flat array of actual Assignment records, see
+ *                    models/Assignment.js) is lazily defaulted at the
+ *                    point of use in services/assignmentService.js,
+ *                    the same convention classroom.checkpoints already
+ *                    follows — not eagerly normalized here.
  *   notebooks      - { [subjectId]: { [notebookTypeId]: { [dateKey]:
  *                    { [studentId]: NotebookSubmission } } } } (see
  *                    services/notebookService.js and
@@ -273,6 +285,7 @@ export function createClassroom({
   assessments = [],
   planner = { planningCycles: [] },
   notebookConfig = { subjects: [], notebookTypes: [] },
+  assignmentConfig = { categories: [] },
   notebooks = {},
   notebookCheckTemplates = {},
   notebookChecks = {},
@@ -305,6 +318,7 @@ export function createClassroom({
     assessments,
     planner,
     notebookConfig,
+    assignmentConfig,
     notebooks,
     notebookCheckTemplates,
     notebookChecks,

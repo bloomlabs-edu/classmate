@@ -30,17 +30,27 @@
  * explicit requirement, both endpoints of a Relationship must already
  * exist as real KnowledgeConcepts — a Relationship form is never a back
  * door for creating one inline.
+ *
+ * `value` (optional, a Concept id) — pre-selects that Concept, showing
+ * its title in the field immediately rather than a blank input. Added
+ * for ui/views/KnowledgeHierarchyView.js's own "default the parent
+ * picker to whichever Concept was just added" requirement; passed
+ * straight through to SearchableSelect's own identical `value` prop,
+ * which already supported this — no existing caller is affected by
+ * this addition (it simply defaults to '', the same blank start every
+ * caller already got).
  */
 
 import { createSearchableSelect } from './SearchableSelect.js';
 import { buildConceptPickerOptions } from '../views/KnowledgeAuthoringDisplay.js';
 
-export function createKnowledgeConceptPicker({ concepts, onSelect, placeholder = 'Search existing Concepts…', allowCustom = true }) {
+export function createKnowledgeConceptPicker({ concepts, onSelect, placeholder = 'Search existing Concepts…', allowCustom = true, value = '' }) {
   return createSearchableSelect({
     options: buildConceptPickerOptions(concepts),
     placeholder,
     onSelect,
     allowCustom,
+    value,
     createLabel: (typed) => `+ Create new Concept: '${typed}'`,
   });
 }

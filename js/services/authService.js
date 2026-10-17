@@ -39,9 +39,11 @@ import {
   setPersistence,
   browserLocalPersistence,
   browserSessionPersistence,
+  connectAuthEmulator,
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 import { getFirebaseApp } from './firebaseApp.js';
 import { logPersistenceEvent } from './persistenceLogger.js';
+import { PRODUCTION_HOSTNAMES } from './firestoreEnvironment.js';
 
 let auth = null;
 
@@ -56,9 +58,33 @@ export function initAuth() {
   if (auth) return;
   const app = getFirebaseApp();
   auth = getAuth(app);
+  connectToAuthEmulatorIfNotProduction(auth);
   setPersistence(auth, browserLocalPersistence).catch((error) => {
     console.error('[authService] Failed to set auth persistence:', error);
   });
+}
+
+/**
+ * Same production-is-opt-in policy services/firestoreEnvironment.js
+ * already enforces for Firestore (see that file's own header comment
+ * and this project's "never-seed-production-data" incident), applied
+ * to Auth for the first time — added specifically so this feature's
+ * own local end-to-end test could sign in against the Auth emulator at
+ * all; nothing here previously ever redirected Auth away from
+ * production. `connectAuthEmulator` MUST run before any other Auth
+ * call (Firebase's own requirement), hence immediately after
+ * `getAuth()` above, before `setPersistence()`.
+ */
+function connectToAuthEmulatorIfNotProduction(authInstance) {
+  const hostname = typeof window !== 'undefined' ? window.location?.hostname : null;
+  if (typeof hostname === 'string' && PRODUCTION_HOSTNAMES.includes(hostname)) return;
+
+  try {
+    connectAuthEmulator(authInstance, 'http://127.0.0.1:9099', { disableWarnings: true });
+    console.warn('[authService] Auth requests redirected to LOCAL EMULATOR at 127.0.0.1:9099. Production Firebase Auth will NOT be used for the rest of this session.');
+  } catch (error) {
+    console.error('[authService] Failed to connect Auth emulator:', error);
+  }
 }
 
 /**
@@ -151,12 +177,11 @@ export function getCurrentUser() {
  * The raw Firebase ID token (a signed JWT proving "this really is
  * uid X," not a contact detail) for the signed-in teacher — needed so
  * a trusted backend endpoint can verify who's calling it (see
- * services/deviceSignInApprovalService.js, which sends this as a
- * Bearer header to the getDeviceSignInRequestInfo/approveDeviceSignIn/
- * denyDeviceSignIn Cloud Functions). This is the one place outside
- * toSafeProfile() that reads anything off the raw Firebase user, but
- * it never touches email or any other field this module's own header
- * comment excludes.
+ * services/slackIntegrationService.js's beginConnect(), which sends
+ * this as a Bearer header to the slackIdentityLinkStart Cloud
+ * Function). This is the one place outside toSafeProfile() that reads
+ * anything off the raw Firebase user, but it never touches email or
+ * any other field this module's own header comment excludes.
  */
 export async function getIdToken() {
   return auth?.currentUser ? auth.currentUser.getIdToken() : null;

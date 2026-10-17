@@ -54,7 +54,7 @@ import {
   getToggledAttendanceStatus,
 } from './ProgrammeSessionHelpers.js';
 
-export function buildAttendanceSection(classroomId, programme, session, roster, editable, persistPatch) {
+export function buildAttendanceSection(classroomId, programme, session, roster, editable, persistPatch, onSelectStudent) {
   const section = document.createElement('section');
   section.className = 'profile-section programme-session-view__section';
 
@@ -67,17 +67,17 @@ export function buildAttendanceSection(classroomId, programme, session, roster, 
   list.className = 'programme-session-view__attendance-list';
 
   roster.forEach(({ student, team }) => {
-    list.appendChild(buildAttendanceRow(classroomId, programme, session, student, team, editable, persistPatch));
+    list.appendChild(buildAttendanceRow(classroomId, programme, session, student, team, editable, persistPatch, onSelectStudent));
   });
 
   section.appendChild(list);
   return section;
 }
 
-function buildAttendanceRow(classroomId, programme, session, student, team, editable, persistPatch) {
+function buildAttendanceRow(classroomId, programme, session, student, team, editable, persistPatch, onSelectStudent) {
   const row = document.createElement('div');
   row.className = 'programme-session-view__attendance-row';
-  row.appendChild(createStudentNameElement({ student, team, leadingMarker: 'avatar', size: 32 }));
+  row.appendChild(createStudentNameElement({ student, team, leadingMarker: 'avatar', size: 32, onSelect: onSelectStudent ? () => onSelectStudent(student.id) : undefined }));
 
   const controls = document.createElement('div');
   controls.className = 'programme-session-view__attendance-controls';

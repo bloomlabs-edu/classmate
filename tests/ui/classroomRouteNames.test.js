@@ -37,6 +37,7 @@ const CLASSROOM_SCOPED_PATHS = [
   `classroom/${CLASSROOM_ID}/weekly-reports`,
   `classroom/${CLASSROOM_ID}/settings`,
   `classroom/${CLASSROOM_ID}/student-access`,
+  `classroom/${CLASSROOM_ID}/connect-learning-hub`,
   `classroom/${CLASSROOM_ID}/setup`,
   `classroom/${CLASSROOM_ID}/student/s1`,
   `classroom/${CLASSROOM_ID}/team/t1`,

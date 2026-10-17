@@ -5579,6 +5579,130 @@ textarea.chapter-plan-editor__field-input {
   padding: 0;
 }
 
+/* ---- Guided Step Flow (ui/components/GuidedStepFlow.js) -------------- */
+
+.guided-step-flow__progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 1.25rem;
+}
+.guided-step-flow__progress-arrow {
+  color: var(--color-muted);
+  font-size: 0.8rem;
+}
+.guided-step-flow__progress-item {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-muted);
+  padding: 0.3rem 0.55rem;
+  border-radius: var(--radius-pill);
+}
+.guided-step-flow__progress-item--filled {
+  color: var(--color-text, #1f2933);
+}
+.guided-step-flow__progress-item--active {
+  background-color: var(--color-bg);
+  color: var(--color-text, #1f2933);
+  font-weight: var(--font-weight-bold);
+}
+
+.guided-step-flow__step--collapsed {
+  border-bottom: 1px solid var(--color-border);
+}
+.guided-step-flow__step-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.75rem 0.25rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+.guided-step-flow__step-summary:hover {
+  background-color: var(--color-bg);
+}
+.guided-step-flow__step-summary-check {
+  flex-shrink: 0;
+  color: var(--color-success, #4C9A2A);
+  font-weight: var(--font-weight-bold);
+}
+.guided-step-flow__step-summary-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.guided-step-flow__step-summary-title {
+  font-weight: var(--font-weight-bold);
+  font-size: 0.95rem;
+  color: var(--color-ink);
+}
+.guided-step-flow__step-summary:not(.guided-step-flow__step-summary--filled) .guided-step-flow__step-summary-title {
+  color: var(--color-muted);
+  font-weight: var(--font-weight-medium);
+}
+.guided-step-flow__step-summary-preview {
+  font-size: 0.82rem;
+  color: var(--color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.guided-step-flow__step-summary-preview--empty {
+  font-style: italic;
+}
+
+.guided-step-flow__step--active {
+  background-color: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: 18px;
+  padding: 1.5rem 1.75rem;
+  margin-bottom: 1.25rem;
+}
+.guided-step-flow__step-heading {
+  margin-bottom: 0.3rem;
+}
+.guided-step-flow__step-counter {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.3rem;
+}
+.guided-step-flow__step-question {
+  font-size: 1.2rem;
+  font-weight: var(--font-weight-black);
+  margin: 0;
+}
+.guided-step-flow__step-helper {
+  font-size: 0.88rem;
+  color: var(--color-muted);
+  margin: 0.4rem 0 1rem;
+}
+.guided-step-flow__step-content {
+  margin-top: 1rem;
+}
+.guided-step-flow__step-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+.guided-step-flow__step-nav:has(.guided-step-flow__step-next:only-child) {
+  justify-content: flex-end;
+}
+
 /* ---- Spark Browser ("✨ Browse Sparks") ------------------------------ */
 
 .spark-browser__intro {
@@ -11169,6 +11293,10 @@ button.recognition-bento__hero-winner-name {
   background-color: #EAF5E3;
   color: #4C9A2A;
 }
+.classroom-access-bento__icon-badge--learning-hub {
+  background-color: #EEEBFB;
+  color: #6D5AC4;
+}
 .classroom-access-bento__heading {
   font-size: 1rem;
   font-weight: var(--font-weight-black);
@@ -11182,6 +11310,166 @@ button.recognition-bento__hero-winner-name {
   color: var(--color-muted);
   line-height: 1.4;
   margin: 0 0 0.4rem;
+}
+
+/*
+ * Connect Learning Hub (see ui/views/ConnectLearningHubView.js) — the
+ * ClassMate-side half of the Learner Identity Bridge. Same quiet-card
+ * language as .lesson-plan-review__section/.student-access-row above
+ * (no new visual language introduced for this feature), max-width
+ * centered like .lesson-plan-review for the same "readable column, not
+ * edge-to-edge" reasoning.
+ */
+.connect-learning-hub {
+  max-width: 720px;
+  margin: 0 auto;
+}
+.connect-learning-hub__error,
+.connect-learning-hub__loading {
+  color: var(--color-muted);
+}
+.connect-learning-hub__section {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  padding: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+.connect-learning-hub__section-heading {
+  font-size: 1.05rem;
+  font-weight: var(--font-weight-black);
+  margin: 0 0 0.4rem;
+}
+.connect-learning-hub__description {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  line-height: 1.4;
+  margin: 0 0 0.75rem;
+}
+/* The "read aloud" instruction — text, deliberately not an icon/color
+   alone, since this is a real security instruction (see
+   ConnectLearningHubView.js's own header comment), not a cosmetic tip. */
+.connect-learning-hub__hint {
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-warning, #BF5F1A);
+  margin: 0.5rem 0 0;
+}
+.connect-learning-hub__queue-group {
+  margin-bottom: 1rem;
+}
+.connect-learning-hub__queue-group-heading {
+  font-size: 0.95rem;
+  font-weight: var(--font-weight-bold);
+  margin: 0 0 0.6rem;
+}
+.connect-learning-hub__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.connect-learning-hub__row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.85rem 1.1rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.connect-learning-hub__row:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.connect-learning-hub__row-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.connect-learning-hub__row-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.connect-learning-hub__row-id {
+  font-family: monospace;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+.connect-learning-hub__row-time {
+  font-size: 0.78rem;
+  color: var(--color-muted);
+}
+.connect-learning-hub__status-badge {
+  display: inline-block;
+  align-self: flex-start;
+  font-size: 0.78rem;
+  font-weight: var(--font-weight-bold);
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-pill);
+  background-color: #eef1f4;
+  color: var(--color-muted);
+}
+.connect-learning-hub__status-badge--pending {
+  background-color: #fff3d6;
+  color: #b7791f;
+}
+.connect-learning-hub__status-badge--active {
+  background-color: #e4f5e8;
+  color: #1e8a3c;
+}
+.connect-learning-hub__status-badge--rejected {
+  background-color: #fbe4e2;
+  color: var(--color-danger);
+}
+.connect-learning-hub__row-detail {
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.connect-learning-hub__row-detail-explanation {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  line-height: 1.4;
+  margin: 0;
+}
+.connect-learning-hub__row-selected-student {
+  padding: 0.5rem 0.75rem;
+  background-color: var(--color-bg);
+  border-radius: var(--radius-control);
+}
+.connect-learning-hub__row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.connect-learning-hub__issued-code {
+  background-color: var(--color-bg);
+  border-radius: 16px;
+  padding: 1rem 1.25rem;
+}
+.connect-learning-hub__issued-code-heading {
+  font-size: 0.85rem;
+  font-weight: var(--font-weight-bold);
+  margin: 0 0 0.3rem;
+}
+.connect-learning-hub__action-error {
+  color: var(--color-danger);
+  font-size: 0.85rem;
+  margin: 0;
 }
 
 /*
@@ -13638,6 +13926,31 @@ button.recognition-bento__hero-winner-name {
   color: var(--color-danger);
   white-space: nowrap;
 }
+/* Discoverability fix (2026-10-10 bug report): ".overflow-menu__trigger"
+   itself (ui/components/OverflowMenu.js) is a deliberately plain "⋮"
+   platform-wide — Curriculum/Assessment/Recognition cards all share
+   that exact minimal look, and this rule does NOT change that shared
+   default. Scoped to ONLY this row (Notebook Subject rows AND
+   Assignment Category rows, which reuse this same class — see
+   SettingsView.js's createAssignmentCategoryRow()) because real-browser
+   verification showed the bare glyph, with no persistent background,
+   was too easy to miss as "the rename control" against a plain white
+   row — not a broken control, an undiscoverable one. A permanent
+   (not hover-only) tinted circular background makes it read as a real
+   button at rest, without adding a second, competing affordance. */
+.settings-notebook-subject__header .overflow-menu__trigger {
+  background-color: var(--color-hover, #F2F5F7);
+  border-radius: 50%;
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.settings-notebook-subject__header .overflow-menu__trigger:hover {
+  background-color: var(--color-border, #e2e8ed);
+}
 .settings-notebook-types-list {
   list-style: none;
   margin: 0.6rem 0 0.5rem;
@@ -13665,6 +13978,55 @@ button.recognition-bento__hero-winner-name {
   border-radius: 6px;
   font: inherit;
 }
+/* Settings > Assignment Categories — see ui/views/SettingsView.js's
+   renderAssignmentCategoriesSection() and createAspectsEditor(). Reuses
+   .settings-notebook-subject/__header above directly for the category
+   row itself (identical shape); only the Aspect chip list below is new. */
+.settings-assignment-aspects {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--color-border);
+}
+.settings-assignment-aspects__label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-muted);
+  margin: 0 0 0.4rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.settings-assignment-aspects__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.settings-assignment-aspect-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  background-color: #EEEBFB;
+  border-radius: 999px;
+  padding: 0.1rem 0.3rem 0.1rem 0.6rem;
+}
+.settings-assignment-aspect-chip .settings-inline-editable-label__display {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+.settings-assignment-aspect-chip__remove {
+  background: none;
+  border: none;
+  color: var(--color-muted);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0.2rem 0.4rem;
+  cursor: pointer;
+  border-radius: 50%;
+}
+.settings-assignment-aspect-chip__remove:hover {
+  background-color: rgba(0, 0, 0, 0.08);
+  color: var(--color-danger);
+}
+
 .settings-add-row {
   display: flex;
   gap: 0.6rem;
@@ -16626,6 +16988,7 @@ button.recognition-bento__hero-winner-name {
   font-weight: 700;
   flex-shrink: 0;
 }
+
 /* Assignment Tracker redesign (2026-10) — the Overall Rating compact
    action (ui/views/AssignmentDetailView.js's own buildOverallRatingPill()),
    a small pill under the student's name, deliberately smaller/quieter
@@ -16663,6 +17026,7 @@ button.recognition-bento__hero-winner-name {
   font-size: 0.85rem;
   color: var(--color-muted);
 }
+
 /* NOTE: this used to force `display: flex` on the <td> itself to line
    up the avatar+name pair. That's redundant — .notebook-checkpoints__
    student above is already `display: flex; align-items: center;` and
@@ -17309,6 +17673,73 @@ button.recognition-bento__hero-winner-name {
   }
 }
 
+/* Parts grid (History/Geography/Civics/Economics, etc.) — the same
+   icon-badge + arrow + label composition as .existing-subjects__grid
+   just above, one step down the Subject -> Part hierarchy, so a Part
+   choice visually reads as "the same kind of decision" as the Subject
+   choice above it, not a step down to plain text rows. Kept as its own
+   rule set (not a shared class) for the same "scoped to the one screen
+   it appears on" reasoning as ui/components/ExistingSubjectsList.js's
+   own header comment. auto-fill, not auto-fit, per
+   docs/classmate_ui_consistency_guidelines.md Section 25 — a Subject
+   with only 2-3 Parts should never stretch into oversized cards. */
+.learning-management__parts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1.25rem;
+}
+.learning-management__part-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  width: 100%;
+  background-color: var(--color-surface);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  border-radius: 18px;
+  padding: 1.1rem 1.1rem;
+  cursor: pointer;
+  text-align: left;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+  transition: transform var(--duration-fast, 150ms) var(--ease-standard, ease), box-shadow var(--duration-fast, 150ms) var(--ease-standard, ease), border-color var(--duration-fast, 150ms) var(--ease-standard, ease);
+}
+.learning-management__part-card:hover,
+.learning-management__part-card:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.1);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+.learning-management__part-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.learning-management__part-card-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background-color: var(--color-bg);
+  color: var(--color-muted);
+}
+.learning-management__part-card-label {
+  font-weight: var(--font-weight-bold);
+  font-size: 1rem;
+  color: var(--color-ink);
+  line-height: 1.3;
+}
+
+@media (max-width: 640px) {
+  .learning-management__parts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* "+ Add Subject" is a secondary action, not the subject grid — this
    overrides .learning-management__section's own flex
    `align-items: stretch` (which the subject grid above deliberately
@@ -17515,12 +17946,20 @@ button.recognition-bento__hero-winner-name {
   color: var(--color-muted);
 }
 
-/* Learning Hub plugin trigger + drawer panel — see ui/components/LearningHubPanel.js. Dormant until opened: this trigger is the entire Learning Hub footprint on the Unit page when the panel is closed. */
+/* Learning Hub plugin trigger + drawer panel — see ui/components/LearningHubPanel.js. Dormant until opened: this trigger is the entire Learning Hub footprint on the Unit page when the panel is closed.
+   Docks right via its own margin-left:auto, not align-self — this
+   button's real parent (ui/views/LearningManagementView.js's own
+   renderUnitsOrParts()) is a plain, unclassed div, never a flex
+   container, so align-self:flex-end was a silent no-op (the button
+   rendered flush-left instead of right-docked — caught during the
+   2026-10-01 UI consistency audit). display:flex (block-outside, not
+   inline-outside) is what lets a block-level auto margin actually
+   resolve; inline-flex never would. */
 .learning-management__learning-hub-trigger {
-  align-self: flex-end;
+  display: flex;
   width: fit-content;
+  margin-left: auto;
   flex-shrink: 0;
-  display: inline-flex;
   align-items: center;
   gap: 0.4rem;
   background: var(--color-surface, #fff);
@@ -17826,6 +18265,7 @@ button.recognition-bento__hero-winner-name {
   background-color: #e8f3ee; /* a distinct, muted tint from the Type pill's own purple, so the two metadata pills read as separate categories at a glance */
   color: #2f7a5c;
 }
+
 .notebook-tracker__configure-panel {
   display: flex;
   flex-direction: column;
@@ -18009,6 +18449,23 @@ button.recognition-bento__hero-winner-name {
   justify-content: space-between;
   gap: 0.75rem;
   margin-top: 0.2rem;
+}
+/* Same discoverability fix as .settings-notebook-subject__header's own
+   identical rule above — the Notebook Type level's own ⋮ (renames
+   "Homework"/"Classwork"/etc., one level below the Subject) had the
+   identical bare-glyph problem. */
+.settings-notebook-type-card__actions .overflow-menu__trigger {
+  background-color: var(--color-hover, #F2F5F7);
+  border-radius: 50%;
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.settings-notebook-type-card__actions .overflow-menu__trigger:hover {
+  background-color: var(--color-border, #e2e8ed);
 }
 .settings-notebook-type-card__editor {
   border-top: 1px solid var(--color-border);
@@ -19560,6 +20017,45 @@ button.recognition-bento__hero-winner-name {
   padding: var(--space-3);
 }
 
+/* Day view's own holiday/non-working-day empty state (2026-10-03 fix —
+   see ui/views/TimetableView.js's own renderDayHolidayEmptyState()) —
+   a compact, bounded card using the same plain card surface/border/
+   radius every other card in this app already uses (never a new
+   visual language, never a CSS min-height trick to fill space). Center-
+   aligned, generously padded (var(--space-5)) since it's the ONLY
+   content on the page in this state, but still naturally compact —
+   its height is purely content-driven, not stretched to fill the
+   viewport. */
+.timetable-view__day-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  text-align: center;
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  color: var(--color-muted);
+}
+
+.timetable-view__day-empty-state-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+}
+
+.timetable-view__day-empty-state-reason {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+.timetable-view__day-empty-state .btn {
+  margin-top: var(--space-2);
+}
+
 /* The period card itself — subject strip, then topic (dominant), then
    quiet metadata/status. Never equal visual weight between these. */
 .timetable-period-card {
@@ -20183,35 +20679,39 @@ button.recognition-bento__hero-winner-name {
   flex: 1;
 }
 
-/* Concepts tab cards (2026-10-02 redesign, simplified 2026-10-03) —
-   the card itself is always visually NEUTRAL (the normal card/surface
-   background, same --color-border as every other plain card in this
-   app) — never a yellow/green teaching-status background. Explicit
-   product direction: yellow is already a potential subject-code color
-   elsewhere in this product, so using it for "planned" created real
-   semantic ambiguity, and a concept itself should read as visually
-   neutral. The only color accent is the left border strip, set
-   per-card via inline style to the period's own SUBJECT color (see
+/* Concepts tab cards (2026-10-02 redesign, simplified 2026-10-03,
+   density pass 2026-10-03b) — a very faint neutral fill
+   (var(--color-bg), the exact same token this app already uses for
+   subtle off-white surfaces elsewhere, e.g. icon-button hover states —
+   never a new token) keeps the card perceptible against the white
+   panel without reading as visually heavy — never a yellow/green
+   teaching-status background. Explicit product direction: yellow is
+   already a potential subject-code color elsewhere in this product, so
+   using it for "planned" created real semantic ambiguity, and a
+   concept itself should read as visually neutral/structural only. The
+   only color ACCENT is the left border strip, set per-card via inline
+   style to the period's own SUBJECT color (see
    ui/views/TimetableView.js's own renderConceptCard(), using the exact
    same getTimetableSubjectColor() token already used for this period's
    subject badge/lesson-header wash) — never teaching status, and never
    a new color system. Teaching status is communicated by WORDS alone
    (.period-detail-panel__concept-card-status below, shown only when it
    carries real information) plus the presence/absence of the quick-
-   action icons — never by background color. Column layout (title+⋮
-   row, then an optional status line, then an optional quick-action
-   row) — not a single flex-wrap row — is what gives the concept name
-   real visual dominance over everything else on the card, per explicit
-   product direction: a concept should read as the main object, with
-   status/actions clearly secondary. */
+   action icons — never by background color.
+   Title + the action cluster share ONE row (not stacked) — a short
+   concept name's card is therefore a single compact line; only a
+   status line (when present) adds a second row below it. Reduced
+   vertical padding (var(--space-2), not var(--space-3)) tightens this
+   further — both 2026-10-03b density fixes, replacing the earlier
+   column-stacked layout that left too much empty vertical space. */
 .period-detail-panel__concept-card {
   display: flex;
   flex-direction: column;
-  background-color: var(--color-surface);
+  background-color: var(--color-bg);
   border: 1px solid var(--color-border);
   border-left: 4px solid var(--color-border);
   border-radius: var(--radius-control);
-  padding: var(--space-3);
+  padding: var(--space-2) var(--space-3);
   margin-bottom: var(--space-3);
 }
 
@@ -20222,20 +20722,16 @@ button.recognition-bento__hero-winner-name {
   gap: var(--space-2);
 }
 
-/* The ⋮ overflow trigger must never shrink/wrap away even when the
-   title next to it wraps to two lines (see
-   .period-detail-panel__concept-card-title below) — it stays pinned
-   top-right, unobtrusive but always reachable. */
-.period-detail-panel__concept-card-header .overflow-menu {
-  flex-shrink: 0;
-}
-
 /* Visually dominant — the concept IS the main object on this card, per
-   explicit product direction; status/⋮/the usage-action row below are
-   all deliberately smaller and quieter than this. `min-width: 0` is
-   what actually lets a flex child wrap a long name onto a second line
-   instead of overflowing its row or forcing the card wider than the
-   narrow side panel. */
+   explicit product direction; status/the action cluster are all
+   deliberately smaller and quieter than this. `min-width: 0` is what
+   actually lets a flex child wrap a long name onto a second (or
+   third) line — robustly, via normal flexbox/text wrapping, never a
+   hard-coded line break — instead of overflowing its row or forcing
+   the card wider than the narrow side panel; combined with the action
+   cluster's own `flex-shrink: 0` (below), a long name wraps entirely
+   within its own left-side space and never runs underneath the
+   actions. */
 .period-detail-panel__concept-card-title {
   font-size: 1rem;
   font-weight: var(--font-weight-bold);
@@ -20244,32 +20740,32 @@ button.recognition-bento__hero-winner-name {
   word-break: break-word;
 }
 
+/* The fixed-order action cluster (Mark Covered -> Carry Forward -> ⋮) —
+   never shrinks/wraps away even when the title next to it wraps to
+   multiple lines (see .period-detail-panel__concept-card-title above);
+   stays pinned top-right, vertically aligned with the title's own
+   first line via the header's own `align-items: flex-start`. This
+   reserves a natural, content-sized (not hard-coded-width) action zone
+   on the right — robust to however many of the three actions are
+   actually present for a given concept's status. */
+.period-detail-panel__concept-card-actions-cluster {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex-shrink: 0;
+}
+
 /* Secondary status line — plain text, never color/icon alone (matches
    this app's own established "never color alone" accessibility
    convention) — reads "Covered · …" / "Carried forward to a later
-   period." Only rendered when it carries real information (2026-10-03
-   fix — a plain pending concept gets no status line at all; its
-   presence on this tab already implies "planned for this lesson,"
-   making that phrase redundant noise). */
+   period." Only rendered when it carries real information (a plain
+   pending concept gets no status line at all; its presence on this tab
+   already implies "planned for this lesson," making that phrase
+   redundant noise). */
 .period-detail-panel__concept-card-status {
   font-size: 0.8rem;
   color: var(--color-muted);
   margin-top: 0.25rem;
-}
-
-/* Quick teaching/usage actions (Mark Covered / Carry Forward) —
-   compact circular icon buttons (2026-10-03 fix, replacing the
-   original large filled pills, which read as too visually dominant for
-   actions this small/frequent), right-aligned below the status line.
-   Still visually distinct from the ⋮ menu's planning actions by
-   position/spacing alone — no border divider needed once these are
-   small icon buttons rather than full-width pills. */
-.period-detail-panel__concept-quick-actions {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
 }
 
 /* `.btn--icon-only` already supplies the shared circular shape/hover/
@@ -20284,6 +20780,23 @@ button.recognition-bento__hero-winner-name {
 }
 .period-detail-panel__concept-quick-action--carry .icon {
   color: var(--color-muted);
+}
+
+/* Hover-contrast fix (2026-10-03c) — `.btn--icon-only:hover`'s own
+   shared background (var(--color-bg)) is exactly the concept card's
+   own fill (see .period-detail-panel__concept-card above), so on this
+   one surface the hover fill visually disappeared into the card
+   instead of signaling "interactive." Scoped to just these two
+   buttons — never touching the shared `.btn--icon-only:hover` rule
+   itself, which stays correct everywhere else it's used (e.g. against
+   a plain white card). var(--color-border) is reused as-is (already
+   this app's own token for a step darker than var(--color-bg), used
+   everywhere for exactly that kind of subtle structural contrast) —
+   no new color, no change to the border/icon treatment, and the
+   shared rule's own border-color: var(--color-muted) on hover still
+   applies untouched (only background-color is overridden here). */
+.period-detail-panel__concept-quick-action:hover:not(:disabled) {
+  background-color: var(--color-border);
 }
 
 .period-detail-panel__concepts-footer-actions {
@@ -20403,35 +20916,56 @@ button.recognition-bento__hero-winner-name {
 }
 
 /* ---------------------------------------------------------------------
-   Period Detail — tab navigation (Phase P). Concepts (n) / Plan /
-   Student Resources / Teacher Resources / Reflection — Concepts is now
-   first/default (the separate Overview tab was removed 2026-10-02).
-   --------------------------------------------------------------------- */
+   Period Detail — tab navigation (Phase P; rail redesign 2026-10-03b).
+   Concepts (n) / Plan / Student Resources / Teacher Resources /
+   Reflection — Concepts is first/default (the separate Overview tab
+   was removed 2026-10-02).
 
+   Previously an underline-tab strip (floating text + a colored bottom
+   border on the active one), which read as weak/ungrouped navigation
+   per explicit product direction. Now a lightweight RAIL: the whole
+   tab set sits on one recessed surface (var(--color-bg), the same
+   subtle neutral token this app already uses for off-white surfaces
+   elsewhere — never a new token), with the active tab sitting on its
+   own raised var(--color-surface) chip inside that rail and inactive
+   tabs receding into the rail's own background — not literal browser-
+   chrome tabs, and not large pills (existing --radius-control, not
+   --radius-pill). Deliberately no new overflow-x/scroll behavior here —
+   this tab bar's pre-existing horizontal-space risk at 420px is a
+   separate, out-of-scope concern (flagged elsewhere), so
+   white-space: nowrap is kept exactly as before rather than papering
+   over it with a narrower fix scoped to this rail alone. */
 .period-detail-panel__tabs {
   display: flex;
-  gap: var(--space-4);
-  border-bottom: 1px solid var(--color-border);
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: 0.25rem;
   margin: var(--space-4) 0 0;
 }
 
 .period-detail-panel__tab {
   border: none;
   background: none;
-  padding: var(--space-2) 0 var(--space-3);
-  font-size: 0.85rem;
+  padding: 0.4rem 0.65rem;
+  border-radius: calc(var(--radius-control) - 3px);
+  font-size: 0.82rem;
   font-weight: var(--font-weight-medium);
   color: var(--color-muted);
   cursor: pointer;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
   white-space: nowrap;
 }
 
+.period-detail-panel__tab:hover:not(.period-detail-panel__tab--active) {
+  color: var(--color-ink);
+}
+
 .period-detail-panel__tab--active {
+  background-color: var(--color-surface);
   color: var(--color-primary-strong);
   font-weight: var(--font-weight-bold);
-  border-bottom-color: var(--color-primary-deep);
 }
 
 .period-detail-panel__tab-content {
@@ -22728,6 +23262,106 @@ button.knowledge-authoring__row:hover {
   font-size: 0.82rem;
 }
 
+/* Hierarchy (ui/views/KnowledgeHierarchyView.js) — 2026-10-01 UX
+   simplification: fast "sub-concept of" Concept entry, with a
+   collapsed-by-default tree below for context/navigation, never the
+   primary focus (see that file's own header comment). */
+.knowledge-hierarchy__add-form {
+  padding-bottom: 1.25rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.knowledge-hierarchy__duplicate-note-slot:empty {
+  display: none;
+}
+.knowledge-hierarchy__parent-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+}
+.knowledge-hierarchy__radio-option {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.9rem;
+  color: var(--color-ink);
+  cursor: pointer;
+}
+.knowledge-hierarchy__radio-option:has(input:disabled) {
+  color: var(--color-muted);
+  cursor: default;
+}
+.knowledge-hierarchy__parent-choice .searchable-select {
+  width: 100%;
+  max-width: 320px;
+}
+.knowledge-hierarchy__add-button {
+  margin-top: 1rem;
+}
+.knowledge-hierarchy__tree-section {
+  margin-top: 0.5rem;
+}
+.knowledge-hierarchy__tree,
+.knowledge-hierarchy__tree .knowledge-hierarchy__tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.knowledge-hierarchy__tree .knowledge-hierarchy__tree {
+  padding-left: 1.4rem;
+  margin-top: 0.3rem;
+}
+.knowledge-hierarchy__tree-node {
+  margin-top: 0.3rem;
+}
+.knowledge-hierarchy__tree-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-control);
+}
+.knowledge-hierarchy__tree-row:hover {
+  background-color: var(--color-bg);
+}
+.knowledge-hierarchy__tree-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: none;
+  color: var(--color-muted);
+  cursor: pointer;
+  padding: 0;
+}
+.knowledge-hierarchy__tree-toggle-icon {
+  transition: transform var(--duration-fast, 150ms) var(--ease-standard, ease);
+}
+.knowledge-hierarchy__tree-toggle-icon--expanded {
+  transform: rotate(90deg);
+}
+.knowledge-hierarchy__tree-toggle-spacer {
+  display: inline-block;
+  width: 20px;
+  flex-shrink: 0;
+}
+.knowledge-hierarchy__tree-title {
+  font-size: 0.92rem;
+  color: var(--color-ink);
+}
+.knowledge-hierarchy__tree-count {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  background-color: var(--color-bg);
+  border-radius: var(--radius-pill);
+  padding: 0.1rem 0.5rem;
+}
+
 /* K2.3 — Classifications/Categories/Membership. Category nesting under
    a Classification card is presentation-only (see
    ui/views/KnowledgeClassificationsView.js's own header comment) — kept
@@ -23136,46 +23770,4 @@ button.knowledge-authoring__row:hover {
   font-size: 0.8rem;
   color: var(--color-primary-strong);
   margin: 0.2rem 0;
-}
-/* Discoverability fix (2026-10-10 bug report): ".overflow-menu__trigger"
-   itself (ui/components/OverflowMenu.js) is a deliberately plain "⋮"
-   platform-wide — Curriculum/Assessment/Recognition cards all share
-   that exact minimal look, and this rule does NOT change that shared
-   default. Scoped to ONLY this row (Notebook Subject rows AND
-   Assignment Category rows, which reuse this same class — see
-   SettingsView.js's createAssignmentCategoryRow()) because real-browser
-   verification showed the bare glyph, with no persistent background,
-   was too easy to miss as "the rename control" against a plain white
-   row — not a broken control, an undiscoverable one. A permanent
-   (not hover-only) tinted circular background makes it read as a real
-   button at rest, without adding a second, competing affordance. */
-.settings-notebook-subject__header .overflow-menu__trigger {
-  background-color: var(--color-hover, #F2F5F7);
-  border-radius: 50%;
-  width: 2rem;
-  height: 2rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-}
-.settings-notebook-subject__header .overflow-menu__trigger:hover {
-  background-color: var(--color-border, #e2e8ed);
-}
-/* Same discoverability fix as .settings-notebook-subject__header's own
-   identical rule above — the Notebook Type level's own ⋮ (renames
-   "Homework"/"Classwork"/etc., one level below the Subject) had the
-   identical bare-glyph problem. */
-.settings-notebook-type-card__actions .overflow-menu__trigger {
-  background-color: var(--color-hover, #F2F5F7);
-  border-radius: 50%;
-  width: 2rem;
-  height: 2rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-}
-.settings-notebook-type-card__actions .overflow-menu__trigger:hover {
-  background-color: var(--color-border, #e2e8ed);
 }

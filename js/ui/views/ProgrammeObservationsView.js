@@ -34,7 +34,7 @@ function formatDateTime(isoString) {
   return `${formatDate(isoString)} \u00b7 ${time}`;
 }
 
-export async function renderProgrammeObservationsView(container, { classroom, programmeId, sessionId, onBack }) {
+export async function renderProgrammeObservationsView(container, { classroom, programmeId, sessionId, onBack, onSelectStudent }) {
   container.innerHTML = '';
 
   const programme = learningProgrammeService.getLearningProgrammeById(classroom, programmeId);
@@ -104,9 +104,17 @@ export async function renderProgrammeObservationsView(container, { classroom, pr
 
         const metaRow = document.createElement('div');
         metaRow.className = 'note-card__meta';
-        const studentNameEl = document.createElement('span');
-        studentNameEl.className = 'note-card__teacher';
-        studentNameEl.textContent = allStudentsById.get(observation.studentId)?.name || 'Unknown student';
+        const observationStudent = allStudentsById.get(observation.studentId);
+        // A profile link when the student can actually be resolved and
+        // a navigation callback exists; otherwise plain text — never a
+        // link to nowhere for a student who's since left the roster.
+        const studentNameEl = document.createElement(observationStudent && onSelectStudent ? 'button' : 'span');
+        studentNameEl.className = observationStudent && onSelectStudent ? 'note-card__teacher student-name-link' : 'note-card__teacher';
+        if (observationStudent && onSelectStudent) {
+          studentNameEl.type = 'button';
+          studentNameEl.addEventListener('click', () => onSelectStudent(observationStudent.id));
+        }
+        studentNameEl.textContent = observationStudent?.name || 'Unknown student';
         const dateEl = document.createElement('span');
         dateEl.className = 'note-card__date';
         dateEl.textContent = formatDateTime(observation.recordedAt);

@@ -82,12 +82,14 @@
  */
 
 import { createBackButton } from '../components/BackButton.js';
-import { createIcon } from '../components/Icon.js';
+import { createIcon, createIconBadge } from '../components/Icon.js';
 import { openAddSubjectModal } from '../components/AddSubjectModal.js';
 import { openAssignCurriculumModal } from '../components/AssignCurriculumModal.js';
 import { renderExistingSubjectsList } from '../components/ExistingSubjectsList.js';
 import { createNavigationRow } from '../components/NavigationRow.js';
+import { createOverflowMenu, createCardRowWithOverflowMenu } from '../components/OverflowMenu.js';
 import { renderCurriculumMetadataLine } from '../components/CurriculumMetadataLine.js';
+import { getPartIconName } from '../../config/partIconConfig.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { getDisplayName, getGradeLabelForClassroom } from '../../services/classroomService.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
@@ -205,6 +207,28 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
   // once, guarded by this state being null).
   let unitCreateState = null;
   let conceptCreateState = null;
+  // Inline rename state for the Subject's own heading (renderSubjectStep())
+  // and, separately, for whichever single Unit row in the Units list
+  // (renderUnitsOrParts()) currently has its own inline rename control
+  // open — same "toggle swaps a heading/row for an editable input,
+  // separate {status:'saving'|'failed', title} slot tracks the in-
+  // flight save" shape as addingUnit/unitCreateState above, just for
+  // a single-string edit rather than a create. editingUnitId (an id,
+  // not a boolean) is deliberately distinct from selectedUnitId below:
+  // selectedUnitId tracks navigation/drill-down into a Unit's own
+  // Concepts, while editingUnitId tracks which row in the LIST is
+  // showing its inline rename control — a Unit's rename now happens
+  // entirely in place in the list, never by navigating into that
+  // Unit's own page (see onStartRenameUnit/onRenameUnit below and
+  // renderUnitsOrParts()'s own Units-list branch). Only one rename can
+  // be in progress at a time on this page (a Subject rename and a Unit
+  // rename are never shown together, and choosing/leaving a Subject or
+  // Unit always resets these below), so two separate slots (rather
+  // than one shared "what am I renaming" slot) stay simplest.
+  let editingSubjectTitle = false;
+  let subjectRenameState = null;
+  let editingUnitId = null;
+  let unitRenameState = null;
   // Set only while a teacher has picked a Learning Hub result but the
   // Unit has more than one Concept, so a small "which concept?" step
   // is needed before the real Resource+link is created — see
@@ -298,6 +322,10 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
         unitCreateState,
         conceptCreateState,
         pendingLearningHubExperience,
+        editingSubjectTitle,
+        subjectRenameState,
+        editingUnitId,
+        unitRenameState,
         singleClassroomMode,
         saveState: selectedClassroom ? workspaceService.getSaveState(selectedClassroom.id) : null,
       },
@@ -399,6 +427,10 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
       unitCreateState = null;
       conceptCreateState = null;
       pendingLearningHubExperience = null;
+      editingSubjectTitle = false;
+      subjectRenameState = null;
+      editingUnitId = null;
+      unitRenameState = null;
       mode = 'subject';
       loadCurriculumStateFor(subject);
     },
@@ -437,6 +469,8 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
       addingUnit = false;
       unitCreateState = null;
       pendingLearningHubExperience = null;
+      editingUnitId = null;
+      unitRenameState = null;
       rerender();
     },
     onSelectUnit: (unitId) => {
@@ -444,6 +478,8 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
       addingConcept = false;
       conceptCreateState = null;
       pendingLearningHubExperience = null;
+      editingUnitId = null;
+      unitRenameState = null;
       rerender();
     },
     onSetUnitLearningHubPack: (unit, pack) => {
@@ -525,6 +561,73 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
         // shows Retry — clicking it re-enters this same handler with
         // unitCreateState already set, so it only retries the save.
         unitCreateState = { ...unitCreateState, status: 'failed' };
+      }
+      rerender();
+    },
+    /**
+     * Renaming the Subject/Unit heading — see renderSubjectStep()/
+     * renderUnitsOrParts()'s own renderInlineRenameControl() calls.
+     * Unlike onCreateUnit/onCreateConcept above, renameSubject()/
+     * renameUnit() (services/learningRecordTeacherService.js) simply
+     * overwrite `title` in place — calling them again with the same
+     * value on a Retry is harmless, so there's no "only mutate once"
+     * guard to mirror here; a Retry click just re-runs this same
+     * handler with whatever title the input currently shows.
+     */
+    onStartRenameSubject: () => {
+      editingSubjectTitle = true;
+      subjectRenameState = null;
+      rerender();
+    },
+    onCancelRenameSubject: () => {
+      editingSubjectTitle = false;
+      subjectRenameState = null;
+      rerender();
+    },
+    onRenameSubject: async (newTitle) => {
+      const title = newTitle.trim();
+      if (!title) return;
+      learningRecordTeacherService.renameSubject(selectedClassroom, selectedSubject.id, title);
+      workspaceService.markDirty(selectedClassroom.id);
+      subjectRenameState = { status: 'saving', title };
+      rerender();
+      try {
+        await workspaceService.saveExplicitly(selectedClassroom);
+        editingSubjectTitle = false;
+        subjectRenameState = null;
+      } catch (error) {
+        // Already logged by saveExplicitly() itself. The title stays
+        // changed in memory (nothing here reverts it) and the control
+        // shows Retry — clicking Save again re-enters this same
+        // handler, harmlessly re-applying the same title and retrying
+        // the save.
+        subjectRenameState = { status: 'failed', title };
+      }
+      rerender();
+    },
+    onStartRenameUnit: (unitId) => {
+      editingUnitId = unitId;
+      unitRenameState = null;
+      rerender();
+    },
+    onCancelRenameUnit: () => {
+      editingUnitId = null;
+      unitRenameState = null;
+      rerender();
+    },
+    onRenameUnit: async (unitId, newTitle) => {
+      const title = newTitle.trim();
+      if (!title) return;
+      learningRecordTeacherService.renameUnit(selectedClassroom, unitId, title);
+      workspaceService.markDirty(selectedClassroom.id);
+      unitRenameState = { status: 'saving', title };
+      rerender();
+      try {
+        await workspaceService.saveExplicitly(selectedClassroom);
+        editingUnitId = null;
+        unitRenameState = null;
+      } catch (error) {
+        unitRenameState = { status: 'failed', title };
       }
       rerender();
     },
@@ -672,6 +775,24 @@ export function renderLearningManagementView(container, { classrooms, onBack, on
       // always land back on the home screen, not wherever we
       // happened to be.
       mode = 'home';
+      rerender();
+    },
+    onRemoveUnit: (subjectId, unitId) => {
+      // subjectId is always selectedSubject.id in practice (this
+      // handler is only ever reached from that Subject's own Units
+      // list) — accepted explicitly anyway to mirror
+      // deleteUnit(classroom, subjectId, unitId)'s own signature
+      // rather than relying on the outer closure alone.
+      const unit = selectedSubject?.units.find((candidate) => candidate.id === unitId);
+      const unitLabel = unit ? (unit.number != null ? `Unit ${unit.number} – ${unit.title}` : unit.title) : 'this Unit';
+      const confirmed = window.confirm(`Remove "${unitLabel}" from this Subject?\n\nThis removes its Concepts. This cannot be undone.`);
+      if (!confirmed) return;
+      learningRecordTeacherService.deleteUnit(selectedClassroom, subjectId, unitId);
+      logPersistenceEvent('Unit removed', { classroomId: selectedClassroom.id, unitTitle: unit ? unit.title : unitLabel });
+      workspaceService.markDirty(selectedClassroom.id);
+      // Unlike onRemoveSubject above, stay right here — the Unit
+      // disappears from its Subject's own list while that Subject
+      // itself stays open, rather than navigating away to 'home'.
       rerender();
     },
     onResetLearningManagement: () => {
@@ -897,6 +1018,10 @@ function renderView(container, mode, state, handlers) {
         state.unitCreateState,
         state.conceptCreateState,
         state.pendingLearningHubExperience,
+        state.editingSubjectTitle,
+        state.subjectRenameState,
+        state.editingUnitId,
+        state.unitRenameState,
         handlers
       )
     );
@@ -1033,34 +1158,66 @@ function renderDeveloperUtilities(handlers) {
  * 'none', 'error') this section is simply absent, per the frozen
  * design's "Units remain unavailable until [a curriculum is chosen]."
  *
- * Subject actions ("Change Curriculum", "Remove Subject") live in a
- * Settings "⋮" here, beside the title — not on the home screen's own
- * list (ui/components/ExistingSubjectsList.js), which is a plain
+ * Subject actions ("Edit Subject", "Delete Subject") live in a "⋮"
+ * overflow menu beside the title (ui/components/OverflowMenu.js's
+ * createOverflowMenu()) — not on the home screen's own list
+ * (ui/components/ExistingSubjectsList.js), which is a plain
  * navigation list per the platform design rules and carries no
- * management actions of its own.
+ * management actions of its own. "Change Curriculum" is a separate,
+ * always-visible button in the Curriculum tile below (see
+ * curriculumActionButton below) — it isn't a Subject-identity action
+ * the way rename/delete are, so it stays out of this menu.
  */
 /**
- * Simplified per explicit product decision: the overflow menu here
- * was causing recurring positioning bugs, and with only two actions
- * (Change/Assign Curriculum, Remove Subject) it never genuinely
- * needed a menu in the first place — "prefer visible primary actions
- * over hidden menus whenever there are fewer than three actions."
- * "Change Curriculum" is a real, visible button now, directly beneath
- * the curriculum metadata it acts on (still deliberately does nothing
- * on click while a curriculum is already assigned — see this
- * function's own comment below for why); "Remove Subject" lives in a
- * Danger Zone at the bottom of the page, visually set apart from
- * everything else here, not hidden behind "⋮". No floating menu
- * anywhere on this screen.
+ * A previous round removed an overflow menu from this exact spot,
+ * citing recurring positioning bugs, and moved "Remove Subject" to an
+ * always-visible Danger Zone at the page bottom instead. Per explicit,
+ * current product direction this is reversed: Edit/Delete Subject now
+ * live in a "⋮" menu here, and the bottom Danger Zone is gone
+ * entirely (see the removed renderDangerZone() this file used to
+ * have). This isn't repeating the earlier mistake — the earlier menu
+ * was a bespoke, ad-hoc dropdown local to this screen; this one reuses
+ * ui/components/OverflowMenu.js's createOverflowMenu(), a newer,
+ * centrally-coordinated component (see utils/popupCoordinator.js's
+ * shared one-popup-at-a-time registry, built specifically to fix this
+ * class of positioning/stacking bug) already used successfully by
+ * Curriculum/Assessment/Resource/Recognition cards elsewhere in this
+ * app.
  */
-function renderSubjectStep(subject, classroom, curriculumState, selectedPartName, selectedUnitId, addingUnit, addingConcept, unitCreateState, conceptCreateState, pendingLearningHubExperience, handlers) {
+function renderSubjectStep(subject, classroom, curriculumState, selectedPartName, selectedUnitId, addingUnit, addingConcept, unitCreateState, conceptCreateState, pendingLearningHubExperience, editingSubjectTitle, subjectRenameState, editingUnitId, unitRenameState, handlers) {
   const section = document.createElement('div');
   section.className = 'learning-management__section';
 
-  const heading = document.createElement('p');
-  heading.className = 'learning-management__step-heading';
-  heading.textContent = subject.title;
-  section.appendChild(heading);
+  const headingRow = document.createElement('div');
+  headingRow.className = 'learning-management__heading-row';
+
+  if (editingSubjectTitle) {
+    headingRow.appendChild(
+      renderInlineRenameControl({
+        currentValue: subject.title,
+        state: subjectRenameState,
+        inputClassName: 'learning-management__rename-input learning-management__step-heading-input',
+        onSave: (newTitle) => handlers.onRenameSubject(newTitle),
+        onCancel: handlers.onCancelRenameSubject,
+      })
+    );
+  } else {
+    const heading = document.createElement('p');
+    heading.className = 'learning-management__step-heading';
+    heading.textContent = subject.title;
+    headingRow.appendChild(heading);
+
+    headingRow.appendChild(
+      createOverflowMenu({
+        actions: [
+          { label: 'Edit Subject', onClick: handlers.onStartRenameSubject },
+          { label: 'Delete Subject', onClick: () => handlers.onRemoveSubject(subject), danger: true },
+        ],
+        ariaLabel: 'Subject options',
+      })
+    );
+  }
+  section.appendChild(headingRow);
 
   // Gateway context — a teacher landing here from Timetable's "Go to
   // {subject} in Learning Management" CTA (see TimetableView.js) should
@@ -1150,7 +1307,7 @@ function renderSubjectStep(subject, classroom, curriculumState, selectedPartName
     // of the Units list (see its own header comment) — that drill-in
     // is exactly the "-> Concepts" half of this tile, reusing the
     // existing Concept workflow verbatim, never a new one.
-    unitsTile.appendChild(renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUnit, addingConcept, unitCreateState, conceptCreateState, pendingLearningHubExperience, handlers));
+    unitsTile.appendChild(renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUnit, addingConcept, unitCreateState, conceptCreateState, pendingLearningHubExperience, editingUnitId, unitRenameState, handlers));
   } else {
     const unitsTileLabel = document.createElement('p');
     unitsTileLabel.className = 'learning-management__bento-tile-label';
@@ -1162,39 +1319,7 @@ function renderSubjectStep(subject, classroom, curriculumState, selectedPartName
 
   bento.appendChild(unitsTile);
 
-  section.appendChild(renderDangerZone(subject, handlers));
-
   return section;
-}
-
-/**
- * A quiet, clearly-set-apart region at the bottom of the page for
- * destructive, rare actions — never hidden behind a menu, but never
- * the visual focus of the page either. A subtle left-border accent
- * and a small warning icon signal "this is destructive" (see
- * docs/classmate_ui_consistency_guidelines.md Section 23); the
- * button's own plain-worded label ("Remove Subject") already says
- * what it does, so no separate shouted heading is needed above it.
- * Only "Remove Subject" lives here today; a future "Remove Curriculum"
- * (mentioned as a later requirement, not built yet) would belong here
- * too.
- */
-function renderDangerZone(subject, handlers) {
-  const zone = document.createElement('div');
-  zone.className = 'subject-danger-zone';
-
-  const icon = createIcon('alert-triangle', { size: 16 });
-  icon.classList.add('subject-danger-zone-icon');
-  zone.appendChild(icon);
-
-  const removeButton = document.createElement('button');
-  removeButton.type = 'button';
-  removeButton.className = 'btn btn--danger';
-  removeButton.textContent = 'Remove Subject';
-  removeButton.addEventListener('click', () => handlers.onRemoveSubject(subject));
-  zone.appendChild(removeButton);
-
-  return zone;
 }
 
 /**
@@ -1225,7 +1350,15 @@ export function renderUnitPackControl(container, unit, handlers) {
 
   const associateButton = document.createElement('button');
   associateButton.type = 'button';
-  associateButton.className = 'btn btn--secondary';
+  // Tonal-neutral, not btn--secondary — this sits right under "+ Add
+  // Concept" (a core action) while being explicitly labelled an
+  // OPTIONAL shortcut; btn--secondary's solid cyan fill read as equally
+  // weighted as Add Concept's own btn--secondary fill, flattening a
+  // hierarchy the heading above already states in words (caught during
+  // the 2026-10-01 UI consistency audit — see docs/
+  // classmate_ui_consistency_guidelines.md Section 9, "do not flatten
+  // this hierarchy by making every button the same weight").
+  associateButton.className = 'btn btn--tonal btn--tonal-neutral';
   associateButton.textContent = '+ Associate Learning Hub Pack';
   associateButton.addEventListener('click', () => {
     const pickerContainer = document.createElement('div');
@@ -1255,6 +1388,90 @@ export function renderUnitPackControl(container, unit, handlers) {
     });
   });
   container.appendChild(associateButton);
+}
+
+/**
+ * Shared inline rename control for the Subject heading
+ * (renderSubjectStep(), triggered from that Subject's own "⋮" ->
+ * "Edit Subject") and, separately, for a single Unit row in the Units
+ * list (renderUnitsOrParts(), triggered from that row's own "⋮" ->
+ * "Edit Unit") — swaps the heading/row for this: a text input
+ * pre-filled with the current title, with Save/Cancel; Enter commits,
+ * Escape cancels. Mirrors ui/views/LearningRecordView.js's own
+ * createRenameInput() interaction *behavior* only (not its markup/CSS
+ * — that's a different screen with its own visual language); no
+ * window.prompt() anywhere — the "⋮" menu only ever chooses which
+ * action to take, never collects the new title itself.
+ *
+ * `state` is this rename's own {status:'saving'|'failed', title} —
+ * see editingSubjectTitle/subjectRenameState and
+ * editingUnitId/unitRenameState in renderLearningManagementView().
+ * A failed save leaves the title already changed in memory (nothing
+ * here reverts it) and simply relabels Save as "Retry" — clicking it
+ * re-invokes onSave with whatever the input currently shows, the same
+ * "harmless to re-run" shape renameSubject()/renameUnit() themselves
+ * already have (they just overwrite `title` in place).
+ */
+function renderInlineRenameControl({ currentValue, state, inputClassName, onSave, onCancel }) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'learning-management__rename-control';
+
+  const isSaving = state?.status === 'saving';
+  const isFailed = state?.status === 'failed';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = inputClassName || 'learning-management__rename-input';
+  // Re-populated from state (not just currentValue) once a save has
+  // been attempted — same "Retry shows exactly what was last
+  // submitted" reasoning as renderAddUnitControl()'s own input above.
+  input.value = state ? state.title : currentValue;
+  input.disabled = isSaving;
+
+  const commit = () => {
+    const title = input.value.trim();
+    if (!title) return;
+    onSave(title);
+  };
+
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      commit();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      onCancel();
+    }
+  });
+  wrapper.appendChild(input);
+  // Focus once mounted, so clicking "Edit" drops the teacher straight
+  // into typing rather than requiring a second click into the input.
+  queueMicrotask(() => input.focus());
+
+  const saveButton = document.createElement('button');
+  saveButton.type = 'button';
+  saveButton.className = 'btn btn--primary learning-management__rename-save';
+  saveButton.disabled = isSaving;
+  saveButton.textContent = isSaving ? 'Saving…' : isFailed ? 'Retry' : 'Save';
+  saveButton.addEventListener('click', commit);
+  wrapper.appendChild(saveButton);
+
+  if (isFailed) {
+    const errorNote = document.createElement('p');
+    errorNote.className = 'learning-management__inline-error';
+    errorNote.textContent = 'Save failed. Check your connection and try again.';
+    wrapper.appendChild(errorNote);
+  } else {
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'btn btn--text learning-management__rename-cancel';
+    cancelButton.disabled = isSaving;
+    cancelButton.textContent = 'Cancel';
+    cancelButton.addEventListener('click', onCancel);
+    wrapper.appendChild(cancelButton);
+  }
+
+  return wrapper;
 }
 
 /**
@@ -1388,7 +1605,55 @@ function renderAddConceptControl(unitId, addingConcept, conceptCreateState, hand
   return wrapper;
 }
 
-function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUnit, addingConcept, unitCreateState, conceptCreateState, pendingLearningHubExperience, handlers) {
+/**
+ * The Parts choice itself (History/Geography/Civics/Economics, or
+ * whatever a Subject's own Units happen to be grouped by) — a small,
+ * icon-based Bento grid, not another `createNavigationRow()` strip.
+ * Mirrors ui/components/ExistingSubjectsList.js's own card composition
+ * (icon badge + arrow + label) deliberately, since the product goal is
+ * for a Parts choice to visually read as "the same kind of decision" as
+ * the Subject choice one level up — but kept as its own local markup,
+ * not a shared component, for the exact reason that file's own header
+ * comment gives for not reusing NavigationRow itself: this is scoped to
+ * one screen, not a platform-wide primitive. Only the glyph varies per
+ * Part (config/partIconConfig.js); colour stays the one restrained
+ * 'teacher' tint every such choice already uses (see
+ * docs/classmate_ui_consistency_guidelines.md Section 11).
+ */
+function renderPartsGrid(distinctPartNames, handlers) {
+  const grid = document.createElement('div');
+  grid.className = 'learning-management__parts-grid';
+
+  distinctPartNames.forEach((partName) => {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'learning-management__part-card';
+    card.setAttribute('aria-label', partName);
+    card.addEventListener('click', () => handlers.onChoosePart(partName));
+
+    const top = document.createElement('div');
+    top.className = 'learning-management__part-card-top';
+    top.appendChild(createIconBadge(getPartIconName(partName), 'teacher', { size: 40 }));
+
+    const arrow = document.createElement('span');
+    arrow.className = 'learning-management__part-card-arrow';
+    arrow.setAttribute('aria-hidden', 'true');
+    arrow.appendChild(createIcon('arrow-right', { size: 14 }));
+    top.appendChild(arrow);
+    card.appendChild(top);
+
+    const label = document.createElement('span');
+    label.className = 'learning-management__part-card-label';
+    label.textContent = partName;
+    card.appendChild(label);
+
+    grid.appendChild(card);
+  });
+
+  return grid;
+}
+
+function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUnit, addingConcept, unitCreateState, conceptCreateState, pendingLearningHubExperience, editingUnitId, unitRenameState, handlers) {
   const wrapper = document.createElement('div');
 
   const distinctPartNames = [...new Set(subject.units.map((unit) => unit.partName).filter(Boolean))];
@@ -1399,12 +1664,7 @@ function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUni
     partHeading.textContent = 'Parts';
     wrapper.appendChild(partHeading);
 
-    const list = document.createElement('div');
-    list.className = 'learning-management__subject-card-list';
-    distinctPartNames.forEach((partName) => {
-      list.appendChild(createNavigationRow({ label: partName, onClick: () => handlers.onChoosePart(partName) }));
-    });
-    wrapper.appendChild(list);
+    wrapper.appendChild(renderPartsGrid(distinctPartNames, handlers));
     return wrapper;
   }
 
@@ -1416,7 +1676,11 @@ function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUni
   // selecting one hands off to the Concept Workspace entirely (see
   // handlers.onSelectConcept in renderLearningManagementView, and
   // renderView's own "mode === 'concept'" branch) rather than
-  // anything being rendered further here.
+  // anything being rendered further here. No repeat of the Unit's own
+  // title/rename affordance lives on this page anymore — per explicit
+  // product decision, a Unit's rename now happens entirely in place on
+  // that Unit's own row in the Units list below (via that row's "⋮" ->
+  // "Edit Unit"), never by navigating in here first.
   if (selectedUnitId) {
     const selectedUnit = unitsToShow.find((unit) => unit.id === selectedUnitId);
     // The unit this drill-down was for no longer exists (deleted from
@@ -1449,11 +1713,16 @@ function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUni
     // ui/components/LearningHubPanel.js), never a permanent page
     // section — per explicit product decision, this trigger is the
     // ENTIRE Learning Hub resource-discovery footprint on the Unit
-    // page when the panel is closed. Docked toward the right edge
-    // (align-self: flex-end on this file's own existing flex column
-    // — see css/styles.css's own .learning-management__section) so
-    // it reads as a plugin launcher, not another stacked ClassMate
-    // action beneath "+ Add Concept".
+    // page when the panel is closed. Docked toward the right edge via
+    // its own `margin-left: auto` (css/styles.css's own
+    // .learning-management__learning-hub-trigger) — NOT `align-self`,
+    // since this button's real parent here is this function's own
+    // plain, unclassed `wrapper` div, never actually a flex container
+    // (a prior version of this comment claimed otherwise and the rule
+    // used align-self:flex-end, which was consequently a silent no-op
+    // — caught during the 2026-10-01 UI consistency audit) — so it
+    // reads as a plugin launcher, not another stacked ClassMate action
+    // beneath "+ Add Concept".
     const learningHubTrigger = document.createElement('button');
     learningHubTrigger.type = 'button';
     learningHubTrigger.className = 'learning-management__learning-hub-trigger';
@@ -1502,7 +1771,34 @@ function renderUnitsOrParts(subject, selectedPartName, selectedUnitId, addingUni
   list.className = 'learning-management__subject-card-list';
   unitsToShow.forEach((unit) => {
     const label = unit.number != null ? `Unit ${unit.number} \u2013 ${unit.title}` : unit.title;
-    list.appendChild(createNavigationRow({ label, onClick: () => handlers.onSelectUnit(unit.id) }));
+    // A Unit currently being renamed (editingUnitId === unit.id, set by
+    // this row's own "\u22ee" -> "Edit Unit") swaps its whole row for the
+    // shared inline rename control in place \u2014 never a navigation into
+    // that Unit's own Concepts page, and never a plain NavigationRow
+    // for that one row while the edit is in progress.
+    if (editingUnitId === unit.id) {
+      list.appendChild(
+        renderInlineRenameControl({
+          currentValue: unit.title,
+          state: unitRenameState,
+          inputClassName: 'learning-management__rename-input',
+          onSave: (newTitle) => handlers.onRenameUnit(unit.id, newTitle),
+          onCancel: handlers.onCancelRenameUnit,
+        })
+      );
+      return;
+    }
+    list.appendChild(
+      createCardRowWithOverflowMenu({
+        label,
+        onClick: () => handlers.onSelectUnit(unit.id),
+        actions: [
+          { label: 'Edit Unit', onClick: () => handlers.onStartRenameUnit(unit.id) },
+          { label: 'Delete Unit', onClick: () => handlers.onRemoveUnit(subject.id, unit.id), danger: true },
+        ],
+        ariaLabel: `${label} options`,
+      })
+    );
   });
   wrapper.appendChild(list);
   wrapper.appendChild(renderAddUnitControl(addingUnit, unitCreateState, handlers));

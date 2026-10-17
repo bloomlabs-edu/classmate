@@ -1507,7 +1507,14 @@ function renderIndexPartSection(index, part, handlers, showHeader) {
 }
 
 function renderAddPartForm(handlers) {
-  return createAddForm('New part name (e.g. History, Geography)', '+ Add Part', (name) => handlers.onAddPart(name));
+  // Placeholder text only — Part itself already accepts any free-text
+  // name with no validation (see services/curriculumIndexSession.js's
+  // addPart()). Mentioning "Term 1" here reflects the locked decision
+  // to reuse Parts for curriculum-specific term/textbook segmentation
+  // (Grade 6/7 Science) without implying that's the only valid use —
+  // subject-area names (History, Geography) remain equally valid, per
+  // that same decision explicitly ruling out a separate Term entity.
+  return createAddForm('New part name (e.g. Term 1, History, Geography)', '+ Add Part', (name) => handlers.onAddPart(name));
 }
 
 /**

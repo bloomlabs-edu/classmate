@@ -152,7 +152,7 @@ const FACILITATOR_HEX = getGroupColorHex('purple');
 
 export function renderPersonalHubView(
   container,
-  { classrooms, currentUser, onSelectClassroom, onNewClassroom, onJoinClassroom, onDeleteClassroom, onOpenCurriculumManagement, onOpenTimetable, onOpenWeeklyPlans, onOpenChapterPlans, onOpenMyWork }
+  { classrooms, currentUser, onSelectClassroom, onNewClassroom, onJoinClassroom, onDeleteClassroom, onOpenCurriculumManagement, onOpenTimetable, onOpenWeeklyPlans, onOpenObservations, onOpenChapterPlans, onOpenMyWork }
 ) {
   container.innerHTML = '';
 
@@ -1192,16 +1192,21 @@ export function renderPersonalHubView(
       })
     );
 
-    // Weekly Plans — Programme Manager Weekly Plan Review. Only ever
-    // shown to someone who is actually a `program_manager` on at least
-    // one of their own classrooms (see config/memberRoles.js's own
+    // Weekly Plans / Observations — Program Manager review, two
+    // SEPARATE entry points for two separate responsibilities (see
+    // docs/CLASSMATE_WEEKLY_PLAN_AND_LESSON_PLAN_ARCHITECTURE.md): Weekly
+    // Plans (ui/views/ProgramManagerWeeklyPlanQueueView.js) is the
+    // weekend, whole-week review; Observations
+    // (ui/views/ProgramManagerObservationsView.js — the renamed former
+    // "Weekly Plans" view, see its own header comment) is the detailed,
+    // per-period review ahead of a school visit. Both shown only to
+    // someone who is actually a `program_manager` on at least one of
+    // their own classrooms (see config/memberRoles.js's own
     // PROGRAM_MANAGER comment for how that membership is established) —
     // never shown to a plain teacher with nothing to review here, per
-    // explicit "do not overuse this everywhere" restraint. This is the
-    // one dashboard entry point Weekly Plan Review adds; the queue
-    // itself (ui/views/ProgramManagerWeeklyPlansView.js) aggregates
-    // across every classroom this check found, so opening it is never
-    // "pick a classroom first."
+    // explicit "do not overuse this everywhere" restraint. Each queue
+    // itself aggregates across every classroom this check found, so
+    // opening either is never "pick a classroom first."
     const isProgramManagerAnywhere = memberService.isProgramManagerAnywhere(classrooms, uid);
     if (isProgramManagerAnywhere && onOpenWeeklyPlans) {
       section.appendChild(
@@ -1209,19 +1214,30 @@ export function renderPersonalHubView(
           icon: 'clipboard-list',
           category: 'progress',
           title: 'Weekly Plans',
-          description: 'Review Weekly Plans submitted for your review, across every classroom.',
+          description: "Review your Fellows' plans for the week ahead, across every classroom.",
           onClick: onOpenWeeklyPlans,
         })
       );
     }
-    // Chapter Plans — Program Manager review. Same
-    // `isProgramManagerAnywhere` gate as Weekly Plans immediately above
-    // — never shown to a plain teacher/co-teacher with nothing to
-    // review here, even though REVIEW_CHAPTER_PLAN/APPROVE_CHAPTER_PLAN
-    // are also granted to OWNER/TEACHER roles (a co-teacher's own
-    // same-classroom Chapter Plan review, if ever built, would be a
-    // separate entry point — this one is specifically the PM's own
-    // cross-classroom queue).
+    if (isProgramManagerAnywhere && onOpenObservations) {
+      section.appendChild(
+        buildManagementRow({
+          icon: 'clipboard-list',
+          category: 'progress',
+          title: 'Observations',
+          description: 'Review detailed lesson plans ahead of your school visits, across every classroom.',
+          onClick: onOpenObservations,
+        })
+      );
+    }
+    // Chapter Plans — Program Manager review (Phase 4). Same
+    // `isProgramManagerAnywhere` gate as Weekly Plans/Observations
+    // immediately above — never shown to a plain teacher/co-teacher with
+    // nothing to review here, even though REVIEW_CHAPTER_PLAN/
+    // APPROVE_CHAPTER_PLAN are also granted to OWNER/TEACHER roles (a
+    // co-teacher's own same-classroom Chapter Plan review, if ever
+    // built, would be a separate entry point — this one is specifically
+    // the PM's own cross-classroom queue).
     if (isProgramManagerAnywhere && onOpenChapterPlans) {
       section.appendChild(
         buildManagementRow({

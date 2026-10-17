@@ -3,14 +3,20 @@
  *
  * The Chapter Plan Editor — preserves the four supplied templates' own
  * information architecture (PURPOSE AND INTEGRATION / MASTERY / METHODS
- * / subject-specific), rendered as clear section cards with large
- * editing areas, per explicit product direction ("do NOT reproduce the
- * spreadsheet/cell experience"). Deliberately simpler than
- * ui/views/LessonPlanBuilderView.js's own guided bento-grid system — a
- * Chapter Plan has four fixed sections, not a multi-question guided
- * flow with per-stage completion tracking, so a plain vertical stack of
- * cards is the right amount of structure here, not an invented
- * imitation of the Lesson Plan Builder's own, more elaborate UI.
+ * / subject-specific) and every one of their fields verbatim, but the
+ * Chapter tab now renders them through a guided, progressive-disclosure
+ * flow (Purpose → Meaning → Concepts → Mastery → Methods →
+ * Subject-Specific) — one stage expanded at a time, everything else
+ * collapsed to a compact "✓ Title: summary" checkpoint — rather than
+ * one long always-visible form. Stage metadata/ordering/fill-detection
+ * lives in the pure ui/views/ChapterPlanGuidedStepsDisplay.js; the
+ * actual stage-by-stage rendering/navigation is the domain-agnostic
+ * ui/components/GuidedStepFlow.js (Back/Next always work, even on an
+ * empty stage — there is no field-completeness gate on navigation at
+ * all, by design — see that file's own header comment). The Weeks and
+ * Lessons tabs are unaffected — they're read-only lenses over existing
+ * Lesson/Weekly Plan data, not fields a teacher fills in here, and stay
+ * exactly as they were.
  *
  * Persistence: every field commits on `change` (blur), not `input` —
  * matches ui/views/LessonPlanBuilderView.js's own convention — via the
@@ -46,6 +52,7 @@ import { openSparkPickerModal } from '../components/SparkPickerModal.js';
 import { openChapterPlanResourcePickerModal } from '../components/ChapterPlanResourcePickerModal.js';
 import { createSaveIndicatorController } from '../components/ProgrammeSessionSaveIndicator.js';
 import { createBackButton } from '../components/BackButton.js';
+import { renderGuidedStepFlow } from '../components/GuidedStepFlow.js';
 import {
   formatRelativeTimestamp,
   getMondayStartOfWeek,
@@ -54,6 +61,12 @@ import {
   formatDateKeyWithWeekday,
 } from '../../utils/dateHelpers.js';
 import { resolveInitialChapterPlanTab, CHAPTER_PLAN_EDITOR_TABS } from './ChapterPlanEditorTabDisplay.js';
+import {
+  getChapterPlanGuidedStages,
+  resolveInitialChapterPlanStageIndex,
+  clampChapterPlanStageIndex,
+  CHAPTER_PLAN_STAGE_KEYS,
+} from './ChapterPlanGuidedStepsDisplay.js';
 
 const STATUS_LABELS = Object.freeze({
   [CHAPTER_PLAN_STATUS.DRAFT]: 'Draft',
@@ -91,6 +104,17 @@ export function renderChapterPlanEditorView(
   // back on that same tab, not silently reset to Chapter.
   let activeTab = resolveInitialChapterPlanTab(initialTab);
 
+  // Chapter tab guided flow — which of the Purpose/Meaning/Concepts/
+  // Mastery/Methods/Subject-Specific stages (see
+  // ui/views/ChapterPlanGuidedStepsDisplay.js) is currently expanded.
+  // `null` until the plan has loaded (resolved then to the first
+  // not-yet-filled stage — see mount() below); purely local UI state,
+  // never persisted, and never read by submission (services/
+  // chapterPlanReviewService.js's own submitChapterPlan() is
+  // status-gated only — see that file's own header comment on why
+  // stage navigation and submission validation stay separate concerns).
+  let activeChapterStageIndex = null;
+
   mount();
 
   async function mount() {
@@ -98,6 +122,9 @@ export function renderChapterPlanEditorView(
       plan = await chapterPlanRepository.getChapterPlanById(classroom.id, chapterPlanId);
       if (!plan) {
         loadError = 'This Chapter Plan could not be found.';
+      } else {
+        const stages = getChapterPlanGuidedStages(plan, getChapterPlanTemplateConfig(plan.subjectId));
+        activeChapterStageIndex = resolveInitialChapterPlanStageIndex(stages, plan);
       }
     } catch (error) {
       console.error('[ChapterPlanEditorView] Failed to load chapter plan:', error);
@@ -190,12 +217,8 @@ export function renderChapterPlanEditorView(
     } else if (activeTab === CHAPTER_PLAN_EDITOR_TABS.LESSONS) {
       wrapper.appendChild(renderLessonsTab(plan));
     } else {
-      wrapper.appendChild(renderPurposeSection(plan, editable));
-      wrapper.appendChild(renderMasterySection(plan, editable));
-      wrapper.appendChild(renderMethodsSection(plan, editable, config));
-      if (config.subjectSpecificFields.length > 0) {
-        wrapper.appendChild(renderSubjectSpecificSection(plan, editable, config));
-      }
+      wrapper.appendChild(renderLessonsProgressReadout(plan));
+      wrapper.appendChild(renderChapterGuidedStepFlow(plan, editable, config));
     }
 
     container.appendChild(wrapper);
@@ -751,110 +774,157 @@ export function renderChapterPlanEditorView(
   }
 
   // ---------------------------------------------------------------------
-  // PURPOSE AND INTEGRATION
+  // Chapter tab — guided, one-stage-at-a-time flow (Purpose → Meaning →
+  // Concepts → Mastery → Methods → Subject-Specific). Stage metadata
+  // (labels/questions/helper copy/isFilled/getSummary) comes from the
+  // pure ui/views/ChapterPlanGuidedStepsDisplay.js; this function only
+  // wires each stage's key to the content-rendering function that
+  // actually knows how to build ITS OWN fields (same field set, same
+  // persist() calls, same editability gate as before this redesign —
+  // only WHICH container each field renders into, and whether it's the
+  // one currently expanded, changed).
   // ---------------------------------------------------------------------
 
-  function renderPurposeSection(currentPlan, editable) {
-    const section = renderSection('Purpose & Integration');
+  function renderChapterGuidedStepFlow(currentPlan, editable, config) {
+    const stageDefinitions = getChapterPlanGuidedStages(currentPlan, config);
+    activeChapterStageIndex = clampChapterPlanStageIndex(activeChapterStageIndex ?? 0, stageDefinitions.length);
 
-    section.appendChild(renderLessonsProgressReadout(currentPlan));
+    const contentRenderers = {
+      [CHAPTER_PLAN_STAGE_KEYS.PURPOSE]: (container) => renderPurposeStepContent(currentPlan, editable, container),
+      [CHAPTER_PLAN_STAGE_KEYS.MEANING]: (container) => renderMeaningStepContent(currentPlan, editable, container),
+      [CHAPTER_PLAN_STAGE_KEYS.CONCEPTS]: (container) => renderConceptsStepContent(currentPlan, editable, container),
+      [CHAPTER_PLAN_STAGE_KEYS.MASTERY]: (container) => renderMasteryStepContent(currentPlan, editable, container),
+      [CHAPTER_PLAN_STAGE_KEYS.METHODS]: (container) => renderMethodsStepContent(currentPlan, editable, config, container),
+      [CHAPTER_PLAN_STAGE_KEYS.SUBJECT_SPECIFIC]: (container) => renderSubjectSpecificStepContent(currentPlan, editable, config, container),
+    };
 
-    renderTextField(section, {
+    const steps = stageDefinitions.map((stage) => ({
+      key: stage.key,
+      label: stage.label,
+      question: stage.question,
+      helper: stage.helper,
+      filled: stage.isFilled(currentPlan),
+      summary: stage.getSummary(currentPlan),
+      renderContent: contentRenderers[stage.key],
+    }));
+
+    return renderGuidedStepFlow({
+      steps,
+      activeIndex: activeChapterStageIndex,
+      onNavigate: (index) => {
+        activeChapterStageIndex = index;
+        rerender();
+      },
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // PURPOSE
+  // ---------------------------------------------------------------------
+
+  function renderPurposeStepContent(currentPlan, editable, container) {
+    renderTextField(container, {
       label: "What's Worth Learning?",
       value: currentPlan.purpose.whatsWorthLearning,
       disabled: !editable,
       onChange: (value) => persist(() => chapterPlanService.updatePurpose(currentPlan, { whatsWorthLearning: value })),
     });
-    renderTextField(section, {
+    renderStringListField(container, {
+      label: 'Objectives',
+      values: currentPlan.purpose.objectives,
+      disabled: !editable,
+      onChange: (next) => persist(() => chapterPlanService.updatePurpose(currentPlan, { objectives: next })),
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // MEANING
+  // ---------------------------------------------------------------------
+
+  function renderMeaningStepContent(currentPlan, editable, container) {
+    renderTextField(container, {
       label: 'Why does learning this matter?',
       value: currentPlan.purpose.whyDoesLearningMatter,
       disabled: !editable,
       onChange: (value) => persist(() => chapterPlanService.updatePurpose(currentPlan, { whyDoesLearningMatter: value })),
     });
-    renderTextField(section, {
-      label: 'Important Concepts',
-      value: currentPlan.purpose.importantConcepts,
-      disabled: !editable,
-      onChange: (value) => persist(() => chapterPlanService.updatePurpose(currentPlan, { importantConcepts: value })),
-    });
-    renderTextField(section, {
+    renderTextField(container, {
       label: 'Supplementary Resources',
       value: currentPlan.purpose.supplementaryResources,
       placeholder: getChapterPlanTemplateConfig(currentPlan.subjectId).placeholderHints.supplementaryResources,
       disabled: !editable,
       onChange: (value) => persist(() => chapterPlanService.updatePurpose(currentPlan, { supplementaryResources: value })),
     });
-    renderStringListField(section, {
+  }
+
+  // ---------------------------------------------------------------------
+  // CONCEPTS
+  // ---------------------------------------------------------------------
+
+  function renderConceptsStepContent(currentPlan, editable, container) {
+    renderTextField(container, {
+      label: 'Important Concepts',
+      value: currentPlan.purpose.importantConcepts,
+      disabled: !editable,
+      onChange: (value) => persist(() => chapterPlanService.updatePurpose(currentPlan, { importantConcepts: value })),
+    });
+    renderStringListField(container, {
       label: 'Essential Questions',
       values: currentPlan.purpose.essentialQuestions,
       disabled: !editable,
       onChange: (next) => persist(() => chapterPlanService.updatePurpose(currentPlan, { essentialQuestions: next })),
     });
-    renderStringListField(section, {
-      label: 'Objectives',
-      values: currentPlan.purpose.objectives,
-      disabled: !editable,
-      onChange: (next) => persist(() => chapterPlanService.updatePurpose(currentPlan, { objectives: next })),
-    });
-
-    return section;
   }
 
   // ---------------------------------------------------------------------
   // MASTERY
   // ---------------------------------------------------------------------
 
-  function renderMasterySection(currentPlan, editable) {
-    const section = renderSection('Mastery');
-
-    renderTextField(section, {
+  function renderMasteryStepContent(currentPlan, editable, container) {
+    renderTextField(container, {
       label: 'End of Chapter Showcase of Learning',
       value: currentPlan.mastery.endOfChapterShowcase,
       disabled: !editable,
       onChange: (value) => persist(() => chapterPlanService.updateMastery(currentPlan, { endOfChapterShowcase: value })),
     });
-    renderTextField(section, {
+    renderTextField(container, {
       label: 'Book-back Question Types',
       value: currentPlan.mastery.bookBackQuestionTypes,
       disabled: !editable,
       onChange: (value) => persist(() => chapterPlanService.updateMastery(currentPlan, { bookBackQuestionTypes: value })),
     });
-    renderTextField(section, {
+    renderTextField(container, {
       label: 'Scope for LSRW',
       value: currentPlan.mastery.lsrwScope,
       placeholder: 'Where applicable…',
       disabled: !editable,
       onChange: (value) => persist(() => chapterPlanService.updateMastery(currentPlan, { lsrwScope: value })),
     });
-    renderTextField(section, {
+    renderTextField(container, {
       label: 'Vocabulary / Anchor Charts',
       value: currentPlan.mastery.vocabularyAndAnchorCharts,
       disabled: !editable,
       onChange: (value) => persist(() => chapterPlanService.updateMastery(currentPlan, { vocabularyAndAnchorCharts: value })),
     });
-
-    return section;
   }
 
   // ---------------------------------------------------------------------
   // METHODS
   // ---------------------------------------------------------------------
 
-  function renderMethodsSection(currentPlan, editable, config) {
-    const section = renderSection('Methods');
-
-    renderTextField(section, {
+  function renderMethodsStepContent(currentPlan, editable, config, container) {
+    renderTextField(container, {
       label: 'Key Methods',
       value: currentPlan.methods.keyMethods,
       disabled: !editable,
       onChange: (value) => persist(() => chapterPlanService.updateMethods(currentPlan, { keyMethods: value })),
     });
-    if (editable) section.appendChild(renderBrowseSparksButton(CHAPTER_PLAN_SPARK_SECTIONS.KEY_METHODS));
+    if (editable) container.appendChild(renderBrowseSparksButton(CHAPTER_PLAN_SPARK_SECTIONS.KEY_METHODS));
     const keyMethodsSparks = renderSparkRefsList(CHAPTER_PLAN_SPARK_SECTIONS.KEY_METHODS, editable);
-    if (keyMethodsSparks) section.appendChild(keyMethodsSparks);
+    if (keyMethodsSparks) container.appendChild(keyMethodsSparks);
 
     if (config.showSimplifiedText) {
-      renderTextField(section, {
+      renderTextField(container, {
         label: 'Simplified Text',
         value: currentPlan.methods.simplifiedText,
         placeholder: 'A simplified version of the text, if needed…',
@@ -863,17 +933,17 @@ export function renderChapterPlanEditorView(
       });
     }
 
-    renderTextField(section, {
+    renderTextField(container, {
       label: 'Revision Ideas',
       value: currentPlan.methods.revisionIdeas,
       disabled: !editable,
       onChange: (value) => persist(() => chapterPlanService.updateMethods(currentPlan, { revisionIdeas: value })),
     });
-    if (editable) section.appendChild(renderBrowseSparksButton(CHAPTER_PLAN_SPARK_SECTIONS.REVISION_IDEAS));
+    if (editable) container.appendChild(renderBrowseSparksButton(CHAPTER_PLAN_SPARK_SECTIONS.REVISION_IDEAS));
     const revisionSparks = renderSparkRefsList(CHAPTER_PLAN_SPARK_SECTIONS.REVISION_IDEAS, editable);
-    if (revisionSparks) section.appendChild(revisionSparks);
+    if (revisionSparks) container.appendChild(revisionSparks);
 
-    renderTextField(section, {
+    renderTextField(container, {
       label: 'Resources',
       value: currentPlan.methods.resources,
       placeholder: config.placeholderHints.resources,
@@ -893,23 +963,19 @@ export function renderChapterPlanEditorView(
           onResourceAttached: () => rerender(),
         });
       });
-      section.appendChild(attachButton);
+      container.appendChild(attachButton);
     }
     const resourceLinks = renderResourceLinksList(editable);
-    if (resourceLinks) section.appendChild(resourceLinks);
-
-    return section;
+    if (resourceLinks) container.appendChild(resourceLinks);
   }
 
   // ---------------------------------------------------------------------
   // Subject-specific
   // ---------------------------------------------------------------------
 
-  function renderSubjectSpecificSection(currentPlan, editable, config) {
-    const section = renderSection(config.label + ' — Subject-Specific');
-
+  function renderSubjectSpecificStepContent(currentPlan, editable, config, container) {
     config.subjectSpecificFields.forEach((field) => {
-      renderTextField(section, {
+      renderTextField(container, {
         label: field.label,
         value: currentPlan.subjectSpecific[field.key],
         placeholder: field.placeholder,
@@ -918,10 +984,8 @@ export function renderChapterPlanEditorView(
       });
     });
 
-    if (editable) section.appendChild(renderBrowseSparksButton(CHAPTER_PLAN_SPARK_SECTIONS.SUBJECT_SPECIFIC));
+    if (editable) container.appendChild(renderBrowseSparksButton(CHAPTER_PLAN_SPARK_SECTIONS.SUBJECT_SPECIFIC));
     const subjectSpecificSparks = renderSparkRefsList(CHAPTER_PLAN_SPARK_SECTIONS.SUBJECT_SPECIFIC, editable);
-    if (subjectSpecificSparks) section.appendChild(subjectSpecificSparks);
-
-    return section;
+    if (subjectSpecificSparks) container.appendChild(subjectSpecificSparks);
   }
 }

@@ -767,6 +767,36 @@ export async function renderTimetableView(
         holidayBlock.style.gridColumn = String(dayIndex + 2);
         holidayBlock.style.gridRow = `2 / span ${Math.max(periods.length, 1)}`;
         weekGrid.appendChild(holidayBlock);
+
+        // 2026-10-03 fix: a non-working day has no teaching PERIODS —
+        // that part of the holiday block above is correct — but a
+        // genuinely scheduled standalone EVENT (e.g. a makeup exam
+        // during a holiday week) must still appear; a holiday doesn't
+        // cancel it. Every event on a non-working day is inherently
+        // standalone (there are no periods for it to overlap/suppress
+        // in the first place — see schedule.periods being [] for a
+        // non-working date, services/schoolCalendarService.js's own
+        // getEffectivePeriodsForDate()), so this renders directly from
+        // schedule.events rather than going through the periodGroups/
+        // suppressedByEventId matching the working-day branch below
+        // uses — same renderExamCard()/computeEventOverlayGeometry()
+        // primitives, not a second event-rendering implementation.
+        if (schedule.events.length > 0) {
+          const holidayExamOverlayLayer = document.createElement('div');
+          holidayExamOverlayLayer.className = 'timetable-view__exam-overlay-layer';
+          holidayExamOverlayLayer.style.gridColumn = String(dayIndex + 2);
+          holidayExamOverlayLayer.style.gridRow = `2 / span ${Math.max(periods.length, 1)}`;
+          schedule.events.forEach((event) => {
+            const geometry = computeEventOverlayGeometry({ event, dayAxisStartMinutes, dayAxisEndMinutes, pixelsPerMinute: PIXELS_PER_MINUTE });
+            const examCard = renderExamCard(event);
+            examCard.classList.add('timetable-period-card--event-overlay');
+            examCard.style.top = `${geometry.topPx}px`;
+            examCard.style.height = `${geometry.heightPx}px`;
+            holidayExamOverlayLayer.appendChild(examCard);
+          });
+          weekGrid.appendChild(holidayExamOverlayLayer);
+        }
+
         return;
       }
 
@@ -943,49 +973,68 @@ export async function renderTimetableView(
     const schedule = getEffectiveScheduleForDate(range.start);
     wrapper.appendChild(renderCalendarStatusBanner(schedule));
 
-    if (!schedule.isWorkingDay) return wrapper; // Holiday — no periods at all, banner above already explains why.
-
     const renderedEventIds = new Set();
 
-    schedule.periods.forEach((period) => {
-      const row = document.createElement('div');
-      row.className = 'timetable-view__day-row';
+    // 2026-10-03 fix: a non-working day (Holiday, or an ordinary
+    // non-working weekday with no override) has no teaching PERIODS —
+    // that part was always correct — but previously this function just
+    // returned right here, leaving a silent, empty `.timetable-view__day-list`
+    // below the banner. On mobile, where Day view is the DEFAULT (see
+    // getVisibleRange()'s own isNarrowViewport() check), that read as a
+    // large, broken-looking blank region. renderDayHolidayEmptyState()
+    // below is Day view's own equivalent of Week view's existing
+    // renderHolidayColumnBlock() — a compact, bounded card, never a
+    // CSS min-height trick. Standalone EVENTS are a separate concept
+    // from teaching periods (see this function's own trailing
+    // `schedule.events.forEach` below) and must never be suppressed
+    // just because there are no periods to render — a holiday doesn't
+    // cancel a genuinely scheduled exam/event.
+    if (schedule.isWorkingDay) {
+      schedule.periods.forEach((period) => {
+        const row = document.createElement('div');
+        row.className = 'timetable-view__day-row';
 
-      if (period.suppressedByEventId) {
-        if (renderedEventIds.has(period.suppressedByEventId)) return; // this event already got its own row from an earlier overlapped period
-        renderedEventIds.add(period.suppressedByEventId);
-        const event = schedule.events.find((e) => e.id === period.suppressedByEventId);
-        row.classList.add('timetable-view__day-row--event');
-        applyDayRowMinHeight(row, event);
+        if (period.suppressedByEventId) {
+          if (renderedEventIds.has(period.suppressedByEventId)) return; // this event already got its own row from an earlier overlapped period
+          renderedEventIds.add(period.suppressedByEventId);
+          const event = schedule.events.find((e) => e.id === period.suppressedByEventId);
+          row.classList.add('timetable-view__day-row--event');
+          applyDayRowMinHeight(row, event);
+          const label = document.createElement('div');
+          label.className = 'timetable-view__period-label';
+          label.innerHTML = `<strong>${scheduledEventService.getEventTypeLabel(event.eventType)}</strong><span>${event.startTime} - ${event.endTime}</span>`;
+          row.appendChild(label);
+          row.appendChild(renderExamCard(event));
+          wrapper.appendChild(row);
+          return;
+        }
+
+        const slot = resolveSlotForEffectivePeriod(slots, range.start, period);
+        // A subtle subject-accent left border — the same color already
+        // computed for the subject strip, just carried onto the row too,
+        // per Phase P's "subtle subject accent" requirement for the
+        // mobile Day view. No new data; an empty period stays neutral.
+        row.style.borderLeftColor = getTimetableSubjectColor(slot.subjectId).text;
+        applyDayRowMinHeight(row, period);
         const label = document.createElement('div');
         label.className = 'timetable-view__period-label';
-        label.innerHTML = `<strong>${scheduledEventService.getEventTypeLabel(event.eventType)}</strong><span>${event.startTime} - ${event.endTime}</span>`;
+        label.innerHTML = `<strong>${period.periodNumber}</strong><span>${period.startTime} - ${period.endTime}</span>`;
         row.appendChild(label);
-        row.appendChild(renderExamCard(event));
+        row.appendChild(renderPeriodCard(slot));
         wrapper.appendChild(row);
-        return;
-      }
-
-      const slot = resolveSlotForEffectivePeriod(slots, range.start, period);
-      // A subtle subject-accent left border — the same color already
-      // computed for the subject strip, just carried onto the row too,
-      // per Phase P's "subtle subject accent" requirement for the
-      // mobile Day view. No new data; an empty period stays neutral.
-      row.style.borderLeftColor = getTimetableSubjectColor(slot.subjectId).text;
-      applyDayRowMinHeight(row, period);
-      const label = document.createElement('div');
-      label.className = 'timetable-view__period-label';
-      label.innerHTML = `<strong>${period.periodNumber}</strong><span>${period.startTime} - ${period.endTime}</span>`;
-      row.appendChild(label);
-      row.appendChild(renderPeriodCard(slot));
-      wrapper.appendChild(row);
-    });
+      });
+    } else {
+      wrapper.appendChild(renderDayHolidayEmptyState(schedule, range.start));
+    }
 
     // An event that doesn't overlap any configured period at all (a
-    // special working day with zero periods of its own, or an exam
-    // scheduled entirely outside every period's time range) still needs
-    // its own row — it's real, date-specific, scheduled content,
-    // regardless of whether the ordinary period grid has room for it.
+    // special working day with zero periods of its own, an exam
+    // scheduled entirely outside every period's time range, or ANY
+    // event on a non-working day, since a non-working day has no
+    // periods for it to overlap in the first place) still needs its
+    // own row — it's real, date-specific, scheduled content,
+    // regardless of whether the ordinary period grid has room for it,
+    // or whether there's a period grid at all today.
     schedule.events.forEach((event) => {
       if (renderedEventIds.has(event.id)) return;
       const row = document.createElement('div');
@@ -1029,6 +1078,63 @@ export async function renderTimetableView(
       banner.hidden = true;
     }
     return banner;
+  }
+
+  /**
+   * Day view's own equivalent of renderHolidayColumnBlock() below (Week
+   * view's per-day holiday column) — a compact, bounded empty-state
+   * card replacing the period list when there's genuinely nothing to
+   * teach today, never a silent empty wrapper (2026-10-03 fix — see
+   * renderDayGrid()'s own call site). Reuses existing card/surface,
+   * typography, spacing, icon, and button tokens only — no new visual
+   * language, and no CSS min-height trick.
+   *
+   * "Go to next working day" reuses schoolCalendarService's own
+   * getNextWorkingDate() — the same "skip the holiday, land on the
+   * next real working date" logic resolveDashboardScheduleDate()
+   * already relies on — never a second date-skipping implementation.
+   * Navigating only ever sets state.anchorDateKey and re-loads, the
+   * exact same pattern the toolbar's own [←]/[→]/[Today] buttons
+   * already use (see renderToolbar() above) — the current view mode
+   * (Day) is left completely untouched, so this never force-switches
+   * to Week. Omitted entirely (not rendered disabled) when
+   * getNextWorkingDate() finds nothing within its own horizon — a
+   * misconfigured classroom with no working day at all gets no action
+   * to click, rather than a button that would silently do nothing.
+   */
+  function renderDayHolidayEmptyState(schedule, dateKey) {
+    const card = document.createElement('div');
+    card.className = 'timetable-view__day-empty-state';
+
+    card.appendChild(createIcon('calendar-x', { size: 24 }));
+
+    const title = document.createElement('p');
+    title.className = 'timetable-view__day-empty-state-title';
+    title.textContent = 'No periods scheduled today';
+    card.appendChild(title);
+
+    if (schedule.exceptionReason) {
+      const reason = document.createElement('p');
+      reason.className = 'timetable-view__day-empty-state-reason';
+      reason.textContent = schedule.exceptionReason;
+      card.appendChild(reason);
+    }
+
+    const nextWorkingDate = schoolCalendarService.getNextWorkingDate(classroom, shiftDateKey(dateKey, 1));
+    if (nextWorkingDate) {
+      const nextButton = document.createElement('button');
+      nextButton.type = 'button';
+      nextButton.className = 'btn btn--tonal btn--tonal-blue btn--pill';
+      nextButton.textContent = 'Go to next working day';
+      nextButton.addEventListener('click', () => {
+        state.anchorDateKey = nextWorkingDate;
+        state.selectedTeachingSlotId = null;
+        loadAndRender();
+      });
+      card.appendChild(nextButton);
+    }
+
+    return card;
   }
 
   /**
@@ -2728,8 +2834,10 @@ export async function renderTimetableView(
    *
    * 2026-10-03 simplification (superseding the 2026-10-02 redesign's
    * yellow/green status-color-coded background): the card itself is
-   * now always visually NEUTRAL — the normal card/surface background,
-   * no status color — with its only color accent being a narrow left
+   * visually quiet — a very faint neutral fill (var(--color-bg), the
+   * same token this app already uses for subtle off-white surfaces
+   * elsewhere, e.g. icon-button hover states — never a new token, and
+   * never yellow) — with its only color ACCENT being a narrow left
    * border strip in the period's own SUBJECT color (not teaching
    * status; see renderConceptsTab()'s own header comment). Status is
    * communicated in two other ways instead: the status line (shown
@@ -2737,21 +2845,35 @@ export async function renderTimetableView(
    * forward to a later period" — never a redundant "Planned for this
    * lesson" restating what's already implied by the concept simply
    * being listed on this tab) and the presence/absence of the Mark
-   * Covered/Carry Forward icon pair below it.
+   * Covered/Carry Forward icons in the action cluster.
    *
-   * Mark Covered (✓) / Carry Forward (↻) are compact, circular
-   * `.btn--icon-only` buttons — the one existing platform treatment
-   * for every icon-only action app-wide (Undo, Notebook, Reset
-   * Session, and others) — never large filled pills for these small,
-   * frequent, per-card actions. Each keeps its own `aria-label`/
-   * `title` (the button has no visible text at all), and inherits the
-   * shared `.btn:focus-visible` ring plus `.btn--icon-only:hover` state
-   * for free, the same as every other icon-only button in the app. A
-   * subtle semantic tint lives on the ICON itself (currentColor), not
-   * the button's own background/border — matching this same "tint the
-   * icon, not the control" principle already used for the ⋮ trigger
-   * and for Teacher/Student interaction icons elsewhere in this app —
-   * never a new color palette.
+   * 2026-10-03 density pass: title and the action cluster now share
+   * ONE row (not stacked), so a short concept name's card is a single
+   * compact line — see .period-detail-panel__concept-card-header's own
+   * CSS comment for how `flex-shrink: 0` on the cluster + `min-width: 0`
+   * on the title keeps a LONG name wrapping entirely within its own
+   * left-side space, never running underneath the action cluster,
+   * robustly via flexbox rather than any hard-coded line break.
+   *
+   * The action cluster is always, in this fixed order: Mark Covered
+   * (✓) → Carry Forward (a RIGHT-pointing arrow — current period to a
+   * LATER one, never a left/looping icon that could read as "undo" or
+   * "back") → the ⋮ overflow menu — both quick actions omitted
+   * together once the concept is executed or carried (see below), ⋮
+   * always present. All three are compact, circular `.btn--icon-only`
+   * buttons (⋮ keeps its own existing trigger styling) — the one
+   * existing platform treatment for every icon-only action app-wide
+   * (Undo, Notebook, Reset Session, and others) — never large filled
+   * pills for these small, frequent, per-card actions. Each quick
+   * action keeps its own `aria-label`/`title` (no visible text at
+   * all), and inherits the shared `.btn:focus-visible` ring plus
+   * `.btn--icon-only:hover` state for free, the same as every other
+   * icon-only button in the app. A subtle semantic tint lives on the
+   * ICON itself (currentColor), not the button's own background/
+   * border — matching this same "tint the icon, not the control"
+   * principle already used for the ⋮ trigger and for Teacher/Student
+   * interaction icons elsewhere in this app — never a new color
+   * palette.
    *
    * A carried concept (`carried` true) is always un-executed (the data
    * model guarantees it's never `executed` — see models/Lesson.js's
@@ -2790,49 +2912,17 @@ export async function renderTimetableView(
     title.textContent = conceptTitle;
     header.appendChild(title);
 
-    // READ-ONLY: the whole ⋮ menu is a mutation-only surface — omitted
-    // entirely (never rendered-but-disabled), matching every other
-    // mutation control in this file.
-    if (isMutationAllowed()) {
-      const menuActions = [{ label: 'Edit concept', onClick: () => openEditConceptFlow(lesson, id, conceptTitle) }];
-      if (!executed && !carried) {
-        menuActions.push({ label: 'Move to…', onClick: () => openMoveConceptFlow(slot, lesson, id, conceptTitle) });
-      }
-      menuActions.push({
-        label: 'Remove from lesson',
-        danger: true,
-        onClick: () => handleRemoveConceptFromLesson(lesson, id, conceptTitle, { executed, carried }),
-      });
-      header.appendChild(createOverflowMenu({ actions: menuActions, ariaLabel: `${conceptTitle} actions` }));
-    }
-    card.appendChild(header);
+    const cluster = document.createElement('div');
+    cluster.className = 'period-detail-panel__concept-card-actions-cluster';
 
-    // Only rendered when it carries real information — never a
-    // restatement of "this concept is planned here," which is already
-    // obvious from its presence on this tab at all (2026-10-03 fix).
-    if (carried || executed) {
-      const status = document.createElement('span');
-      status.className = 'period-detail-panel__concept-card-status';
-      if (carried) {
-        status.textContent = 'Carried forward to a later period';
-      } else {
-        status.textContent = stat ? `Covered · ${stat.respondedCount}/${stat.totalStudents} responded · ${stat.positivePercent}%` : 'Covered';
-      }
-      card.appendChild(status);
-    }
-
-    // Compact teaching/usage actions — visually separate from the
-    // planning actions tucked inside ⋮ above, per explicit product
-    // direction that these must never read as part of the same action
-    // group as Edit/Move/Remove, but compact icon buttons rather than
-    // large filled pills (2026-10-03 fix — the original pill treatment
-    // was too visually dominant for actions this small/frequent). Only
-    // ever appears for a still-pending, not-yet-carried concept — see
-    // this function's own header comment.
+    // Mark Covered / Carry Forward — only for a still-pending,
+    // not-yet-carried concept (a COVERED concept has already been
+    // taught, and an already-carried one is something
+    // models/Lesson.js's own carryForwardConcept() itself refuses to
+    // carry a second time). Deliberately NOT the ⋮ menu's "Move to…" —
+    // see openMoveConceptFlow()'s own header comment for exactly how
+    // these differ.
     if (!carried && !executed && isMutationAllowed()) {
-      const actions = document.createElement('div');
-      actions.className = 'period-detail-panel__concept-quick-actions';
-
       const markCoveredButton = document.createElement('button');
       markCoveredButton.type = 'button';
       markCoveredButton.className = 'btn btn--icon-only period-detail-panel__concept-quick-action period-detail-panel__concept-quick-action--cover';
@@ -2846,28 +2936,56 @@ export async function renderTimetableView(
           rerenderCurrentRange();
         })
       );
-      actions.appendChild(markCoveredButton);
+      cluster.appendChild(markCoveredButton);
 
-      // Carry Forward only ever appears here — a PENDING, not-yet-
-      // carried concept — per explicit product direction: a COVERED
-      // concept has already been taught, and an already-carried one is
-      // something models/Lesson.js's own carryForwardConcept() itself
-      // refuses to carry a second time. Deliberately NOT the same
-      // action as the ⋮ menu's "Move to…" above — see
-      // openMoveConceptFlow()'s own header comment for exactly how
-      // these differ. Same 'undo-2' curved-arrow icon this app already
-      // used for Carry Forward before this redesign (the Overview
-      // tab's own now-removed carry-forward callout).
+      // 'arrow-right' — a plain, unambiguous rightward arrow, not
+      // 'undo-2'/'rotate-ccw' (both curve back toward their own
+      // starting point, reading as "undo"/"back," the opposite of what
+      // Carry Forward means: THIS period moving forward to a LATER
+      // one). This icon set has no curved-and-rightward glyph, so a
+      // plain straight arrow is the correct existing-icon choice over
+      // either an ambiguous curve or inventing a new SVG path.
       const carryButton = document.createElement('button');
       carryButton.type = 'button';
       carryButton.className = 'btn btn--icon-only period-detail-panel__concept-quick-action period-detail-panel__concept-quick-action--carry';
       carryButton.title = 'Carry Forward';
       carryButton.setAttribute('aria-label', `Carry ${conceptTitle} forward to a later period`);
-      carryButton.appendChild(createIcon('undo-2', { size: 16 }));
+      carryButton.appendChild(createIcon('arrow-right', { size: 16 }));
       carryButton.addEventListener('click', () => openCarryForwardFlow(slot, lesson, id, conceptTitle));
-      actions.appendChild(carryButton);
+      cluster.appendChild(carryButton);
+    }
 
-      card.appendChild(actions);
+    // READ-ONLY: the whole ⋮ menu is a mutation-only surface — omitted
+    // entirely (never rendered-but-disabled), matching every other
+    // mutation control in this file.
+    if (isMutationAllowed()) {
+      const menuActions = [{ label: 'Edit concept', onClick: () => openEditConceptFlow(lesson, id, conceptTitle) }];
+      if (!executed && !carried) {
+        menuActions.push({ label: 'Move to…', onClick: () => openMoveConceptFlow(slot, lesson, id, conceptTitle) });
+      }
+      menuActions.push({
+        label: 'Remove from lesson',
+        danger: true,
+        onClick: () => handleRemoveConceptFromLesson(lesson, id, conceptTitle, { executed, carried }),
+      });
+      cluster.appendChild(createOverflowMenu({ actions: menuActions, ariaLabel: `${conceptTitle} actions` }));
+    }
+
+    header.appendChild(cluster);
+    card.appendChild(header);
+
+    // Only rendered when it carries real information — never a
+    // restatement of "this concept is planned here," which is already
+    // obvious from its presence on this tab at all.
+    if (carried || executed) {
+      const status = document.createElement('span');
+      status.className = 'period-detail-panel__concept-card-status';
+      if (carried) {
+        status.textContent = 'Carried forward to a later period';
+      } else {
+        status.textContent = stat ? `Covered · ${stat.respondedCount}/${stat.totalStudents} responded · ${stat.positivePercent}%` : 'Covered';
+      }
+      card.appendChild(status);
     }
 
     return card;

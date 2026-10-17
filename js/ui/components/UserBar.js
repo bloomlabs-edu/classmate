@@ -48,7 +48,7 @@ import { createIcon } from './Icon.js';
 import { getDisplayName } from '../../services/classroomService.js';
 import { registerOpenPopup, clearOpenPopup } from '../../utils/popupCoordinator.js';
 
-export function renderUserBar(container, { user, onSignOut, currentAccentColorId, onSelectAccentColor, onSelectCustomAccentColor, onPreviewCustomAccentColor, onGoToOverview, notificationPermissionState, onEnableNotifications, onDisableNotifications, notificationUnreadCount, notifications, hasClassroomContext, onOpenNotification, onNotificationsViewed, currentClassroom, classroomList, onSwitchClassroom, onOpenGuidance }) {
+export function renderUserBar(container, { user, onSignOut, currentAccentColorId, onSelectAccentColor, onSelectCustomAccentColor, onPreviewCustomAccentColor, onGoToOverview, notificationPermissionState, onEnableNotifications, onDisableNotifications, notificationUnreadCount, notifications, hasClassroomContext, onOpenNotification, onNotificationsViewed, currentClassroom, classroomList, onSwitchClassroom, slackConnected, onConnectSlack, onDisconnectSlack, onOpenGuidance }) {
   container.innerHTML = '';
   if (!user) return;
 
@@ -266,6 +266,16 @@ export function renderUserBar(container, { user, onSignOut, currentAccentColorId
         onOpenNotification,
         onNotificationsViewed,
         currentUserUid: user.uid,
+      })
+    );
+  }
+
+  if (onConnectSlack || onDisconnectSlack) {
+    rightGroup.appendChild(
+      createSlackIntegrationControl({
+        connected: Boolean(slackConnected),
+        onConnect: onConnectSlack,
+        onDisconnect: onDisconnectSlack,
       })
     );
   }
@@ -659,6 +669,100 @@ function createNotificationControl({ permissionState, onEnable, onDisable, unrea
     badge.setAttribute('aria-hidden', 'true');
     wrapper.appendChild(badge);
   }
+
+  wrapper.append(toggleButton, popover);
+  return wrapper;
+}
+
+/**
+ * Bell/color-editor-shaped button+popover for the Slack identity link
+ * (see services/slackIntegrationService.js) — Phase 1's ONLY UI for
+ * this feature, deliberately as small as the feature itself: a status
+ * line and one action button, no explanation copy beyond that (unlike
+ * the notification control's own longer "what this does" paragraph),
+ * since this is this feature's smallest possible end-to-end test
+ * surface, not a finished settings page.
+ *
+ * `onConnect` navigates the whole page away (see
+ * slackIntegrationService.beginConnect()'s own top-level-redirect
+ * behavior) — there is deliberately no loading state here for that
+ * redirect, since the browser is about to leave this page entirely.
+ */
+function createSlackIntegrationControl({ connected, onConnect, onDisconnect }) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'user-bar__slack-control';
+
+  const toggleButton = document.createElement('button');
+  toggleButton.type = 'button';
+  toggleButton.className = 'user-bar__slack-button';
+  toggleButton.setAttribute('aria-label', 'Slack connection settings');
+  toggleButton.setAttribute('aria-expanded', 'false');
+  toggleButton.title = 'Slack connection settings';
+  toggleButton.appendChild(createIcon('message-circle', { className: 'user-bar__slack-icon', size: 18 }));
+  if (connected) {
+    const dot = document.createElement('span');
+    dot.className = 'user-bar__slack-dot';
+    dot.setAttribute('aria-hidden', 'true');
+    toggleButton.appendChild(dot);
+  }
+
+  const popover = document.createElement('div');
+  popover.className = 'user-bar__slack-popover';
+  popover.setAttribute('role', 'group');
+  popover.setAttribute('aria-label', 'Slack connection');
+
+  const status = document.createElement('p');
+  status.className = 'user-bar__slack-status';
+  status.textContent = connected
+    ? 'Slack is connected — you’ll get a DM when your Weekly Plan status changes.'
+    : 'Connect Slack to get a DM when your Weekly Plan status changes.';
+  popover.appendChild(status);
+
+  const actionButton = document.createElement('button');
+  actionButton.type = 'button';
+  if (connected && onDisconnect) {
+    actionButton.className = 'btn btn--text';
+    actionButton.textContent = 'Disconnect Slack';
+    actionButton.addEventListener('click', () => {
+      closePopover();
+      onDisconnect();
+    });
+    popover.appendChild(actionButton);
+  } else if (!connected && onConnect) {
+    actionButton.className = 'btn btn--secondary';
+    actionButton.textContent = 'Connect Slack';
+    actionButton.addEventListener('click', () => {
+      closePopover();
+      onConnect();
+    });
+    popover.appendChild(actionButton);
+  }
+
+  function closePopover() {
+    popover.classList.remove('user-bar__slack-popover--open');
+    toggleButton.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', handleOutsideClick);
+    clearOpenPopup(slackPopoverApi);
+  }
+
+  function handleOutsideClick(event) {
+    if (!wrapper.contains(event.target)) closePopover();
+  }
+
+  const slackPopoverApi = { close: closePopover };
+
+  toggleButton.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const isOpen = popover.classList.toggle('user-bar__slack-popover--open');
+    toggleButton.setAttribute('aria-expanded', String(isOpen));
+    if (isOpen) {
+      registerOpenPopup(slackPopoverApi);
+      setTimeout(() => document.addEventListener('click', handleOutsideClick), 0);
+    } else {
+      document.removeEventListener('click', handleOutsideClick);
+      clearOpenPopup(slackPopoverApi);
+    }
+  });
 
   wrapper.append(toggleButton, popover);
   return wrapper;

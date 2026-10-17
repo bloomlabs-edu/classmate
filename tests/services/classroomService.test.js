@@ -101,6 +101,69 @@ test('upsertClassroom: never overwrites an existing classroom\'s already-saved a
   assert.deepEqual(assignmentConfigService.listCategories(normalized), [existingCategory]);
 });
 
+/**
+ * Regression coverage for the Assignment Tracker redesign's own new
+ * classroom-level field: `classroom.assignmentCheckpoints` is a
+ * brand-new top-level array, so a classroom document saved before this
+ * redesign shipped has no such field at all. Added as an explicit,
+ * mandatory line item (not an afterthought) specifically because this
+ * exact class of omission — a new classroom field missing from
+ * normalizeClassroom() — already caused two real production crashes
+ * this session (CLASSROOM_ROUTE_NAMES, assignmentConfig).
+ */
+test('upsertClassroom: backfills assignmentCheckpoints for a classroom document saved before the Assignment Tracker redesign shipped', () => {
+  const legacyClassroomData = {
+    id: 'legacy-4',
+    schoolName: 'A School',
+    gradeSection: 'Grade 8',
+    teams: [],
+    // No `assignmentCheckpoints` key at all -- exactly what a classroom
+    // document written before this redesign existed looks like.
+  };
+
+  const normalized = upsertClassroom(legacyClassroomData);
+
+  assert.deepEqual(normalized.assignmentCheckpoints, []);
+});
+
+test('upsertClassroom: never overwrites an existing classroom\'s assignmentCheckpoints, or its existing assignments/categories, while backfilling', () => {
+  const existingCheckpoint = { id: 'cp-1', assignmentId: 'assign-1', title: 'Draft', description: '', givenDate: '2026-09-01', dueDate: '', order: 0, createdAt: '2026-09-01T00:00:00.000Z', records: [] };
+  const existingCategory = { id: 'cat-1', name: 'Worksheets', aspects: [] };
+  const existingAssignment = { id: 'assign-1', categoryId: 'cat-1', title: 'Water Cycle Worksheet', description: '', givenDate: '2026-09-01', dueDate: '', order: 0, createdAt: '2026-09-01T00:00:00.000Z', records: [], conceptIds: [], resourceUrl: '' };
+  const classroomData = {
+    id: 'legacy-5',
+    schoolName: 'A School',
+    gradeSection: 'Grade 8',
+    teams: [],
+    assignmentCheckpoints: [existingCheckpoint],
+    assignmentConfig: { categories: [existingCategory] },
+    assignments: [existingAssignment],
+  };
+
+  const normalized = upsertClassroom(classroomData);
+
+  assert.deepEqual(normalized.assignmentCheckpoints, [existingCheckpoint]);
+  assert.deepEqual(normalized.assignmentConfig.categories, [existingCategory]);
+  assert.deepEqual(normalized.assignments, [existingAssignment]);
+});
+
+test('upsertClassroom: an existing Assignment with no subjectId (pre-dates that field) loads safely as null, never crashes or gets a fabricated value', () => {
+  const legacyAssignment = { id: 'assign-2', categoryId: 'cat-1', title: 'Graphic Organizer', description: '', givenDate: '2026-09-01', dueDate: '', order: 0, createdAt: '2026-09-01T00:00:00.000Z', records: [], conceptIds: [], resourceUrl: '' };
+  // No `subjectId` key at all on the Assignment itself.
+  const classroomData = {
+    id: 'legacy-6',
+    schoolName: 'A School',
+    gradeSection: 'Grade 8',
+    teams: [],
+    assignments: [legacyAssignment],
+  };
+
+  const normalized = upsertClassroom(classroomData);
+
+  assert.equal(normalized.assignments[0].subjectId, undefined);
+  assert.deepEqual(normalized.assignments[0], legacyAssignment);
+});
+
 test('upsertClassroom: never overwrites an existing student roster while backfilling assignmentConfig', () => {
   const existingStudent = { id: 's1', name: 'Asha', score: 7, bucket: 'green', badges: ['star'], notes: [], submissions: {}, history: [{ id: 'h1' }] };
   const classroomData = {

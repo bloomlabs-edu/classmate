@@ -2,12 +2,23 @@
  * ui/components/CreateAssessmentModal.js
  *
  * "+ Create Assessment" — a single-step form: name, type, academic
- * year, date, and which of the classroom's real Subjects are
- * included. Only Subjects that actually exist in this classroom are
- * ever offered (reads services/learningRecordService.js's
- * getSubjects() directly) — this is the module's one deliberate
- * connection to Learning Management, a read of which Subjects exist
- * and their current titles, nothing more.
+ * year, date, and which Subjects are included. Manual creation must
+ * remain possible even for a Subject not yet in this classroom's
+ * Learning Record/Learning Activities (e.g. Physical Education, when
+ * only Science/Social Science/Mathematics have been added there) —
+ * see this feature's own "Learning Activities is a filter, not a hard
+ * security lock" requirement. So two groups are offered:
+ *
+ * 1. Subjects that already exist in this classroom (reads
+ *    services/learningRecordService.js's getSubjects() directly) —
+ *    checkbox value is that Subject record's own `.id`, the original,
+ *    still-primary meaning of AssessmentSubject.subjectId.
+ * 2. Every other canonical Subject (config/canonicalSubjectsConfig.js)
+ *    NOT yet in this classroom's Learning Record — checkbox value is
+ *    the canonical id itself (e.g. "physical_education"). Picking one
+ *    of these does NOT add it to Learning Record/Learning Activities;
+ *    services/assessmentService.js's getSubjectTitle() resolves this
+ *    case via its own canonical-registry fallback.
  *
  * Persists nothing until "Create Assessment" is explicitly clicked —
  * services/assessmentService.js's createNewAssessment() builds the
@@ -16,6 +27,7 @@
  */
 
 import { ASSESSMENT_TYPES } from '../../config/assessmentTypesConfig.js';
+import { CANONICAL_SUBJECTS } from '../../config/canonicalSubjectsConfig.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
 import * as assessmentService from '../../services/assessmentService.js';
 import * as workspaceService from '../../services/workspaceService.js';
@@ -65,29 +77,50 @@ export function openCreateAssessmentModal({ classroom, onAssessmentCreated }) {
   modal.appendChild(subjectsLabel);
 
   const subjects = learningRecordService.getSubjects(classroom);
+  const learningRecordCanonicalIds = new Set(subjects.map((subject) => subject.subjectId).filter(Boolean));
+  const otherCanonicalSubjects = CANONICAL_SUBJECTS.filter((subject) => !learningRecordCanonicalIds.has(subject.id));
   const subjectCheckboxes = [];
 
-  if (subjects.length === 0) {
+  function appendSubjectRow(list, value, title) {
+    const row = document.createElement('label');
+    row.className = 'create-assessment-modal__subject-row';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.value = value;
+    const labelText = document.createElement('span');
+    labelText.textContent = title;
+    row.append(checkbox, labelText);
+    list.appendChild(row);
+    subjectCheckboxes.push(checkbox);
+  }
+
+  if (subjects.length === 0 && otherCanonicalSubjects.length === 0) {
     const emptyNote = document.createElement('p');
     emptyNote.className = 'modal__description';
     emptyNote.textContent = 'This classroom has no Subjects yet \u2014 add one in Learning first.';
     modal.appendChild(emptyNote);
   } else {
-    const subjectsList = document.createElement('div');
-    subjectsList.className = 'create-assessment-modal__subjects-list';
-    subjects.forEach((subject) => {
-      const row = document.createElement('label');
-      row.className = 'create-assessment-modal__subject-row';
-      const checkbox = document.createElement('input');
-      checkbox.type = 'checkbox';
-      checkbox.value = subject.id;
-      const labelText = document.createElement('span');
-      labelText.textContent = subject.title;
-      row.append(checkbox, labelText);
-      subjectsList.appendChild(row);
-      subjectCheckboxes.push(checkbox);
-    });
-    modal.appendChild(subjectsList);
+    if (subjects.length > 0) {
+      const subjectsList = document.createElement('div');
+      subjectsList.className = 'create-assessment-modal__subjects-list';
+      subjects.forEach((subject) => appendSubjectRow(subjectsList, subject.id, subject.title));
+      modal.appendChild(subjectsList);
+    }
+
+    if (otherCanonicalSubjects.length > 0) {
+      // Not yet in this classroom's Learning Activities \u2014 picking one
+      // here creates an Assessment for it without adding it to
+      // Learning Record; see this file's own header comment.
+      const otherLabel = document.createElement('p');
+      otherLabel.className = 'modal__description';
+      otherLabel.textContent = 'Not yet in Learning Activities';
+      modal.appendChild(otherLabel);
+
+      const otherList = document.createElement('div');
+      otherList.className = 'create-assessment-modal__subjects-list';
+      otherCanonicalSubjects.forEach((subject) => appendSubjectRow(otherList, subject.id, subject.title));
+      modal.appendChild(otherList);
+    }
   }
 
   const errorText = document.createElement('p');

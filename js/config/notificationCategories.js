@@ -19,10 +19,18 @@
  * pre-declared the way studentEventCategories.js pre-declares unused
  * ones — this file can grow alongside its own next real publisher
  * instead.
+ *
+ * CONNECTIONS added alongside the fourth real publisher,
+ * ui/views/ConnectLearningHubView.js, for the Learner Identity
+ * Bridge's own `connection_request_pending` notification type (see
+ * docs/architecture/CLASSROOM_INVITATION_VERIFICATION_BRIDGE.md) —
+ * same "grow alongside the next real publisher" reasoning as above,
+ * not a pre-declared placeholder.
  */
 
 export const NOTIFICATION_CATEGORIES = {
   CLASSROOM: 'Classroom',
   CHECKPOINTS: 'Checkpoints',
   FEED: 'Feed',
+  CONNECTIONS: 'Connections',
 };

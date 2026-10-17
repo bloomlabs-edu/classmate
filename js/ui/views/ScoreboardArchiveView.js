@@ -42,7 +42,7 @@ function formatDisplayDate(isoString) {
   return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-export async function renderScoreboardArchiveView(container, { classroom, archiveId, onBack, onOpenArchive, onSelectTeam }) {
+export async function renderScoreboardArchiveView(container, { classroom, archiveId, onBack, onOpenArchive, onSelectTeam, onSelectStudent }) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
@@ -53,7 +53,7 @@ export async function renderScoreboardArchiveView(container, { classroom, archiv
   header.appendChild(createBackButton(onBack));
 
   if (archiveId) {
-    await renderDetail(wrapper, header, classroom, archiveId, onSelectTeam);
+    await renderDetail(wrapper, header, classroom, archiveId, onSelectTeam, onSelectStudent);
   } else {
     await renderList(wrapper, header, classroom, onOpenArchive);
   }
@@ -235,7 +235,7 @@ function createArchiveCard(archive, allEvents, onOpenArchive, { variant }) {
   return card;
 }
 
-async function renderDetail(wrapper, header, classroom, archiveId, onSelectTeam) {
+async function renderDetail(wrapper, header, classroom, archiveId, onSelectTeam, onSelectStudent) {
   const archive = await scoreboardArchiveService.getArchive(classroom.id, archiveId);
 
   const titleBlock = document.createElement('div');
@@ -300,7 +300,19 @@ async function renderDetail(wrapper, header, classroom, archiveId, onSelectTeam)
     team.students.forEach((student) => {
       const row = document.createElement('div');
       row.className = 'scoreboard-archive__student-row';
-      const name = document.createElement('span');
+      // Same conditional span-vs-button pattern as this file's own
+      // group name above — a plain <span> when no navigation callback
+      // was passed in (e.g. no access to this student's profile from
+      // the current context), never a link with nowhere real to go.
+      const name = document.createElement(onSelectStudent ? 'button' : 'span');
+      if (onSelectStudent) {
+        name.type = 'button';
+        name.className = 'student-name-link';
+        name.addEventListener('click', (event) => {
+          event.stopPropagation();
+          onSelectStudent(student.id);
+        });
+      }
       name.textContent = student.name;
       const score = document.createElement('span');
       score.className = 'scoreboard-archive__student-score';

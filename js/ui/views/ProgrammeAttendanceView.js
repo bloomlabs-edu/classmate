@@ -24,7 +24,7 @@ import { createBackButton } from '../components/BackButton.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { formatDateKey } from '../../utils/dateHelpers.js';
 
-export async function renderProgrammeAttendanceView(container, { classroom, programmeId, sessionId, onBack }) {
+export async function renderProgrammeAttendanceView(container, { classroom, programmeId, sessionId, onBack, onSelectStudent }) {
   container.innerHTML = '';
 
   const programme = learningProgrammeService.getLearningProgrammeById(classroom, programmeId);
@@ -71,7 +71,7 @@ export async function renderProgrammeAttendanceView(container, { classroom, prog
       })
     );
   } else {
-    wrapper.appendChild(buildAttendanceSection(classroom.id, programme, session, roster, editable, persistPatch));
+    wrapper.appendChild(buildAttendanceSection(classroom.id, programme, session, roster, editable, persistPatch, onSelectStudent));
   }
 
   container.appendChild(wrapper);

@@ -123,8 +123,12 @@ export function renderCurriculumMetadataLine(container, { curriculumState, unitC
     // See this file's own header comment — this Subject genuinely HAS
     // a linkedCurriculumIndexId; the record it points to just isn't in
     // this browser's IndexedDB. Never names a curriculum here — this
-    // component has no way to know what it was called.
-    text.textContent = 'Curriculum linked, but its details aren’t available on this device/browser';
+    // component has no way to know what it was called. Wording-only
+    // pass (2026-10-01 UI consistency audit): the underlying logic/
+    // state this communicates is unchanged and still correct (see
+    // above) — only the phrasing moved away from "device/browser",
+    // which read as unusually technical for a teacher-facing screen.
+    text.textContent = 'Curriculum linked on another device — not synced here yet';
     line.appendChild(text);
     return;
   }

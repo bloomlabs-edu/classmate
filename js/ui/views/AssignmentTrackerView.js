@@ -31,6 +31,7 @@ import * as assignmentConfigService from '../../services/assignmentConfigService
 import * as assignmentCheckpointService from '../../services/assignmentCheckpointService.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
 import * as workspaceService from '../../services/workspaceService.js';
+import { createAssignmentConceptLinkState } from './AssignmentConceptLinkingDisplay.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createIcon, createIconBadge } from '../components/Icon.js';
@@ -316,7 +317,64 @@ function buildDeleteImpactMessage(title, { checkpointCount, recordCount }) {
   return `Delete "${title}"? This also removes ${checkpointCount} checkpoint${checkpointCount === 1 ? '' : 's'} (${recordCount} student record${recordCount === 1 ? '' : 's'}). This cannot be undone.`;
 }
 
-function renderConceptLinkSection(classroom, selectedConceptIds) {
+/**
+ * Unit -> Concept linking, Subject -> Unit -> Concept flow — see
+ * ui/views/AssignmentConceptLinkingDisplay.js's own header comment for
+ * the root cause this replaces (every concept in the whole classroom
+ * used to show here, merely grouped under headings, never actually
+ * filtered). `state` is that file's createAssignmentConceptLinkState();
+ * `refresh` re-renders this whole slot in place after any change that
+ * needs the DOM to reflect new selection state (subject/unit change).
+ * A concept checkbox toggle never needs a refresh — it doesn't change
+ * which units/concepts are offered, only which are checked.
+ */
+function renderUnitAndConceptSection(classroom, state, refresh) {
+  const wrapper = document.createElement('div');
+
+  const unitLabel = document.createElement('label');
+  unitLabel.textContent = 'Unit';
+  const unitSelect = document.createElement('select');
+
+  const subjectId = state.getSubjectId();
+  const units = state.getUnits();
+
+  if (!subjectId) {
+    unitSelect.disabled = true;
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'Select a subject first';
+    unitSelect.appendChild(option);
+  } else if (units.length === 0) {
+    unitSelect.disabled = true;
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'No units available for this subject';
+    unitSelect.appendChild(option);
+  } else {
+    const noneOption = document.createElement('option');
+    noneOption.value = '';
+    noneOption.textContent = '— Select a unit —';
+    unitSelect.appendChild(noneOption);
+    units.forEach((unit) => {
+      const option = document.createElement('option');
+      option.value = unit.id;
+      option.textContent = unit.title;
+      if (unit.id === state.getUnitId()) option.selected = true;
+      unitSelect.appendChild(option);
+    });
+  }
+  unitSelect.addEventListener('change', () => {
+    state.setUnitId(unitSelect.value || null);
+    refresh();
+  });
+  unitLabel.appendChild(unitSelect);
+  wrapper.appendChild(unitLabel);
+
+  wrapper.appendChild(renderConceptSection(classroom, state));
+  return wrapper;
+}
+
+function renderConceptSection(classroom, state) {
   const section = document.createElement('div');
   section.className = 'assignment-form__concept-section';
 
@@ -325,62 +383,82 @@ function renderConceptLinkSection(classroom, selectedConceptIds) {
   label.textContent = 'Link concepts (optional)';
   section.appendChild(label);
 
-  const allConcepts = learningRecordService.getAllConcepts(classroom);
-  if (allConcepts.length === 0) {
-    const empty = document.createElement('p');
-    empty.className = 'assignment-form__concept-empty';
-    empty.textContent = 'No concepts set up yet — add some from Learning Management first.';
-    section.appendChild(empty);
+  const subjectId = state.getSubjectId();
+  const unitId = state.getUnitId();
+  const selectedConceptIds = state.getSelectedConceptIds();
+
+  if (!subjectId) {
+    section.appendChild(buildConceptPrompt('Select a subject, then a unit, to link concepts.'));
+    return section;
+  }
+
+  if (!unitId) {
+    // Legacy-editing case: concepts selected before this fix (or
+    // spanning more than one Unit) are preserved here, visible but not
+    // editable until a specific Unit is chosen — see
+    // AssignmentConceptLinkingDisplay.js's own inferInitialUnitId()
+    // comment for why this can legitimately happen.
+    if (selectedConceptIds.length > 0) {
+      section.appendChild(buildPreservedConceptNote(classroom, selectedConceptIds));
+    }
+    const prompt = state.getUnits().length === 0 ? 'This subject has no units yet — add one from Learning Management first.' : 'Select a unit above to see its concepts.';
+    section.appendChild(buildConceptPrompt(prompt));
+    return section;
+  }
+
+  const unit = state.getUnits().find((u) => u.id === unitId);
+  const concepts = state.getConcepts();
+
+  const unitHeading = document.createElement('p');
+  unitHeading.className = 'assignment-form__concept-unit-heading';
+  unitHeading.textContent = unit ? `Concepts in "${unit.title}"` : '';
+  section.appendChild(unitHeading);
+
+  if (concepts.length === 0) {
+    section.appendChild(buildConceptPrompt('This unit has no concepts yet — add some from Learning Management first.'));
     return section;
   }
 
   const list = document.createElement('div');
   list.className = 'assignment-form__concept-list';
+  concepts.forEach((concept) => {
+    const option = document.createElement('label');
+    option.className = 'assignment-form__concept-option';
 
-  const bySubject = new Map();
-  allConcepts.forEach(({ subject, unit, concept }) => {
-    if (!bySubject.has(subject.id)) bySubject.set(subject.id, { subject, byUnit: new Map() });
-    const subjectGroup = bySubject.get(subject.id);
-    if (!subjectGroup.byUnit.has(unit.id)) subjectGroup.byUnit.set(unit.id, { unit, concepts: [] });
-    subjectGroup.byUnit.get(unit.id).concepts.push(concept);
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = state.isConceptSelected(concept.id);
+    checkbox.addEventListener('change', () => state.toggleConcept(concept.id, checkbox.checked));
+    option.appendChild(checkbox);
+
+    const title = document.createElement('span');
+    title.textContent = concept.title;
+    option.appendChild(title);
+
+    list.appendChild(option);
   });
-
-  bySubject.forEach(({ subject, byUnit }) => {
-    const subjectHeading = document.createElement('p');
-    subjectHeading.className = 'assignment-form__concept-subject-heading';
-    subjectHeading.textContent = subject.name;
-    list.appendChild(subjectHeading);
-
-    byUnit.forEach(({ unit, concepts }) => {
-      const unitHeading = document.createElement('p');
-      unitHeading.className = 'assignment-form__concept-unit-heading';
-      unitHeading.textContent = unit.title;
-      list.appendChild(unitHeading);
-
-      concepts.forEach((concept) => {
-        const option = document.createElement('label');
-        option.className = 'assignment-form__concept-option';
-
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.checked = selectedConceptIds.has(concept.id);
-        checkbox.addEventListener('change', () => {
-          if (checkbox.checked) selectedConceptIds.add(concept.id);
-          else selectedConceptIds.delete(concept.id);
-        });
-        option.appendChild(checkbox);
-
-        const title = document.createElement('span');
-        title.textContent = concept.title;
-        option.appendChild(title);
-
-        list.appendChild(option);
-      });
-    });
-  });
-
   section.appendChild(list);
   return section;
+}
+
+function buildConceptPrompt(message) {
+  const prompt = document.createElement('p');
+  prompt.className = 'assignment-form__concept-empty';
+  prompt.textContent = message;
+  return prompt;
+}
+
+/** Read-only chips for concepts already linked before a Unit could be resolved for them — never silently dropped, see renderConceptSection()'s own comment. */
+function buildPreservedConceptNote(classroom, conceptIds) {
+  const wrapper = document.createElement('div');
+
+  const note = document.createElement('p');
+  note.className = 'assignment-form__concept-empty';
+  note.textContent = 'Already linked (from before a unit was tracked, or spanning more than one unit):';
+  wrapper.appendChild(note);
+
+  wrapper.appendChild(buildConceptChips(classroom, conceptIds));
+  return wrapper;
 }
 
 /**
@@ -437,6 +515,28 @@ function renderAssignmentForm(assignment, classroom, handlers) {
   subjectLabel.appendChild(subjectSelect);
   form.appendChild(subjectLabel);
 
+  // Subject -> Unit -> Concept cascade — see
+  // AssignmentConceptLinkingDisplay.js's own header comment for the
+  // root cause this fixes. `conceptState` is the one source of truth
+  // for subject/unit/concept selection; `unitAndConceptSlot` is
+  // re-rendered in place on every subject/unit change so the DOM
+  // never gets out of sync with it.
+  const conceptState = createAssignmentConceptLinkState(classroom, {
+    subjectId: assignment?.subjectId || null,
+    conceptIds: assignment?.conceptIds || [],
+  });
+  const unitAndConceptSlot = document.createElement('div');
+  function refreshUnitAndConceptSlot() {
+    unitAndConceptSlot.innerHTML = '';
+    unitAndConceptSlot.appendChild(renderUnitAndConceptSection(classroom, conceptState, refreshUnitAndConceptSlot));
+  }
+  subjectSelect.addEventListener('change', () => {
+    conceptState.setSubjectId(subjectSelect.value || null);
+    refreshUnitAndConceptSlot();
+  });
+  refreshUnitAndConceptSlot();
+  form.appendChild(unitAndConceptSlot);
+
   const givenDateLabel = document.createElement('label');
   givenDateLabel.textContent = 'Date given';
   const givenDateInput = document.createElement('input');
@@ -462,9 +562,6 @@ function renderAssignmentForm(assignment, classroom, handlers) {
   resourceUrlLabel.appendChild(resourceUrlInput);
   form.appendChild(resourceUrlLabel);
 
-  const selectedConceptIds = new Set(assignment?.conceptIds || []);
-  form.appendChild(renderConceptLinkSection(classroom, selectedConceptIds));
-
   const actions = document.createElement('div');
   actions.className = 'notebook-checkpoints__form-actions';
 
@@ -483,7 +580,7 @@ function renderAssignmentForm(assignment, classroom, handlers) {
       givenDate: givenDateInput.value,
       dueDate: dueDateInput.value,
       resourceUrl: resourceUrlInput.value.trim(),
-      conceptIds: Array.from(selectedConceptIds),
+      conceptIds: conceptState.getSelectedConceptIds(),
     });
   });
   actions.appendChild(saveButton);

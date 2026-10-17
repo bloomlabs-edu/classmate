@@ -30,6 +30,18 @@
  * editable" state the way a never-saved AssessmentSubject's marks
  * entry does.
  *
+ * `scheduledEventId` — null for a manually-created Assessment (every
+ * Assessment created before this field existed, and any created via
+ * "+ Create Assessment" today). Set only when this Assessment was
+ * "Set up" from a Timetable exam (see
+ * services/assessmentTimetableLinkService.js) — a reference to that
+ * models/ScheduledEvent.js record, never a copy of its date/time.
+ * `date` above is still set at creation time from the event (so
+ * existing date-based sorting/filtering keeps working unmodified),
+ * but display code must resolve the CURRENT date/period from the
+ * live ScheduledEvent when this is set, not trust this field, since
+ * the event may be rescheduled afterward.
+ *
  * `examinationCycleId` — null for every Assessment created before this
  * field existed (i.e. every Assessment today). The STABLE, long-term
  * identity for "which examination cycle is this" (e.g. one specific
@@ -84,6 +96,7 @@ export function createAssessment({
   detailsLastSavedAt = null,
   assessmentSubjects = [],
   pinnedToDashboard = false,
+  scheduledEventId = null,
   passMarkPercent = null,
   examinationCycleId = null,
 } = {}) {
@@ -99,6 +112,7 @@ export function createAssessment({
     detailsLastSavedAt,
     assessmentSubjects,
     pinnedToDashboard,
+    scheduledEventId,
     passMarkPercent,
     examinationCycleId,
   };

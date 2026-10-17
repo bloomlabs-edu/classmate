@@ -14,6 +14,8 @@ import {
   createInitialTextbookItemStates,
   setTextbookItemState,
   findConceptByExactTitle,
+  buildConceptHierarchyForest,
+  getConceptAncestorIds,
 } from '../../js/ui/views/KnowledgeAuthoringDisplay.js';
 import { RELATIONSHIP_TYPES } from '../../js/models/KnowledgeRelationship.js';
 
@@ -344,4 +346,89 @@ test('findConceptByExactTitle: a near-miss/partial title is never treated as a m
 test('findConceptByExactTitle: no match returns null, never a guess', () => {
   assert.equal(findConceptByExactTitle(CONCEPTS, ''), null);
   assert.equal(findConceptByExactTitle(undefined, 'Flood'), null);
+});
+
+// ---------------------------------------------------------------------
+// Hierarchy (buildConceptHierarchyForest / getConceptAncestorIds)
+// ---------------------------------------------------------------------
+
+const HAZARD_TREE_CONCEPTS = [
+  { id: 'hazard', title: 'Hazard' },
+  { id: 'natural-hazard', title: 'Natural hazard' },
+  { id: 'human-made-hazard', title: 'Human-made hazard' },
+  { id: 'earthquake', title: 'Earthquake' },
+  { id: 'flood', title: 'Flood' },
+  { id: 'landslide', title: 'Landslide' },
+  { id: 'length', title: 'Length' }, // an unrelated, standalone root — no IS_A at all
+];
+
+function isA(fromConceptId, toConceptId) {
+  return { id: `${fromConceptId}->${toConceptId}`, type: RELATIONSHIP_TYPES.IS_A, fromConceptId, toConceptId };
+}
+
+const HAZARD_TREE_RELATIONSHIPS = [
+  isA('natural-hazard', 'hazard'),
+  isA('human-made-hazard', 'hazard'),
+  isA('earthquake', 'natural-hazard'),
+  isA('flood', 'natural-hazard'),
+  isA('landslide', 'natural-hazard'),
+];
+
+test('buildConceptHierarchyForest: builds the full nested tree from IS_A relationships, children sorted alphabetically', () => {
+  const forest = buildConceptHierarchyForest(HAZARD_TREE_CONCEPTS, HAZARD_TREE_RELATIONSHIPS);
+  // Two roots: 'Hazard' and the unrelated standalone 'Length', alphabetical
+  assert.deepEqual(forest.map((node) => node.concept.title), ['Hazard', 'Length']);
+
+  const hazardNode = forest[0];
+  assert.deepEqual(hazardNode.children.map((c) => c.concept.title), ['Human-made hazard', 'Natural hazard']);
+
+  const naturalHazardNode = hazardNode.children.find((c) => c.concept.title === 'Natural hazard');
+  assert.deepEqual(naturalHazardNode.children.map((c) => c.concept.title), ['Earthquake', 'Flood', 'Landslide']);
+
+  const lengthNode = forest[1];
+  assert.deepEqual(lengthNode.children, []);
+});
+
+test('buildConceptHierarchyForest: a relationship pointing at a deleted Concept is silently excluded, never a broken node', () => {
+  const relationships = [...HAZARD_TREE_RELATIONSHIPS, isA('earthquake', 'no-such-concept')];
+  const forest = buildConceptHierarchyForest(HAZARD_TREE_CONCEPTS, relationships);
+  // 'Earthquake' still appears once, correctly, under Natural hazard — the bad second IS_A is simply ignored
+  const naturalHazardNode = forest[0].children.find((c) => c.concept.title === 'Natural hazard');
+  assert.deepEqual(naturalHazardNode.children.map((c) => c.concept.title), ['Earthquake', 'Flood', 'Landslide']);
+});
+
+test('buildConceptHierarchyForest: a non-IS_A relationship (e.g. CAUSES) never contributes to the hierarchy', () => {
+  const relationships = [...HAZARD_TREE_RELATIONSHIPS, { id: 'r1', type: RELATIONSHIP_TYPES.CAUSES, fromConceptId: 'flood', toConceptId: 'length' }];
+  const forest = buildConceptHierarchyForest(HAZARD_TREE_CONCEPTS, relationships);
+  assert.deepEqual(forest.map((node) => node.concept.title), ['Hazard', 'Length']);
+});
+
+test('buildConceptHierarchyForest: a cycle never hangs — stops recursing once a path repeats', () => {
+  const concepts = [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }];
+  const cyclicRelationships = [isA('a', 'b'), isA('b', 'a')];
+  // Must return without throwing/hanging; exact shape isn't the point, termination is.
+  const forest = buildConceptHierarchyForest(concepts, cyclicRelationships);
+  assert.ok(Array.isArray(forest));
+});
+
+test('buildConceptHierarchyForest: an empty concepts/relationships list returns an empty forest, never throws', () => {
+  assert.deepEqual(buildConceptHierarchyForest([], []), []);
+  assert.deepEqual(buildConceptHierarchyForest(undefined, undefined), []);
+});
+
+test('getConceptAncestorIds: walks the full IS_A chain up to the root, nearest ancestor first', () => {
+  const ancestors = getConceptAncestorIds(HAZARD_TREE_RELATIONSHIPS, 'earthquake');
+  assert.deepEqual(ancestors, ['natural-hazard', 'hazard']);
+});
+
+test('getConceptAncestorIds: a root Concept (no outgoing IS_A) has no ancestors', () => {
+  assert.deepEqual(getConceptAncestorIds(HAZARD_TREE_RELATIONSHIPS, 'hazard'), []);
+  assert.deepEqual(getConceptAncestorIds(HAZARD_TREE_RELATIONSHIPS, 'length'), []);
+});
+
+test('getConceptAncestorIds: a cycle never hangs — stops once an id would repeat', () => {
+  const cyclicRelationships = [isA('a', 'b'), isA('b', 'a')];
+  const ancestors = getConceptAncestorIds(cyclicRelationships, 'a');
+  assert.ok(Array.isArray(ancestors));
+  assert.ok(ancestors.length <= 2);
 });

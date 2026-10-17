@@ -42,7 +42,7 @@ import { createBackButton } from '../components/BackButton.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { formatDateKey } from '../../utils/dateHelpers.js';
 
-export async function renderProgrammeGoalsReviewView(container, { classroom, programmeId, sessionId, onBack }) {
+export async function renderProgrammeGoalsReviewView(container, { classroom, programmeId, sessionId, onBack, onSelectStudent }) {
   container.innerHTML = '';
 
   const programme = learningProgrammeService.getLearningProgrammeById(classroom, programmeId);
@@ -121,7 +121,7 @@ export async function renderProgrammeGoalsReviewView(container, { classroom, pro
       );
       return;
     }
-    sectionContainer.appendChild(buildGoalsSection(programme, session, roster, editable, persistPatch, redraw, saveGoal));
+    sectionContainer.appendChild(buildGoalsSection(programme, session, roster, editable, persistPatch, redraw, saveGoal, onSelectStudent));
   }
 
   redraw();

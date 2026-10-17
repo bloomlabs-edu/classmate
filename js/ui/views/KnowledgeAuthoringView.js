@@ -37,12 +37,14 @@
  * internals.
  */
 
+import { renderKnowledgeHierarchyView } from './KnowledgeHierarchyView.js';
 import { renderKnowledgeConceptsView } from './KnowledgeConceptsView.js';
 import { renderKnowledgeRelationshipsView } from './KnowledgeRelationshipsView.js';
 import { renderKnowledgeClassificationsView } from './KnowledgeClassificationsView.js';
 import { renderKnowledgeTextbookReviewView } from './KnowledgeTextbookReviewView.js';
 
 const SECTIONS = [
+  { id: 'hierarchy', label: 'Hierarchy' },
   { id: 'concepts', label: 'Concepts' },
   { id: 'relationships', label: 'Relationships' },
   { id: 'classifications', label: 'Classifications' },
@@ -50,7 +52,12 @@ const SECTIONS = [
 ];
 
 export function renderKnowledgeAuthoringView(container, { classrooms, currentUser, sourceCurriculumUnitId = null }) {
-  let activeSection = 'concepts';
+  // 2026-10-01 UX simplification — Hierarchy (fast "sub-concept of"
+  // Concept entry, see ui/views/KnowledgeHierarchyView.js's own header
+  // comment) is now the primary landing tab; Concepts' own search/reuse
+  // screen remains exactly as it was for anyone who wants it, just no
+  // longer the default.
+  let activeSection = 'hierarchy';
 
   function rerenderShell() {
     container.innerHTML = '';
@@ -85,7 +92,9 @@ export function renderKnowledgeAuthoringView(container, { classrooms, currentUse
 
     container.appendChild(wrapper);
 
-    if (activeSection === 'concepts') {
+    if (activeSection === 'hierarchy') {
+      renderKnowledgeHierarchyView(sectionContainer, { classrooms, currentUser });
+    } else if (activeSection === 'concepts') {
       renderKnowledgeConceptsView(sectionContainer, { classrooms, currentUser, sourceCurriculumUnitId });
     } else if (activeSection === 'relationships') {
       renderKnowledgeRelationshipsView(sectionContainer, { classrooms, currentUser });

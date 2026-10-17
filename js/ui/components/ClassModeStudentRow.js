@@ -9,9 +9,12 @@
  * A vertical drag is treated as scrolling and abandons the gesture
  * entirely, so this never fights the page's normal scroll.
  *
- * The bucket's soft-pastel-background + coloured-left-border treatment
- * is unchanged from earlier sprints — only the interaction layer is new.
- * A visible "more actions" button is included alongside the gesture
+ * The bucket's soft-pastel background is unchanged from earlier sprints
+ * (the matching coloured left border was removed 2026-10 per product
+ * decision — temporary, bucket data/logic untouched, see
+ * config/bucketConfig.js's own getBucketRowStyle()) — only the
+ * interaction layer is new. A visible "more actions" button is
+ * included alongside the gesture
  * surface: long-press is pointer-only, so keyboard and assistive-tech
  * users need an explicit, focusable way to reach Quick Actions too.
  *
@@ -75,7 +78,6 @@ export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongP
   item.className = 'student-row';
   item.dataset.studentId = student.id;
   item.style.backgroundColor = style.background;
-  item.style.borderLeftColor = style.border;
 
   const surface = document.createElement('div');
   surface.className = 'student-row__surface';

@@ -272,6 +272,11 @@ test('weekly reports detail route: a Monday date key opens that week specificall
   });
 });
 
+test('my-work route: flat, top-level, no classroomId — a Task belongs to a person, not a classroom', () => {
+  const route = resolvePathParts(parts('my-work'));
+  assert.deepEqual(route, { name: 'myWork' });
+});
+
 // ---------------------------------------------------------------------
 // ASSESSMENTS — Scorecard as the default route, /manage as the
 // demoted-but-still-reachable old card-based home, /scorecard kept as
