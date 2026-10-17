@@ -2031,13 +2031,29 @@ service cloud.firestore {
       // This is a real, working, tested enforcement point, just at a
       // different layer than originally attempted.
 
+      // learnerProfileId + the PENDING-relationship existence check
+      // below were added per the Connect Learning Hub teacher review
+      // workflow's own CRITICAL FIRST STEP security verification (see
+      // models/LearnerConnection.js's own createStudentVerificationCode()
+      // header comment for the full "why"): a code generated while a
+      // teacher reviews one specific pending request must be bound,
+      // server-verifiably, to that exact learnerProfileId — not merely
+      // to (classroomId, studentId), which any OTHER learnerProfileId
+      // with a non-ACTIVE relationship in this same classroom could
+      // otherwise redeem. This single extra get() stays within this
+      // rules engine's documented constraints (this block's own
+      // existing comment above on the nested-exists() limitation) —
+      // it's one flat document lookup, not a nested list macro.
       allow read: if isTeacherOfThisClassroom();
 
       allow create: if isTeacherOfThisClassroom() &&
         request.resource.data.classroomId == classroomId &&
         request.resource.data.status == 'active' &&
         request.resource.data.studentId is string &&
-        request.resource.data.studentId.size() > 0;
+        request.resource.data.studentId.size() > 0 &&
+        request.resource.data.learnerProfileId is string &&
+        request.resource.data.learnerProfileId.size() > 0 &&
+        get(/databases/$(database)/documents/learnerClassroomRelationships/$(request.resource.data.learnerProfileId + '_' + classroomId)).data.status == 'PENDING';
 
       allow update: if isTeacherOfThisClassroom() &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
@@ -2101,6 +2117,21 @@ service cloud.firestore {
         resource.data.status == 'ACTIVE' &&
         request.resource.data.status == 'REVOKED' &&
         request.resource.data.revokedByUid == request.auth.uid;
+
+      // PENDING -> REJECTED: the second (and only other) client-side
+      // mutation this collection allows — a classroom's own teacher
+      // deciding a still-unverified request does not belong to any of
+      // their students. Exact same narrow-diff shape as ACTIVE ->
+      // REVOKED above, just a different starting/ending status pair —
+      // only ever from PENDING (never ACTIVE, never an
+      // already-REJECTED document), so an already-verified learner can
+      // never be silently rejected out from under them, and a rejected
+      // request can't be "re-rejected" to smuggle in a different field.
+      allow update: if isTeacherOfRelationshipClassroom() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'rejectedAt', 'rejectedByUid']) &&
+        resource.data.status == 'PENDING' &&
+        request.resource.data.status == 'REJECTED' &&
+        request.resource.data.rejectedByUid == request.auth.uid;
 
       allow delete: if false;
     }

@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "next_id": 18,
+  "next_id": 29,
   "items": [
     {
       "id": "WORK-0017",
@@ -14,7 +14,9 @@
         "tests/services/winningTeamMemberRule.test.js",
         "classrooms/4a85ca96-e10e-43c6-abba-97386cd3d80a/achievementEvents (production Firestore data correction)"
       ],
-      "dependencies": ["WORK-0009"],
+      "dependencies": [
+        "WORK-0009"
+      ],
       "worktree": null,
       "started_at": "2026-09-16",
       "updated_at": "2026-09-16",
@@ -353,6 +355,225 @@
       "current_state": "OBSERVED (verified directly against the actual learning-hub repo before writing the agent definition, not assumed from the user's brief alone): app/style.css (~950 lines) is the one primary stylesheet, zero CSS custom properties/design tokens exist anywhere in it, typeface is Poppins (not ClassMate's Plus Jakarta Sans), app/subjects/lets-get-social/theme.css exists but is empty (0 lines, a scaffold only). CRITICAL CORRECTION made mid-task: the user's brief said 'do not introduce a separate Concept Repository,' which an early draft of the agent file misread as 'no Concept Repository exists yet, described only via docs/CONCEPT_PROGRESS_ARCHITECTURE.md's mission-embedded concepts.' Direct inspection of docs/LEARNING_HUB_ARCHITECTURE_CURRENT_STATE.md showed this was wrong: a REAL, already-implemented, Firestore-backed Concept Repository already exists (app/repository/*.js + repository-ui.js, 'Phase 1 onward' - global Concepts, Resources, Learning Checks, Contributor Workspace), bridged (not merged) with the legacy mission engine's own separate concept-progress model (CONCEPT_PROGRESS_ARCHITECTURE.md's LESSON_DATA.concepts array). The agent definition was corrected before finishing to reflect that TWO concept systems already coexist, and that 'do not create a Concept Repository' means 'do not build a second/competing one,' not 'none exists.' This directly relates to CONFLICT-0001 (cross-project 'what does Concept mean' ambiguity), which the new agent is explicitly instructed not to attempt to resolve.",
       "blocked_reason": null,
       "notes": "The new agent is repo-scoped to learning-hub and cannot be invoked as a real custom agent type until a fresh session loads it (the same hot-load limitation observed earlier this project for classmate-visual-qa - see WORK-0004's notes). It has tools Read/Write/Edit/Glob/Grep/Bash (it DOES implement, unlike classmate-supervisor or classmate-visual-qa) but is explicitly instructed never to commit/push/deploy, and to escalate architectural-weight decisions rather than deciding them unilaterally - since it cannot invoke classmate-supervisor directly itself, escalation in practice means it states the question plainly and the invoking session routes it. No actual visual-system audit/implementation work has been performed yet by this new agent - this item only covers its creation and registration."
+    },
+    {
+      "id": "WORK-0018",
+      "worker_type": "SPECIALIST",
+      "worker_id": "specialist:classmate-visual-qa",
+      "project": "classmate",
+      "task": "Learning -> Social Science subject-selection UI audit + cleanup. User-reported visual issues (from a screenshot of Learning -> Social Science, a multi-Part subject: History/Geography/Civics/Economics), plus a broader scan of surrounding Learning UI for similar visual-language inconsistencies per docs/classmate_ui_consistency_guidelines.md Section 20 (which already lists Learning and Learning Subject Detail as screens due to be brought forward). Requested by the user, 2026-10-01. A classmate-visual-qa specialist run has already been launched in parallel by the main coordinating agent (NOT the Supervisor) to inspect the screen and report findings back to that main agent. Implementation will follow once findings return; the main coordinating agent owns prioritization, implementation, and verification end-to-end for this task -- the Supervisor role here is registration plus conflict-check only.",
+      "status": "active",
+      "affected_areas": [
+        "js/ui/views/LearningManagementView.js -- renderSubjectStep() (~L1185) and renderUnitsOrParts() (~L1598, Parts-list branch specifically at ~L1603-1616)",
+        "js/ui/components/CurriculumMetadataLine.js -- confirmed (this session, by direct read) to be the exact source of item 2 message, verbatim at line 127: Curriculum linked, but its details aren’t available on this device/browser",
+        "js/ui/components/BackButton.js -- shared Back control (read this session: already a real button element with class btn btn--text, not an anchor tag -- so item 5 complaint is a visual-affordance issue with the shared .btn--text style itself, not a structural/markup bug local to this screen; a fix here could affect roughly 20 other back buttons app-wide per this file own header comment -- flagged for whoever scopes implementation, not resolved here)",
+        "docs/classmate_ui_consistency_guidelines.md -- reference doc (confirmed present at this path), Section 20 already lists Learning and Learning Subject Detail as screens due to be brought forward"
+      ],
+      "dependencies": [],
+      "worktree": null,
+      "started_at": "2026-10-01",
+      "updated_at": "2026-10-01",
+      "current_state": "REGISTERED ONLY -- no implementation performed or authorized by this entry. Visual QA (classmate-visual-qa) is understood to be actively running in parallel, launched and owned by the main coordinating agent, not the Supervisor. CONFLICT CHECK PERFORMED THIS SESSION (read-only: git status, git diff --stat, git diff on specific files, git log, grep/read on the named files): (1) js/ui/components/CurriculumMetadataLine.js and js/ui/components/BackButton.js are both currently UNMODIFIED in the working tree (absent from git status --short) -- safe, stable, no active edit to collide with. (2) js/ui/views/LearningManagementView.js, by contrast, currently carries a substantial UNCOMMITTED diff (354 changed lines per git diff --stat) that was NOT previously registered anywhere in this registry -- see new entry WORK-0019, discovered and recorded as part of this same conflict check. That diff directly touches renderSubjectStep() and renderUnitsOrParts(), the same two functions this item named. See CONFLICT-0003. (3) Separately, git status also shows an uncommitted css/styles.css diff (124 lines) and new/modified files under js/ui/views/ChapterPlanEditorView.js, js/ui/components/GuidedStepFlow.js, js/ui/views/ChapterPlanGuidedStepsDisplay.js -- per the requesting session own account this is a just-finished Chapter Planning progressive-disclosure redesign, unrelated to this item scope (see backfill entry WORK-0020). Its only overlap with this item is the shared, global css/styles.css file -- a low-risk WARNING-level overlap (same pattern as WORK-0009 precedent with WORK-0001), not a direct function/component collision, since this item likely CSS additions (new icon-card styles for the Parts list, item 3) would be new rules, not edits to whatever Chapter Planning added. (4) No other active/queued work-registry item names js/ui/views/LearningManagementView.js, js/ui/components/CurriculumMetadataLine.js, js/ui/components/BackButton.js, or css/styles.css as an open, not-yet-completed target other than WORK-0019/WORK-0020 just discovered here. (5) decisions-log.md was checked -- nothing in it contradicts this item direction; the 6 pending Learning Hub integration decisions are unrelated (this item is entirely classmate-side, Learning-tab UI, not the separate Learning Hub cross-project integration).",
+      "blocked_reason": null,
+      "notes": "SCOPE AS GIVEN BY THE REQUESTING SESSION (not re-derived or altered by the Supervisor): (1) Remove Subject should move from prominent placement into a settings/overflow menu -- PARTIALLY ALREADY TRUE per this session own read: the Subject-level Delete Subject action is already inside an overflow menu (createOverflowMenu(), renderSubjectStep() ~L1208-1216, already-committed code per HEAD, not part of WORK-0019 uncommitted diff) -- open question for Visual QA to resolve, per the requesting session own framing, is whether the Social Science Parts screen specifically is a different code path that regressed or was missed, since renderUnitsOrParts() Parts-list branch (~L1603-1616) renders no Subject-removal action of its own at all today (it only renders plain createNavigationRow label-only rows for History/Geography/Civics/Economics -- see item 3 below). (2) remove the Curriculum is linked, but details are not available message -- confirmed exact source, see affected_areas. (3) convert History/Geography/Civics/Economics from horizontal strips to icon-based cards -- confirmed exact source: renderUnitsOrParts(), ~L1603-1616, currently a loop of plain createNavigationRow calls (label only) with a learning-management__subject-card-list wrapper class -- no icon, no card treatment today. (4) align with docs/classmate_ui_consistency_guidelines.md. (5) give Back a real visual affordance -- see BackButton.js finding above; blast radius may be app-wide, not local to this screen, if the fix is to .btn--text itself. (6) Visual QA has also been asked to scan surrounding Learning UI more broadly per guidelines Section 20. PARALLEL-WORK CHECKLIST RESULT (evaluated at registration): overlaps an UNREGISTERED-UNTIL-NOW uncommitted edit (WORK-0019) in the same file and same two functions -- recorded as CONFLICT-0003, severity SIGNIFICANT, because an implementation pass that does not re-check the file live state first could silently discard WORK-0019 in-progress rename/overflow-menu-for-Units work. Low-risk WARNING-level shared-file overlap with WORK-0020 (css/styles.css only). No cross-project dependency created (classmate-only). No contradiction found in decisions-log.md. CONCLUSION: NOT yet safe to start a parallel implementation pass on js/ui/views/LearningManagementView.js without first re-reading its current state (WORK-0019 diff may have changed or been committed by the time implementation begins) -- this is a needs-coordination finding, not an unsafe or an independent-assign-now one. The Supervisor did not and was not asked to start, delegate, or perform any implementation here."
+    },
+    {
+      "id": "WORK-0019",
+      "worker_type": "USER",
+      "worker_id": "human:rejeesh",
+      "project": "classmate",
+      "task": "Discovered during WORK-0018 conflict check, not previously registered anywhere: a substantial uncommitted, in-progress edit to js/ui/views/LearningManagementView.js adding inline Subject-title and Unit-title rename affordances (editingSubjectTitle/subjectRenameState, editingUnitId/unitRenameState, onStartRenameSubject/onRenameSubject/onStartRenameUnit/onRenameUnit handlers) and converting the Units list per-row actions from a plain row to js/ui/components/OverflowMenu.js createCardRowWithOverflowMenu() (Edit Unit / Delete Unit), alongside a new onRemoveUnit handler. Authorship/originating session not independently established by the Supervisor -- recorded as observed uncommitted working-tree state, same convention as WORK-0001.",
+      "status": "active",
+      "affected_areas": [
+        "js/ui/views/LearningManagementView.js"
+      ],
+      "dependencies": [],
+      "worktree": null,
+      "started_at": "unknown -- discovered as pre-existing uncommitted state during this conflict-check session",
+      "updated_at": "2026-10-01",
+      "current_state": "OBSERVED (this session, via git status --short and git diff --stat): js/ui/views/LearningManagementView.js carries an uncommitted diff of 354 changed lines. OBSERVED (via git diff read directly, hunk-by-hunk): the Subject-level Edit Subject / Delete Subject overflow menu (createOverflowMenu(), renderSubjectStep() ~L1208-1216) and its surrounding header comment (explaining a prior-round reversal from an ad hoc bottom Danger Zone back to a centrally-coordinated overflow menu, citing utils/popupCoordinator.js) are NOT part of this uncommitted diff -- that is already-committed code reachable at HEAD, predating this diff untouched. What IS part of the uncommitted diff: (a) new inline-rename state/handlers for both the Subject heading and individual Unit rows (rendered via a shared renderInlineRenameControl() when editingSubjectTitle/editingUnitId is set); (b) the Units list per-row rendering changed from a plain list row to createCardRowWithOverflowMenu() (imported new from js/ui/components/OverflowMenu.js, itself already a committed, pre-existing file per git log), giving each Unit its own Edit Unit / Delete Unit (danger) actions; (c) a new onRemoveUnit handler with its own confirm-gated deletion, deliberately NOT navigating away afterward (stays on the same Subject, per its own code comment contrasting this with onRemoveSubject navigate-to-home behavior). OBSERVED: css/styles.css also carries a separate uncommitted diff (124 lines added) that, per the requesting session own account, belongs to a different, just-finished Chapter Planning progressive-disclosure redesign (js/ui/views/ChapterPlanEditorView.js, new js/ui/components/GuidedStepFlow.js, new js/ui/views/ChapterPlanGuidedStepsDisplay.js) -- NOT this item; see backfill entry WORK-0020. This item js/ui/views/LearningManagementView.js diff is separate from, and unaccounted for by, that Chapter Planning description -- its origin/session is not established here.",
+      "blocked_reason": null,
+      "notes": "Recorded specifically because it directly overlaps WORK-0018 named affected files AND functions (renderSubjectStep(), renderUnitsOrParts()) -- see CONFLICT-0003, severity SIGNIFICANT. This is an observational, state-recording entry only: the Supervisor did not author, request, modify, commit, or revert any part of this diff. Do not treat this as settled or stable -- it is uncommitted working-tree state and could change, be reverted, or be committed at any time before a future session reads this file again. Any future implementation pass touching js/ui/views/LearningManagementView.js (including any WORK-0018 implementation) MUST re-run git status / git diff on js/ui/views/LearningManagementView.js immediately before editing, not rely on this snapshot, and must not silently discard this rename/overflow-menu-for-Units work without checking with the user first (Safety Principle)."
+    },
+    {
+      "id": "WORK-0020",
+      "worker_type": "USER",
+      "worker_id": "human:rejeesh",
+      "project": "classmate",
+      "task": "Backfill entry (registered at the requesting session own suggestion, during WORK-0018 registration): a Chapter Planning progressive-disclosure redesign, reported by the requesting session as JUST COMPLETED earlier in this same working session -- uncommitted changes to js/ui/views/ChapterPlanEditorView.js, two new files (js/ui/components/GuidedStepFlow.js, js/ui/views/ChapterPlanGuidedStepsDisplay.js), plus additions to css/styles.css. Not independently investigated in depth by the Supervisor beyond confirming the files existence/modification state -- recorded per the requesting session own account, same convention as WORK-0009/WORK-0010 backfills.",
+      "status": "completed",
+      "affected_areas": [
+        "js/ui/views/ChapterPlanEditorView.js",
+        "js/ui/components/GuidedStepFlow.js",
+        "js/ui/views/ChapterPlanGuidedStepsDisplay.js",
+        "css/styles.css (additions only, shared file -- see WORK-0018/WORK-0019 notes on the low-risk overlap)",
+        "tests/ui/chapterPlanGuidedStepsDisplay.test.js",
+        "tests/ui/guidedStepFlow.test.js"
+      ],
+      "dependencies": [],
+      "worktree": null,
+      "started_at": "unknown -- reported as completed earlier in the same working session this entry was created in",
+      "updated_at": "2026-10-01",
+      "current_state": "OBSERVED (this session, via git status --short): js/ui/views/ChapterPlanEditorView.js is modified (200 changed lines per git diff --stat); js/ui/components/GuidedStepFlow.js and js/ui/views/ChapterPlanGuidedStepsDisplay.js are new, untracked files; tests/ui/chapterPlanGuidedStepsDisplay.test.js and tests/ui/guidedStepFlow.test.js are new, untracked test files; css/styles.css carries a 124-line uncommitted addition (shared with/unseparated from any WORK-0019 styling needs, if any -- not independently distinguished here). USER-REPORTED (per the requesting session own account, not independently re-derived or test-run by the Supervisor this session): this work is done, not in progress. Status recorded as completed on that basis, consistent with how WORK-0010 recorded a user-verified-but-not-agent-re-verified completion.",
+      "blocked_reason": null,
+      "notes": "This is a bookkeeping-only backfill, exactly like WORK-0009/WORK-0010: no new investigation, testing, or verification was performed by the Supervisor to produce it beyond confirming the named files modified/untracked state in git. Explicitly NOT in conflict with WORK-0018 per the requesting session own account (finished, not concurrent) -- the only shared surface is css/styles.css, already noted as a low-risk WARNING-level overlap in WORK-0018/WORK-0019, not a direct conflict. None of this work is committed or pushed as of this entry."
+    },
+    {
+      "id": "WORK-0021",
+      "worker_type": "AGENT",
+      "worker_id": "agent:requesting-session",
+      "project": "classmate",
+      "status": "queued",
+      "dependencies": [],
+      "worktree": null,
+      "started_at": "2026-10-01",
+      "updated_at": "2026-10-01",
+      "blocked_reason": null,
+      "affected_areas": [
+        "js/ui/views/TimetableView.js -- Period Detail panel tab bar (Overview / Concepts / Plan / Student Resources / Lesson Plan / Reflection)",
+        "js/ui/views/TimetableView.js -- loadLessonPlanTab() (~L3205), the tab literally labeled 'Lesson Plan'",
+        "js/ui/views/TimetableView.js -- openAddResourceFlow() (~L3463), shared mechanism between the 'Lesson Plan' tab and the sibling 'Student Resources' tab",
+        "js/ui/views/TimetableView.js -- renderPlanTab() (~L1967), the REAL lesson-planning feature (Objectives + Big Question + bridge to Build/Open Detailed Lesson Plan via models/LessonPlan.js / LessonPlanBuilderView.js) -- read for contrast only, not an edit target",
+        "js/models/Resource.js -- audience field (read-only reference, not an edit target)"
+      ],
+      "task": "Fix Lesson Plan / Resource terminology-IA mismatch in Timetable's Period Detail panel. Requested by the user, 2026-10-01. Explicitly independent of the Concept Knowledge Model work (CLOSED this same session), the Chapter Planning guided-flow work (WORK-0020), and the Learning -> Social Science UI work (WORK-0018/WORK-0019) -- not to be treated as related to any of those despite some incidental file/area proximity.",
+      "current_state": "INSPECTION COMPLETE, proposal presented to the user for approval -- no code changes made or authorized by this entry. FINDINGS (confirmed by direct read of js/ui/views/TimetableView.js this session, consistent with the code's own existing comment at line 159 flagging the mismatch): the Period Detail panel's tab literally labeled 'Lesson Plan' (loadLessonPlanTab(), ~L3205) is in fact just the teacher-audience mirror of the sibling 'Student Resources' tab -- same openAddResourceFlow() mechanism (~L3463), filtered by models/Resource.js's own audience field, not a real lesson plan. The REAL lesson-planning feature is the separate 'Plan' tab (renderPlanTab(), ~L1967) -- Objectives + Big Question + a bridge to 'Build/Open Detailed Lesson Plan' (the real models/LessonPlan.js document via LessonPlanBuilderView.js). Affected strings in the mislabeled tab: tab label 'Lesson Plan', description 'Teacher-facing planning material.', empty state 'No lesson plan material added for this lesson yet.', buttons 'Share Lesson Plan'/'Upload Lesson Plan', modal eyebrow 'ADD TO LESSON PLAN' (~L3465), submit button 'Add to Lesson Plan' (~L3636). PROPOSED FIX (pending user approval, not yet decided): rename the tab and its copy to 'Teacher Resources', a direct parallel to 'Student Resources', with matching description/empty-state/button copy. ONE OPEN AMBIGUITY flagged back to the user, not resolved by this entry: 'Upload Lesson Plan' (currently disabled, 'Coming soon', no backing file-storage implementation) may have been originally intended as a genuine future lesson-plan-DOCUMENT upload rather than a generic teacher resource link -- the user is being asked to resolve this specifically before any implementation proceeds, since the terminology fix and this ambiguity are coupled (renaming to 'Teacher Resources' forecloses the document-upload reading unless handled separately). CONFLICT CHECK PERFORMED THIS SESSION (read-only: git status --short --branch, git diff --stat on js/ui/views/TimetableView.js, css/styles.css, and js/ui/components): js/ui/views/TimetableView.js itself is CONFIRMED CLEAN -- zero modified/untracked state, not named in any other registry item (WORK-0018/WORK-0019/WORK-0020 name js/ui/views/LearningManagementView.js, js/ui/components/CurriculumMetadataLine.js, and js/ui/components/BackButton.js -- none of which this item touches). The resource-add flow (openAddResourceFlow) this item would touch is defined locally inside TimetableView.js itself -- not a separate shared component file -- confirmed via grep across js/ (14 files reference openAddResourceFlow/models/Resource, none of them a shared modal/component file this item would also need to touch). css/styles.css DOES currently carry a substantial uncommitted diff (469 lines, confirmed via git diff --stat) -- but per the requesting session's own account this is the just-closed Concept Knowledge Model UX simplification (new js/ui/views/KnowledgeHierarchyView.js + edits to KnowledgeAuthoringDisplay.js/KnowledgeAuthoringView.js/KnowledgeConceptPicker.js), unrelated to Timetable/resource terminology -- same low-risk WARNING-level shared-global-file pattern already established for css/styles.css in WORK-0009/WORK-0018/WORK-0019/WORK-0020 (new/different rules, not edits to the same selectors). No active or queued registry item references Timetable, Lesson Plan tab, Period Detail panel, or the resource-link/audience mechanism prior to this entry. decisions-log.md checked -- nothing in it (including the 6 pending Learning Hub integration decisions, which are unrelated cross-project items) contradicts this item's direction.",
+      "notes": "PARALLEL-WORK CHECKLIST RESULT (evaluated at registration): independent of all currently active/queued classmate items -- no file overlap with WORK-0019 (active, LearningManagementView.js) or any other open item; only a low-risk WARNING-level shared-file overlap with css/styles.css if the eventual fix needs new CSS (none of today's uncommitted css/styles.css diff touches Timetable/resource/lesson-plan selectors). No cross-project dependency (classmate-only, no Learning Hub involvement, no overlap with CONFLICT-0001's 'what does Concept mean' ambiguity -- this item is about Timetable tab/resource terminology, not Concepts). No contradiction found in decisions-log.md. CONCLUSION: parallel-safe to start once the user resolves the one open ambiguity (the 'Upload Lesson Plan' document-vs-generic-resource question) -- status recorded as 'queued', not 'ready', specifically because that user decision is the actual gate on beginning implementation, not a file/dependency conflict. The classmate-visual-qa specialist is explicitly NOT to be invoked by the Supervisor for this item -- the user wants visual QA run AFTER implementation, to be triggered separately by the main coordinating agent once terminology is approved and changes are made. Do not treat this item as related to the Concept Knowledge Model (CLOSED), Chapter Planning guided-flow work (WORK-0020), or Social Science UI work (WORK-0018/WORK-0019) despite incidental proximity in session timing or the shared css/styles.css file -- the requesting session was explicit that these are unrelated."
+    },
+    {
+      "id": "WORK-0022",
+      "worker_type": "AGENT",
+      "worker_id": "unassigned",
+      "project": "classmate",
+      "task": "App-wide Student-side interaction-label contrast issue: the Teacher/Student interaction color pairing used on Activities/Spark/review/read-only surfaces has a contrast problem specifically on the Student side. Pre-existing (not introduced by the Lesson Plan Activity UI redesign); flagged by visual QA during that redesign but explicitly called out as out of that tasks scope, since it affects more surfaces than just Lesson Plan.",
+      "status": "queued",
+      "affected_areas": [
+        "js/ui/views/LessonPlanBuilderView.js -- Activity/Spark Teacher/Student interaction pairing (where first flagged)",
+        "css/styles.css -- Teacher/Student interaction color-pair rule(s), app-wide, not Lesson-Plan-local",
+        "js/ui/views/LessonPlanReviewView.js -- review surface using the same pairing",
+        "js/ui/components/LessonContentReadOnly.js -- read-only surface using the same pairing",
+        "other surfaces not yet enumerated that reuse the same Teacher/Student interaction color pairing"
+      ],
+      "dependencies": [],
+      "worktree": null,
+      "started_at": null,
+      "updated_at": "2026-10-01",
+      "current_state": "QUEUED -- not started. Recorded as a not-yet-started follow-up to the just-shipped Redesign Lesson Plan Activity UI task (commit fe07902, pushed to origin/main, deployed and verified live on classmate-302c2.web.app, 2026-10-01). Not started; no investigation beyond the originating flag has been performed by the Supervisor. Exact contrast ratio, exact affected CSS selector(s), and the full list of surfaces beyond Activities/Spark/review/read-only have not been independently measured or enumerated; this entry records the flag, not a completed audit.",
+      "blocked_reason": null,
+      "notes": "Explicitly pre-existing and app-wide, not local to the Lesson Plan Builder -- do not scope an eventual fix to LessonPlanBuilderView.js alone without first checking every other surface that reuses the same Teacher/Student color pairing. No product-direction decision has been made about the fix approach; a classmate-visual-qa pass to measure actual contrast ratios and enumerate every affected surface would likely need to precede any implementation."
+    },
+    {
+      "id": "WORK-0023",
+      "worker_type": "AGENT",
+      "worker_id": "unassigned",
+      "project": "classmate",
+      "task": "Long Topic title clips/overlaps the status badge in the Lesson Plan header. Pre-existing title-bar markup, not introduced by the Activity UI redesign.",
+      "status": "queued",
+      "affected_areas": [
+        "js/ui/views/LessonPlanBuilderView.js -- header/title-bar markup (Topic title + status badge)"
+      ],
+      "dependencies": [],
+      "worktree": null,
+      "started_at": null,
+      "updated_at": "2026-10-01",
+      "current_state": "QUEUED -- not started. Recorded as a not-yet-started follow-up to the just-shipped Redesign Lesson Plan Activity UI task (commit fe07902, pushed to origin/main, deployed and verified live on classmate-302c2.web.app, 2026-10-01). Not started; no investigation beyond the originating flag has been performed by the Supervisor.",
+      "blocked_reason": null,
+      "notes": "Pre-existing title-bar layout issue, unrelated to the activity-card/interaction/differentiation redesign that just shipped. No fix approach (truncation, wrap, badge reposition) has been decided."
+    },
+    {
+      "id": "WORK-0024",
+      "worker_type": "AGENT",
+      "worker_id": "unassigned",
+      "project": "classmate",
+      "task": "Lesson Objectives rows clip long text: the Objectives field is a plain single-line input (not auto-grow), a different field pattern than Activity/Interaction/Spark/Differentiation, which now use AutoGrowTextarea after the just-shipped redesign.",
+      "status": "queued",
+      "affected_areas": [
+        "js/ui/views/LessonPlanBuilderView.js -- Lesson Objectives field rendering",
+        "js/ui/components/AutoGrowTextarea.js -- the component other fields now use; read as the reference pattern, not necessarily to be reused as-is"
+      ],
+      "dependencies": [],
+      "worktree": null,
+      "started_at": null,
+      "updated_at": "2026-10-01",
+      "current_state": "QUEUED -- not started. Recorded as a not-yet-started follow-up to the just-shipped Redesign Lesson Plan Activity UI task (commit fe07902, pushed to origin/main, deployed and verified live on classmate-302c2.web.app, 2026-10-01). Not started; no investigation beyond the originating flag has been performed by the Supervisor. AutoGrowTextarea.js itself was just fixed this same redesign (resize-driven stale-height cropping bug, debounced via a shared rAF-scheduled resize listener) -- that fix is already shipped; this item is about the Objectives field not using that component/pattern at all yet, a separate, pre-existing field-pattern inconsistency.",
+      "blocked_reason": null,
+      "notes": "Whether Objectives should simply adopt AutoGrowTextarea (consistency with the other now-updated fields) or use a different pattern is not decided here -- recorded as a follow-up only."
+    },
+    {
+      "id": "WORK-0025",
+      "worker_type": "AGENT",
+      "worker_id": "unassigned",
+      "project": "classmate",
+      "task": "Inconsistent Add button visual tiers on the Lesson Plan Builder page: the redesign introduced a new tonal-blue pill tier (Resources/Interactions/Differentiation adds, per-field Browse Ideas) that now sits in close visual proximity to pre-existing btn--primary (Submit for Review, plus New Activity) and btn--secondary controls, several with the same or similar label wording -- needs a product decision on whether to unify, not a mechanical fix.",
+      "status": "queued",
+      "affected_areas": [
+        "js/ui/views/LessonPlanBuilderView.js -- all Add-labeled and similarly-worded controls on the page",
+        "css/styles.css -- the new tonal-blue pill tier plus existing btn--primary/btn--secondary rules"
+      ],
+      "dependencies": [],
+      "worktree": null,
+      "started_at": null,
+      "updated_at": "2026-10-01",
+      "current_state": "QUEUED -- not started, and explicitly not implementation-ready as registered: this items own description frames it as needing a product decision (unify the button tiers, or leave as deliberately distinct affordances) before any code change. Recorded as a not-yet-started follow-up to the just-shipped Redesign Lesson Plan Activity UI task (commit fe07902, pushed to origin/main, deployed and verified live on classmate-302c2.web.app, 2026-10-01). Not started; no investigation beyond the originating flag has been performed by the Supervisor.",
+      "blocked_reason": "Needs a product/design decision from the user (unify the visual tiers vs. keep them distinct) before implementation can begin -- not a file/dependency blocker.",
+      "notes": "Do not implement a unification (or any other fix) without that decision being made and recorded in decisions-log.md first, per the Supervisors standing instruction to escalate rather than silently pick an answer on ambiguous design questions."
+    },
+    {
+      "id": "WORK-0026",
+      "worker_type": "AGENT",
+      "worker_id": "unassigned",
+      "project": "classmate",
+      "task": "Progressive-disclosure row-height imbalance when reopening the Connection stage next to the still-compact Showcase tile, in the Chapter Planning guided-flow UI (unrelated to Lesson Plan; flagged during the same visual QA round as the Lesson Plan follow-ups but a different feature area).",
+      "status": "queued",
+      "affected_areas": [
+        "js/ui/views/ChapterPlanEditorView.js",
+        "js/ui/components/GuidedStepFlow.js",
+        "js/ui/views/ChapterPlanGuidedStepsDisplay.js"
+      ],
+      "dependencies": [],
+      "worktree": null,
+      "started_at": null,
+      "updated_at": "2026-10-01",
+      "current_state": "QUEUED -- not started. Recorded as a not-yet-started follow-up to the just-shipped Redesign Lesson Plan Activity UI task (commit fe07902, pushed to origin/main, deployed and verified live on classmate-302c2.web.app, 2026-10-01). Not started; no investigation beyond the originating flag has been performed by the Supervisor. This items affected files are the same Chapter Planning progressive-disclosure feature recorded as WORK-0020 (backfill, status completed/committed per that entry) -- this is a new, separate follow-up finding against that already-shipped feature, not a reopening of WORK-0020 itself.",
+      "blocked_reason": null,
+      "notes": "Explicitly unrelated to the Lesson Plan Activity UI redesign despite being recorded in the same batch -- grouped here only because it was flagged in the same visual QA round. Cross-reference WORK-0020 for the feature this row-height imbalance was found in."
+    },
+    {
+      "id": "WORK-0027",
+      "worker_type": "AGENT",
+      "worker_id": "unassigned",
+      "project": "classmate",
+      "task": "Locked/submitted Lesson Plan view drops section headings for 3 of 5 stages inconsistently: Why/Connection/Showcase show raw content with no framing question while Helping/Experience keep theirs. Likely a pre-existing, separate code path for the locked/read-only branch, not something the just-shipped redesign touched.",
+      "status": "queued",
+      "affected_areas": [
+        "js/ui/components/LessonContentReadOnly.js -- the locked/submitted/read-only rendering path",
+        "js/ui/views/LessonPlanBuilderView.js -- for contrast against the editable-stage rendering, which does show framing questions for all 5 stages"
+      ],
+      "dependencies": [],
+      "worktree": null,
+      "started_at": null,
+      "updated_at": "2026-10-01",
+      "current_state": "QUEUED -- not started. Recorded as a not-yet-started follow-up to the just-shipped Redesign Lesson Plan Activity UI task (commit fe07902, pushed to origin/main, deployed and verified live on classmate-302c2.web.app, 2026-10-01). Not started; no investigation beyond the originating flag has been performed by the Supervisor. Root cause (likely a pre-existing separate code path for the locked/read-only branch) is the originating flags own hypothesis, not independently confirmed by the Supervisor -- a future implementation pass should verify this via direct code read before assuming the diagnosis.",
+      "blocked_reason": null,
+      "notes": "No code has been read by the Supervisor to confirm which 3 of the 5 stages (Why/Connection/Showcase) are actually missing their framing-question heading in the locked view, versus Helping/Experience which reportedly keep theirs -- recorded as reported, pending verification."
+    },
+    {
+      "id": "WORK-0028",
+      "worker_type": "AGENT",
+      "worker_id": "unassigned",
+      "project": "classmate",
+      "task": "The 768px viewport width does not trigger the 3-column-grid-to-1-column stacking breakpoint used in a few places on the Lesson Plan Builder (breakpoint is set at 640px). Flagged only because 768px is a common tablet width -- may be an intentional threshold, not necessarily a bug.",
+      "status": "queued",
+      "affected_areas": [
+        "css/styles.css -- the 640px breakpoint rule(s) governing the 3-column-to-1-column grid stacking on Lesson Plan Builder surfaces"
+      ],
+      "dependencies": [],
+      "worktree": null,
+      "started_at": null,
+      "updated_at": "2026-10-01",
+      "current_state": "QUEUED -- not started, and explicitly flagged as possibly-not-a-bug at registration time: the originating finding itself notes the 640px threshold may be intentional. Recorded as a not-yet-started follow-up to the just-shipped Redesign Lesson Plan Activity UI task (commit fe07902, pushed to origin/main, deployed and verified live on classmate-302c2.web.app, 2026-10-01). Not started; no investigation beyond the originating flag has been performed by the Supervisor.",
+      "blocked_reason": null,
+      "notes": "Before implementing any breakpoint change, confirm with the user whether 640px was a deliberate choice (e.g. matching an existing design-system breakpoint scale) or simply never checked against 768px -- do not assume it is a defect."
     }
   ]
 }
