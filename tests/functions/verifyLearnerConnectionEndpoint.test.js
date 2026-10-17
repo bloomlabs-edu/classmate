@@ -5,7 +5,7 @@
  * functions/src/verifyLearnerConnectionEndpoint.js — the trusted
  * endpoint's own core logic: authentication, identity binding, request
  * validation, and delegation to the already-tested
- * server/learnerVerification/verifyLearnerConnection.js module.
+ * functions/src/learnerVerification/verifyLearnerConnection.js module.
  *
  * This suite deliberately does NOT re-prove every transaction-level
  * property already covered exhaustively by
@@ -89,11 +89,11 @@ async function seedInvitationCode(code, classroomId) {
   await db.doc(`classroomInvitationCodes/${code}`).set({ classroomId, invitationId: 'inv-endpoint', status: 'active', createdAt: 'now' });
 }
 
-async function seedVerificationCode(classroomId, studentId, rawCode) {
-  const { sha256Hex } = await import('../../server/learnerVerification/hashUtils.js');
+async function seedVerificationCode(classroomId, studentId, learnerProfileId, rawCode) {
+  const { sha256Hex } = await import('../../functions/src/learnerVerification/hashUtils.js');
   const codeHash = sha256Hex(rawCode);
   await db.doc(`classrooms/${classroomId}/studentVerificationCodes/${codeHash}`).set({
-    codeHash, classroomId, studentId, status: 'active', createdByUid: 'endpoint-teacher', createdAt: 'now', expiresAt: '2099-01-01T00:00:00.000Z',
+    codeHash, classroomId, studentId, learnerProfileId, status: 'active', createdByUid: 'endpoint-teacher', createdAt: 'now', expiresAt: '2099-01-01T00:00:00.000Z',
   });
 }
 
@@ -284,7 +284,7 @@ test('an ownership resolver throwing an error is treated as "not owned", not as 
 // --------------------------------------------------------------------
 
 test('with a trusting resolver, a real verification code activates the relationship end-to-end through the endpoint', async () => {
-  await seedVerificationCode(CLASSROOM_A, STUDENT_A1, 'ENDPOINTCODE1');
+  await seedVerificationCode(CLASSROOM_A, STUDENT_A1, LEARNER_1, 'ENDPOINTCODE1');
   const { httpStatus, body } = await handleVerifyLearnerConnectionRequest({
     authorizationHeader: validBearerToken,
     body: { learnerProfileId: LEARNER_1, classroomId: CLASSROOM_A, credentialType: 'verification', credential: 'ENDPOINTCODE1' },
@@ -296,7 +296,7 @@ test('with a trusting resolver, a real verification code activates the relations
 });
 
 test('the same verification code cannot be redeemed twice through the endpoint (reuse still blocked underneath)', async () => {
-  await seedVerificationCode(CLASSROOM_A, STUDENT_A1, 'ENDPOINTCODE2');
+  await seedVerificationCode(CLASSROOM_A, STUDENT_A1, LEARNER_1, 'ENDPOINTCODE2');
   const deps = { adminDb: db, verifyLearnerProfileOwnership: ownershipResolverFor(REAL_LEARNING_HUB_UID, LEARNER_1) };
   const req = { authorizationHeader: validBearerToken, body: { learnerProfileId: LEARNER_1, classroomId: CLASSROOM_A, credentialType: 'verification', credential: 'ENDPOINTCODE2' }, deps };
   const first = await handleVerifyLearnerConnectionRequest(req);
@@ -306,7 +306,7 @@ test('the same verification code cannot be redeemed twice through the endpoint (
 });
 
 test('a verification code from a DIFFERENT classroom cannot be redeemed through the endpoint (cross-classroom isolation still holds)', async () => {
-  await seedVerificationCode(CLASSROOM_A, STUDENT_A1, 'ENDPOINTCODE3');
+  await seedVerificationCode(CLASSROOM_A, STUDENT_A1, LEARNER_1, 'ENDPOINTCODE3');
   const { body } = await handleVerifyLearnerConnectionRequest({
     authorizationHeader: validBearerToken,
     body: { learnerProfileId: LEARNER_1, classroomId: CLASSROOM_B, credentialType: 'verification', credential: 'ENDPOINTCODE3' },
@@ -333,11 +333,18 @@ test('a REVOKED relationship is never resurrected straight to ACTIVE by an invit
 });
 
 test('concurrent redemption of the same code through the endpoint still resolves to exactly one success (the endpoint adds no non-atomic step of its own)', async () => {
-  await seedVerificationCode(CLASSROOM_A, STUDENT_A1, 'ENDPOINTCONCURRENT1');
+  // Same rightful learner racing itself (e.g. a double-submit from two
+  // tabs) — matching tests/server/verifyLearnerConnection.test.js's own
+  // concurrency test. A code is bound to exactly one learnerProfileId
+  // (see verifyLearnerConnection.js's own mis-binding check), so a
+  // second, DIFFERENT learner racing for the same code would fail on
+  // that binding check regardless of timing, which would no longer be
+  // proving the atomicity property this test exists for.
+  await seedVerificationCode(CLASSROOM_A, STUDENT_A1, LEARNER_1, 'ENDPOINTCONCURRENT1');
   const deps = { adminDb: db, verifyLearnerProfileOwnership: async () => true };
   const [a, b] = await Promise.all([
     handleVerifyLearnerConnectionRequest({ authorizationHeader: validBearerToken, body: { learnerProfileId: LEARNER_1, classroomId: CLASSROOM_A, credentialType: 'verification', credential: 'ENDPOINTCONCURRENT1' }, deps }),
-    handleVerifyLearnerConnectionRequest({ authorizationHeader: validBearerToken, body: { learnerProfileId: LEARNER_2, classroomId: CLASSROOM_A, credentialType: 'verification', credential: 'ENDPOINTCONCURRENT1' }, deps }),
+    handleVerifyLearnerConnectionRequest({ authorizationHeader: validBearerToken, body: { learnerProfileId: LEARNER_1, classroomId: CLASSROOM_A, credentialType: 'verification', credential: 'ENDPOINTCONCURRENT1' }, deps }),
   ]);
   const successes = [a, b].filter((r) => r.body.ok);
   assert.equal(successes.length, 1);

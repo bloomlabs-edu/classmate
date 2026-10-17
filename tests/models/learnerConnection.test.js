@@ -21,7 +21,13 @@ import {
   CODE_STATUS,
 } from '../../js/models/LearnerConnection.js';
 import { sha256Hex as browserSha256Hex } from '../../js/utils/hashUtils.js';
-import { sha256Hex as serverSha256Hex } from '../../server/learnerVerification/hashUtils.js';
+import { sha256Hex as serverSha256Hex } from '../../functions/src/learnerVerification/hashUtils.js';
+import {
+  RELATIONSHIP_STATUS as FUNCTIONS_RELATIONSHIP_STATUS,
+  CODE_STATUS as FUNCTIONS_CODE_STATUS,
+  buildRelationshipId as functionsBuildRelationshipId,
+  findTrustedAutomaticMatch as functionsFindTrustedAutomaticMatch,
+} from '../../functions/src/learnerVerification/learnerConnectionShared.js';
 
 test('buildRelationshipId is deterministic and composes learnerProfileId + classroomId', () => {
   assert.equal(buildRelationshipId('learner-1', 'classroom-1'), 'learner-1_classroom-1');
@@ -94,4 +100,11 @@ test('SHA-256 hashing is deterministic (same input always produces the same hash
   const hashB = await browserSha256Hex('CODE-BBBB2');
   assert.equal(hashA1, hashA2);
   assert.notEqual(hashA1, hashB);
+});
+
+test('functions/src/learnerVerification/learnerConnectionShared.js stays in parity with js/models/LearnerConnection.js (deliberate deploy-boundary duplicate — see that file\'s own header comment)', () => {
+  assert.deepEqual(FUNCTIONS_RELATIONSHIP_STATUS, RELATIONSHIP_STATUS);
+  assert.deepEqual(FUNCTIONS_CODE_STATUS, CODE_STATUS);
+  assert.equal(functionsBuildRelationshipId('learner-1', 'classroom-1'), buildRelationshipId('learner-1', 'classroom-1'));
+  assert.equal(functionsFindTrustedAutomaticMatch({ learnerProfileId: 'x', classroomId: 'y' }), findTrustedAutomaticMatch({ learnerProfileId: 'x', classroomId: 'y' }));
 });

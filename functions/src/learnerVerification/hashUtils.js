@@ -1,5 +1,5 @@
 /**
- * server/learnerVerification/hashUtils.js
+ * functions/src/learnerVerification/hashUtils.js
  *
  * Node-side SHA-256, used only by the trusted verification module
  * (verifyLearnerConnection.js) to re-derive the same hash the teacher's
