@@ -50,7 +50,7 @@ import { createIcon } from '../components/Icon.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createStudentNameElement } from '../components/StudentNameElement.js';
 
-export function renderStudentAccessView(container, { classroom, currentUser, onBack, onSelectStudent }) {
+export function renderStudentAccessView(container, { classroom, currentUser, onBack, onSelectStudent, onOpenConnectLearningHub }) {
   container.innerHTML = '';
 
   const wrapper = document.createElement('div');
@@ -77,7 +77,7 @@ export function renderStudentAccessView(container, { classroom, currentUser, onB
   const content = document.createElement('div');
   content.className = 'wizard-step-content';
 
-  const rerender = () => renderStudentAccessView(container, { classroom, currentUser, onBack, onSelectStudent });
+  const rerender = () => renderStudentAccessView(container, { classroom, currentUser, onBack, onSelectStudent, onOpenConnectLearningHub });
 
   const bento = document.createElement('div');
   bento.className = 'classroom-access-bento';
@@ -85,6 +85,7 @@ export function renderStudentAccessView(container, { classroom, currentUser, onB
   bento.appendChild(createInviteCoTeacherTile(classroom, currentUser, rerender));
   bento.appendChild(createInviteProgramManagerTile(classroom, currentUser, rerender));
   bento.appendChild(createVisitorAccessTile(classroom, currentUser, rerender));
+  bento.appendChild(createConnectLearningHubTile(onOpenConnectLearningHub));
   content.appendChild(bento);
 
   content.appendChild(createDeviceSecurityCard(classroom, rerender));
@@ -106,7 +107,7 @@ export function renderStudentAccessView(container, { classroom, currentUser, onB
  * this page already used before this redesign — one shared place for
  * that fallback chain rather than repeating it per button.
  */
-async function copyText(text, successMessage) {
+export async function copyText(text, successMessage) {
   try {
     await navigator.clipboard.writeText(text);
     showToast(successMessage);
@@ -495,6 +496,56 @@ function createVisitorAccessTile(classroom, currentUser, rerender) {
     }
   });
   card.appendChild(revokeButton);
+
+  return card;
+}
+
+/**
+ * Connect Learning Hub — the entry point into the ClassMate-side half
+ * of the Learner Identity Bridge (see
+ * docs/architecture/CLASSROOM_INVITATION_VERIFICATION_BRIDGE.md). This
+ * tile is deliberately a plain navigation card, not an inline
+ * code/queue display the way the other four tiles are: unlike
+ * classroom.classroomJoinCode etc. (plain fields already present on
+ * the already-loaded `classroom` object this whole view renders
+ * synchronously from), a classroom invitation lives in its own
+ * Firestore subcollection and the pending-request queue is a separate
+ * classroom-scoped query — both need an async read this view's own
+ * synchronous render function was never built to perform. See
+ * ui/views/ConnectLearningHubView.js's own header comment for where
+ * that data actually loads and renders, using the exact same
+ * `.invite-students-card__code`/copyText() conventions the other tiles
+ * use, just one screen deeper.
+ *
+ * Never routes through, references, or revives Student Mode in any
+ * way — this is a distinct, ClassMate-owned connection to a SEPARATE
+ * product (Learning Hub), not a Student Mode join flow.
+ */
+function createConnectLearningHubTile(onOpenConnectLearningHub) {
+  const card = document.createElement('div');
+  card.className = 'classroom-access-bento__tile classroom-access-bento__tile--medium';
+
+  const iconBadge = document.createElement('div');
+  iconBadge.className = 'classroom-access-bento__icon-badge classroom-access-bento__icon-badge--learning-hub';
+  iconBadge.appendChild(createIcon('graduation-cap', { size: 20 }));
+  card.appendChild(iconBadge);
+
+  const heading = document.createElement('h2');
+  heading.className = 'classroom-access-bento__heading';
+  heading.textContent = 'Connect Learning Hub';
+  card.appendChild(heading);
+
+  const description = document.createElement('p');
+  description.className = 'classroom-access-bento__description';
+  description.textContent = 'Link learners from Learning Hub to a student in your classroom — share a connection code, then verify each request against your own roster.';
+  card.appendChild(description);
+
+  const openButton = document.createElement('button');
+  openButton.type = 'button';
+  openButton.className = 'btn btn--primary';
+  openButton.textContent = 'Open Connect Learning Hub';
+  openButton.addEventListener('click', () => onOpenConnectLearningHub?.());
+  card.appendChild(openButton);
 
   return card;
 }
