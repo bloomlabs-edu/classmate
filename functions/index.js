@@ -1,38 +1,27 @@
 /**
  * functions/index.js
  *
- * "Sign in with Phone" — TV/shared-device pairing (see
- * docs/architecture/TV_PHONE_SIGNIN_DESIGN.md). Every handler's real
- * logic lives in src/deviceSignIn/deviceSignInEndpoints.js, directly
- * unit/emulator-testable without this file; everything below is pure
- * onRequest/CORS/Express glue.
- *
- * `getAllowedOrigins()` is imported from ./src/slack/config.js — a
- * generic, non-secret, app-wide CORS allow-list that happens to live
- * alongside this codebase's Slack integration work (reused here rather
- * than duplicated, per explicit design decision — see this feature's
- * own implementation report). It is the one dependency this file has
- * outside its own src/deviceSignIn/ directory.
- *
- * App Check (decision #6 — "add it if this fits cleanly... do not let
- * it become a blocker"): `enforceAppCheck` is a one-line, zero-custom-
- * code option Cloud Functions v2 supports directly on `startDeviceSignIn`
- * and `pollDeviceSignIn` specifically (the two fully-unauthenticated
- * endpoints — getDeviceSignInRequestInfo/approveDeviceSignIn/
- * denyDeviceSignIn are already gated by a verified teacher ID token and
- * don't need it). Left OFF by default here because turning it on
- * requires a Firebase Console / App Check SDK registration step this
- * change cannot perform on its own (see this feature's own
- * implementation report) — flip `ENFORCE_APP_CHECK_ON_PUBLIC_ENDPOINTS`
- * to true once that registration exists and the client has been wired
- * to call `getToken()`/attach `X-Firebase-AppCheck`, never before (an
- * unregistered client would otherwise have every request rejected).
+ * The `verifyLearnerConnection` function (Learner Identity Bridge) is
+ * deliberately NOT defined here right now: its own dependency,
+ * src/verifyLearnerConnectionEndpoint.js, imports
+ * ../../server/learnerVerification/verifyLearnerConnection.js — a path
+ * outside functions/, which Cloud Functions never packages, so its
+ * container crashed on startup and took every other function in this
+ * file down with it (they all share one module load). Pulled out so
+ * the Slack functions below can deploy; re-add it once that import is
+ * fixed to point at a module actually inside functions/.
  */
 import { onRequest } from 'firebase-functions/v2/https';
+import { defineSecret } from 'firebase-functions/params';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
-import { getAllowedOrigins } from './src/slack/config.js';
+import { handleSlackIdentityLinkStart, handleSlackIdentityLinkCallback } from './src/slack/oauthCallback.js';
+import { createStateToken as signSlackStateToken, verifyStateToken as verifySlackStateToken } from './src/slack/stateToken.js';
+import { exchangeOAuthCode as exchangeSlackOAuthCode, fetchSlackIdentity as fetchSlackUserIdentity } from './src/slack/slackClient.js';
+import { saveSlackIntegration } from './src/slack/slackIntegrationRepository.js';
+import { getSlackClientId, getIdentityLinkRedirectUri, getAppBaseUrl, getAllowedOrigins, SLACK_OIDC_AUTHORIZE_URL, SLACK_OIDC_SCOPE } from './src/slack/config.js';
+import { onWeeklyPlanSubmissionWrite } from './src/slack/onWeeklyPlanSubmissionWrite.js';
 import {
   handleStartDeviceSignIn,
   handleGetDeviceSignInRequestInfo,
@@ -45,10 +34,45 @@ if (getApps().length === 0) {
   initializeApp();
 }
 
+// Slack integration secrets — Secret Manager only (see
+// docs/architecture/SLACK_INTEGRATION_APP_CONFIGURATION.md §7). Never
+// a plain env var, never committed, never reachable from js/ (this
+// app's entire client bundle ships to the browser — see
+// firebase.json's own hosting.public: "." for confirmation nothing
+// under js/ is private).
+const slackClientSecret = defineSecret('SLACK_CLIENT_SECRET');
+const slackStateSigningSecret = defineSecret('SLACK_STATE_SIGNING_SECRET');
+
 /**
- * Echoes back the request's Origin ONLY if it exactly matches
- * getAllowedOrigins(), and sets no CORS header at all otherwise —
- * never a wildcard, never reflecting an arbitrary unlisted origin.
+ * Step 3 of the identity-link flow
+ * (docs/architecture/SLACK_IDENTITY_LINKING_COMMITTEE_REVIEW.md §5): a
+ * signed-in teacher's browser calls this (with their own ClassMate
+ * Firebase ID token as a Bearer header) to get the Slack "Sign in with
+ * Slack" URL to redirect to. A plain `onRequest`, not `onCall` — this
+ * project's client code has no existing convention for calling a
+ * callable function.
+ * `getAuth()` here uses ClassMate's OWN default Admin app (unlike
+ * src/learningHubAuth.js's deliberately separate, cross-project app) —
+ * this token is always a ClassMate-issued one.
+ *
+ * This function IS called directly from a browser (see
+ * services/slackIntegrationService.js's
+ * own beginConnect(), a cross-origin fetch() with an Authorization
+ * header, which triggers a real CORS preflight). `cors: false` would
+ * silently break this in BOTH local testing and production (the
+ * deployed client's origin and this function's own origin are
+ * different there too).
+ *
+ * Deliberately does NOT use the built-in `cors: [...]` option here —
+ * testing against this exact emulator proved it reflects back ANY
+ * requesting origin (including an arbitrary, unlisted one), not just
+ * ones in the array, in the installed firebase-functions version. That
+ * is exactly the `Access-Control-Allow-Origin: *`-equivalent behavior
+ * this feature must never have. `applyCorsIfAllowed()` below is a
+ * small, explicit, directly-testable substitute: it echoes back the
+ * request's Origin ONLY if it exactly matches getAllowedOrigins(), and
+ * sets no CORS header at all otherwise — verified in
+ * tests/functions/slack/corsConfiguration.emulator.test.js.
  */
 function applyCorsIfAllowed(req, res) {
   const origin = req.get('Origin');
@@ -60,6 +84,114 @@ function applyCorsIfAllowed(req, res) {
   return isAllowed;
 }
 
+export const slackIdentityLinkStart = onRequest(
+  { cors: false, invoker: 'public', secrets: [slackStateSigningSecret] },
+  async (req, res) => {
+    const originAllowed = applyCorsIfAllowed(req, res);
+
+    if (req.method === 'OPTIONS') {
+      // Preflight — only advertise POST/Authorization for an origin
+      // that's actually allowed; an unlisted origin gets a bare,
+      // header-less 204, which the browser's own CORS enforcement
+      // then blocks the real request on regardless of what this
+      // response's status code is.
+      if (originAllowed) {
+        res.set('Access-Control-Allow-Methods', 'POST');
+        res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+      }
+      res.status(204).send('');
+      return;
+    }
+
+    if (req.method !== 'POST') {
+      res.status(405).json({ ok: false, error: 'method_not_allowed' });
+      return;
+    }
+
+    const { httpStatus, body } = await handleSlackIdentityLinkStart({
+      authorizationHeader: req.get('Authorization'),
+      deps: {
+        verifyClassMateIdToken: (idToken) =>
+          getAuth()
+            .verifyIdToken(idToken)
+            .then((decoded) => decoded.uid)
+            .catch(() => null),
+        createStateToken: (uid) => signSlackStateToken({ uid, secret: slackStateSigningSecret.value() }),
+        buildAuthorizeUrl: (state) =>
+          `${SLACK_OIDC_AUTHORIZE_URL}?${new URLSearchParams({
+            response_type: 'code',
+            client_id: getSlackClientId(),
+            scope: SLACK_OIDC_SCOPE,
+            redirect_uri: getIdentityLinkRedirectUri(),
+            state,
+          }).toString()}`,
+      },
+    });
+
+    res.status(httpStatus).json(body);
+  }
+);
+
+/**
+ * Step 5-6: Slack's own redirect back after the teacher answers its
+ * consent screen. Never returns JSON to the browser — always redirects
+ * onward to ClassMate's own app (see
+ * src/slack/oauthCallback.js's own `buildRedirectUrl`), success or
+ * failure alike, so a teacher never sees a bare API response.
+ */
+export const slackIdentityLinkCallback = onRequest(
+  { cors: false, invoker: 'public', secrets: [slackStateSigningSecret, slackClientSecret] },
+  async (req, res) => {
+    const { httpStatus, redirectUrl } = await handleSlackIdentityLinkCallback({
+      query: req.query,
+      deps: {
+        verifyStateToken: (state) => verifySlackStateToken({ token: state, secret: slackStateSigningSecret.value() }),
+        exchangeOAuthCode: (code) =>
+          exchangeSlackOAuthCode({
+            code,
+            redirectUri: getIdentityLinkRedirectUri(),
+            clientId: getSlackClientId(),
+            clientSecret: slackClientSecret.value(),
+          }),
+        fetchSlackIdentity: (accessToken) => fetchSlackUserIdentity({ accessToken }),
+        saveSlackIntegration: (uid, identity) => saveSlackIntegration(getFirestore(), uid, identity),
+        nowIso: () => new Date().toISOString(),
+        buildRedirectUrl: (status) => `${getAppBaseUrl()}/#/teacher?slack=${status}`,
+        onError: (context, error) => console.error('[slackIdentityLinkCallback]', context, error),
+      },
+    });
+
+    res.redirect(httpStatus, redirectUrl);
+  }
+);
+
+// The WeeklyPlanSubmission Firestore trigger — see
+// src/slack/onWeeklyPlanSubmissionWrite.js's own header comment for why
+// this reacts to Firestore state rather than being called from
+// services/weeklyPlanSubmissionService.js directly.
+export { onWeeklyPlanSubmissionWrite };
+
+// -----------------------------------------------------------------------
+// "Sign in with Phone" — TV/shared-device pairing (see
+// docs/architecture/TV_PHONE_SIGNIN_DESIGN.md). Every handler's real
+// logic lives in src/deviceSignIn/deviceSignInEndpoints.js, directly
+// unit/emulator-testable without this file; everything below is pure
+// onRequest/CORS/Express glue, same split as the Slack functions above.
+//
+// App Check (decision #6 — "add it if this fits cleanly... do not let
+// it become a blocker"): `enforceAppCheck` is a one-line, zero-custom-
+// code option Cloud Functions v2 supports directly on `startDeviceSignIn`
+// and `pollDeviceSignIn` specifically (the two fully-unauthenticated
+// endpoints — getDeviceSignInRequestInfo/approveDeviceSignIn/
+// denyDeviceSignIn are already gated by a verified teacher ID token and
+// don't need it). Left OFF by default here because turning it on
+// requires a Firebase Console / App Check SDK registration step this
+// change cannot perform on its own (see this feature's own
+// implementation report) — flip `ENFORCE_APP_CHECK_ON_PUBLIC_ENDPOINTS`
+// to true once that registration exists and the client has been wired
+// to call `getToken()`/attach `X-Firebase-AppCheck`, never before (an
+// unregistered client would otherwise have every request rejected).
+// -----------------------------------------------------------------------
 const ENFORCE_APP_CHECK_ON_PUBLIC_ENDPOINTS = false;
 
 function getClientKey(req) {
