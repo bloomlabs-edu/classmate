@@ -325,22 +325,19 @@ export const pollDeviceSignIn = onRequest(
 // same pattern already used for the Slack identity-link endpoints
 // above — not IAM allowlisting.
 //
-// `serviceAccount` is REQUIRED here, not optional: this function calls
-// learnerProfileOwnership.js, which mints a service-to-service OIDC
-// token using its own ambient runtime identity (see that file's own
-// header comment). Learning Hub's cross-project endpoint only grants
-// `roles/run.invoker` to this one dedicated, narrowly-scoped service
-// account — running under any other identity (e.g. the project's
-// default compute service account) would make every ownership check
-// fail closed in production, silently, with no error surfaced here.
+// Deliberately NO `serviceAccount` override here: this function also
+// performs its own Firestore reads/writes (classroomInvitationCodes,
+// studentVerificationCodes, learnerClassroomRelationships via
+// createConnectionRequest/verifyStudentCode), so it must keep this
+// project's normal default runtime identity, same as every sibling
+// function in this file. The cross-project call to Learning Hub's
+// IAM-gated endpoint uses a SEPARATE, narrowly-scoped identity via
+// impersonation — see learnerProfileOwnership.js's own header comment
+// for why forcing the whole function to run AS that narrow identity
+// (instead of impersonating it for one outbound call) would silently
+// break every Firestore operation here with PERMISSION_DENIED.
 // -----------------------------------------------------------------------
-export const verifyLearnerConnection = onRequest(
-  {
-    cors: false,
-    invoker: 'public',
-    serviceAccount: 'learning-hub-profile-verifier@classmate-302c2.iam.gserviceaccount.com',
-  },
-  async (req, res) => {
+export const verifyLearnerConnection = onRequest({ cors: false, invoker: 'public' }, async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'method_not_allowed' });
 
   const { httpStatus, body } = await handleVerifyLearnerConnectionRequest({

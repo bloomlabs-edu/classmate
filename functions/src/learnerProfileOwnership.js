@@ -17,30 +17,36 @@
  * granted `roles/run.invoker` on that ONE Learning Hub Cloud Run
  * service — nothing broader, no Firestore role anywhere).
  *
- * WHO ClassMate authenticates AS, calling out: this module's `GoogleAuth`
- * instance resolves the AMBIENT identity of whatever is running this
- * code — for that ambient identity to be the dedicated service account
- * above, and not some default runtime identity, the deployed Cloud
- * Function itself MUST be configured with `serviceAccount:
- * 'learning-hub-profile-verifier@classmate-302c2.iam.gserviceaccount.com'`
- * (see ../index.js's own `onRequest()` options — set there, not here;
- * this module has no way to force its own caller's identity, only to
- * use whatever identity it's actually running as). This module does
- * NOT re-verify its own runtime identity at call time — that would be
- * redundant with, not a substitute for, the actual IAM/deploy
- * configuration being correct, and this file's own header comment
- * exists specifically so that dependency stays visible rather than
- * silently assumed.
+ * WHO ClassMate authenticates AS, calling out: this module deliberately
+ * does NOT run this whole Cloud Function as the dedicated service
+ * account below — that was tried and is wrong (see ../index.js's own
+ * header comment on `verifyLearnerConnection`): this same function also
+ * performs its own Firestore reads/writes, which would break with
+ * PERMISSION_DENIED if the function's runtime identity were narrowed to
+ * a service account that ONLY has `roles/run.invoker` on Learning Hub's
+ * function and nothing else. Instead, this module IMPERSONATES the
+ * narrow service account for this one outbound call only, via
+ * `Impersonated` (google-auth-library) — the function keeps its normal
+ * default runtime identity (with normal Firestore access) for
+ * everything else, and briefly borrows the narrow identity's token only
+ * to mint the OIDC ID token below. This requires the function's own
+ * default runtime service account to be granted
+ * `roles/iam.serviceAccountTokenCreator` on
+ * `learning-hub-profile-verifier@classmate-302c2.iam.gserviceaccount.com`
+ * (a deploy-time IAM step, not something this code can verify at call
+ * time — a missing grant here fails closed via the same try/catch as
+ * every other failure mode below, not a special case).
  *
  * `getIdTokenClient(TARGET_URL)` mints a Google-signed OIDC identity
- * token with `TARGET_URL` baked in as the `aud` claim — this is what
- * Learning Hub's own IAM-gated Cloud Run service checks before
- * accepting the request at all (a request whose OIDC token names the
- * wrong audience, or comes from a service account IAM hasn't granted
- * `roles/run.invoker` to, is rejected by GCP's own infrastructure
- * before this repository's code on the far side ever runs). No shared
- * secret, API key, or Firestore credential of any kind crosses this
- * boundary — exactly per this task's own explicit prohibition list.
+ * token with `TARGET_URL` baked in as the `aud` claim, signed as the
+ * impersonated service account — this is what Learning Hub's own
+ * IAM-gated Cloud Run service checks before accepting the request at
+ * all (a request whose OIDC token names the wrong audience, or comes
+ * from a service account IAM hasn't granted `roles/run.invoker` to, is
+ * rejected by GCP's own infrastructure before this repository's code on
+ * the far side ever runs). No shared secret, API key, or Firestore
+ * credential of any kind crosses this boundary — exactly per this
+ * task's own explicit prohibition list.
  *
  * FAIL-CLOSED, uniformly, across every failure category — mirroring
  * this bridge's established anti-oracle convention
@@ -60,7 +66,40 @@
  * false, uniformly" — that guarantee lives one level up, unchanged by
  * this file.
  */
-import { GoogleAuth } from 'google-auth-library';
+import { GoogleAuth, Impersonated, IdTokenClient } from 'google-auth-library';
+
+/**
+ * The dedicated, narrowly-scoped service account this module
+ * impersonates for the one outbound call below — granted
+ * `roles/run.invoker` on Learning Hub's ownership function and nothing
+ * else (see this file's own header comment for why the whole function
+ * does NOT run as this identity).
+ */
+export const LEARNING_HUB_PROFILE_VERIFIER_SERVICE_ACCOUNT =
+  'learning-hub-profile-verifier@classmate-302c2.iam.gserviceaccount.com';
+
+/**
+ * Builds the production `googleAuth`-shaped default: impersonates
+ * LEARNING_HUB_PROFILE_VERIFIER_SERVICE_ACCOUNT using this function's
+ * own ambient runtime credentials as the source, then mints an OIDC ID
+ * token from that impersonated identity. Matches the same
+ * `{ getIdTokenClient(url) -> { request(opts) } }` shape the TEST-ONLY
+ * `deps.googleAuth` override already uses, so this is a drop-in
+ * production default, not a parallel code path.
+ */
+function buildImpersonatedGoogleAuth() {
+  return {
+    getIdTokenClient: async (targetAudience) => {
+      const sourceClient = await new GoogleAuth().getClient();
+      const impersonated = new Impersonated({
+        sourceClient,
+        targetPrincipal: LEARNING_HUB_PROFILE_VERIFIER_SERVICE_ACCOUNT,
+        lifetime: 60,
+      });
+      return new IdTokenClient({ idTokenProvider: impersonated, targetAudience });
+    },
+  };
+}
 
 /**
  * Exactly the URL Learning Hub's ownership function is deployed at.
@@ -102,7 +141,7 @@ export async function verifyLearnerProfileOwnership(uid, learnerProfileId, deps 
     return false;
   }
 
-  const googleAuth = deps.googleAuth ?? new GoogleAuth();
+  const googleAuth = deps.googleAuth ?? buildImpersonatedGoogleAuth();
 
   let client;
   try {
