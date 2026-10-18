@@ -198,9 +198,8 @@ export const pollDeviceSignIn = onRequest(
 // docs/architecture/CLASSROOM_INVITATION_VERIFICATION_BRIDGE.md).
 // `invoker: 'public'` because this endpoint's real security boundary is
 // the Learning Hub Firebase ID token check inside
-// handleVerifyLearnerConnectionRequest (src/learningHubAuth.js), the
-// same pattern already used for the Slack identity-link endpoints
-// above — not IAM allowlisting.
+// handleVerifyLearnerConnectionRequest (src/learningHubAuth.js) — not
+// IAM allowlisting.
 //
 // Deliberately NO `serviceAccount` override here: this function also
 // performs its own Firestore reads/writes (classroomInvitationCodes,
