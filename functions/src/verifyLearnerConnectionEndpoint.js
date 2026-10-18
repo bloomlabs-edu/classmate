@@ -21,10 +21,23 @@
  *   Header:  Authorization: Bearer <Learning Hub Firebase ID token>
  *   Body:    {
  *              learnerProfileId: string,
- *              classroomId: string,
+ *              classroomId: string,   // REQUIRED for credentialType 'verification' only — see below
  *              credentialType: 'invitation' | 'verification',
  *              credential: string
  *            }
+ *
+ * `classroomId` is conditionally required: for `credentialType:
+ * 'invitation'`, the caller (Learning Hub) has no way to know it in
+ * advance — ClassMate's own invitation-sharing UI only ever hands out
+ * the bare code (see createConnectionRequest's own header comment in
+ * ./learnerVerification/verifyLearnerConnection.js) — so it is derived
+ * server-side from the invitation code itself and returned in the
+ * response. For `credentialType: 'verification'`, it IS required: a
+ * student verification code is nested under
+ * `classrooms/{classroomId}/studentVerificationCodes/{hash}`, so there
+ * is no way to even locate the code document without already knowing
+ * which classroom to look under — by the time a caller reaches this
+ * step, their own earlier 'invitation' response will have told them.
  *
  * `studentId` is never an accepted input, by construction: it is not in
  * the destructured field list below, and a request that includes it
@@ -102,11 +115,19 @@ export async function handleVerifyLearnerConnectionRequest({ authorizationHeader
     return { httpStatus: 400, body: INVALID_REQUEST };
   }
   const { learnerProfileId, classroomId, credentialType, credential } = body;
+  const credentialTypeValid = credentialType === 'invitation' || credentialType === 'verification';
+  // classroomId is required only for 'verification' (see this file's own
+  // header comment); for 'invitation' it may be entirely absent, but if
+  // the caller supplies one anyway it must still be a well-formed string
+  // — createConnectionRequest treats a present-but-mismatched value as a
+  // hard failure, never silently ignores a malformed one.
+  const classroomIdValid =
+    classroomId === undefined ? credentialType !== 'verification' : isBoundedString(classroomId, MAX_ID_LENGTH);
   const shapeIsValid =
     isBoundedString(learnerProfileId, MAX_ID_LENGTH) &&
-    isBoundedString(classroomId, MAX_ID_LENGTH) &&
+    classroomIdValid &&
     isBoundedString(credential, MAX_CREDENTIAL_LENGTH) &&
-    (credentialType === 'invitation' || credentialType === 'verification');
+    credentialTypeValid;
   if (!shapeIsValid) {
     return { httpStatus: 400, body: INVALID_REQUEST };
   }
