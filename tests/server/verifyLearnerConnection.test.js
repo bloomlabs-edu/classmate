@@ -148,6 +148,23 @@ test('createConnectionRequest fails if the invitation code has been revoked', as
   assert.equal(result.ok, false);
 });
 
+test('createConnectionRequest works WITHOUT a caller-supplied classroomId — the real-world case, since the invitation code alone is what ClassMate actually hands out', async () => {
+  const result = await createConnectionRequest(db, { learnerProfileId: LEARNER_1, invitationCode: INVITATION_CODE_A });
+  assert.equal(result.ok, true);
+  assert.equal(result.status, RELATIONSHIP_STATUS.PENDING);
+  assert.equal(result.classroomId, CLASSROOM_A, 'classroomId must be resolved from the invitation code itself and returned to the caller');
+
+  const snap = await db.doc(`learnerClassroomRelationships/${LEARNER_1}_${CLASSROOM_A}`).get();
+  assert.equal(snap.data().classroomId, CLASSROOM_A);
+});
+
+test('createConnectionRequest fails if a caller-supplied classroomId does NOT match the invitation code\'s real classroom (defense in depth, never trusted as the source of truth)', async () => {
+  const result = await createConnectionRequest(db, { learnerProfileId: LEARNER_1, classroomId: CLASSROOM_B, invitationCode: INVITATION_CODE_A });
+  assert.equal(result.ok, false);
+  const snap = await db.doc(`learnerClassroomRelationships/${LEARNER_1}_${CLASSROOM_B}`).get();
+  assert.equal(snap.exists, false, 'no relationship should be created under the mismatched, unverified classroomId');
+});
+
 test('createConnectionRequest does not disturb an already-ACTIVE relationship', async () => {
   await db.doc(`learnerClassroomRelationships/${LEARNER_1}_${CLASSROOM_A}`).set({
     learnerProfileId: LEARNER_1, classroomId: CLASSROOM_A, studentId: STUDENT_A1, status: 'ACTIVE', createdAt: 'now',

@@ -56,32 +56,51 @@ const GENERIC_FAILURE = Object.freeze({ ok: false, error: 'verification_failed' 
  * re-verification is required, it should go through the appropriate
  * verification process again" for the REVOKED case.
  */
+/**
+ * `classroomId` is OPTIONAL here, deliberately — this was a required
+ * caller-supplied input originally, but ClassMate's own invitation-
+ * sharing UI (ConnectLearningHubView.js's renderInvitationSection(),
+ * "On its own, this code identifies your classroom only") never hands
+ * the classroom id out alongside the code, only the bare 6-character
+ * code itself. Requiring a value the caller structurally cannot have
+ * made this function uncallable from the one real, live UI that
+ * redeems invitations (Learning Hub's redeemInvitation(), wired to
+ * onboarding-ui.js). The invitation code is already the sole, globally
+ * unique key into `classroomInvitationCodes` (a top-level collection,
+ * keyed by the code itself) — the classroom it belongs to is always
+ * resolved FROM the code, never from a client claim. If a caller does
+ * independently supply classroomId anyway, it's still checked against
+ * the invitation's own real value as defense in depth; it is never
+ * treated as the source of truth.
+ */
 export async function createConnectionRequest(adminDb, { learnerProfileId, classroomId, invitationCode }) {
-  if (!learnerProfileId || !classroomId || !invitationCode) return GENERIC_FAILURE;
+  if (!learnerProfileId || !invitationCode) return GENERIC_FAILURE;
 
   const invitationCodeRef = adminDb.collection('classroomInvitationCodes').doc(invitationCode);
-  const relationshipRef = adminDb.collection('learnerClassroomRelationships').doc(buildRelationshipId(learnerProfileId, classroomId));
-
   const invitationCodeSnap = await invitationCodeRef.get();
   if (!invitationCodeSnap.exists) return GENERIC_FAILURE;
   const invitationCodeData = invitationCodeSnap.data();
-  if (invitationCodeData.status !== 'active' || invitationCodeData.classroomId !== classroomId) return GENERIC_FAILURE;
+  const resolvedClassroomId = invitationCodeData.classroomId;
+  if (invitationCodeData.status !== 'active' || !resolvedClassroomId) return GENERIC_FAILURE;
+  if (classroomId && classroomId !== resolvedClassroomId) return GENERIC_FAILURE;
+
+  const relationshipRef = adminDb.collection('learnerClassroomRelationships').doc(buildRelationshipId(learnerProfileId, resolvedClassroomId));
 
   const existing = await relationshipRef.get();
   if (existing.exists && existing.data().status === RELATIONSHIP_STATUS.ACTIVE) {
-    return { ok: true, status: RELATIONSHIP_STATUS.ACTIVE };
+    return { ok: true, status: RELATIONSHIP_STATUS.ACTIVE, classroomId: resolvedClassroomId };
   }
 
   // Documented no-op today (see findTrustedAutomaticMatch's own header
   // comment) — performed for real, never skipped, so this bridge never
   // silently assumes a signal that doesn't exist.
-  const automaticMatch = findTrustedAutomaticMatch({ learnerProfileId, classroomId });
+  const automaticMatch = findTrustedAutomaticMatch({ learnerProfileId, classroomId: resolvedClassroomId });
 
   const now = new Date().toISOString();
   await relationshipRef.set(
     {
       learnerProfileId,
-      classroomId,
+      classroomId: resolvedClassroomId,
       studentId: automaticMatch?.studentId ?? null,
       status: RELATIONSHIP_STATUS.PENDING,
       invitationCode,
@@ -91,7 +110,7 @@ export async function createConnectionRequest(adminDb, { learnerProfileId, class
     { merge: false }
   );
 
-  return { ok: true, status: RELATIONSHIP_STATUS.PENDING };
+  return { ok: true, status: RELATIONSHIP_STATUS.PENDING, classroomId: resolvedClassroomId };
 }
 
 /**

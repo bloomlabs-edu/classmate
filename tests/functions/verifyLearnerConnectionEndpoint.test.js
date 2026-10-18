@@ -175,14 +175,34 @@ test('a valid token authenticates successfully (proven by reaching past the 401 
 // Request validation
 // --------------------------------------------------------------------
 
-test('missing classroomId -> 400 invalid_request', async () => {
-  const { httpStatus, body } = await handleVerifyLearnerConnectionRequest({
+test('missing classroomId is VALID for credentialType "invitation" — ClassMate\'s own invitation-sharing UI never hands it out, so the request must pass shape validation and proceed to identity binding, not 400', async () => {
+  const { httpStatus } = await handleVerifyLearnerConnectionRequest({
     authorizationHeader: validBearerToken,
     body: { learnerProfileId: LEARNER_1, credentialType: 'invitation', credential: 'ENDPOINTINV' },
+    deps: { adminDb: db, verifyLearnerProfileOwnership: ownershipResolverFor(REAL_LEARNING_HUB_UID, LEARNER_1) },
+  });
+  assert.notEqual(httpStatus, 400, 'missing classroomId must not be treated as a malformed request for invitation redemption');
+});
+
+test('missing classroomId -> 400 invalid_request for credentialType "verification" (structurally required to locate the nested studentVerificationCodes document)', async () => {
+  const { httpStatus, body } = await handleVerifyLearnerConnectionRequest({
+    authorizationHeader: validBearerToken,
+    body: { learnerProfileId: LEARNER_1, credentialType: 'verification', credential: 'SOMECODE123' },
     deps: { adminDb: db },
   });
   assert.equal(httpStatus, 400);
   assert.equal(body.error, 'invalid_request');
+});
+
+test('a mismatched classroomId for credentialType "invitation" fails generically, never trusted over the invitation code\'s own real classroom', async () => {
+  const { httpStatus, body } = await handleVerifyLearnerConnectionRequest({
+    authorizationHeader: validBearerToken,
+    body: { learnerProfileId: LEARNER_1, classroomId: CLASSROOM_B, credentialType: 'invitation', credential: 'ENDPOINTINV' },
+    deps: { adminDb: db, verifyLearnerProfileOwnership: ownershipResolverFor(REAL_LEARNING_HUB_UID, LEARNER_1) },
+  });
+  assert.equal(httpStatus, 200);
+  assert.equal(body.ok, false);
+  assert.equal(body.error, 'verification_failed');
 });
 
 test('missing learnerProfileId -> 400 invalid_request', async () => {
