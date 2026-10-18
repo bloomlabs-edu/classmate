@@ -175,13 +175,16 @@ test('a valid token authenticates successfully (proven by reaching past the 401 
 // Request validation
 // --------------------------------------------------------------------
 
-test('missing classroomId is VALID for credentialType "invitation" — ClassMate\'s own invitation-sharing UI never hands it out, so the request must pass shape validation and proceed to identity binding, not 400', async () => {
-  const { httpStatus } = await handleVerifyLearnerConnectionRequest({
+test('missing classroomId is VALID for credentialType "invitation" — ClassMate\'s own invitation-sharing UI never hands it out, so the request must pass shape validation all the way through to a real success, not just avoid a 400', async () => {
+  const { httpStatus, body } = await handleVerifyLearnerConnectionRequest({
     authorizationHeader: validBearerToken,
     body: { learnerProfileId: LEARNER_1, credentialType: 'invitation', credential: 'ENDPOINTINV' },
     deps: { adminDb: db, verifyLearnerProfileOwnership: ownershipResolverFor(REAL_LEARNING_HUB_UID, LEARNER_1) },
   });
-  assert.notEqual(httpStatus, 400, 'missing classroomId must not be treated as a malformed request for invitation redemption');
+  assert.equal(httpStatus, 200);
+  assert.equal(body.ok, true, 'expected a real successful redemption, not merely "not a 400": ' + JSON.stringify(body));
+  assert.equal(body.status, 'PENDING');
+  assert.equal(body.classroomId, CLASSROOM_A, 'classroomId must be resolved from the invitation code itself');
 });
 
 test('missing classroomId -> 400 invalid_request for credentialType "verification" (structurally required to locate the nested studentVerificationCodes document)', async () => {

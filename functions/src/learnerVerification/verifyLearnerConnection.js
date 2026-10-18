@@ -82,7 +82,15 @@ export async function createConnectionRequest(adminDb, { learnerProfileId, class
   const invitationCodeData = invitationCodeSnap.data();
   const resolvedClassroomId = invitationCodeData.classroomId;
   if (invitationCodeData.status !== 'active' || !resolvedClassroomId) return GENERIC_FAILURE;
-  if (classroomId && classroomId !== resolvedClassroomId) return GENERIC_FAILURE;
+  // Strict `!== undefined`, not a truthy check — a caller passing an
+  // empty string must still hit the mismatch check below, not be
+  // silently treated as "no value supplied" (independent review caught
+  // this: a bare `if (classroomId && ...)` would let `classroomId: ''`
+  // bypass the defense-in-depth check entirely). The real endpoint
+  // (verifyLearnerConnectionEndpoint.js) already rejects a non-string
+  // or empty classroomId with 400 before this function is ever called,
+  // but this function's own guarantee should hold regardless of caller.
+  if (classroomId !== undefined && classroomId !== resolvedClassroomId) return GENERIC_FAILURE;
 
   const relationshipRef = adminDb.collection('learnerClassroomRelationships').doc(buildRelationshipId(learnerProfileId, resolvedClassroomId));
 
