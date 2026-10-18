@@ -2,6 +2,21 @@
 # changes can be reviewed on a real, live URL before merging - the
 # preview channel expires automatically after a few days and never
 # touches the live site at classmate-302c2.web.app.
+#
+# `permissions` below is REQUIRED, not optional: with no explicit block,
+# GITHUB_TOKEN falls back to this repo's default workflow permissions,
+# which are evidently read-only here — action-hosting-deploy@v0 needs to
+# POST a check run (to report the preview URL/status) and comment on the
+# PR (to post the preview link), both of which a read-only token cannot
+# do, producing exactly a 403 "Resource not accessible by integration"
+# on POST /check-runs. Scoped to the three permissions this one action
+# actually uses (confirmed against learning-hub's own identical,
+# already-working workflow for the same action) — not broadened beyond
+# that, and scoped to this workflow file only, not applied repo-wide.
+permissions:
+  checks: write
+  contents: read
+  pull-requests: write
 
 name: Deploy preview on PR
 on: pull_request
