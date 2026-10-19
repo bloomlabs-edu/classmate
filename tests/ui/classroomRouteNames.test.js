@@ -74,6 +74,7 @@ const CLASSROOM_SCOPED_PATHS = [
   `classroom/${CLASSROOM_ID}/learning-programmes/p1/session/s1/goals`,
   `classroom/${CLASSROOM_ID}/learning-programmes/p1/session/s1/observations`,
   `classroom/${CLASSROOM_ID}/diagnostics`,
+  `classroom/${CLASSROOM_ID}/connect-learning-hub`,
   `classroom/${CLASSROOM_ID}`, // bare classroom URL -> dashboard
 ];
 
@@ -128,4 +129,25 @@ test('the specific reported regression: /assignments/{assignmentId} resolves to 
   const route = resolvePathParts(['classroom', CLASSROOM_ID, 'assignments', 'assign1']);
   assert.equal(route.name, 'assignmentDetail');
   assert.ok(CLASSROOM_ROUTE_NAMES.includes('assignmentDetail'));
+});
+
+/**
+ * Same bug class again, reported 2026-10-19 against
+ * `/classroom/{id}/connect-learning-hub`: clicking "Open Connect
+ * Learning Hub" on the Classroom Access screen changed the URL
+ * correctly, ui/router.js's resolvePathParts() already resolved it to
+ * `connectLearningHub`, and js/main.js already had a real
+ * `else if (route.name === 'connectLearningHub')` render branch -- but
+ * `connectLearningHub` was simply missing from CLASSROOM_ROUTE_NAMES,
+ * so renderRoute()'s entire classroom-scoped block was skipped and the
+ * previously-rendered Dashboard was left on screen untouched. The
+ * generic test above would have caught this too, once
+ * `/connect-learning-hub` was added to CLASSROOM_SCOPED_PATHS -- this
+ * dedicated pair exists for the same "name the specific regression"
+ * reason the two pairs above do.
+ */
+test('the specific reported regression: /connect-learning-hub resolves to connectLearningHub and is registered', () => {
+  const route = resolvePathParts(['classroom', CLASSROOM_ID, 'connect-learning-hub']);
+  assert.equal(route.name, 'connectLearningHub');
+  assert.ok(CLASSROOM_ROUTE_NAMES.includes('connectLearningHub'));
 });

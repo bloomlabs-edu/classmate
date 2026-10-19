@@ -34,6 +34,7 @@ export const CLASSROOM_ROUTE_NAMES = [
   'studentProfile',
   'teamProfile',
   'studentAccess',
+  'connectLearningHub',
   'activitiesList',
   'activityRoster',
   'workRequestRoster',
