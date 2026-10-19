@@ -1,0 +1,10 @@
+# Local-only Slack test credentials (see this feature's Phase-1 E2E
+# test plan) — read automatically by the Functions emulator, never by
+# a real deploy. Must never be committed.
+.secret.local
+.env.local
+.env.*.local
+
+# Per-project local env (e.g. .env.classmate-302c2) — deploy-time
+# config belongs in the Firebase project itself, not source control.
+.env.*

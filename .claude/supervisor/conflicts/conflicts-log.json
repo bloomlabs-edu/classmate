@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "description": "See registry/SCHEMA.md for field definitions. Severity: INFO (no action) | WARNING (continue, watch) | SIGNIFICANT (notify user) | BLOCKING (stop, needs a decision). Status: potential | confirmed | resolved | requires_human_decision.",
-  "next_id": 3,
+  "next_id": 4,
   "items": [
     {
       "id": "CONFLICT-0002",
@@ -35,6 +35,21 @@
       "resolution": null,
       "resolved_at": null,
       "notes": "By explicit user instruction: record this and do not attempt to resolve it yet. Any future task in either repo that touches a 'Concept'-named entity, or any cross-project work involving conceptId, must check this record and cross-reference cross-project/dependencies.md before assuming shared meaning. Do not close or resolve this record without a real, ratified decision (see decisions-log.md, DEC-PENDING items) establishing how - or whether - the meanings are reconciled."
+    },
+    {
+      "id": "CONFLICT-0003",
+      "severity": "SIGNIFICANT",
+      "status": "potential",
+      "involved_work_items": [
+        "WORK-0018",
+        "WORK-0019"
+      ],
+      "project": "classmate",
+      "description": "WORK-0018 (Learning -> Social Science subject-selection UI audit + cleanup) names js/ui/views/LearningManagementView.js renderSubjectStep() and renderUnitsOrParts() as direct implementation targets (Subject-action overflow-menu placement/regression check; Parts-list horizontal-strip-to-icon-card redesign). WORK-0019 is a currently-uncommitted, unregistered-until-now edit to those exact same two functions in that exact same file (inline Subject/Unit rename UI; Unit-row actions converted to an overflow menu; a new onRemoveUnit handler). Neither item has touched or discarded the other work as of this record, but an implementation pass for WORK-0018 that edits this file without first re-checking its live state could silently conflict with or discard WORK-0019 in-progress feature.",
+      "detected_at": "2026-10-01",
+      "resolution": null,
+      "resolved_at": null,
+      "notes": "Flagged at registration time per the Safety Principle -- not investigated further and not resolved by the Supervisor; no implementation was performed or authorized for either item by this record. Whoever eventually implements WORK-0018 (the main coordinating agent, per that item own record -- not the Supervisor) must re-run git status / git diff on js/ui/views/LearningManagementView.js immediately before editing this file, and must not assume WORK-0019 rename/overflow-menu-for-Units feature is finished, abandoned, or safe to overwrite without checking with the user first."
     }
   ]
 }

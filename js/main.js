@@ -88,9 +88,11 @@ import { renderSetupWizardView } from './ui/views/SetupWizardView.js';
 import { renderStudentProfileView } from './ui/views/StudentProfileView.js';
 import { renderTeamProfileView } from './ui/views/TeamProfileView.js';
 import { CLASSROOM_ROUTE_NAMES } from './config/classroomRouteNames.js';
+import { resolveNotificationRoute } from './config/notificationRouting.js';
 import { MEMBER_ROLES } from './config/memberRoles.js';
 import * as memberService from './services/memberService.js';
 import { renderStudentAccessView } from './ui/views/StudentAccessView.js';
+import { renderConnectLearningHubView } from './ui/views/ConnectLearningHubView.js';
 import { renderVisitorAccessView } from './ui/views/VisitorAccessView.js';
 import { renderActivitiesListView, renderActivityRosterView } from './ui/views/ActivitiesView.js';
 import { renderWorkRequestRosterView } from './ui/views/WorkRequestRosterView.js';
@@ -492,11 +494,8 @@ function handleOpenNotification(notification) {
   if (currentUser?.uid) {
     notificationService.markNotificationRead(notification.classroomId, notification.id, currentUser.uid);
   }
-  if (notification.payload?.studentId) {
-    router.navigate(`/classroom/${notification.classroomId}/student/${notification.payload.studentId}`);
-  } else if (notification.payload?.postId) {
-    router.navigate(`/classroom/${notification.classroomId}/feed`);
-  }
+  const path = resolveNotificationRoute(notification);
+  if (path) router.navigate(path);
 }
 
 /**
@@ -1796,6 +1795,13 @@ function renderRoute(route, reason = 'unspecified') {
         currentUser,
         onBack: () => router.navigate(`/classroom/${classroom.id}`),
         onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
+        onOpenConnectLearningHub: () => router.navigate(`/classroom/${classroom.id}/connect-learning-hub`),
+      });
+    } else if (route.name === 'connectLearningHub') {
+      renderConnectLearningHubView(appContainer, {
+        classroom,
+        currentUser,
+        onBack: () => router.navigate(`/classroom/${classroom.id}/student-access`),
       });
     } else if (route.name === 'activitiesList') {
       renderActivitiesListView(appContainer, {

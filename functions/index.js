@@ -8,8 +8,7 @@
  * onRequest/CORS/Express glue.
  *
  * `getAllowedOrigins()` is imported from ./src/slack/config.js — a
- * generic, non-secret, app-wide CORS allow-list that happens to live
- * alongside this codebase's Slack integration work (reused here rather
+ * generic, non-secret, app-wide CORS allow-list (reused here rather
  * than duplicated, per explicit design decision — see this feature's
  * own implementation report). It is the one dependency this file has
  * outside its own src/deviceSignIn/ directory.
@@ -27,6 +26,16 @@
  * to true once that registration exists and the client has been wired
  * to call `getToken()`/attach `X-Firebase-AppCheck`, never before (an
  * unregistered client would otherwise have every request rejected).
+ *
+ * `verifyLearnerConnection` (Learner Identity Bridge) previously
+ * couldn't be defined here: its dependency,
+ * src/verifyLearnerConnectionEndpoint.js, imported
+ * ../../server/learnerVerification/verifyLearnerConnection.js — a path
+ * outside functions/, which Cloud Functions never packages, so its
+ * container crashed on startup and took every other function in this
+ * file down with it (they all share one module load). Fixed by moving
+ * that module (and its hashUtils/shape dependencies) into
+ * src/learnerVerification/ — see that directory's own header comments.
  */
 import { onRequest } from 'firebase-functions/v2/https';
 import { initializeApp, getApps } from 'firebase-admin/app';
@@ -40,6 +49,7 @@ import {
   handleDenyDeviceSignIn,
   handlePollDeviceSignIn,
 } from './src/deviceSignIn/deviceSignInEndpoints.js';
+import { handleVerifyLearnerConnectionRequest } from './src/verifyLearnerConnectionEndpoint.js';
 
 if (getApps().length === 0) {
   initializeApp();
@@ -180,3 +190,36 @@ export const pollDeviceSignIn = onRequest(
     res.status(httpStatus).json(body);
   }
 );
+
+// -----------------------------------------------------------------------
+// Learner Identity Bridge — the trusted endpoint Learning Hub's own
+// backend calls (never a browser directly, so no CORS handling here,
+// matching the server-to-server trust boundary documented in
+// docs/architecture/CLASSROOM_INVITATION_VERIFICATION_BRIDGE.md).
+// `invoker: 'public'` because this endpoint's real security boundary is
+// the Learning Hub Firebase ID token check inside
+// handleVerifyLearnerConnectionRequest (src/learningHubAuth.js) — not
+// IAM allowlisting.
+//
+// Deliberately NO `serviceAccount` override here: this function also
+// performs its own Firestore reads/writes (classroomInvitationCodes,
+// studentVerificationCodes, learnerClassroomRelationships via
+// createConnectionRequest/verifyStudentCode), so it must keep this
+// project's normal default runtime identity, same as every sibling
+// function in this file. The cross-project call to Learning Hub's
+// IAM-gated endpoint uses a SEPARATE, narrowly-scoped identity via
+// impersonation — see learnerProfileOwnership.js's own header comment
+// for why forcing the whole function to run AS that narrow identity
+// (instead of impersonating it for one outbound call) would silently
+// break every Firestore operation here with PERMISSION_DENIED.
+// -----------------------------------------------------------------------
+export const verifyLearnerConnection = onRequest({ cors: false, invoker: 'public' }, async (req, res) => {
+  if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'method_not_allowed' });
+
+  const { httpStatus, body } = await handleVerifyLearnerConnectionRequest({
+    authorizationHeader: req.get('Authorization'),
+    body: await readJsonBody(req),
+    deps: { adminDb: getFirestore() },
+  });
+  res.status(httpStatus).json(body);
+});

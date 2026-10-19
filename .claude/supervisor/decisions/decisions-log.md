@@ -76,3 +76,11 @@ otherwise, in this log, not in a source doc's own wording.
 - **Rationale:** every field the task pool needs is already a property of a work item; a second parallel structure could silently disagree with the first about a task's true status.
 - **What future agents/work must respect:** never create a separate task-pool store. Add tasks by appending a work item with `status: "queued"` (or `"ready"`) to `work-registry.json`.
 - **Status:** active.
+
+### DEC-0003 -- Lesson Plan Builder Submit button position is intentional, not a bug
+- **Date:** 2026-10-01
+- **Made by:** User (rejeesh), explicitly confirmed -- not inferred or recommended by any agent.
+- **Decision:** The Lesson Plan Builder's "Submit for Review" button sits near the top of the page, rather than literally after the Differentiation section as an earlier design brief's linear-flow diagram assumed. This placement is intentional, pre-existing, deliberate design and does not need to change.
+- **Rationale:** per the user directly -- the earlier brief's linear top-to-bottom flow diagram was a planning aid, not a binding layout spec; the actual placement decision was made deliberately and stands.
+- **What future agents/work must respect:** do not treat this placement as a defect, regression, or inconsistency with the design brief in any future UI pass on the Lesson Plan Builder (including WORK-0022 through WORK-0028, the follow-up items recorded the same day). No implementation action is needed or authorized as a result of this entry -- it exists only to prevent this from being re-flagged as a bug later.
+- **Status:** CONFIRMED by the user, 2026-10-01. Closed, no action needed.

@@ -26,7 +26,7 @@
  *   #/classroom/{id}/lesson-plans/review       -> Review Queue, same-classroom SUBMITTED plans not your own (see ui/views/LessonPlanReviewQueueView.js)
  *   #/classroom/{id}/lesson-plans/{lessonPlanId} -> the Lesson Plan Builder for one plan (see ui/views/LessonPlanBuilderView.js)
  *   #/classroom/{id}/lesson-plans/{lessonPlanId}/review -> the reviewer's read+comment+decide view for one plan (see ui/views/LessonPlanReviewView.js)
- *   #/classroom/{id}/chapter-plans              -> Chapter Plans list, THIS Fellow's own plans only (see ui/views/ChapterPlansListView.js) — Fellow-facing only
+ *   #/classroom/{id}/chapter-plans              -> Chapter Plans list, THIS Fellow's own plans only (see ui/views/ChapterPlansListView.js) — Phase 3, Fellow-facing only, no PM review route yet
  *   #/classroom/{id}/chapter-plans/{chapterPlanId} -> the Chapter Plan Editor for one plan (see ui/views/ChapterPlanEditorView.js)
  *   #/program-manager/chapter-plans            -> Program Manager Chapter Plan Review — the cross-classroom queue of
  *                                                 Fellows' submitted Chapter Plans (see ui/views/ProgramManagerChapterPlanQueueView.js)
@@ -53,16 +53,34 @@
  *   #/classroom/{id}/weekly-reports/{weekStart?}              -> Weekly Reports — no weekStart = the week picker list; a Monday date key opens that week's own report (see ui/views/WeeklyReportsListView.js/WeeklyReportDetailView.js)
  *   #/classroom/{id}/diagnostics               -> TEMPORARY Teacher Diagnostics screen (see
  *                                                 ui/views/TeacherDiagnosticsView.js's own header comment)
+ *   #/classroom/{id}/connect-learning-hub      -> Connect Learning Hub — classroom invitation code + the
+ *                                                 pending-request review queue for the Learner Identity Bridge
+ *                                                 (see ui/views/ConnectLearningHubView.js)
  *   #/curriculum-management                   -> Curriculum Management (admin tool — create/review/save Curriculum
  *                                                 Packs; not classroom-scoped, since a pack is shared across every
  *                                                 classroom, not owned by one — see ui/views/CurriculumManagementView.js)
- *   #/program-manager/weekly-plans             -> Programme Manager Weekly Plan Review — the cross-classroom Weekly
- *                                                 Plans queue (see ui/views/ProgramManagerWeeklyPlansView.js). Not
+ *   #/program-manager/weekly-plans             -> Program Manager Weekly Plan Review — the cross-classroom queue of
+ *                                                 Fellows' concise, whole-week Weekly Plans awaiting review (see
+ *                                                 ui/views/ProgramManagerWeeklyPlanQueueView.js). NOT the detailed
+ *                                                 LessonPlan queue that used to live at this exact path — see
+ *                                                 #/program-manager/observations below for that (renamed, same
+ *                                                 route-name-vs-content distinction the Weekly Plan / Detailed
+ *                                                 Lesson Plan architecture doc draws everywhere else). Not
  *                                                 classroom-scoped for the same reason Curriculum Management isn't:
  *                                                 a Program Manager reviews across every classroom they belong to,
- *                                                 never one at a time. Opening a plan still navigates to the
- *                                                 existing #/classroom/{id}/lesson-plans/{lessonPlanId}/review below
- *                                                 with a `?returnTo=` back to this route (see that route's own entry).
+ *                                                 never one at a time.
+ *   #/program-manager/weekly-plans/review      -> the Monday-Friday Weekly Plan review grid for one Fellow +
+ *                                                 classroom + week (see ui/views/WeeklyPlanReviewView.js), reached
+ *                                                 with `?classroomId=&teacherUid=&week=` query params. The SAME view
+ *                                                 also renders for a Fellow reviewing their own week before
+ *                                                 submitting — see that view's own header comment.
+ *   #/program-manager/observations             -> Observation Lesson Plan Review — the cross-classroom queue of
+ *                                                 individually-submitted DETAILED LessonPlans awaiting review (see
+ *                                                 ui/views/ProgramManagerObservationsView.js — the exact code that
+ *                                                 used to live at #/program-manager/weekly-plans, relabeled, not
+ *                                                 rebuilt). Opening one still navigates to the existing
+ *                                                 #/classroom/{id}/lesson-plans/{lessonPlanId}/review below with a
+ *                                                 `?returnTo=` back to this route (see that route's own entry).
  * Deep links work on refresh since the route is derived from the URL,
  * not from in-memory state.
  *
@@ -120,6 +138,17 @@ export function resolvePathParts(parts) {
     }
     if (parts[2] === 'student-access') {
       return { name: 'studentAccess', classroomId: parts[1] };
+    }
+    // Connect Learning Hub — the ClassMate-side half of the Learner
+    // Identity Bridge's teacher-facing workflow (see
+    // docs/architecture/CLASSROOM_INVITATION_VERIFICATION_BRIDGE.md).
+    // A dedicated screen, not a `studentAccess` section, since it has
+    // its own async-loaded data (classroom invitation + pending
+    // request queue) rather than the synchronous classroom-field reads
+    // every other Classroom Access tile uses — see
+    // ui/views/ConnectLearningHubView.js's own header comment.
+    if (parts[2] === 'connect-learning-hub') {
+      return { name: 'connectLearningHub', classroomId: parts[1] };
     }
     if (parts[2] === 'setup') {
       return { name: 'setup', classroomId: parts[1], step: parts[3] || null };
@@ -223,7 +252,7 @@ export function resolvePathParts(parts) {
       }
       return { name: 'lessonPlansList', classroomId: parts[1] };
     }
-    // Chapter Plans — Fellow-facing only (see
+    // Chapter Plans — Phase 3, Fellow-facing only (see
     // ui/views/ChapterPlansListView.js/ChapterPlanEditorView.js). No
     // separate "create" route: creation is a modal
     // (ui/components/ChapterPlanCreateModal.js) reached from the list,
@@ -232,7 +261,8 @@ export function resolvePathParts(parts) {
     // "+ New Lesson Plan" creates instantly, no wizard needed there; a
     // Chapter Plan's wizard is a modal for the identical reason: nothing
     // about "which subject/term/chapter" needs its own back-button-
-    // stable address).
+    // stable address). No PM review sub-route yet — that's a later
+    // phase.
     if (parts[2] === 'chapter-plans') {
       if (parts[3]) {
         return { name: 'chapterPlanEditor', classroomId: parts[1], chapterPlanId: parts[3] };
@@ -322,10 +352,10 @@ export function resolvePathParts(parts) {
     return { name: 'programManagerWeeklyPlans' };
   }
 
-  // Program Manager Chapter Plan review. Same shape as the Weekly Plan
-  // Review pair immediately above: a cross-classroom queue (no
-  // classroomId in the path — a PM reviews across every classroom they
-  // belong to) plus a `/review` detail reached via `?classroomId=&
+  // Program Manager Chapter Plan review — Phase 4. Same shape as the
+  // Weekly Plan Review pair immediately above: a cross-classroom queue
+  // (no classroomId in the path — a PM reviews across every classroom
+  // they belong to) plus a `/review` detail reached via `?classroomId=&
   // chapterPlanId=` query params, not path segments — a ChapterPlan
   // lives at `classrooms/{classroomId}/chapterPlans/{chapterPlanId}`,
   // so both ids are needed together and neither alone is a valid
