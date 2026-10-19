@@ -46,6 +46,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Check js/main.js import graph for missing local modules
+        # THE ACTUAL FIX for the 2026-10-19 production incident: js/main.js
+        # statically imported ./config/notificationRouting.js, but that
+        # file was never committed to main. A browser's module loader
+        # fetches a script's ENTIRE static import graph before the
+        # top-level script is considered loaded, so the resulting 404
+        # surfaced in the browser as "js/main.js failed to load" even
+        # though main.js itself deployed and served correctly — nothing
+        # that only requests js/main.js directly (curl, a smoke test
+        # hitting that one URL) can ever catch this class of gap. This
+        # step walks the real import graph (scripts/checkImportGraph.js)
+        # and fails the deploy before Hosting ever runs if any statically
+        # imported local module is missing.
+        run: node scripts/checkImportGraph.js
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: '${{ secrets.GITHUB_TOKEN }}'
