@@ -594,7 +594,7 @@ function renderIssuedCode(issuedCode) {
 
   const explainer = document.createElement('p');
   explainer.className = 'connect-learning-hub__description';
-  explainer.textContent = 'This code lets the learner complete verification in Learning Hub. It stays PENDING until they redeem it there — this does not activate the connection by itself.';
+  explainer.textContent = "Share this code directly with the learner or their family. They'll enter it in their own Learning Hub account to finish connecting — the request stays PENDING until they do; this code alone does not activate it.";
   wrapper.appendChild(explainer);
 
   const hint = document.createElement('p');
