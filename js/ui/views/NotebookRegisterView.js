@@ -18,12 +18,16 @@ import * as workspaceService from '../../services/workspaceService.js';
 import * as classSessionService from '../../services/classSessionService.js';
 import * as notebookConfigService from '../../services/notebookConfigService.js';
 import * as notebookService from '../../services/notebookService.js';
+import * as recognitionService from '../../services/recognitionService.js';
+import * as badgeService from '../../services/badgeService.js';
+import * as commentService from '../../services/commentService.js';
 import { createNotebookRosterElement } from '../components/NotebookRoster.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { getTodayDateKey, shiftDateKey, formatDateKey } from '../../utils/dateHelpers.js';
 import { createDebouncedFunction } from '../../utils/debounce.js';
 import { createIcon } from '../components/Icon.js';
 import { createBackButton } from '../components/BackButton.js';
+import { openQuickRecognitionModal } from '../components/QuickRecognitionModal.js';
 
 const debouncedSave = createDebouncedFunction((classroom) => workspaceService.save(classroom), 400);
 
@@ -163,7 +167,14 @@ export function renderNotebookRegisterView(container, props) {
         getEntryForStudent: (studentId) => notebookService.getEntry(classroom, subjectId, notebookTypeId, dateKey, studentId),
         onSelectStudent,
         onSetSubmission: (studentId, value) => {
-          notebookService.setEntry(classroom, subjectId, notebookTypeId, dateKey, studentId, { submission: value }, actingUid);
+          // Routed through recognitionService.js rather than calling
+          // notebookService.setEntry() directly — it still makes that
+          // exact same write, but also awards (first time submitted)
+          // or reverses (walked back to not-submitted/absent) this
+          // student's own automatic completion star for THIS notebook
+          // on THIS date — idempotent either way. See that function's
+          // own header comment.
+          recognitionService.recordNotebookSubmission(classroom, { subjectId, notebookTypeId, dateKey, studentId, submission: value }, actingUid);
           saveOrRecordDraft(classroom);
           rerender();
         },
@@ -171,6 +182,44 @@ export function renderNotebookRegisterView(container, props) {
           notebookService.setEntry(classroom, subjectId, notebookTypeId, dateKey, studentId, { completion: value }, actingUid);
           saveOrRecordDraft(classroom);
           rerender();
+        },
+        onQuickRecognize: (studentId) => {
+          const found = allStudents.find((entry) => entry.student.id === studentId);
+          if (!found) return;
+          const { student } = found;
+          const workItemRef = recognitionService.buildNotebookWorkItemRef({ subjectId, notebookTypeId, dateKey });
+          const workItemLabel = `${subject.name} · ${notebookType.name} · ${formatDateKey(dateKey)}`;
+
+          openQuickRecognitionModal({
+            studentName: student.name,
+            workItemLabel,
+            availableBadges: badgeService.listCatalog(classroom).filter((name) => !(student.badges || []).includes(name)),
+            onSubmit: async ({ badgeNames, awardManualStar, text }) => {
+              // The private comment, if any, is written FIRST (its own
+              // Firestore collection — see services/commentService.js's
+              // own header comment on why this is a separate write from
+              // everything below), so its real id is ready to attach to
+              // the star/badge timeline entries that reference it.
+              let commentId = null;
+              if (text) {
+                const comment = await commentService.addComment(classroom.id, { studentId, workItemRef, text, actingUid });
+                commentId = comment.id;
+              }
+
+              badgeNames.forEach((badgeName) => {
+                recognitionService.awardBadgeForWorkItem(student, badgeName, { workItemRef, commentId });
+              });
+
+              if (awardManualStar) {
+                recognitionService.awardManualStar(student, { label: workItemLabel, workItemRef, commentId });
+              }
+
+              if (badgeNames.length > 0 || awardManualStar) {
+                saveOrRecordDraft(classroom);
+              }
+              rerender();
+            },
+          });
         },
       })
     );

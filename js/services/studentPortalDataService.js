@@ -38,6 +38,7 @@ import * as studentGoalsService from './studentGoalsService.js';
 import * as learningRecordStudentService from './learningRecordStudentService.js';
 import * as goalStatisticsService from './goalStatisticsService.js';
 import * as teamStatisticsService from './teamStatisticsService.js';
+import * as testimonialService from './testimonialService.js';
 import * as plannerRepository from './plannerRepository.js';
 import * as timetableLessonService from './timetableLessonService.js';
 import * as studentAuthService from './studentAuthService.js';
@@ -615,6 +616,21 @@ export async function getPublicProfileForStudent(studentId) {
       }))
     : [];
 
+  // PUBLISHED testimonials only — see services/testimonialService.js's
+  // own header comment for exactly why this is the one safe function
+  // to call here: it never imports services/commentService.js or the
+  // private studentComments collection, only ever queries testimonials
+  // filtered to `published == true`, and strips every field beyond a
+  // short public allowlist before returning. A failure here (no active
+  // profile, no Firestore reachable) resolves to an empty list rather
+  // than ever throwing and blocking the rest of this profile.
+  let testimonials = [];
+  try {
+    testimonials = await testimonialService.getPublishedTestimonialsForStudent(activeProfile.classroomId, studentId);
+  } catch (error) {
+    console.error('[studentPortalDataService] getPublishedTestimonialsForStudent() failed — showing the rest of the profile without testimonials:', error);
+  }
+
   return {
     studentId: student.id,
     name: student.name,
@@ -628,6 +644,7 @@ export async function getPublicProfileForStudent(studentId) {
     events: studentEventService.getEventsForStudent(classroom, studentId),
     currentGoals,
     weeklyNetPoints: studentProgressService.getWeeklyNetPoints(classroom, studentId),
+    testimonials,
   };
 }
 

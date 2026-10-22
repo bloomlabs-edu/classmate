@@ -23228,3 +23228,87 @@ button.knowledge-authoring__row:hover {
 .settings-notebook-type-card__actions .overflow-menu__trigger:hover {
   background-color: var(--color-border, #e2e8ed);
 }
+
+/* =====================================================================
+   Recognition, comments, and testimonials — NEW SECTION, deliberately
+   appended here rather than interleaved with any existing rule block:
+   ui/components/QuickRecognitionModal.js (notebook-row quick badge/
+   star/comment action), the "Recognize" button on
+   ui/components/NotebookRoster.js's own rows, the Student Profile's
+   Comments & Testimonials section (reuses .note-card/.note-list/
+   .profile-section as-is — no new card styling needed there), and the
+   Student Public Profile's own Testimonials section. Everything below
+   is scoped to classes unique to this feature; nothing here touches an
+   existing selector.
+   ===================================================================== */
+
+.notebook-checking-row__recognize {
+  margin-left: auto;
+}
+
+.quick-recognition-modal__form {
+  text-align: left;
+}
+
+.quick-recognition-modal__badges {
+  border: none;
+  padding: 0;
+  margin: 0 0 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.quick-recognition-modal__badge-option {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: var(--font-weight-normal, 400);
+}
+
+.quick-recognition-modal__star-option {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.quick-recognition-modal__comment-input {
+  min-height: 4.5rem;
+  resize: vertical;
+}
+
+.quick-recognition-modal__privacy-note {
+  margin-top: 0.25rem;
+}
+
+.student-public-profile__testimonial-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.student-public-profile__testimonial-card {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border-left: 3px solid var(--color-primary, #2563EB);
+  background-color: var(--color-surface-muted, #F7F9FB);
+  border-radius: var(--radius-card, 0.5rem);
+}
+
+.student-public-profile__testimonial-text {
+  margin: 0 0 0.35rem;
+  font-style: italic;
+}
+
+.student-public-profile__testimonial-meta {
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+  font-style: normal;
+}
+
+@media (max-width: 480px) {
+  .notebook-checking-row__recognize {
+    margin-left: 0;
+  }
+}

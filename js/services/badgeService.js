@@ -35,12 +35,26 @@ export function removeBadgeFromCatalog(classroom, name) {
   return classroom.settings.badgeCatalog.length < before;
 }
 
-export function awardBadge(student, badgeName) {
+/**
+ * `meta` is an optional, purely-additive extension (Recognition/
+ * Comments feature) — when a badge is awarded from a specific
+ * notebook/assignment row's own quick-access control, the caller
+ * passes `{ workItemRef }` (and, if a comment was attached in the same
+ * action, `{ commentId }`) so the timeline entry preserves exactly
+ * which piece of work this award was for — see
+ * services/recognitionService.js's own header comment for the
+ * `workItemRef` shape. Every pre-existing call site (Achievements tab's
+ * "+ Award Badge", services/classModeService.js's own badge-award
+ * rules) calls this with no third argument at all and is completely
+ * unaffected: `meta` defaults to `{}`, so no new field is ever added to
+ * a badge-timeline entry unless a caller actually supplies one.
+ */
+export function awardBadge(student, badgeName, meta = {}) {
   if (!student.badges) student.badges = [];
   if (student.badges.includes(badgeName)) return false;
 
   student.badges.push(badgeName);
-  logEntry(student, { kind: 'badge', label: badgeName, delta: 0 });
+  logEntry(student, { kind: 'badge', label: badgeName, delta: 0, ...meta });
   return true;
 }
 

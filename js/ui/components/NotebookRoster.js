@@ -15,8 +15,19 @@
 
 import { SUBMISSION_STATUSES, SUBMISSION_LABELS, COMPLETION_STATUSES, COMPLETION_LABELS } from '../../config/notebookStatuses.js';
 import { createStudentNameElement } from './StudentNameElement.js';
+import { createIcon } from './Icon.js';
 
-export function createNotebookRosterElement({ students, getEntryForStudent, onSetSubmission, onSetCompletion, onSelectStudent }) {
+/**
+ * `onQuickRecognize` is optional and purely additive (Recognition,
+ * comments, and testimonials feature) — when supplied, each row gets a
+ * small "Recognize" button next to its two status dropdowns, for
+ * awarding a badge, an extra manual star, and/or a private comment
+ * scoped to THIS student on THIS exact notebook/date (see
+ * ui/views/NotebookRegisterView.js's own wiring and
+ * ui/components/QuickRecognitionModal.js). Omitting it renders this
+ * roster exactly as it always has.
+ */
+export function createNotebookRosterElement({ students, getEntryForStudent, onSetSubmission, onSetCompletion, onSelectStudent, onQuickRecognize }) {
   const list = document.createElement('div');
   list.className = 'notebook-checking-list';
 
@@ -29,6 +40,7 @@ export function createNotebookRosterElement({ students, getEntryForStudent, onSe
         onSetSubmission: (value) => onSetSubmission(student.id, value),
         onSetCompletion: (value) => onSetCompletion(student.id, value),
         onSelectStudent: onSelectStudent ? () => onSelectStudent(student.id) : null,
+        onQuickRecognize: onQuickRecognize ? () => onQuickRecognize(student.id) : null,
       })
     );
   });
@@ -36,7 +48,7 @@ export function createNotebookRosterElement({ students, getEntryForStudent, onSe
   return list;
 }
 
-function createRosterRow({ student, team, entry, onSetSubmission, onSetCompletion, onSelectStudent }) {
+function createRosterRow({ student, team, entry, onSetSubmission, onSetCompletion, onSelectStudent, onQuickRecognize }) {
   const row = document.createElement('div');
   row.className = 'notebook-checking-row';
 
@@ -65,6 +77,17 @@ function createRosterRow({ student, team, entry, onSetSubmission, onSetCompletio
       onSelect: onSetCompletion,
     })
   );
+
+  if (onQuickRecognize) {
+    const recognizeButton = document.createElement('button');
+    recognizeButton.type = 'button';
+    recognizeButton.className = 'btn btn--icon-only notebook-checking-row__recognize';
+    recognizeButton.setAttribute('aria-label', `Recognize ${student.name}`);
+    recognizeButton.title = 'Award a badge, star, or comment';
+    recognizeButton.appendChild(createIcon('award', { size: 16 }));
+    recognizeButton.addEventListener('click', onQuickRecognize);
+    row.appendChild(recognizeButton);
+  }
 
   return row;
 }

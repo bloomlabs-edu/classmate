@@ -21,9 +21,20 @@
 import { generateId } from '../utils/idGenerator.js';
 import { getCurrentIsoDate } from '../utils/dateHelpers.js';
 
-export function logEntry(student, { kind, label, delta = 0 }) {
+/**
+ * `...meta` is a deliberate, purely-additive escape hatch — any extra
+ * keys a caller passes (e.g. services/recognitionService.js's own
+ * `source`/`workItemRef`/`commentId`, for distinguishing automatic vs.
+ * manual star awards and tying an award back to the exact worksheet or
+ * comment it came from) ride along on the entry unchanged. A caller
+ * that passes only {kind, label, delta} — every pre-existing call site
+ * in this codebase — gets the exact same entry shape as before this
+ * change; no new field is ever added unless a caller actually supplies
+ * it.
+ */
+export function logEntry(student, { kind, label, delta = 0, ...meta }) {
   if (!student.history) student.history = [];
-  const entry = { id: generateId(), kind, label, delta, recordedAt: getCurrentIsoDate() };
+  const entry = { id: generateId(), kind, label, delta, recordedAt: getCurrentIsoDate(), ...meta };
   student.history.push(entry);
   if (kind === 'points') student.score += delta;
   return entry;

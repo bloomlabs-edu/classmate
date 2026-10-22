@@ -2153,6 +2153,106 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == teacherId;
     }
 
+    // ---------------------------------------------------------------
+    // Recognition, comments, and testimonials (see
+    // services/commentService.js's own header comment for the full
+    // feature). Deliberately TWO separate collections, not one
+    // document shape with a `published` flag — this is what makes "a
+    // student can never read a private comment" a property of the
+    // data model itself, not just of careful query-writing in the
+    // client: Firestore rules are scoped per-collection, so a rule
+    // granting broad, student-reachable read access to `testimonials`
+    // structurally cannot also expose `studentComments`, no matter
+    // what a future screen queries.
+    //
+    // studentComments: the private, teacher-authored note a teacher may
+    // attach when recording a completion/recognition event (a
+    // notebook check, an assignment checkpoint, or a standalone
+    // recognition). TEACHER-ONLY read and write, gated on classroom
+    // membership exactly like lessonPlans/chapterPlans above — never
+    // readable by a student identity, authenticated or anonymous,
+    // under any circumstance.
+    match /classrooms/{classroomId}/studentComments/{commentId} {
+      allow read: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids;
+
+      allow create: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids &&
+        request.resource.data.createdByUid == request.auth.uid &&
+        request.resource.data.classroomId == classroomId &&
+        request.resource.data.studentId is string;
+
+      // A teacher may edit the comment's own text later (e.g. to fix a
+      // typo) — never studentId, workItemRef, or who/when it was
+      // originally created.
+      allow update: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'updatedAt', 'updatedByUid']) &&
+        request.resource.data.studentId == resource.data.studentId &&
+        request.resource.data.createdByUid == resource.data.createdByUid;
+
+      // Never deleted — matches this file's own established
+      // "Participation History is append-only" convention
+      // (services/timelineService.js, services/badgeService.js). A
+      // comment that's no longer wanted is simply never published, or
+      // is unpublished if it already was — never erased — so the
+      // record of what a teacher actually observed can't quietly
+      // disappear.
+      allow delete: if false;
+    }
+
+    // testimonials: the explicit, teacher-published COPY of a
+    // comment's text, created only via a separate "Publish" action
+    // (services/commentService.js's own publishComment()) — never
+    // written to as a side effect of creating or editing a private
+    // comment. The ORIGINAL studentComments document is never touched
+    // by any write here. `published` is the only field that gates
+    // visibility; a teacher flips it off to unpublish WITHOUT deleting
+    // this document (so re-publishing needs no new text/approval
+    // step), and the create rule's own `hasOnly([...])` allowlist
+    // guarantees this document can never carry any field beyond this
+    // short, deliberately public-safe list — there is no path by which
+    // a private comment field could ever end up on a testimonial.
+    //
+    // Read is intentionally broader than studentComments' own — any
+    // authenticated identity, teacher or a student's own per-slot
+    // anonymous device, may read a testimonial once `published ==
+    // true`. This mirrors the exact same "any authenticated identity,
+    // teacher or anonymous student device" trust boundary this file
+    // already accepts for feedPosts/lessons/studentGoals (see those
+    // blocks' own comments) — a published testimonial is deliberately
+    // classroom-public, the same trust ceiling as a Feed post. An
+    // unpublished testimonial is invisible to everyone except a
+    // teacher member, same as a private comment.
+    match /classrooms/{classroomId}/testimonials/{testimonialId} {
+      allow read: if request.auth != null && (
+        resource.data.published == true ||
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids
+      );
+
+      allow create: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids &&
+        request.resource.data.publishedByUid == request.auth.uid &&
+        request.resource.data.classroomId == classroomId &&
+        request.resource.data.studentId is string &&
+        request.resource.data.keys().hasOnly([
+          'id', 'classroomId', 'studentId', 'sourceCommentId', 'text',
+          'workItemLabel', 'published', 'publishedByUid', 'publishedAt', 'updatedAt'
+        ]);
+
+      // A teacher may only toggle `published` (unpublish/republish) or
+      // touch updatedAt alongside it — never silently rewrite `text`
+      // to something the original private comment never said.
+      allow update: if request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/classrooms/$(classroomId)).data.memberUids &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['published', 'updatedAt']) &&
+        request.resource.data.studentId == resource.data.studentId &&
+        request.resource.data.text == resource.data.text &&
+        request.resource.data.sourceCommentId == resource.data.sourceCommentId;
+
+      allow delete: if false;
+    }
+
     // Everything else is denied by default (Firestore rules are
     // deny-by-default outside of explicit `match` blocks), but this is
     // here for clarity and as a deliberate backstop.

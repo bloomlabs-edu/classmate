@@ -37,6 +37,7 @@
  */
 
 import * as assignmentCheckpointService from '../../services/assignmentCheckpointService.js';
+import * as recognitionService from '../../services/recognitionService.js';
 import * as assignmentService from '../../services/assignmentService.js';
 import * as assignmentConfigService from '../../services/assignmentConfigService.js';
 import * as learningRecordService from '../../services/learningRecordService.js';
@@ -233,7 +234,15 @@ export function renderAssignmentDetailView(container, { classroom, assignmentId,
     },
     onQuickMarkSubmitted: (checkpointId, studentId) => {
       const checkpoint = assignmentCheckpointService.getCheckpointById(currentClassroom, checkpointId);
-      assignmentCheckpointService.setSubmission(checkpoint, studentId, { status: 'submitted', submittedDate: getTodayDateKey() });
+      // Routed through recognitionService.js rather than calling
+      // assignmentCheckpointService.setSubmission() directly — it still
+      // makes that exact same call, but also awards (idempotently) this
+      // student's own automatic completion star for THIS checkpoint —
+      // see that function's own header comment.
+      recognitionService.recordAssignmentCheckpointSubmission(currentClassroom, checkpoint, studentId, {
+        status: 'submitted',
+        submittedDate: getTodayDateKey(),
+      });
       persistClassroom();
       updateCellAndColumn(checkpointId, studentId);
     },
@@ -249,7 +258,11 @@ export function renderAssignmentDetailView(container, { classroom, assignmentId,
     },
     onSaveCell: (checkpointId, studentId, submission, review, teacherNote) => {
       const checkpoint = assignmentCheckpointService.getCheckpointById(currentClassroom, checkpointId);
-      assignmentCheckpointService.setSubmission(checkpoint, studentId, submission);
+      // Same automatic-star wrapping as onQuickMarkSubmitted above —
+      // this is also how a submission gets walked BACK to
+      // 'not_submitted' from the full cell editor, which is exactly
+      // the transition that must reverse (not re-award) the star.
+      recognitionService.recordAssignmentCheckpointSubmission(currentClassroom, checkpoint, studentId, submission);
       assignmentCheckpointService.setReview(checkpoint, studentId, review);
       assignmentCheckpointService.setTeacherNote(checkpoint, studentId, teacherNote);
       openCellFor = null;

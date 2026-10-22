@@ -17,6 +17,9 @@
  */
 
 import * as workspaceService from '../../services/workspaceService.js';
+import * as authService from '../../services/authService.js';
+import * as commentService from '../../services/commentService.js';
+import { openAddCommentModal } from '../components/AddCommentModal.js';
 import * as studentIdentityService from '../../services/studentIdentityService.js';
 import * as studentService from '../../services/studentService.js';
 import * as teamService from '../../services/teamService.js';
@@ -1166,7 +1169,132 @@ function renderActivityTab(content, classroom, student, team, rerender) {
 // Notes
 // ---------------------------------------------------------------------
 
-function renderNotesTab(content, classroom, student, team, rerender) {
+/** A short, human-readable label for a recognitionService.js-shaped `workItemRef`, or null for a standalone comment with no work item at all. Resolves names through the exact same config services the rest of this file already uses — never a raw id. */
+function describeWorkItemRef(classroom, workItemRef) {
+  if (!workItemRef) return null;
+  if (workItemRef.type === 'notebook') {
+    const subject = notebookConfigService.getSubjectById(classroom, workItemRef.subjectId);
+    const notebookType = notebookConfigService.getNotebookTypeById(classroom, workItemRef.notebookTypeId);
+    return [subject?.name, notebookType?.name, workItemRef.dateKey].filter(Boolean).join(' · ');
+  }
+  if (workItemRef.type === 'assignment_checkpoint') {
+    const checkpoint = assignmentCheckpointService.getCheckpointById(classroom, workItemRef.checkpointId);
+    return checkpoint ? `Checkpoint: ${checkpoint.title}` : 'Assignment Checkpoint';
+  }
+  return null;
+}
+
+/**
+ * Comments & Testimonials — the PRIVATE comment list (teacher-only;
+ * see services/commentService.js's own header comment) plus per-comment
+ * Publish/Unpublish controls. Async: both reads go through
+ * commentService.js's own Firestore-backed functions, a genuinely
+ * different persistence path from the rest of this synchronous,
+ * in-memory-classroom-object file — matches this file's own existing
+ * async-section precedent (renderStudentBadgesSection(), awaited inside
+ * renderAchievementsTab() above).
+ */
+async function renderCommentsAndTestimonialsSection(classroom, student, rerender) {
+  const section = document.createElement('div');
+  section.className = 'profile-section';
+
+  const heading = document.createElement('h2');
+  heading.className = 'profile-section__heading';
+  heading.textContent = 'Comments & Testimonials';
+  section.appendChild(heading);
+
+  const subheading = document.createElement('p');
+  subheading.className = 'profile-section__meta';
+  subheading.textContent = 'Private by default. Publish a comment to make it visible to this student as a testimonial.';
+  section.appendChild(subheading);
+
+  const [comments, testimonials] = await Promise.all([
+    commentService.listCommentsForStudent(classroom.id, student.id),
+    commentService.listTestimonialsForStudent(classroom.id, student.id),
+  ]);
+
+  if (comments.length === 0) {
+    section.appendChild(createEmptyStateElement({ message: 'No comments yet.' }));
+  } else {
+    const list = document.createElement('div');
+    list.className = 'note-list';
+
+    comments.forEach((comment) => {
+      const testimonial = testimonials.find((t) => t.sourceCommentId === comment.id) || null;
+
+      const card = document.createElement('div');
+      card.className = 'note-card';
+
+      const metaRow = document.createElement('div');
+      metaRow.className = 'note-card__meta';
+      const workItemLabel = describeWorkItemRef(classroom, comment.workItemRef);
+      const label = document.createElement('span');
+      label.className = 'note-card__teacher';
+      label.textContent = workItemLabel || 'General';
+      const date = document.createElement('span');
+      date.className = 'note-card__date';
+      date.textContent = formatDate(comment.createdAt);
+      metaRow.append(label, date);
+
+      const contentEl = document.createElement('p');
+      contentEl.className = 'note-card__content';
+      contentEl.textContent = comment.text;
+
+      const statusEl = document.createElement('p');
+      statusEl.className = 'profile-section__meta';
+      statusEl.textContent = testimonial?.published ? 'Published as a testimonial' : testimonial ? 'Unpublished' : 'Not published';
+
+      const actionButton = document.createElement('button');
+      actionButton.type = 'button';
+      actionButton.className = 'btn btn--ghost';
+
+      if (testimonial?.published) {
+        actionButton.textContent = 'Unpublish';
+        actionButton.addEventListener('click', async () => {
+          await commentService.unpublishTestimonial(classroom.id, testimonial.id);
+          rerender();
+        });
+      } else if (testimonial) {
+        actionButton.textContent = 'Republish';
+        actionButton.addEventListener('click', async () => {
+          await commentService.republishTestimonial(classroom.id, testimonial.id);
+          rerender();
+        });
+      } else {
+        actionButton.textContent = 'Publish as Testimonial';
+        actionButton.addEventListener('click', async () => {
+          const actingUid = authService.getCurrentUser()?.uid || null;
+          await commentService.publishComment(classroom.id, comment, { actingUid, workItemLabel });
+          rerender();
+        });
+      }
+
+      card.append(metaRow, contentEl, statusEl, actionButton);
+      list.appendChild(card);
+    });
+
+    section.appendChild(list);
+  }
+
+  const addButton = document.createElement('button');
+  addButton.type = 'button';
+  addButton.className = 'btn btn--primary';
+  addButton.textContent = '+ Add Comment';
+  addButton.addEventListener('click', () => {
+    openAddCommentModal({
+      onSave: async ({ text }) => {
+        const actingUid = authService.getCurrentUser()?.uid || null;
+        await commentService.addComment(classroom.id, { studentId: student.id, workItemRef: null, text, actingUid });
+        rerender();
+      },
+    });
+  });
+  section.appendChild(addButton);
+
+  return section;
+}
+
+async function renderNotesTab(content, classroom, student, team, rerender) {
   const section = document.createElement('div');
   section.className = 'profile-section';
 
@@ -1228,4 +1356,5 @@ function renderNotesTab(content, classroom, student, team, rerender) {
   section.appendChild(addButton);
 
   content.appendChild(section);
+  content.appendChild(await renderCommentsAndTestimonialsSection(classroom, student, rerender));
 }

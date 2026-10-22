@@ -62,6 +62,7 @@ export async function renderStudentPublicProfileView(container, { studentId, onB
   wrapper.appendChild(renderHeader(profile, onBack));
   wrapper.appendChild(createWeeklyNetPointsSection(profile.weeklyNetPoints, 'Points movement this week'));
   wrapper.appendChild(renderRecognitionSection(profile));
+  wrapper.appendChild(renderTestimonialsSection(profile));
   wrapper.appendChild(renderJourneySection(profile));
   wrapper.appendChild(renderPlaceholderSection('Learning Hub', 'Learning Hub progress will show up here once it\u2019s available.'));
   wrapper.appendChild(renderPlaceholderSection('Assessments', 'Assessment results aren\u2019t shown on public profiles yet.'));
@@ -159,6 +160,56 @@ function renderRecognitionSection(profile) {
       timeline.appendChild(renderEventCard(event, null, 'peer'));
     });
     section.appendChild(timeline);
+  }
+
+  return section;
+}
+
+/**
+ * Testimonials — short teacher comments explicitly published for this
+ * student to see (see services/commentService.js's own publishComment()
+ * and services/testimonialService.js's own header comment for why this
+ * is the one safe, student-reachable read for this feature). `profile.testimonials`
+ * is already PUBLISHED-ONLY and already stripped to
+ * {id, studentId, text, workItemLabel, publishedAt} — never a private
+ * comment, never anything beyond those fields, by construction of the
+ * function that produced it, not by any filtering done here.
+ */
+function renderTestimonialsSection(profile) {
+  const section = document.createElement('div');
+  section.className = 'student-public-profile__section';
+
+  const heading = document.createElement('h2');
+  heading.className = 'student-public-profile__section-heading';
+  heading.textContent = 'Testimonials';
+  section.appendChild(heading);
+
+  const testimonials = profile.testimonials || [];
+
+  if (testimonials.length === 0) {
+    section.appendChild(createEmptyStateElement({ message: 'No testimonials published yet.' }));
+  } else {
+    const list = document.createElement('div');
+    list.className = 'student-public-profile__testimonial-list';
+    testimonials.forEach((testimonial) => {
+      const card = document.createElement('blockquote');
+      card.className = 'student-public-profile__testimonial-card';
+
+      const text = document.createElement('p');
+      text.className = 'student-public-profile__testimonial-text';
+      text.textContent = `“${testimonial.text}”`;
+      card.appendChild(text);
+
+      if (testimonial.workItemLabel) {
+        const meta = document.createElement('cite');
+        meta.className = 'student-public-profile__testimonial-meta';
+        meta.textContent = testimonial.workItemLabel;
+        card.appendChild(meta);
+      }
+
+      list.appendChild(card);
+    });
+    section.appendChild(list);
   }
 
   return section;
