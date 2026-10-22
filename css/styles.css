@@ -3400,16 +3400,32 @@ textarea.reading-editor__block-input {
   flex-wrap: wrap;
   min-width: 0;
 }
+/* Section-heading scale (2026-10 consistency pass) — THREE levels, used
+   consistently regardless of which render function produces them:
+   Level A `.stage-heading` (this rule, 1.05rem) for every full-width/
+   top-of-canvas conceptual section (Subject, Lesson Overview, Purpose,
+   Connection, Showcase, Common Learning Resources, Experience,
+   Helping); Level B `.subheading` (0.9rem, below) for a named block
+   nested ONE level inside a Level A surface tile (Spark, Learning
+   Activities); Level C (0.85rem, see the `.activity-body` override on
+   `.primary-section-heading` below) for a heading nested inside an
+   Activity CARD (Interactions, this Activity's own Resources,
+   Differentiation). Was previously three unrelated sizes (0.85/0.95/1.5rem)
+   with NO consistent relationship to nesting depth — e.g. a
+   deeply-nested card subsection and a top-level page section shared the
+   exact same smallest size, while an outlier "needs attention" state
+   rendered 50% larger than every sibling heading of the same semantic
+   role. See docs/classmate_ui_consistency_guidelines.md Section 22:
+   hierarchy comes from weight/colour, not an oversized one-off. */
 .lesson-plan-builder__stage-heading {
-  font-size: 1rem;
+  font-size: 1.05rem;
   font-weight: var(--font-weight-bold);
   color: var(--color-ink);
   margin: 0;
 }
 .lesson-plan-builder__stage-heading--primary {
-  font-size: 1.5rem;
   font-weight: var(--font-weight-black);
-  letter-spacing: -0.01em;
+  color: var(--color-primary);
 }
 .lesson-plan-builder__stage-collapse-button {
   font-size: 0.85rem;
@@ -3604,54 +3620,26 @@ textarea.reading-editor__block-input {
 
 /* The Submission check — an always-visible, ADVISORY panel now living
    near the top of the canvas (see renderReadinessPanel()'s own doc
-   comment): warns, never blocks. Three tints for the three states —
-   ready (quiet green, same treatment as before), warning (a checklist
-   exists but Submit still works), blocked (the one real requirement —
-   zero Activities — genuinely missing). */
+   comment): warns, never blocks. Grounded in the SAME quiet wash
+   `.stage--reopened` already uses elsewhere on this page (never a new
+   container style) — previously this had padding/margin implying a
+   card with no background at all, so the page's own primary action
+   (Submit for Review) rendered as a bare button floating in open
+   whitespace, with no visual relationship to the hero above it; the
+   old ready/warning/blocked tinted-background states this rule used to
+   carry were removed from renderReadinessPanel() itself in the 2026-10
+   "advisory, not a checklist" redesign (see that function's own doc
+   comment) and had gone fully unused since — never reintroduced here. */
 .lesson-plan-builder__readiness {
-  border-radius: 14px;
-  padding: 0.85rem 1rem;
+  background-color: var(--color-bg);
+  border-radius: 16px;
+  padding: 1rem 1.25rem;
   margin-top: 1rem;
-}
-.lesson-plan-builder__readiness--ready {
-  background-color: #EAF5E3;
-}
-.lesson-plan-builder__readiness--warning {
-  background-color: #FBF6E9;
-}
-.lesson-plan-builder__readiness--blocked {
-  background-color: #FBEAEA;
-}
-.lesson-plan-builder__readiness-heading {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0 0 0.5rem;
-  font-weight: var(--font-weight-bold);
-  font-size: 0.9rem;
-  color: var(--color-text);
-}
-.lesson-plan-builder__readiness-note {
-  margin: 0 0 0.6rem;
-  font-size: 0.85rem;
-}
-.lesson-plan-builder__readiness--ready .lesson-plan-builder__readiness-note {
-  color: var(--color-success, #4C9A2A);
 }
 .lesson-plan-builder__readiness-warning {
   margin: 0;
   font-size: 0.85rem;
   color: var(--color-danger, #C0392B);
-}
-.lesson-plan-builder__readiness-checklist {
-  list-style: disc;
-  margin: 0;
-  padding-left: 1.25rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  font-size: 0.82rem;
-  color: var(--color-text);
 }
 .lesson-plan-builder__back-to-top {
   display: block;
@@ -3677,8 +3665,9 @@ textarea.reading-editor__block-input {
 .lesson-plan-builder__progress-segment--complete {
   background-color: var(--color-success, #4C9A2A);
 }
+/* Level B — see the Level A `.stage-heading` comment above. */
 .lesson-plan-builder__subheading {
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-weight: var(--font-weight-bold);
   margin: 1.25rem 0 0.75rem;
 }
@@ -4011,14 +4000,21 @@ textarea.reading-editor__block-input {
 .lesson-plan-builder__interaction-side--students {
   background-color: #FDEEE0;
 }
+/* Shared "card badge label" typography (icon + short identifying label
+   atop a tinted card) — identical font-size/weight/letter-spacing/gap/
+   margin to `.differentiation-bucket-label` below, since both play the
+   exact same role (naming which tinted card this is); only the per-type
+   colour differs, per explicit product direction ("never colour
+   alone" — colour stays a secondary reinforcement, never the only
+   thing distinguishing two otherwise-identical components). */
 .lesson-plan-builder__interaction-side-label {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
-  font-size: 0.72rem;
+  gap: 0.4rem;
+  font-size: 0.74rem;
   font-weight: var(--font-weight-bold);
   letter-spacing: 0.03em;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.45rem;
 }
 .lesson-plan-builder__interaction-side--teacher .lesson-plan-builder__interaction-side-label {
   color: #5ea6da;
@@ -4041,12 +4037,23 @@ textarea.reading-editor__block-input {
 /* Was previously unstyled (relying on default <p> rendering) — also
    used by renderLearningResourcesSection()'s own "Learning Resources"/
    "Concepts" headings, so fixing it here benefits all three, not just
-   the new "Interactions" row. */
+   the new "Interactions" row.
+   Level A by default (Lesson Overview's own label, Common Learning
+   Resources — both full-width, top-of-canvas sections, same visual
+   weight as Purpose/Connection/Showcase) — see the `.stage-heading`
+   comment above for the full 3-level scale. The `.activity-body`
+   override just below demotes this SAME class to Level C wherever it's
+   reused one level deeper, inside an Activity card (Interactions, this
+   Activity's own Resources, Differentiation) — one shared class,
+   context decides the level, never a different class per call site. */
 .lesson-plan-builder__primary-section-heading {
-  font-size: 0.85rem;
+  font-size: 1.05rem;
   font-weight: var(--font-weight-bold);
   color: var(--color-ink);
   margin: 0;
+}
+.lesson-plan-builder__activity-body .lesson-plan-builder__primary-section-heading {
+  font-size: 0.85rem;
 }
 .lesson-plan-builder__interactions-block {
   display: flex;
@@ -4068,12 +4075,16 @@ textarea.reading-editor__block-input {
   display: flex;
   flex-direction: column;
 }
+/* Typography now lives on the heading text itself, via the shared
+   `.primary-section-heading` class (Level C inside `.activity-body` —
+   see that class's own comment) — previously a bare, unstyled <span>
+   with the size/weight set here on its parent div instead, the one
+   heading on this page with no heading class of its own ("floating
+   text" relative to every other section/subsection heading). */
 .lesson-plan-builder__differentiation-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 0.8rem;
-  font-weight: var(--font-weight-bold);
   margin-bottom: 0.75rem;
 }
 /* Three equal, visually distinct cards — an optional planning LAYER,
@@ -4108,14 +4119,16 @@ textarea.reading-editor__block-input {
 .lesson-plan-builder__differentiation-bucket--green {
   background-color: #EAF5E3;
 }
+/* Same shared card-badge-label typography as `.interaction-side-label`
+   above — see that rule's own comment. */
 .lesson-plan-builder__differentiation-bucket-label {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-weight: var(--font-weight-bold);
-  letter-spacing: 0.02em;
-  margin-bottom: 0.5rem;
+  letter-spacing: 0.03em;
+  margin-bottom: 0.45rem;
   color: var(--color-ink);
 }
 /* Dark ink text, not a saturated hue against its own pale tint — per
@@ -4314,7 +4327,27 @@ textarea.reading-editor__block-input {
     padding: 1.1rem 1.25rem;
   }
   .lesson-plan-builder__title-input {
-    font-size: 1.4rem;
+    /* WORK-0023 — a long Topic title (an ordinary single-line <input>,
+       never wrapped) silently overflowed past the status badge's
+       shared flex row at narrow widths: `flex: 1` sizes against the
+       input's own `min-width: 200px`, which the badge's small fixed
+       width always satisfies, so `.title-line`'s own flex-wrap never
+       actually triggered even though the TEXT inside the input was
+       already wider than its rendered box and scrolled out of view
+       with no visual indicator. Forcing the input onto its own full
+       row (min-width: 100%) is what actually triggers the wrap,
+       dropping the badge to its own line below with the input free to
+       use the whole row width for the title text. `clamp()` shrinks
+       the font for genuinely narrow viewports instead of a single
+       fixed size, and `text-overflow: ellipsis` (an <input> can't wrap
+       its own text — only a textarea can) turns whatever still doesn't
+       fit into a VISIBLE "…" plus the `title` attribute's native hover
+       tooltip (set alongside `.value` in renderTitleBar()), never the
+       original silent, indicator-less clip. */
+    font-size: clamp(1.05rem, 5.6vw, 1.4rem);
+    min-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .lesson-plan-builder__stage--surface-tile:not(.lesson-plan-builder__stage--compact) {
     padding: 1.1rem 1.25rem;

@@ -852,6 +852,37 @@ export function renderLessonPlanBuilderView(container, { classroom, currentUser,
 // Rendering
 // ---------------------------------------------------------------------
 
+/**
+ * The locked (SUBMITTED/APPROVED) view's own stage heading-row — the
+ * exact same `.stage-heading-row` > `.stage-heading` structure
+ * renderGuidedContentStage() builds for the editable view (same copy,
+ * same Level A class, same bottom-border/spacing — suppressed by the
+ * identical `.stage--surface-tile .stage-heading-row` CSS rule
+ * wherever the caller also applies withSurfaceTile(), exactly as it
+ * already is for the editable view), just without that function's
+ * collapse/reopen chrome (nothing in the locked view is ever collapsed
+ * or reopened). Returns the ROW, not a bare heading — a caller appends
+ * this directly to a `.lesson-plan-builder__stage` wrap, then its own
+ * content, mirroring renderGuidedContentStage()'s own
+ * headingRow-then-content structure exactly so a locked plan's
+ * Why/Connection/Showcase/Experience/Helping sections are laid out
+ * IDENTICALLY to how that same teacher saw them while still drafting —
+ * previously a bare, un-rowed `<h2>` sat flush against its content with
+ * no divider and a smaller gap than the editable view's own stages got,
+ * a real structural inconsistency between the two states of the same
+ * page, not just a missing-heading gap (see .claude/supervisor's own
+ * WORK-0027, which only fixed the missing-heading half of this).
+ */
+function renderLockedStageHeadingRow(title) {
+  const headingRow = document.createElement('div');
+  headingRow.className = 'lesson-plan-builder__stage-heading-row';
+  const heading = document.createElement('h2');
+  heading.className = 'lesson-plan-builder__stage-heading';
+  heading.textContent = title;
+  headingRow.appendChild(heading);
+  return headingRow;
+}
+
 function renderBuilder(container, state, handlers) {
   container.innerHTML = '';
 
@@ -924,22 +955,48 @@ function renderBuilder(container, state, handlers) {
     grid.appendChild(withTileSize(renderLessonOverviewLabel(), 'full'));
     grid.appendChild(withTileSize(withSurfaceTile(renderConceptsField(plan, classroom, guidedState, handlers)), 'wide'));
     grid.appendChild(withTileSize(renderScheduleSection(plan, classroom, guidedState, handlers), 'narrow'));
-    grid.appendChild(withTileSize(withSurfaceTile(renderWhySection(plan, handlers)), 'full'));
-    grid.appendChild(withTileSize(renderSelfOthersIndiaSection(plan, handlers), 'half'));
-    grid.appendChild(withTileSize(renderAssessmentSection(plan, handlers), 'half'));
+    // Every locked-view wrap below is `.lesson-plan-builder__stage` —
+    // the SAME bare shell (padding: 0, no gap of its own) that the
+    // editable guided view's own renderGuidedContentStage() section
+    // uses — plus withSurfaceTile() wherever the editable view also
+    // surfaces that stage (Why, Experience), so a locked plan's own
+    // heading-to-content spacing, divider, and card treatment are
+    // pixel-identical to how that same teacher saw them while drafting,
+    // never a second, looser layout just because the plan is now
+    // read-only.
+    const whyWrap = withSurfaceTile(document.createElement('section'));
+    whyWrap.classList.add('lesson-plan-builder__stage');
+    whyWrap.appendChild(renderLockedStageHeadingRow('Why are students learning what they are learning today?'));
+    whyWrap.appendChild(renderWhySection(plan, handlers));
+    grid.appendChild(withTileSize(whyWrap, 'full'));
+    const connectionWrap = document.createElement('section');
+    connectionWrap.className = 'lesson-plan-builder__stage';
+    connectionWrap.appendChild(renderLockedStageHeadingRow('Will it advance self, others and India?'));
+    connectionWrap.appendChild(renderSelfOthersIndiaSection(plan, handlers));
+    grid.appendChild(withTileSize(connectionWrap, 'half'));
+    const showcaseWrap = document.createElement('section');
+    showcaseWrap.className = 'lesson-plan-builder__stage';
+    showcaseWrap.appendChild(renderLockedStageHeadingRow('Are students showcasing learning and applying the content in and beyond class?'));
+    showcaseWrap.appendChild(renderAssessmentSection(plan, handlers));
+    grid.appendChild(withTileSize(showcaseWrap, 'half'));
     grid.appendChild(withTileSize(withSurfaceTile(renderCommonLearningResources(plan, state, handlers)), 'full'));
-    const experience = document.createElement('div');
-    experience.className = 'lesson-plan-builder__experience';
-    experience.appendChild(renderSparkSection(plan, handlers));
-    experience.appendChild(renderActivitiesSection(plan, state.collapsedActivityIds, handlers, state));
+    const experience = document.createElement('section');
+    experience.className = 'lesson-plan-builder__stage';
+    experience.appendChild(renderLockedStageHeadingRow('Is it fun, fast, effective?'));
+    const experienceContent = document.createElement('div');
+    experienceContent.className = 'lesson-plan-builder__experience';
+    experienceContent.appendChild(renderSparkSection(plan, handlers));
+    experienceContent.appendChild(renderActivitiesSection(plan, state.collapsedActivityIds, handlers, state));
+    experience.appendChild(experienceContent);
     grid.appendChild(withTileSize(withSurfaceTile(experience), 'full'));
-    const helping = document.createElement('div');
-    const helpingHeading = document.createElement('h2');
-    helpingHeading.className = 'lesson-plan-builder__stage-heading';
-    helpingHeading.textContent = 'Are students helping me and others learn?';
-    helping.appendChild(helpingHeading);
-    helping.appendChild(renderPairExplanationField(plan, handlers));
-    helping.appendChild(renderExitTicketField(plan, handlers));
+    const helping = document.createElement('section');
+    helping.className = 'lesson-plan-builder__stage';
+    helping.appendChild(renderLockedStageHeadingRow('Are students helping me and others learn?'));
+    const helpingContent = document.createElement('div');
+    helpingContent.className = 'lesson-plan-builder__helping';
+    helpingContent.appendChild(renderPairExplanationField(plan, handlers));
+    helpingContent.appendChild(renderExitTicketField(plan, handlers));
+    helping.appendChild(helpingContent);
     grid.appendChild(withTileSize(helping, 'full'));
     container.appendChild(wrapper);
     return;
@@ -1143,6 +1200,7 @@ function renderTitleBar(plan, stageCompletion, state, handlers) {
   topicInput.className = 'lesson-plan-builder__title-input';
   topicInput.placeholder = 'Untitled Lesson Plan';
   topicInput.value = plan.topic;
+  topicInput.title = plan.topic; // visible/hover fallback for whatever a fixed-width single-line input can't show in full — see the mobile `text-overflow: ellipsis` rule in styles.css
   topicInput.disabled = !handlers.editable;
   topicInput.addEventListener('change', () => handlers.onTopicChange(topicInput.value));
   topLine.appendChild(topicInput);
@@ -2971,6 +3029,7 @@ function renderDifferentiationFields(plan, activity, handlers) {
   const heading = document.createElement('div');
   heading.className = 'lesson-plan-builder__differentiation-heading';
   const headingText = document.createElement('span');
+  headingText.className = 'lesson-plan-builder__primary-section-heading';
   headingText.textContent = 'Differentiation';
   heading.appendChild(headingText);
 
