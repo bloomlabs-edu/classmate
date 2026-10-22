@@ -2189,30 +2189,24 @@ select:focus-visible,
    supplies which state, if any). Deliberately a separate visual layer from
    the row's own bucket background/border, which is unchanged: bucket =
    group/level, this pill = performance/behaviour, score+stars+movement =
-   underlying data. Solid, bright fills (reusing the same green/red already
-   used for small solid accents elsewhere, see config/bucketConfig.js's own
-   BUCKET_DISPLAY_COLORS) rather than the movement badge's soft tint, since
-   this needs to read clearly at a glance across a whole roster. */
-.student-row__name--climbing,
-.student-row__name--redemption {
+   underlying data. */
+.student-row__name--climbing {
   display: inline-block;
   padding: 0.1rem 0.55rem;
   border-radius: var(--radius-pill);
   color: #fff;
-}
-.student-row__name--climbing {
   background-color: #2e7d32;
 }
-.student-row__name--redemption {
-  /* Softened per explicit product feedback (2026-09): the original
-     #c62828 read as too alarming/bright for a pill shown behind a
-     student's name. #B24C4C keeps the same white-text pairing (still
-     ~5.2:1 contrast, comfortably passing WCAG AA) while cutting
-     saturation roughly in half (66% -> 40%), reading as a calm
-     dusty-rose rather than an alert. Climbing's own green pill is
-     untouched. */
-  background-color: #b24c4c;
-}
+/* Redemption's own pill fill removed (2026-10 visual cleanup, part of
+   the same student-identity styling pass as the bucket left-border
+   removal) — the underlying 'redemption' state/class itself is
+   unchanged (ui/components/ClassModeStudentRow.js still adds
+   `student-row__name--redemption` exactly as before, see
+   services/performanceStateService.js's own getNameHighlightState()),
+   so the indicator can be restored later without touching any
+   component logic; this class simply has no visual styling of its own
+   right now, so a redemption name renders as plain `.student-row__name`
+   text, same contrast/typography as every other student. */
 
 .student-row__points {
   font-weight: var(--font-weight-black);
@@ -13371,6 +13365,20 @@ button.recognition-bento__hero-winner-name {
 .classroom-management__group-add-student {
   margin-top: 0.5rem;
 }
+/* Houses "+ Add Student" and "+ Add Existing Student" side by side —
+   two clearly-distinguished triggers (new vs. existing student), see
+   ui/views/ClassroomManagementView.js's own openAddExistingStudentsFor()
+   header comment. Wraps to its own line per button at narrow widths
+   rather than overflowing the group card. */
+.classroom-management__group-add-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+.classroom-management__group-add-actions .classroom-management__group-add-student {
+  margin-top: 0;
+}
 .classroom-management__coming-soon-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -18701,6 +18709,22 @@ button.recognition-bento__hero-winner-name {
 .student-multi-select__empty {
   color: var(--color-muted);
   font-size: var(--text-sm);
+}
+
+/* --- Add Existing Students modal (Classroom Management groups) ---
+   Layers a plain search input + note text on top of the
+   .student-multi-select__* block above — see
+   ui/components/AddExistingStudentsModal.js's own header comment. */
+.add-existing-students-modal__search {
+  margin-bottom: 0.75rem;
+}
+.add-existing-students-modal__list {
+  margin-bottom: 0.25rem;
+}
+.add-existing-students-modal__note {
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+  margin: 0.5rem 0 1rem;
 }
 
 /* --- Learning Programme overview --- */

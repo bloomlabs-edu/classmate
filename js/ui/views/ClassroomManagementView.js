@@ -59,6 +59,7 @@ import { getOrCreateUngroupedTeam } from '../../services/classroomService.js';
 import * as classroomImportService from '../../services/classroomImportService.js';
 import { ClassroomImportError } from '../../services/classroomImportService.js';
 import { openImportPreviewModal } from '../components/ImportPreviewModal.js';
+import { openAddExistingStudentsModal } from '../components/AddExistingStudentsModal.js';
 import { renderSeatingView } from './SeatingView.js';
 import * as workspaceCoordinator from '../../services/workspaceCoordinator.js';
 
@@ -228,6 +229,33 @@ function renderStudentsAndGroupsSection(classroom, rerender, onSelectStudent, on
   return section;
 }
 
+/**
+ * The "add an EXISTING student" flow — a searchable multi-select over
+ * the classroom's own roster (ui/components/AddExistingStudentsModal.js),
+ * deliberately separate from "+ Add Student" above (which always types
+ * a brand-new name). The modal itself never mutates anything; it only
+ * reports back which studentIds were chosen, so the actual move — and
+ * the invariant that a student only ever lives in one team's own
+ * `students` array at a time — stays entirely inside
+ * studentService.moveStudentToTeam(), exactly as every other move in
+ * this file already works.
+ */
+function openAddExistingStudentsFor(classroom, team, rerender) {
+  openAddExistingStudentsModal({
+    classroom,
+    targetTeam: team,
+    onConfirm: (selectedStudentIds) => {
+      selectedStudentIds.forEach((studentId) => {
+        const found = studentService.findStudentInClassroom(classroom, studentId);
+        if (!found || found.team.id === team.id) return; // already moved by an earlier iteration, or already here
+        studentService.moveStudentToTeam(classroom, found.team.id, studentId, team.id);
+      });
+      workspaceService.save(classroom);
+      rerender();
+    },
+  });
+}
+
 function renderGroupCard(classroom, team, rerender, onSelectStudent, onSelectTeam) {
   const card = document.createElement('div');
   card.className = 'classroom-management__group-card';
@@ -288,6 +316,10 @@ function renderGroupCard(classroom, team, rerender, onSelectStudent, onSelectTea
             },
           });
         },
+      },
+      {
+        label: 'Add Existing Student',
+        onClick: () => openAddExistingStudentsFor(classroom, team, rerender),
       },
       {
         label: 'Rename Group',
@@ -365,9 +397,19 @@ function renderGroupCard(classroom, team, rerender, onSelectStudent, onSelectTea
       card.appendChild(list);
     }
 
+    const addStudentActions = document.createElement('div');
+    addStudentActions.className = 'classroom-management__group-add-actions';
+
     const addStudentInline = document.createElement('button');
     addStudentInline.type = 'button';
-    addStudentInline.className = 'btn btn--text classroom-management__group-add-student';
+    // .btn--tonal/.btn--tonal-blue/.btn--pill — same filled, pill-shaped
+    // "add a row" treatment already established for repeated add-actions
+    // inside a card (see ui/views/LessonPlanBuilderView.js's own Add
+    // Activity/Add Interaction/Add Differentiation buttons), promoted
+    // from .btn--text (2026-10 visual refinement) per explicit product
+    // direction that this action needed more visual prominence than a
+    // plain text link.
+    addStudentInline.className = 'btn btn--tonal btn--tonal-blue btn--pill classroom-management__group-add-student';
     addStudentInline.textContent = '+ Add Student';
     addStudentInline.addEventListener('click', () => {
       openNameEntryModal({
@@ -380,7 +422,20 @@ function renderGroupCard(classroom, team, rerender, onSelectStudent, onSelectTea
         },
       });
     });
-    card.appendChild(addStudentInline);
+    addStudentActions.appendChild(addStudentInline);
+
+    // A separate, clearly-distinguished trigger from "+ Add Student"
+    // above — that one always types a brand-new name; this one only
+    // ever picks among students who already exist (see
+    // ui/components/AddExistingStudentsModal.js's own header comment).
+    const addExistingStudentInline = document.createElement('button');
+    addExistingStudentInline.type = 'button';
+    addExistingStudentInline.className = 'btn btn--tonal btn--tonal-blue btn--pill classroom-management__group-add-student';
+    addExistingStudentInline.textContent = '+ Add Existing Student';
+    addExistingStudentInline.addEventListener('click', () => openAddExistingStudentsFor(classroom, team, rerender));
+    addStudentActions.appendChild(addExistingStudentInline);
+
+    card.appendChild(addStudentActions);
   }
 
   return card;
