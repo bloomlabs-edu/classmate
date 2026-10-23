@@ -2060,6 +2060,10 @@ function init() {
         slackIntegrationService.getConnectionStatus(user.uid).then(({ connected }) => {
           slackConnected = connected;
           refreshUserBar();
+        }).catch((error) => {
+          // Non-essential: the Slack control simply stays in its default
+          // (disconnected) state until a later retry succeeds.
+          console.error('[main] Failed to load Slack connection status:', error);
         });
         handleSlackRedirectIfPresent();
 
@@ -2071,6 +2075,13 @@ function init() {
           // once (and skipped triggering guidance) before this promise
           // resolved.
           maybeShowGuidanceForRoute(router.getCurrentRoute().name);
+        }).catch((error) => {
+          // Non-essential: guidanceCompletedMapLoaded simply stays false,
+          // so maybeShowGuidanceForRoute() keeps skipping every
+          // auto-triggered flow this session rather than risk replaying
+          // one a teacher already completed -- never blocks the route
+          // itself from rendering.
+          console.error('[main] Failed to load guidance completion state:', error);
         });
 
         accentColorPreferenceService.getPreferenceOnce(user.uid).then((storedValue) => {
@@ -2085,6 +2096,11 @@ function init() {
             accentColorService.applyAccentColor(storedValue);
           }
           refreshUserBar();
+        }).catch((error) => {
+          // Non-essential: the default accent color ('ocean', set at
+          // sign-out/module-load above) simply stays applied until a
+          // later retry succeeds.
+          console.error('[main] Failed to load accent color preference:', error);
         });
 
         workspaceLoading = true;

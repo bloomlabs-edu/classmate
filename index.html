@@ -225,7 +225,35 @@
         },
         true
       );
+      // Same appStillBooting gate as the 'error' listener above, for the
+      // same reason: an unhandled rejection is not inherently a startup
+      // failure. Non-essential background reads (guidance/accent-color
+      // preferences — see main.js's own onAuthStateChange()) are
+      // deliberately fire-and-forget, and a known class of Firestore JS
+      // SDK bug ("FIRESTORE INTERNAL ASSERTION FAILED: Unexpected
+      // state", reported across SDK versions 7.x-11.x, tied to network
+      // connectivity transitions hitting the SDK's own internal
+      // watch-stream/persistence queue rather than any single awaited
+      // call) can surface as an unhandled rejection with no application
+      // code in its stack at all. By the time any of those settle, the
+      // boot placeholder has virtually always already been replaced by
+      // a real view (even just the "Loading your classrooms..." screen —
+      // see renderLoadingScreen()), so without this gate a background
+      // hiccup unrelated to booting was able to blank out an
+      // already-working app with this same fatal banner. A rejection
+      // that happens WHILE #app-boot-loading is still the only thing in
+      // #app is still treated as a genuine startup failure, unchanged.
       window.addEventListener('unhandledrejection', function (event) {
+        var bootEl = document.getElementById('app-boot-loading');
+        var appEl = document.getElementById('app');
+        var appStillBooting = !!(bootEl && appEl && appEl.contains(bootEl));
+        if (!appStillBooting) {
+          console.error(
+            '[startup] unhandled rejection after boot (non-fatal):',
+            (event.reason && event.reason.stack) || String(event.reason)
+          );
+          return;
+        }
         showStartupError(
           'A background operation failed before the app could finish loading.',
           (event.reason && event.reason.stack) || String(event.reason)
