@@ -2127,7 +2127,27 @@ select:focus-visible,
   border-left: 4px solid transparent;
   overflow: hidden;
   display: flex;
-  align-items: stretch;
+  /* `center`, not `stretch`: .student-row__remove-star has a fixed
+     height (.btn--icon-only), so under `stretch` it can't actually
+     stretch and instead sits flex-start (top-aligned), while
+     .student-row__more (sized via min-height, so it DOES stretch) ends
+     up visually centered by its own internal centering -- the two
+     controls read as inconsistently aligned against each other. Both
+     have real, independent clickable boxes already (44px min-height on
+     .student-row__more, a true circle on .student-row__remove-star), so
+     neither depends on stretching to fill the row for its own hit area. */
+  align-items: center;
+  /* Breathing room between the name/score surface and the trailing
+     controls, and between the controls themselves -- previously 0, so
+     the remove-star circle and the ⋮ menu sat flush against the
+     surface's own right edge with nothing but their own padding
+     separating them. */
+  gap: 0.4rem;
+  /* Mirrors .student-row__surface's own 0.85rem left inset on the
+     right side of the strip, after the last trailing control, so the
+     whole row reads as evenly inset rather than only the left side
+     having a deliberate margin. */
+  padding-right: 0.6rem;
 }
 
 .student-row__surface {
@@ -2186,13 +2206,42 @@ select:focus-visible,
    established tier NotebookRoster.js's own per-row "Recognize" button
    already uses in an equally dense list, not a new, one-off treatment.
    .student-row__more (the three-dot menu) is deliberately left
-   untouched — out of scope for this change. */
+   untouched — out of scope for this change.
+
+   2026-10-23 follow-up: the 40px/2px-border/1.2rem-glyph sizing above
+   came from .btn--icon-only, the app's shared icon-only-button tier —
+   correct for a standalone action button, but oversized once repeated
+   down every row of a dense roster (the exact "excessive empty space /
+   oversized control" the Class Mode roster review flagged). Scoped
+   down here, not in .btn--icon-only itself, so every OTHER consumer of
+   that shared tier (e.g. NotebookRoster.js's own per-row "Recognize"
+   button) is completely unaffected — this is still a real, bordered
+   circle with the identical "−" glyph, just sized to actually fit a
+   compact student strip instead of a one-off standalone button. */
 .student-row__remove-star {
   flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  font-size: 0.85rem;
+  border-width: 1.5px;
 }
 
 .student-row__name {
   font-weight: var(--font-weight-medium);
+  /* Without min-width: 0, a flex item's default min-width is its own
+     unwrapped content width, so a long name can't actually shrink
+     below that -- it overflows past the score/controls instead of
+     wrapping, the exact "long names collide with scores or controls"
+     failure mode. flex: 1 1 auto makes the name reliably claim
+     whatever width .student-row__trailing's own flex-shrink: 0 leaves
+     it, rather than relying on justify-content: space-between's
+     leftover-space distribution (which has nothing to distribute once
+     the name already needs all remaining room). overflow-wrap: anywhere
+     additionally lets a single very long word (not just long names with
+     multiple words) wrap rather than overflow. */
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
 }
 
 /* Performance/behaviour name pill — a compact rounded highlight strip
