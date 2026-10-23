@@ -109,8 +109,12 @@ export function createClassModeStudentRow(student, { onTap, onSwipeLeft, onLongP
   if (onSwipeLeft) {
     const removeStarButton = document.createElement('button');
     removeStarButton.type = 'button';
-    removeStarButton.className = 'student-row__remove-star';
-    removeStarButton.textContent = '−'; // U+2212 minus sign — same plain-glyph approach as the '⋮' more-actions button below, not an SVG icon
+    // .btn--icon-only — the app's own documented circular icon-button
+    // tier (2026-10-23 visual fix: a bare glyph with no resting-state
+    // chrome read as a stray dash against a whole roster; see this
+    // class's own CSS comment in styles.css for the full history).
+    removeStarButton.className = 'btn btn--icon-only student-row__remove-star';
+    removeStarButton.textContent = '−'; // U+2212 minus sign — still a plain glyph, not an SVG icon, now inside the shared bordered circle every other icon-only action in the app already uses
     removeStarButton.setAttribute('aria-label', `Remove a star from ${student.name}`);
     removeStarButton.title = 'Remove a star';
     removeStarButton.addEventListener('click', (event) => {

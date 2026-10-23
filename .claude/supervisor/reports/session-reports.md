@@ -462,3 +462,77 @@ These are two clearly different blues. The cross-page divergence `CONFLICT-0002`
 **Flagged, not acted on:** the working tree currently carries a substantially larger uncommitted diff than this session's earlier snapshot (now also touching `js/ui/views/TimetableView.js`, `js/ui/components/KnowledgeConceptPicker.js`, `js/ui/views/KnowledgeAuthoringDisplay.js`/`KnowledgeAuthoringView.js`, `js/ui/views/StudentAccessView.js`, `firestore.rules`, `js/main.js`, plus new untracked `js/ui/views/ConnectLearningHubView.js`/`ConnectLearningHubDisplay.js`, `functions/`, `server/`, etc.) -- none of this is registered anywhere in `work-registry.json` yet. This was not investigated or registered as part of this task (out of scope for what was asked), but is noted here so a future session doesn't assume the registry's last-known working-tree snapshot is current.
 
 **Not done:** no implementation, delegation, worktree creation, or specialist invocation. No other work item's `status` was changed as a side effect. No commit, push, or deploy.
+
+## REPORT-0022 -- Registration: Lesson Plan Builder comprehensive visual-consistency redesign (WORK-0029)
+
+- **Date:** 2026-10-21
+- **Session type:** Registration + conflict check only. No product code read in depth, no implementation performed or delegated by the Supervisor.
+
+**What was inspected:** `registry/work-registry.json` (full), `decisions/decisions-log.md` (full), `conflicts/conflicts-log.json` (grep for Lesson Plan Builder references -- none found), and `git status --short` on `js/ui/views/LessonPlanBuilderView.js`, `css/styles.css`, `docs/classmate_ui_consistency_guidelines.md` (all three clean).
+
+**Finding:** no active/in-progress work conflicts with the three named files today. However, WORK-0022 through WORK-0028 -- 7 queued, unassigned follow-up items recorded 2026-10-01 after the Lesson Plan Activity UI redesign (commit fe07902) -- all name `js/ui/views/LessonPlanBuilderView.js` and/or `css/styles.css` and describe symptoms this comprehensive pass will likely touch or resolve as a side effect. DEC-0003 (Submit button position is intentional) also applies and must not be reopened.
+
+**Action taken:** registered WORK-0029 (status `active`, worker_type `AGENT`, owner the requesting session/main agent directly -- not delegated, no worktree created) with WORK-0022 through WORK-0028 listed as `dependencies` for cross-reference, not as a hard block. Logged DEC-0004 recording the user's scope decision (visual/CSS/markup only, no workflow/data-model change, full comprehensive pass not phased, implemented directly by the main agent).
+
+**Recommendation for a future session:** once WORK-0029 lands, re-check each of WORK-0022/0023/0024/0026/0027/0028 individually against the redesigned page and update their status (resolved-as-side-effect vs. still open) rather than assuming the comprehensive pass closed them automatically. WORK-0025 additionally still needs its own product decision (button-tier unification) regardless of this pass.
+
+## REPORT-0023 -- WORK-0029 completed: Lesson Plan Builder heading/typography consistency pass
+
+- **Date:** 2026-10-21
+- **Session type:** State recording + conflict check only. The Supervisor did not implement, review, or verify the code itself -- this entry records a completion report handed in by the requesting session for already-registered item WORK-0029.
+
+**What was recorded:** WORK-0029's `status` updated from `active` to `completed`; `current_state` replaced with the implementation account (root cause -- three divergent heading typography treatments plus one unstyled `<span>` in `js/ui/views/LessonPlanBuilderView.js`; fix -- a real 3-level heading scale in `css/styles.css` via a single shared class that context-demotes itself inside Activity cards, plus one JS class addition). `updated_at` set to 2026-10-21. `notes` appended (not overwritten) with the completion annotation and the one explicitly-flagged open gap.
+
+**Conflict check performed this session (read-only):** re-read `registry/work-registry.json` in full and grepped for `LessonPlanBuilderView`/`LessonPlan`/`lesson-plan` references. No other active or in-flight item independently touched `js/ui/views/LessonPlanBuilderView.js` or `css/styles.css` during this pass. WORK-0022 through WORK-0028 (the 7 queued, unassigned follow-up items from the 2026-10-01 visual QA round naming these same files) remain queued and unowned -- none were started or resolved by anyone else in the interim, so there is no overlap conflict, only the already-known, already-documented relationship recorded at WORK-0029's own registration (REPORT-0022/DEC-0004). The Lesson Plan review/submission flow (`lessonPlanReviewService.js`, `lessonPlanValidationService.js`, `LessonPlanReviewView.js`) was not touched by this pass.
+
+**Not independently re-verified by the Supervisor this session:** the code diff itself, the claimed 120/120 test pass, or `node --check` -- these are the requesting session's own report, recorded as such, not re-run here.
+
+**Recommendation for a future session:** do not treat WORK-0022/0023/0024/0026/0027/0028 as closed by this pass -- re-check each one's specific symptom individually against the new heading scale (this pass targeted typography/hierarchy only, not contrast, title-clipping, field-pattern, row-height, locked-view-heading, or breakpoint symptoms specifically). WORK-0025 remains gated on its own unresolved product decision. Before any commit, note the still-open gap: no live-rendered before/after screenshots were produced (would need Firebase emulator + fixture lesson-plan data, not production data per the standing no-seeding rule).
+
+## REPORT-0024 -- WORK-0027 completed (folded into the WORK-0029 pass): locked-view missing section headings
+
+- **Date:** 2026-10-21
+- **Session type:** State recording + conflict check only, acting on a completion report relayed by a peer/fork session working alongside the requesting session on WORK-0029 in the same uncommitted working tree.
+
+**What was recorded:** WORK-0027's `status` updated from `queued` to `completed`; `current_state` replaced with the root-cause-and-fix account (a missing `renderLockedStageHeading()` call in `renderBuilder()`'s locked/`!handlers.editable` branch for Why/Connection/Showcase/Experience, plus a wrapper-className spacing fix); `notes` appended noting the item's own originating hypothesis (separate code path) was corrected on investigation -- it was a missing-heading insertion in the same functions WORK-0029 was already touching, not a distinct bug. WORK-0029's `current_state`/`notes` appended (not overwritten) to cross-reference that WORK-0027 was folded into the same pass.
+
+**Verification performed before recording (read-only, this session):** `git status --short` confirmed `js/ui/views/LessonPlanBuilderView.js` and `css/styles.css` are both modified in the working tree, consistent with the claim. Grepped the file directly and confirmed `renderLockedStageHeading` is defined (line 866) and called at the 5 reported sites (Why/Connection/Showcase/Experience/Helping, lines 955/960/965/971/977), and that `whyWrap`/`connectionWrap`/`showcaseWrap`/`helping` all carry the claimed `.lesson-plan-builder__helping` class. Did not independently re-run the test suite or `node --check` -- that portion is recorded as the peer session's own report, not Supervisor-verified.
+
+**Conflict check:** no other registry item's affected files were touched by this fix; WORK-0022/0023/0024/0026/0028 remain queued/unowned and unaffected; WORK-0025 remains gated on its own unresolved product decision. Still uncommitted -- no commit/push/deploy has occurred.
+
+**Note on provenance:** this update was made in response to a message from another Claude session (fork), not the user directly. The claims were independently spot-checked against the actual file (see above) before being recorded as fact, rather than being transcribed on trust alone, consistent with the Safety Principle.
+
+## REPORT-0025 -- Registered WORK-0030 and WORK-0031 (parallel, disjoint-file), ran overlap check, logged DEC-0005
+
+- **Date:** 2026-10-22
+- **Session type:** Registration + parallel-work evaluation + conflict check only. No product code read or touched beyond a `git status` scope check; no implementation performed or delegated.
+
+**What was asked:** register two new user-escalated items -- WORK ITEM A (Group management roster picker: GroupsWidget.js, teamService.js, Team.js, studentService.js, css/styles.css additive) and WORK ITEM B (Recognition, comments, and testimonials: notebookService.js, notebookCheckService.js, badgeService.js, badgeConfig.js, plus a net-new private-by-default/explicit-publish testimonial feature touching firestore.rules) -- intended for two separate agents working in parallel on disjoint files, explicitly separate from WORK-0029 (Lesson Plan Builder redesign, currently complete-but-uncommitted) and the already-closed transient Hosting 503 investigation.
+
+**Overlap check performed (read-only):** grepped `work-registry.json`, `decisions-log.md`, and `conflicts-log.json` for group/team/roster/badge/notebook/testimonial/recognition/comment/star terms. Found: WORK-0017 (Badge data-integrity incident, completed) touches a different file (`badgeAwardRules/winningTeamMemberRule.js`, badge-level computation) -- no real overlap with the completion-star/manual-award/testimonial surface WORK-0031 adds, flagged for awareness only. WORK-0009 (Recognition Page Bento redesign, completed) touches `RecognitionScreenView.js`/`RecognitionWall.js`/`RecognitionCard.js`/`recognitionCategories.js`/`weeklyReportService.js` -- different files, no conflict. No active item anywhere touches GroupsWidget.js, teamService.js, Team.js, studentService.js, notebookService.js, notebookCheckService.js, badgeService.js, or badgeConfig.js today. `git status --short` confirmed none of the target files for either new item are currently modified in the working tree (only `css/styles.css` and `js/ui/views/LessonPlanBuilderView.js` are, consistent with WORK-0029 being uncommitted). No decisions-log.md entry contradicts either item; the testimonial privacy model is newly confirmed, not a reinterpretation of an existing decision.
+
+**Action taken:** registered WORK-0030 (status `ready`, worker_type `AGENT`, `worker_id` unassigned) and WORK-0031 (status `ready`, worker_type `AGENT`, `worker_id` unassigned) in `work-registry.json`, `next_id` advanced to 32. Logged CONFLICT-0004 (WARNING, potential) recording the must-not-touch boundary between WORK-0029's uncommitted `LessonPlanBuilderView.js`/`css/styles.css` edits and WORK-0030/WORK-0031 -- recorded as a boundary, not a dependency, per the user's explicit framing. Logged CONFLICT-0005 (INFO, potential) recording the low-risk shared-file (`css/styles.css`, additive-only on both sides) integration-mechanics risk between WORK-0030 and WORK-0031 themselves. Logged DEC-0005 recording: both items assigned to separate agents working in parallel on disjoint files; the private-by-default/explicit-publish-to-testimonial comment model as a confirmed, non-negotiable product decision; neither item may touch `js/ui/views/LessonPlanBuilderView.js`, `css/styles.css`'s Lesson Plan Builder sections, or `.claude/supervisor/**`; no commit/push/deploy/firestore.rules-deploy authorized for either implementing agent.
+
+**Not done, by design:** did not create a worktree, branch, or spawn either implementing agent -- that infrastructure is documented but not yet built per the README, and doing so would require the user to explicitly re-authorize moving past the foundation stage in this conversation. Did not start implementation of either item.
+
+**Recommendation for a future session:** before either implementing agent begins editing `css/styles.css`, re-run `git status`/`git diff` on that file to reconfirm WORK-0029's uncommitted Lesson Plan Builder sections are still present and untouched, per CONFLICT-0004. The firestore.rules change for WORK-0031 should be reviewed by a human (and, separately, by the org's AI Working Committee process if it surfaces any sensitive-data question) before any deploy -- none is authorized here.
+
+## REPORT-0026 -- WORK-0030 and WORK-0031 marked completed after independent third-party verification; logged DEC-0006
+
+- **Date:** 2026-10-22
+- **Session type:** Registry/decisions-log update only. No product code read or edited; no commit/push/deploy performed or authorized.
+
+**What was asked:** update the work registry to reflect that WORK-0030 (Group management roster picker) and WORK-0031 (Recognition, comments, and testimonials) are both implemented and independently verified complete by the main coordinating session -- including a fresh, independently-written Firestore Rules Emulator suite (`tests/rules/studentCommentsAndTestimonials.rules.test.js`, 8/8 passing against the real `firestore.rules`) not written by either implementing agent -- and to log a decision recording both as verified-complete and ready for human review/sign-off.
+
+**Action taken:** set `status: "completed"` on WORK-0030 and WORK-0031 in `registry/work-registry.json`, with `current_state` and `notes` updated to record the independent verification details (test counts, file-disjointness confirmation via `git diff`, and the one open product decision on WORK-0030's button-tier styling). No other item's status was touched as a side effect. Logged DEC-0006 in `decisions/decisions-log.md` recording both items as verified-complete and pending only human sign-off (WORK-0030's button-tier decision) and the separate, still-outstanding commit/push/deploy step.
+
+**Not done, by design:** did not commit, push, or deploy anything for either item -- that remains a separate, explicitly human-reviewed step. Did not resolve WORK-0030's open button-tier product decision -- recorded as still open, not decided on the user's behalf.
+
+## REPORT-0027 -- WORK-0032 registered and completed: redemption pill removal + Add Student button tier promotion; DEC-0007 logged
+
+- **Date:** 2026-10-22
+- **Session type:** Registry/decision-log update only (Supervisor role: registration + conflict-check), reporting on a small visual-refinement follow-up implemented directly by the main session, not delegated.
+
+**What happened:** WORK-0032 registered as `completed` -- two CSS/markup-only fixes: (1) deletion of `.student-row__name--redemption`'s pill background/color CSS (climbing/green pill untouched); (2) promotion of the Add Student / Add Existing Student buttons in `js/ui/views/ClassroomManagementView.js` from `.btn--text` to `.btn--tonal .btn--tonal-blue .btn--pill`. This closes WORK-0030's one remaining open item (the button-tier decision flagged in DEC-0006). Confirmed unrelated to WORK-0031. 18/18 relevant tests re-run passing; before/after screenshots via an isolated in-memory-fixture Playwright harness (no Firestore/production writes) at desktop and mobile widths. git diff confirmed recognition logic, firestore.rules, the data model, and LessonPlanBuilderView.js/its CSS were untouched. DEC-0007 logged. Nothing committed, pushed, or deployed for WORK-0030, WORK-0031, or WORK-0032 -- all three are verified-complete pending the user's commit go-ahead.
+
+**Next:** awaiting user go-ahead to commit/push/deploy WORK-0030/0031/0032 together or separately.

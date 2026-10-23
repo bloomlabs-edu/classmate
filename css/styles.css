@@ -2175,31 +2175,20 @@ select:focus-visible,
   color: var(--color-ink);
 }
 
-/* Explicit desktop remove-star control (2026-10) — same compact,
-   subtly-surfaced icon-button treatment as .student-row__more just
-   above (same footprint, same hover fill), not a large wireframe
-   button, per explicit product decision to keep this visually
-   consistent with the row's existing action button rather than
-   introducing a second visual language. */
+/* Explicit desktop remove-star control (2026-10). Originally styled as
+   a borderless, subtly-surfaced glyph matching .student-row__more's own
+   treatment — superseded (2026-10-23) per explicit product feedback:
+   against a whole roster, a bare "−" with no resting-state chrome read
+   as a stray/leftover character, not a button. Now carries the app's
+   own documented .btn--icon-only tier instead (see that class's own
+   comment: "the shared circular button used for every icon-only action
+   across the app") — a real, always-visible bordered circle, same
+   established tier NotebookRoster.js's own per-row "Recognize" button
+   already uses in an equally dense list, not a new, one-off treatment.
+   .student-row__more (the three-dot menu) is deliberately left
+   untouched — out of scope for this change. */
 .student-row__remove-star {
   flex-shrink: 0;
-  min-width: 44px;
-  min-height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  color: var(--color-muted);
-  font-size: 1.3rem;
-  font-weight: var(--font-weight-black);
-  line-height: 1;
-  cursor: pointer;
-  border-radius: var(--radius-control);
-}
-.student-row__remove-star:hover {
-  background-color: rgba(0, 0, 0, 0.05);
-  color: var(--color-ink);
 }
 
 .student-row__name {

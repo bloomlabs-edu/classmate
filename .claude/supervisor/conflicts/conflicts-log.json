@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "description": "See registry/SCHEMA.md for field definitions. Severity: INFO (no action) | WARNING (continue, watch) | SIGNIFICANT (notify user) | BLOCKING (stop, needs a decision). Status: potential | confirmed | resolved | requires_human_decision.",
-  "next_id": 4,
+  "next_id": 6,
   "items": [
     {
       "id": "CONFLICT-0002",
@@ -50,6 +50,37 @@
       "resolution": null,
       "resolved_at": null,
       "notes": "Flagged at registration time per the Safety Principle -- not investigated further and not resolved by the Supervisor; no implementation was performed or authorized for either item by this record. Whoever eventually implements WORK-0018 (the main coordinating agent, per that item own record -- not the Supervisor) must re-run git status / git diff on js/ui/views/LearningManagementView.js immediately before editing this file, and must not assume WORK-0019 rename/overflow-menu-for-Units feature is finished, abandoned, or safe to overwrite without checking with the user first."
+    },
+    {
+      "id": "CONFLICT-0004",
+      "severity": "WARNING",
+      "status": "potential",
+      "involved_work_items": [
+        "WORK-0029",
+        "WORK-0030",
+        "WORK-0031"
+      ],
+      "project": "classmate",
+      "description": "WORK-0029 (Lesson Plan Builder visual-consistency redesign) is implementation-complete but UNCOMMITTED in the working tree, with active edits to js/ui/views/LessonPlanBuilderView.js and css/styles.css. WORK-0030 and WORK-0031 are new, separate work items starting in the same repo/working tree and are explicitly instructed not to touch js/ui/views/LessonPlanBuilderView.js or css/styles.css's Lesson Plan Builder sections. This is recorded as a must-not-touch boundary, not a dependency -- WORK-0030/0031 do not wait on WORK-0029 being committed, but any agent touching css/styles.css for either item must first re-run git status/git diff to confirm WORK-0029's uncommitted Lesson Plan Builder sections remain untouched and unreverted by its own edit.",
+      "detected_at": "2026-10-22",
+      "resolution": null,
+      "resolved_at": null,
+      "notes": "Flagged at registration time per the Safety Principle. No implementation has touched LessonPlanBuilderView.js or any Lesson Plan Builder CSS section for WORK-0030/0031 as of this record. Should remain open/potential until WORK-0029 is committed (removing the uncommitted-overlap risk) or until both WORK-0030 and WORK-0031 complete without having touched those sections."
+    },
+    {
+      "id": "CONFLICT-0005",
+      "severity": "INFO",
+      "status": "potential",
+      "involved_work_items": [
+        "WORK-0030",
+        "WORK-0031"
+      ],
+      "project": "classmate",
+      "description": "Both WORK-0030 (Group management roster picker) and WORK-0031 (Recognition, comments, and testimonials) are authorized to make ADDITIVE-ONLY changes to css/styles.css in parallel, on otherwise fully disjoint product files. This is the one shared file between the two items. Risk is limited to integration/merge mechanics (two agents appending new, unrelated CSS sections to the same file around the same time), not a product-direction or data conflict.",
+      "detected_at": "2026-10-22",
+      "resolution": null,
+      "resolved_at": null,
+      "notes": "Mitigation (recorded, not yet verified): each implementing agent should add its new rules in a clearly delimited, clearly-named section (e.g. a comment banner identifying the feature) rather than interleaving with existing rules, and whoever integrates/reviews the two diffs should check for a clean, non-overlapping merge before any commit. Recorded at INFO per the Safety Principle (always log overlap, even low-risk) -- escalate to WARNING only if an actual line-level collision is observed."
     }
   ]
 }
