@@ -48,6 +48,28 @@
      the app looks right before any preference has loaded. */
   --color-on-primary-deep: #ffffff;
   --shadow-on-primary-deep: 0 1px 3px rgba(0, 0, 0, 0.35);
+
+  /* -------------------------------------------------------------
+   * BRAND IDENTITY (2026-10 reference-screenshot update) — ClassMate's
+   * own fixed teacher-identity colour, #5EA5D8, as used by Learning
+   * Hub's own cross-product "classroom connection" surface (see that
+   * repo's own --lh-classmate-blue token) and by this app's own fixed,
+   * non-personalisable brand marks: the theme-color meta tag
+   * (index.html), manifest.json's theme_color, and the "C" in the
+   * classmate-icon.svg wordmark.
+   *
+   * DELIBERATELY NOT the same thing as --color-primary-deep above:
+   * that token is the teacher-CUSTOMIZABLE accent (5 presets a teacher
+   * can pick between, including an existing "Ocean" preset at
+   * #5ea6da — already near-identical to this exact value, see
+   * config/accentColorConfig.js) that drives the app's own in-product
+   * chrome (headers, buttons, KPI cards) and is explicitly designed to
+   * be overridden per teacher. This token is the one FIXED value for
+   * contexts that are never personalised — browser chrome tinting and
+   * the static icon/logo — and is not referenced by any in-app
+   * component. Changing it never affects a teacher's own chosen accent
+   * colour, and changing a teacher's accent never affects this. */
+  --color-brand-identity: #5EA5D8;
   --color-success: var(--color-lime); /* TFI Lime Green — brand's documented "secondary accent"; reads as complete/positive */
   --color-warning: var(--color-yellow); /* TFI Yellow — unchanged, already this role today */
   --color-accent: var(--color-gold); /* TFI-adjacent gold — replaces orange per explicit direction ("not liking the orange theme"); ties to trophy/star imagery already in Recognition */
