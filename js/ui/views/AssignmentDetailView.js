@@ -290,6 +290,21 @@ export function renderAssignmentDetailView(container, { classroom, assignmentId,
       refreshOverallRatingEditor();
       updateOverallRatingPill(studentId);
     },
+    // Workstream 4C/3B — assignment-LEVEL Done/Not Done, independent of
+    // both the checkpoint grid above and Overall Rating, and working
+    // identically whether or not this Assignment has any checkpoints at
+    // all (see renderEmptyCheckpointsGrid()'s own call to
+    // populateStudentNameCell() below — the completion pill renders
+    // there exactly the same way). Routed through recognitionService.js
+    // so Done -> awards one star, Undo -> reverses exactly that star —
+    // see recordAssignmentCompletion()'s own header comment.
+    onToggleCompletion: (studentId, status) => {
+      const assignment = getAssignment();
+      if (!assignment) return;
+      recognitionService.recordAssignmentCompletion(currentClassroom, assignment, studentId, status);
+      persistClassroom();
+      updateCompletionPill(studentId);
+    },
     onSelectStudent,
   };
 
@@ -387,6 +402,20 @@ export function renderAssignmentDetailView(container, { classroom, assignmentId,
     const pillWrapper = scrollEl.querySelector(`[data-overall-rating-student-id="${studentId}"]`);
     if (pillWrapper) {
       pillWrapper.replaceWith(buildOverallRatingPill(category, assignment, studentId, handlers));
+    }
+  }
+
+  /** Same targeted-replace pattern as updateOverallRatingPill() above, for the completion toggle. */
+  function updateCompletionPill(studentId) {
+    const scrollEl = gridSlot.querySelector('.assessment-gradebook__scroll');
+    const assignment = getAssignment();
+    if (!scrollEl || !assignment) {
+      refreshGrid();
+      return;
+    }
+    const pillWrapper = scrollEl.querySelector(`[data-completion-student-id="${studentId}"]`);
+    if (pillWrapper) {
+      pillWrapper.replaceWith(buildCompletionTogglePill(assignment, studentId, handlers));
     }
   }
 
@@ -582,9 +611,70 @@ function populateStudentNameCell(nameCell, student, category, assignment, handle
   wrapper.append(avatar, nameButton);
   nameCell.appendChild(wrapper);
 
+  // Workstream 4C — rendered for every Assignment regardless of
+  // checkpoints or category/aspects (both renderGrid() and
+  // renderEmptyCheckpointsGrid() call this same function), since
+  // assignment-level completion is independent of both.
+  if (assignment) {
+    nameCell.appendChild(buildCompletionTogglePill(assignment, student.id, handlers));
+  }
+
   if (category && assignment) {
     nameCell.appendChild(buildOverallRatingPill(category, assignment, student.id, handlers));
   }
+}
+
+/**
+ * Done / Not Done / Not Recorded — a real tri-state control (not a
+ * single toggle button), since "Not Recorded" is a genuine, distinct
+ * state a teacher can return to (see
+ * models/StudentAssignmentRecord.js's own `completionStatus` comment),
+ * not merely the absence of having clicked yet. Clicking the state
+ * that's ALREADY active clears it back to Not Recorded (a plain toggle
+ * affordance), matching "Mark Done again" / "Mark Undone" reading as
+ * reversible actions rather than one-way buttons.
+ */
+function buildCompletionTogglePill(assignment, studentId, handlers) {
+  const wrapper = document.createElement('span');
+  wrapper.className = 'assignment-completion-toggle';
+  wrapper.dataset.completionStudentId = studentId;
+
+  const status = assignmentService.getCompletionStatus(assignment, studentId);
+
+  const doneButton = document.createElement('button');
+  doneButton.type = 'button';
+  doneButton.className = `assignment-completion-toggle__button assignment-completion-toggle__button--done${status === 'done' ? ' assignment-completion-toggle__button--active' : ''}`;
+  doneButton.setAttribute('aria-pressed', String(status === 'done'));
+  doneButton.setAttribute('aria-label', `${assignment.title}: mark Done`);
+  doneButton.appendChild(createIcon('check', { size: 12 }));
+  doneButton.append('Done');
+  doneButton.addEventListener('click', (event) => {
+    event.stopPropagation();
+    handlers.onToggleCompletion(studentId, status === 'done' ? null : 'done');
+  });
+
+  const notDoneButton = document.createElement('button');
+  notDoneButton.type = 'button';
+  notDoneButton.className = `assignment-completion-toggle__button assignment-completion-toggle__button--not-done${status === 'not_done' ? ' assignment-completion-toggle__button--active' : ''}`;
+  notDoneButton.setAttribute('aria-pressed', String(status === 'not_done'));
+  notDoneButton.setAttribute('aria-label', `${assignment.title}: mark Not Done`);
+  notDoneButton.appendChild(createIcon('x', { size: 12 }));
+  notDoneButton.append('Not Done');
+  notDoneButton.addEventListener('click', (event) => {
+    event.stopPropagation();
+    handlers.onToggleCompletion(studentId, status === 'not_done' ? null : 'not_done');
+  });
+
+  wrapper.append(doneButton, notDoneButton);
+
+  if (status === 'not_recorded') {
+    const notRecordedLabel = document.createElement('span');
+    notRecordedLabel.className = 'assignment-completion-toggle__not-recorded';
+    notRecordedLabel.textContent = 'Not Recorded';
+    wrapper.appendChild(notRecordedLabel);
+  }
+
+  return wrapper;
 }
 
 /**

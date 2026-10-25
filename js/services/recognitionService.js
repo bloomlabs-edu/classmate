@@ -67,7 +67,9 @@
 
 import * as timelineService from './timelineService.js';
 import * as notebookService from './notebookService.js';
+import * as checkpointService from './checkpointService.js';
 import * as assignmentCheckpointService from './assignmentCheckpointService.js';
+import * as assignmentService from './assignmentService.js';
 import * as badgeService from './badgeService.js';
 
 // ---------------------------------------------------------------------
@@ -80,6 +82,40 @@ export function buildNotebookWorkItemRef({ subjectId, notebookTypeId, dateKey })
 
 export function buildAssignmentCheckpointWorkItemRef({ assignmentId, checkpointId }) {
   return { type: 'assignment_checkpoint', assignmentId, checkpointId };
+}
+
+/**
+ * THE ACTUAL FIX for the "Notebook workflow has no star wiring at all"
+ * gap: buildNotebookWorkItemRef() above keys off notebookService.js's
+ * own (subjectId, notebookTypeId, dateKey) record shape — the LEGACY,
+ * retired Register workflow (see ui/router.js's own "register and
+ * Timeline routes are retired entirely" comment) — not the Notebook
+ * Checkpoints system (services/checkpointService.js) every teacher
+ * actually uses today via ui/views/NotebookCheckpointsView.js. A
+ * checkpoint's own identity is (subjectId, notebookTypeId,
+ * checkpointId), never a date — multiple checkpoints coexist
+ * permanently on the same notebook (Unit 1, Unit 2, Question Paper),
+ * unlike a dated daily Register entry — so this is its own distinct
+ * `type`, never conflated with either existing ref shape.
+ */
+export function buildNotebookCheckpointWorkItemRef({ subjectId, notebookTypeId, checkpointId }) {
+  return { type: 'notebook_checkpoint', subjectId, notebookTypeId, checkpointId };
+}
+
+/**
+ * Workstream 4C's own addition — a worksheet/Assignment's own
+ * assignment-LEVEL completion (services/assignmentService.js's own
+ * setCompletionStatus()), as distinct from
+ * buildAssignmentCheckpointWorkItemRef() above (one specific checkpoint
+ * WITHIN an assignment). An assignment with zero checkpoints is
+ * identified here by its own `assignmentId` alone — there is no
+ * checkpoint to key against — so this is its own `type`, never
+ * conflated with the checkpoint ref shape even for an assignment that
+ * also happens to have checkpoints (both can independently earn their
+ * own stars; see recordAssignmentCompletion() below).
+ */
+export function buildAssignmentCompletionWorkItemRef({ assignmentId }) {
+  return { type: 'assignment_completion', assignmentId };
 }
 
 /** Deep-equal for the small, flat workItemRef shapes above — deliberately strict about `type` first, so a notebook ref and a checkpoint ref are never accidentally treated as equal even if other keys happened to collide. */
@@ -228,6 +264,66 @@ export function recordAssignmentCheckpointSubmission(classroom, checkpoint, stud
     if (isNowSubmitted && !wasSubmitted) {
       awardAutomaticCompletionStar(found.student, workItemRef);
     } else if (!isNowSubmitted && wasSubmitted) {
+      reverseAutomaticCompletionStar(found.student, workItemRef);
+    }
+  }
+}
+
+/**
+ * Same wrapping pattern as recordAssignmentCheckpointSubmission()
+ * above, for Notebook Checkpoints (services/checkpointService.js) —
+ * the system ui/views/NotebookCheckpointsView.js's own
+ * onQuickMarkSubmitted/onSaveCell handlers actually call today. Reads
+ * the PRIOR submissionStatus first (the same "read before write" shape
+ * every wrapper in this file uses) so the automatic star transition is
+ * based on a real before/after comparison, not just the new value in
+ * isolation — marking an already-submitted checkpoint "submitted"
+ * again (e.g. only editing its date) must never double-award.
+ */
+export function recordNotebookCheckpointSubmission(classroom, checkpoint, studentId, { status, submittedDate = null }) {
+  const workItemRef = buildNotebookCheckpointWorkItemRef({
+    subjectId: checkpoint.subjectId,
+    notebookTypeId: checkpoint.notebookTypeId,
+    checkpointId: checkpoint.id,
+  });
+  const wasSubmitted = checkpointService.getRecordForStudent(checkpoint, studentId)?.submissionStatus === 'submitted';
+
+  checkpointService.setSubmission(checkpoint, studentId, { status, submittedDate });
+
+  const isNowSubmitted = status === 'submitted';
+  const found = findStudentById(classroom, studentId);
+  if (found) {
+    if (isNowSubmitted && !wasSubmitted) {
+      awardAutomaticCompletionStar(found.student, workItemRef);
+    } else if (!isNowSubmitted && wasSubmitted) {
+      reverseAutomaticCompletionStar(found.student, workItemRef);
+    }
+  }
+}
+
+/**
+ * Workstream 4C/3B: wraps assignmentService.js's own
+ * setCompletionStatus() — the exact same wrapping pattern as every
+ * other wrapper in this file. `status` is 'done' | 'not_done' | null.
+ * Only a transition INTO 'done' awards a star; only a transition AWAY
+ * FROM 'done' (to 'not_done' or back to null/"Not Recorded") reverses
+ * it — matching Workstream 3B's own "Mark Done -> award exactly one
+ * star. Mark Undone -> cancel the specific star" requirement exactly,
+ * idempotent and reversible via the same net-of-append-only-entries
+ * mechanism every other automatic star in this file already uses.
+ */
+export function recordAssignmentCompletion(classroom, assignment, studentId, status) {
+  const workItemRef = buildAssignmentCompletionWorkItemRef({ assignmentId: assignment.id });
+  const wasDone = assignmentService.getCompletionStatus(assignment, studentId) === 'done';
+
+  assignmentService.setCompletionStatus(assignment, studentId, status);
+
+  const isNowDone = status === 'done';
+  const found = findStudentById(classroom, studentId);
+  if (found) {
+    if (isNowDone && !wasDone) {
+      awardAutomaticCompletionStar(found.student, workItemRef);
+    } else if (!isNowDone && wasDone) {
       reverseAutomaticCompletionStar(found.student, workItemRef);
     }
   }

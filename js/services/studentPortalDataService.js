@@ -33,6 +33,10 @@ import * as studentEventService from './studentEventService.js';
 import * as assessmentService from './assessmentService.js';
 import * as workRequestService from './workRequestService.js';
 import * as notebookConfigService from './notebookConfigService.js';
+import * as notebookStatusService from './notebookStatusService.js';
+import * as achievementService from './achievementService.js';
+import * as assignmentService from './assignmentService.js';
+import * as assignmentCheckpointService from './assignmentCheckpointService.js';
 import * as goalService from './goalService.js';
 import * as studentGoalsService from './studentGoalsService.js';
 import * as learningRecordStudentService from './learningRecordStudentService.js';
@@ -223,13 +227,84 @@ export async function getCurrentStudentProfile() {
     groupName: found.team && !found.team.isUngrouped ? found.team.name : null,
     role: 'student',
     bucket: found.student.bucket, // reused directly from the Student model — see config/bucketConfig.js for the shared color/label mapping every screen (teacher and student) reads from
+    // THE ACTUAL FIX for Workstream 1 (Student Profile parity): netScore
+    // and negativePoints previously had no student-facing equivalent at
+    // all — totalStars (positive points only) was the only score figure
+    // shown. All three read the exact same timelineService.js functions
+    // ui/views/StudentProfileView.js's own teacher-facing header already
+    // uses — never recalculated independently. Negative points are
+    // deliberately never hidden here: per explicit product direction,
+    // they're part of what keeps a Yellow-bucket student motivated to
+    // help a Red-bucket student earn points back.
     totalStars: timelineService.getTotalPositivePoints(student),
+    netScore: timelineService.getNetPoints(student),
+    negativePoints: timelineService.getTotalNegativePoints(student),
     badgeCount: (student.badges || []).length,
     currentStreak: studentProgressService.getBestActiveStreakAcrossNotebooks(classroom, student.id),
     biggestClimb: classEntry && classEntry.movement === 'up' ? classEntry.movementAmount : 0,
     recentEvents: studentEventService.getEventsForStudent(classroom, student.id).slice(0, 3),
     weeklyNetPoints: studentProgressService.getWeeklyNetPoints(classroom, student.id),
   };
+}
+
+/**
+ * THE ACTUAL FIX for the second half of Workstream 1's badges gap: the
+ * Badge & Achievement Engine's own real, persisted recognition
+ * (services/achievementService.js — automatic, levelled badges like
+ * "Winning Team Member · LV 3") was never read anywhere under
+ * ui/student-portal/ before this — only the separate, manually-awarded
+ * services/badgeService.js badges (see getAchievements() above) ever
+ * reached a student. A student with a real, visible Achievement Engine
+ * badge had no screen anywhere showing it to them. A separate function
+ * from getCurrentStudentProfile() (not folded into it) because this is
+ * the one genuinely async Firestore read here — achievementService.js's
+ * own achievementEvents live in their own subcollection, not embedded
+ * in the classroom document loadCurrentStudentAndClassroom() already
+ * has in memory (see that function's own listEventsForStudent()).
+ * Fails quietly to an empty list (never throws into the caller) --
+ * mirrors ui/views/StudentProfileView.js's own populateRecognitionRow(),
+ * matching its "a summary row, not the Achievements tab's own error
+ * state" reasoning.
+ */
+export async function getAchievementBadgesForCurrentStudent() {
+  const found = await loadCurrentStudentAndClassroom();
+  if (!found) return [];
+
+  try {
+    const events = await achievementService.listEventsForStudent(found.classroom.id, found.student.id);
+    return achievementService.summarizeStudentBadges(events);
+  } catch (error) {
+    console.error('[studentPortalDataService] Failed to load Achievement Engine badges:', error);
+    return [];
+  }
+}
+
+/**
+ * THE ACTUAL FIX for Workstream 1's "Assignment completion and
+ * progress" gap: services/assignmentService.js and
+ * services/assignmentCheckpointService.js were never imported anywhere
+ * under ui/student-portal/ before this — a student had no way to see
+ * their own assignment status at all. Reuses the exact same functions
+ * ui/views/StudentProfileView.js's own renderAssignmentsTab() already
+ * calls for the teacher-facing equivalent — same summary shape, same
+ * per-assignment checkpoint progress, never recalculated independently.
+ */
+export async function getAssignmentProgressForCurrentStudent() {
+  const found = await loadCurrentStudentAndClassroom();
+  if (!found) return { summary: { completeCount: 0, needsAttentionCount: 0, inProgressCount: 0 }, entries: [] };
+
+  const { classroom, student } = found;
+  const summary = assignmentService.getStudentAssignmentSummary(classroom, student.id);
+  const entries = assignmentService.getAssignmentsForStudent(classroom, student.id).map((entry) => ({
+    ...entry,
+    checkpointProgress: assignmentCheckpointService.getStudentCheckpointProgress(classroom, entry.assignment.id, student.id),
+    // Workstream 4C — the assignment-level Done/Not Done/Not Recorded
+    // axis (see assignmentService.js's own getCompletionStatus()),
+    // independent of the Overall Rating `status` already on `entry`.
+    completionStatus: assignmentService.getCompletionStatus(entry.assignment, student.id),
+  }));
+
+  return { summary, entries };
 }
 
 export async function getHomeSummary() {
@@ -649,30 +724,34 @@ export async function getPublicProfileForStudent(studentId) {
 }
 
 /**
- * The Journey page's own "alerts" panel — pending notebook
+ * The Journey page's own "alerts" panel -- pending notebook
  * submissions and upcoming published tests, for whichever student is
- * currently active. Deliberately just a thin combination of two
- * existing, already-correct reads (workRequestService.js's own
- * getNotebookObligationsForStudent(), assessmentService.js's own
- * getUpcomingAssessments()) — no new derivation logic, no duplicate
- * status/date rules.
+ * currently active. See getAlertsForCurrentStudent()'s own inline
+ * comment below for why this reads notebookStatusService.js rather
+ * than workRequestService.js alone.
  */
 export async function getAlertsForCurrentStudent() {
   const found = await loadCurrentStudentAndClassroom();
   if (!found) return { pendingSubmissions: [], upcomingAssessments: [] };
 
-  const pendingSubmissions = workRequestService
-    .getNotebookObligationsForStudent(found.classroom, found.student.id)
-    .filter((obligation) => obligation.isOpen && obligation.status !== 'reviewed')
-    .map((obligation) => {
-      const subject = notebookConfigService.getSubjectById(found.classroom, obligation.subjectId);
-      const notebookType = notebookConfigService.getNotebookTypeById(found.classroom, obligation.notebookTypeId);
-      return {
-        requestId: obligation.requestId,
-        label: [subject?.name, notebookType?.name].filter(Boolean).join(' \u00b7 ') || obligation.title,
-        dueDate: obligation.dueDate,
-      };
-    });
+  // THE ACTUAL FIX for this panel showing "All caught up!" while the
+  // teacher's Notebook Tracker showed several of this exact student's
+  // checkpoints as "Not Submitted": this used to read only
+  // workRequestService.js's own getNotebookObligationsForStudent(),
+  // which has no knowledge of classroom.checkpoints at all (see
+  // services/notebookStatusService.js's own header comment). Now reads
+  // that merged source instead. A checkpoint-sourced item is always
+  // `actionable` (checkpoints never close); a WorkRequest-sourced item
+  // is only included while its own request is still open, matching
+  // this panel's original "still worth nudging about" filter exactly.
+  const notebookStatus = notebookStatusService.getNotebookStatusForStudent(found.classroom, found.student.id);
+  const pendingSubmissions = notebookStatus.items.awaitingSubmission
+    .filter((item) => item.actionable)
+    .map((item) => ({
+      requestId: item.requestId ?? null,
+      label: item.title,
+      dueDate: item.dueDate,
+    }));
 
   const upcomingAssessments = assessmentService.getUpcomingAssessments(found.classroom).map((assessment) => ({
     id: assessment.id,
@@ -681,6 +760,20 @@ export async function getAlertsForCurrentStudent() {
   }));
 
   return { pendingSubmissions, upcomingAssessments };
+}
+
+/**
+ * The full merged notebook-status picture (see
+ * services/notebookStatusService.js) for whichever student is
+ * currently active -- the student-portal counterpart to
+ * ui/views/StudentProfileView.js's own teacher-facing Notebooks tab,
+ * reading the exact same underlying function so the two can never
+ * disagree.
+ */
+export async function getNotebookStatusForCurrentStudent() {
+  const found = await loadCurrentStudentAndClassroom();
+  if (!found) return { summary: { awaitingSubmission: 0, awaitingReview: 0, needsCorrection: 0, reviewed: 0, absent: 0 }, items: {} };
+  return notebookStatusService.getNotebookStatusForStudent(found.classroom, found.student.id);
 }
 
 export async function getGoalCycleForCurrentStudent() {
