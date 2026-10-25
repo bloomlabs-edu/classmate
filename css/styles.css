@@ -6280,6 +6280,79 @@ button.wizard-checklist__row:hover {
   font-family: inherit;
 }
 
+/* ui/components/NotebookStatusSummary.js — a .profile-stat-card tier
+   made clickable (real <button>s), each expanding the same shared
+   .notebook-status-summary__detail panel below the row rather than
+   its own popover, so only one status is ever open at a time and
+   neither the teacher-facing nor student-facing host view needs to
+   manage that state itself. */
+.notebook-status-summary__card {
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+.notebook-status-summary__card:hover {
+  border-color: var(--color-primary-strong);
+}
+.notebook-status-summary__card[aria-expanded='true'] {
+  border-color: var(--color-primary-strong);
+  border-width: 2px;
+}
+
+.notebook-status-summary__detail {
+  margin: 0 1.5rem 1.5rem;
+  padding: 1rem 1.15rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+}
+
+.notebook-status-summary__detail-heading {
+  margin: 0 0 0.75rem;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-bold);
+}
+
+.notebook-status-summary__detail-empty {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+}
+
+.notebook-status-summary__detail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.notebook-status-summary__detail-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.notebook-status-summary__detail-item:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.notebook-status-summary__detail-title {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.notebook-status-summary__detail-due {
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .profile-section {
   padding: 0 1.5rem 1.5rem;
 }
@@ -10511,6 +10584,15 @@ button.recognition-bento__hero-winner-name {
   font-weight: var(--font-weight-bold);
   font-size: 0.9rem;
   margin: 0 0 1.25rem;
+}
+
+/* Workstream 1 (Student Profile parity) -- a short, data-driven tip
+   under the stat chips (see StudentProfileView.js's own
+   buildGuidanceMessage()), never a fabricated score-to-bucket claim. */
+.student-profile__guidance {
+  margin: 0.75rem 0 0;
+  font-size: var(--text-sm);
+  color: var(--color-muted);
 }
 
 /* Avatar Builder */
@@ -16747,6 +16829,49 @@ button.recognition-bento__hero-winner-name {
 .notebook-checkpoints__overall-rating-pill--orange { background-color: #b7691a; }
 .notebook-checkpoints__overall-rating-pill--red { background-color: #D95C5C; }
 
+/* Workstream 4C — assignment-level Done/Not Done/Not Recorded (see
+   ui/views/AssignmentDetailView.js's own buildCompletionTogglePill()).
+   Same positioning convention as .notebook-checkpoints__overall-rating-pill
+   just above (margin-left aligns under the name, past the avatar), kept
+   as its own sibling control rather than a third pill shape, since this
+   is a real two-button tri-state toggle, not a single click-to-open
+   pill. */
+.assignment-completion-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.3rem;
+  margin-left: 1.75rem;
+}
+.assignment-completion-toggle__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background-color: var(--color-surface);
+  color: var(--color-muted);
+  font-size: 0.7rem;
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+}
+.assignment-completion-toggle__button--active.assignment-completion-toggle__button--done {
+  background-color: #4FAF78;
+  border-color: #4FAF78;
+  color: #fff;
+}
+.assignment-completion-toggle__button--active.assignment-completion-toggle__button--not-done {
+  background-color: #D95C5C;
+  border-color: #D95C5C;
+  color: #fff;
+}
+.assignment-completion-toggle__not-recorded {
+  font-size: 0.7rem;
+  color: var(--color-muted);
+  font-style: italic;
+}
+
 /* The Assignment's own Type/Subject/date meta-line, shown under this
    screen's own header title (ui/views/AssignmentDetailView.js) —
    plain, muted, single line, same restrained treatment
@@ -16861,6 +16986,83 @@ button.recognition-bento__hero-winner-name {
   display: flex;
   gap: 0.5rem;
   margin-top: 0.5rem;
+}
+
+/* ui/views/NotebookCheckpointsView.js's own per-cell completion-star
+   indicator (see populateCheckpointCell()'s own comment) — a small,
+   real <button> (never decorative-only) distinct from the status row
+   above it, so a teacher can tell at a glance whether THIS checkpoint
+   earned a star, without it being confused for the cell's own
+   submission/review status chip. Active (gold) vs. cancelled (muted
+   outline, same shape) mirrors this same active/cancelled distinction
+   services/recognitionService.js's own award model already tracks. */
+.notebook-checkpoints__cell-star-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  align-self: flex-start;
+  margin-top: 0.3rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  background: none;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: var(--font-weight-bold);
+}
+.notebook-checkpoints__cell-star-indicator--active {
+  color: #8a6d00;
+  background-color: #fff6da;
+  border-color: #f0d879;
+}
+.notebook-checkpoints__cell-star-indicator--cancelled {
+  color: var(--color-muted);
+  background-color: var(--color-bg);
+  border-color: var(--color-border);
+  text-decoration: line-through;
+}
+
+/* Read-only award-inspection sheet (showAwardDetailsSheet() in that
+   same file) — reuses .notebook-checkpoints__cell-editor's own overlay
+   shell, adds only its own status line + history list on top. */
+.award-details-sheet__status {
+  display: inline-block;
+  width: fit-content;
+  margin: 0 0 0.5rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-bold);
+}
+.award-details-sheet__status--active {
+  color: #8a6d00;
+  background-color: #fff6da;
+}
+.award-details-sheet__status--cancelled {
+  color: var(--color-muted);
+  background-color: var(--color-bg);
+}
+.award-details-sheet__history {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.award-details-sheet__history-item {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.award-details-sheet__history-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.award-details-sheet__history-date {
+  color: var(--color-muted);
 }
 
 /* Assignment cell editor's own per-aspect rating control (see
@@ -17863,6 +18065,19 @@ button.recognition-bento__hero-winner-name {
   font-size: 1.1rem;
   font-weight: var(--font-weight-black);
   color: var(--color-ink);
+}
+/* Workstream 4A — the auto-generated worksheet code, shown above its
+   own description on the Assignment card (see createAssignmentCard()'s
+   own comment). Smaller and muted relative to .notebook-tracker__bento-title
+   so the description remains the visually dominant line. */
+.notebook-tracker__bento-code {
+  display: block;
+  font-family: monospace;
+  font-size: 0.78rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-muted);
+  letter-spacing: 0.02em;
+  margin-bottom: 0.1rem;
 }
 .notebook-tracker__bento-pill {
   display: inline-flex;
@@ -23192,6 +23407,25 @@ button.knowledge-authoring__row:hover {
    interconnectivity gate: the "Link concepts" checklist in the Add
    Assignment form, and the resulting chips/resource-link shown on an
    Assignment's own card. */
+/* Workstream 4A — the auto-generated, read-only worksheet code (see
+   services/worksheetCodeService.js), shown at the top of the Assignment
+   form once an Assignment has one. Styled like a stable, monospace
+   identifier (never an editable-looking input) so it never invites a
+   teacher to try typing into it. */
+.assignment-form__code-display {
+  display: inline-block;
+  margin: 0 0 0.5rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: var(--radius-control);
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
+  font-family: monospace;
+  font-weight: var(--font-weight-bold);
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  width: fit-content;
+}
+
 .assignment-form__concept-section {
   margin-top: 0.75rem;
 }

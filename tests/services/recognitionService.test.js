@@ -267,3 +267,151 @@ test('recordAssignmentCheckpointSubmission: mirrors the notebook wrapper exactly
   recognitionService.recordAssignmentCheckpointSubmission(classroom, checkpointA, 'stu1', { status: 'not_submitted' });
   assert.equal(student.score, 1); // only checkpoint A's star reversed
 });
+
+// ---------------------------------------------------------------------
+// recordNotebookCheckpointSubmission — the LIVE Notebook Checkpoints
+// workflow (services/checkpointService.js, ui/views/NotebookCheckpointsView.js),
+// as distinct from recordNotebookSubmission above (the legacy, retired
+// Register workflow) and recordAssignmentCheckpointSubmission (Assignment
+// Checkpoints). Before this function existed, marking a notebook
+// checkpoint "submitted" in the view every teacher actually uses never
+// awarded a star at all — this closes that gap using the exact same
+// wrapping pattern as its two siblings.
+// ---------------------------------------------------------------------
+
+test('recordNotebookCheckpointSubmission: first mark as submitted awards one star; marking submitted again is idempotent', () => {
+  const classroom = freshClassroom();
+  const student = classroom.teams[0].students[0];
+  const checkpoint = { id: 'cp-1', subjectId: 'subj-sci', notebookTypeId: 'type-classwork', records: [] };
+
+  recognitionService.recordNotebookCheckpointSubmission(classroom, checkpoint, 'stu1', { status: 'submitted', submittedDate: '2026-10-01' });
+  recognitionService.recordNotebookCheckpointSubmission(classroom, checkpoint, 'stu1', { status: 'submitted', submittedDate: '2026-10-01' });
+
+  assert.equal(student.score, 1);
+  assert.equal(student.history.filter((e) => e.source === 'auto').length, 1);
+});
+
+test('recordNotebookCheckpointSubmission: marking back to not_submitted reverses the star exactly once', () => {
+  const classroom = freshClassroom();
+  const student = classroom.teams[0].students[0];
+  const checkpoint = { id: 'cp-1', subjectId: 'subj-sci', notebookTypeId: 'type-classwork', records: [] };
+
+  recognitionService.recordNotebookCheckpointSubmission(classroom, checkpoint, 'stu1', { status: 'submitted', submittedDate: '2026-10-01' });
+  recognitionService.recordNotebookCheckpointSubmission(classroom, checkpoint, 'stu1', { status: 'not_submitted' });
+  recognitionService.recordNotebookCheckpointSubmission(classroom, checkpoint, 'stu1', { status: 'not_submitted' }); // idempotent reversal
+
+  assert.equal(student.score, 0);
+  assert.equal(recognitionService.getAutomaticStarNetForWorkItem(student, recognitionService.buildNotebookCheckpointWorkItemRef({ subjectId: 'subj-sci', notebookTypeId: 'type-classwork', checkpointId: 'cp-1' })), 0);
+});
+
+test('recordNotebookCheckpointSubmission: re-submitting after a reversal awards a fresh, active star', () => {
+  const classroom = freshClassroom();
+  const student = classroom.teams[0].students[0];
+  const checkpoint = { id: 'cp-1', subjectId: 'subj-sci', notebookTypeId: 'type-classwork', records: [] };
+
+  recognitionService.recordNotebookCheckpointSubmission(classroom, checkpoint, 'stu1', { status: 'submitted', submittedDate: '2026-10-01' });
+  recognitionService.recordNotebookCheckpointSubmission(classroom, checkpoint, 'stu1', { status: 'not_submitted' });
+  recognitionService.recordNotebookCheckpointSubmission(classroom, checkpoint, 'stu1', { status: 'submitted', submittedDate: '2026-10-05' });
+
+  assert.equal(student.score, 1);
+  assert.equal(student.history.filter((e) => e.source === 'auto').length, 3, 'award, reversal, re-award — all three preserved (append-only)');
+});
+
+test('recordNotebookCheckpointSubmission: two different checkpoints on the same notebook never conflate their own stars', () => {
+  const classroom = freshClassroom();
+  const student = classroom.teams[0].students[0];
+  const checkpointUnit1 = { id: 'cp-unit1', subjectId: 'subj-sci', notebookTypeId: 'type-classwork', records: [] };
+  const checkpointUnit2 = { id: 'cp-unit2', subjectId: 'subj-sci', notebookTypeId: 'type-classwork', records: [] };
+
+  recognitionService.recordNotebookCheckpointSubmission(classroom, checkpointUnit1, 'stu1', { status: 'submitted' });
+  recognitionService.recordNotebookCheckpointSubmission(classroom, checkpointUnit2, 'stu1', { status: 'submitted' });
+  assert.equal(student.score, 2);
+
+  recognitionService.recordNotebookCheckpointSubmission(classroom, checkpointUnit1, 'stu1', { status: 'not_submitted' });
+  assert.equal(student.score, 1, 'only Unit 1’s own star was reversed');
+});
+
+test('recordNotebookCheckpointSubmission: never conflated with a notebook Register work item or an Assignment Checkpoint work item, even with overlapping field values', () => {
+  const classroom = freshClassroom();
+  const student = classroom.teams[0].students[0];
+  const checkpoint = { id: 'cp-1', subjectId: 'subj-eng', notebookTypeId: 'type-hw', records: [] };
+
+  recognitionService.recordNotebookSubmission(classroom, { ...NOTEBOOK_WORK_ITEM, studentId: 'stu1', submission: 'submitted' });
+  recognitionService.recordNotebookCheckpointSubmission(classroom, checkpoint, 'stu1', { status: 'submitted' });
+
+  assert.equal(student.score, 2, 'both are independently active stars from two genuinely different work items');
+  recognitionService.recordNotebookCheckpointSubmission(classroom, checkpoint, 'stu1', { status: 'not_submitted' });
+  assert.equal(student.score, 1, 'reversing the checkpoint star must never touch the Register star');
+});
+
+// ---------------------------------------------------------------------
+// recordAssignmentCompletion — Workstream 4C's own assignment-LEVEL
+// Done/Not Done/Not Recorded state (no checkpoints required), wired to
+// the same idempotent award/reversal mechanism as every other
+// completion path in this file.
+// ---------------------------------------------------------------------
+
+test('recordAssignmentCompletion: marking Done awards one star; marking Done again is idempotent', () => {
+  const classroom = freshClassroom();
+  const student = classroom.teams[0].students[0];
+  const assignment = { id: 'assign-1', records: [] };
+
+  recognitionService.recordAssignmentCompletion(classroom, assignment, 'stu1', 'done');
+  recognitionService.recordAssignmentCompletion(classroom, assignment, 'stu1', 'done');
+
+  assert.equal(student.score, 1);
+  assert.equal(student.history.filter((e) => e.source === 'auto').length, 1);
+});
+
+test('recordAssignmentCompletion: marking Undone reverses exactly the one star for this assignment', () => {
+  const classroom = freshClassroom();
+  const student = classroom.teams[0].students[0];
+  const assignmentA = { id: 'assign-a', records: [] };
+  const assignmentB = { id: 'assign-b', records: [] };
+
+  recognitionService.recordAssignmentCompletion(classroom, assignmentA, 'stu1', 'done');
+  recognitionService.recordAssignmentCompletion(classroom, assignmentB, 'stu1', 'done');
+  assert.equal(student.score, 2);
+
+  recognitionService.recordAssignmentCompletion(classroom, assignmentA, 'stu1', 'not_done');
+  assert.equal(student.score, 1, 'only assignment A’s own star was reversed');
+});
+
+test('recordAssignmentCompletion: Not Recorded (null) and Not Done never award a star', () => {
+  const classroom = freshClassroom();
+  const student = classroom.teams[0].students[0];
+  const assignment = { id: 'assign-1', records: [] };
+
+  recognitionService.recordAssignmentCompletion(classroom, assignment, 'stu1', 'not_done');
+  recognitionService.recordAssignmentCompletion(classroom, assignment, 'stu1', null);
+
+  assert.equal(student.score, 0);
+  assert.equal(student.history.filter((e) => e.source === 'auto').length, 0);
+});
+
+test('recordAssignmentCompletion: re-marking Done after Undo awards a fresh, active star', () => {
+  const classroom = freshClassroom();
+  const student = classroom.teams[0].students[0];
+  const assignment = { id: 'assign-1', records: [] };
+
+  recognitionService.recordAssignmentCompletion(classroom, assignment, 'stu1', 'done');
+  recognitionService.recordAssignmentCompletion(classroom, assignment, 'stu1', 'not_done');
+  recognitionService.recordAssignmentCompletion(classroom, assignment, 'stu1', 'done');
+
+  assert.equal(student.score, 1);
+  assert.equal(student.history.filter((e) => e.source === 'auto').length, 3, 'award, reversal, re-award — all preserved (append-only)');
+});
+
+test('recordAssignmentCompletion: an assignment-level completion star is never conflated with that same assignment’s own checkpoint stars', () => {
+  const classroom = freshClassroom();
+  const student = classroom.teams[0].students[0];
+  const assignment = { id: 'assign-1', records: [] };
+  const checkpoint = { id: 'cp-1', assignmentId: 'assign-1', records: [] };
+
+  recognitionService.recordAssignmentCompletion(classroom, assignment, 'stu1', 'done');
+  recognitionService.recordAssignmentCheckpointSubmission(classroom, checkpoint, 'stu1', { status: 'submitted' });
+  assert.equal(student.score, 2, 'both are independently active stars from two genuinely different work items');
+
+  recognitionService.recordAssignmentCompletion(classroom, assignment, 'stu1', 'not_done');
+  assert.equal(student.score, 1, 'reversing the assignment-level star must never touch the checkpoint star');
+});

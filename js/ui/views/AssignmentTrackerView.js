@@ -255,6 +255,20 @@ function createAssignmentCard(assignment, classroom, handlers) {
   top.appendChild(arrow);
   openButton.appendChild(top);
 
+  // Workstream 4A — the auto-generated code is this worksheet's own
+  // primary identifier once it has one; the description (the former
+  // free-text "Title" field, unchanged internally — see
+  // renderAssignmentForm()'s own comment) stays visible right below it,
+  // never replaced. An Assignment created before this field existed has
+  // no code at all and simply shows its description alone, unchanged
+  // from before this feature.
+  if (assignment.code) {
+    const codeEl = document.createElement('span');
+    codeEl.className = 'notebook-tracker__bento-code';
+    codeEl.textContent = assignment.code;
+    openButton.appendChild(codeEl);
+  }
+
   const titleEl = document.createElement('span');
   titleEl.className = 'notebook-tracker__bento-title';
   titleEl.textContent = assignment.title;
@@ -316,7 +330,36 @@ function buildDeleteImpactMessage(title, { checkpointCount, recordCount }) {
   return `Delete "${title}"? This also removes ${checkpointCount} checkpoint${checkpointCount === 1 ? '' : 's'} (${recordCount} student record${recordCount === 1 ? '' : 's'}). This cannot be undone.`;
 }
 
-function renderConceptLinkSection(classroom, selectedConceptIds) {
+/**
+ * THE ACTUAL FIX for Workstream 4B: previously showed EVERY concept
+ * across EVERY subject/unit in the whole classroom, completely
+ * unfiltered and never re-rendered on Subject/Unit selection — the
+ * Subject `<select>` elsewhere in this form was never even read by
+ * this function. Now scoped to exactly the one selected Unit, per
+ * explicit requirement ("display only concepts associated with the
+ * selected unit"), and re-invoked by renderAssignmentForm() below
+ * whenever Subject or Unit changes — see that function's own
+ * `refreshConceptSection()`.
+ *
+ * `unitId` — null means "no unit chosen yet" (whether because no
+ * Subject is selected either, or a Subject is selected but its own
+ * Unit hasn't been picked), rendered as a plain hint rather than an
+ * empty checkbox list, since an empty list reads as "this
+ * subject/unit genuinely has zero concepts," which is a different,
+ * misleading claim.
+ *
+ * `preservedUnresolvableConceptIds` — existing concept ids on the
+ * Assignment being edited that `learningRecordService.getAllConcepts()`
+ * can no longer resolve at all (the concept itself, or its containing
+ * Subject/Unit, was deleted since this Assignment was linked to it).
+ * Per explicit instruction not to silently delete existing concept
+ * links for a legacy Assignment, these are listed read-only (never as
+ * an interactive checkbox — there is nothing current to toggle them
+ * against) and are always included back into the saved conceptIds by
+ * renderAssignmentForm()'s own save handler, regardless of which unit
+ * is currently selected.
+ */
+function renderConceptLinkSection(classroom, unitId, selectedConceptIds, preservedUnresolvableConceptIds) {
   const section = document.createElement('div');
   section.className = 'assignment-form__concept-section';
 
@@ -325,11 +368,26 @@ function renderConceptLinkSection(classroom, selectedConceptIds) {
   label.textContent = 'Link concepts (optional)';
   section.appendChild(label);
 
-  const allConcepts = learningRecordService.getAllConcepts(classroom);
-  if (allConcepts.length === 0) {
+  if (preservedUnresolvableConceptIds.size > 0) {
+    const preservedNote = document.createElement('p');
+    preservedNote.className = 'assignment-form__concept-empty';
+    preservedNote.textContent = `${preservedUnresolvableConceptIds.size} previously linked concept${preservedUnresolvableConceptIds.size === 1 ? '' : 's'} no longer resolve to a current Subject/Unit and are kept linked, unchanged.`;
+    section.appendChild(preservedNote);
+  }
+
+  const unit = unitId ? learningRecordService.getUnitById(classroom, unitId) : null;
+  if (!unit) {
     const empty = document.createElement('p');
     empty.className = 'assignment-form__concept-empty';
-    empty.textContent = 'No concepts set up yet — add some from Learning Management first.';
+    empty.textContent = 'Select a Subject and Unit above to link concepts.';
+    section.appendChild(empty);
+    return section;
+  }
+
+  if (unit.concepts.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'assignment-form__concept-empty';
+    empty.textContent = 'No concepts set up yet for this unit — add some from Learning Management first.';
     section.appendChild(empty);
     return section;
   }
@@ -337,46 +395,24 @@ function renderConceptLinkSection(classroom, selectedConceptIds) {
   const list = document.createElement('div');
   list.className = 'assignment-form__concept-list';
 
-  const bySubject = new Map();
-  allConcepts.forEach(({ subject, unit, concept }) => {
-    if (!bySubject.has(subject.id)) bySubject.set(subject.id, { subject, byUnit: new Map() });
-    const subjectGroup = bySubject.get(subject.id);
-    if (!subjectGroup.byUnit.has(unit.id)) subjectGroup.byUnit.set(unit.id, { unit, concepts: [] });
-    subjectGroup.byUnit.get(unit.id).concepts.push(concept);
-  });
+  unit.concepts.forEach((concept) => {
+    const option = document.createElement('label');
+    option.className = 'assignment-form__concept-option';
 
-  bySubject.forEach(({ subject, byUnit }) => {
-    const subjectHeading = document.createElement('p');
-    subjectHeading.className = 'assignment-form__concept-subject-heading';
-    subjectHeading.textContent = subject.name;
-    list.appendChild(subjectHeading);
-
-    byUnit.forEach(({ unit, concepts }) => {
-      const unitHeading = document.createElement('p');
-      unitHeading.className = 'assignment-form__concept-unit-heading';
-      unitHeading.textContent = unit.title;
-      list.appendChild(unitHeading);
-
-      concepts.forEach((concept) => {
-        const option = document.createElement('label');
-        option.className = 'assignment-form__concept-option';
-
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.checked = selectedConceptIds.has(concept.id);
-        checkbox.addEventListener('change', () => {
-          if (checkbox.checked) selectedConceptIds.add(concept.id);
-          else selectedConceptIds.delete(concept.id);
-        });
-        option.appendChild(checkbox);
-
-        const title = document.createElement('span');
-        title.textContent = concept.title;
-        option.appendChild(title);
-
-        list.appendChild(option);
-      });
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = selectedConceptIds.has(concept.id);
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) selectedConceptIds.add(concept.id);
+      else selectedConceptIds.delete(concept.id);
     });
+    option.appendChild(checkbox);
+
+    const title = document.createElement('span');
+    title.textContent = concept.title;
+    option.appendChild(title);
+
+    list.appendChild(option);
   });
 
   section.appendChild(list);
@@ -392,18 +428,37 @@ function renderConceptLinkSection(classroom, selectedConceptIds) {
  * established "simple select for a single reference, not a custom
  * picker component" convention for exactly this shape of choice.
  */
-function renderAssignmentForm(assignment, classroom, handlers) {
+/** Exported for tests/ui/assignmentFormCascade.test.js — mirrors ui/views/NotebookCheckpointsView.js's own getCellMeta() convention of exporting a specific piece for direct, real-browser testing rather than only reaching it through the full view. */
+export function renderAssignmentForm(assignment, classroom, handlers) {
   const form = document.createElement('div');
   form.className = 'notebook-checkpoints__form';
 
+  // Read-only — see models/Assignment.js's own `code` field comment.
+  // Only shown once an Assignment actually has one (every Assignment
+  // created before this field existed has `code: null` or no field at
+  // all) — never a blank/placeholder code for those.
+  if (assignment?.code) {
+    const codeDisplay = document.createElement('p');
+    codeDisplay.className = 'assignment-form__code-display';
+    codeDisplay.textContent = assignment.code;
+    form.appendChild(codeDisplay);
+  }
+
   const titleInput = document.createElement('input');
   titleInput.type = 'text';
-  titleInput.placeholder = 'Title (e.g. Water Cycle Worksheet)';
+  // Per Workstream 4A: the auto-generated Code (above, once this
+  // Assignment has been saved at least once) is now the worksheet's own
+  // identifier — this field is its plain-language description, never a
+  // teacher-typed code. Still the same underlying `title` field (see
+  // assignmentService.js's own createNewAssignment()/updateAssignment())
+  // -- only the label/placeholder changed, so every existing Assignment
+  // and every other reader of `assignment.title` is unaffected.
+  titleInput.placeholder = 'Description (e.g. Chemical Formula, Equation and Naming Compounds)';
   titleInput.value = assignment?.title || '';
   form.appendChild(titleInput);
 
   const descriptionInput = document.createElement('textarea');
-  descriptionInput.placeholder = 'Description (optional)';
+  descriptionInput.placeholder = 'Additional notes (optional)';
   descriptionInput.value = assignment?.description || '';
   form.appendChild(descriptionInput);
 
@@ -437,6 +492,91 @@ function renderAssignmentForm(assignment, classroom, handlers) {
   subjectLabel.appendChild(subjectSelect);
   form.appendChild(subjectLabel);
 
+  // THE ACTUAL FIX for Workstream 4B: a new Unit selector, populated
+  // from whichever Subject is currently selected (see
+  // refreshUnitOptions() below) — previously no Unit selector existed
+  // here at all, so Concept linking (renderConceptLinkSection) had no
+  // way to scope itself to one Unit and showed every concept in the
+  // whole classroom unfiltered.
+  const unitLabel = document.createElement('label');
+  unitLabel.textContent = 'Unit (optional)';
+  const unitSelect = document.createElement('select');
+  unitLabel.appendChild(unitSelect);
+  form.appendChild(unitLabel);
+
+  const conceptSectionSlot = document.createElement('div');
+
+  // Existing concept ids that the LOADED subject/unit (or any current
+  // subject/unit at all, for a brand-new Assignment) genuinely cannot
+  // resolve — see renderConceptLinkSection()'s own
+  // `preservedUnresolvableConceptIds` comment. Computed ONCE against
+  // the full, unfiltered concept tree (never against just the
+  // currently-selected unit), so a concept link is only ever treated as
+  // "legacy/unresolvable" when the concept itself is genuinely gone,
+  // not merely because a different unit happens to be selected right
+  // now.
+  const allResolvableConceptIds = new Set(learningRecordService.getAllConcepts(classroom).map(({ concept }) => concept.id));
+  const preservedUnresolvableConceptIds = new Set((assignment?.conceptIds || []).filter((id) => !allResolvableConceptIds.has(id)));
+  const selectedConceptIds = new Set((assignment?.conceptIds || []).filter((id) => allResolvableConceptIds.has(id)));
+
+  function refreshConceptSection() {
+    conceptSectionSlot.innerHTML = '';
+    conceptSectionSlot.appendChild(
+      renderConceptLinkSection(classroom, unitSelect.value || null, selectedConceptIds, preservedUnresolvableConceptIds)
+    );
+  }
+
+  /**
+   * Rebuilds the Unit <select>'s own options from `subjectId`'s own
+   * `units[]` — called on initial render (preserving a valid existing
+   * `assignment.unitId`) and again every time a teacher changes Subject
+   * (where `preserveUnitId` is deliberately omitted, since the
+   * previously-selected unit almost certainly doesn't belong to the
+   * newly-chosen subject at all).
+   */
+  function refreshUnitOptions(subjectId, preserveUnitId = null) {
+    unitSelect.innerHTML = '';
+    const noUnitOption = document.createElement('option');
+    noUnitOption.value = '';
+    noUnitOption.textContent = 'No unit set';
+    unitSelect.appendChild(noUnitOption);
+
+    const subject = subjectId ? learningRecordService.getSubjectById(classroom, subjectId) : null;
+    (subject?.units || []).forEach((unit) => {
+      const option = document.createElement('option');
+      option.value = unit.id;
+      option.textContent = unit.number != null ? `Unit ${unit.number}: ${unit.title}` : unit.title;
+      if (preserveUnitId === unit.id) option.selected = true;
+      unitSelect.appendChild(option);
+    });
+  }
+
+  refreshUnitOptions(assignment?.subjectId || null, assignment?.unitId || null);
+  refreshConceptSection();
+
+  // Changing Subject invalidates whatever Unit was selected (a Unit
+  // belongs to exactly one Subject) — per explicit instruction to
+  // "clear invalid selections when their parent selection changes."
+  // Concept selections scoped to the now-cleared Unit are dropped from
+  // `selectedConceptIds` too (refreshConceptSection() below re-renders
+  // against the new, empty Unit selection, and its own checkboxes are
+  // the only thing that ever re-adds to that Set) — genuinely
+  // unresolvable legacy links in `preservedUnresolvableConceptIds` are
+  // never touched by this, since they were never tied to any
+  // currently-selectable unit in the first place.
+  subjectSelect.addEventListener('change', () => {
+    selectedConceptIds.clear();
+    refreshUnitOptions(subjectSelect.value || null);
+    refreshConceptSection();
+  });
+
+  unitSelect.addEventListener('change', () => {
+    selectedConceptIds.clear();
+    refreshConceptSection();
+  });
+
+  form.appendChild(conceptSectionSlot);
+
   const givenDateLabel = document.createElement('label');
   givenDateLabel.textContent = 'Date given';
   const givenDateInput = document.createElement('input');
@@ -462,9 +602,6 @@ function renderAssignmentForm(assignment, classroom, handlers) {
   resourceUrlLabel.appendChild(resourceUrlInput);
   form.appendChild(resourceUrlLabel);
 
-  const selectedConceptIds = new Set(assignment?.conceptIds || []);
-  form.appendChild(renderConceptLinkSection(classroom, selectedConceptIds));
-
   const actions = document.createElement('div');
   actions.className = 'notebook-checkpoints__form-actions';
 
@@ -477,13 +614,27 @@ function renderAssignmentForm(assignment, classroom, handlers) {
     if (!title || !categorySelect.value) return;
     handlers.onSave({
       categoryId: categorySelect.value,
+      // Only ever consulted by createNewAssignment() -> worksheetCodeService.js
+      // as a fallback abbreviation source when no Subject is set (see
+      // that service's own header comment) — updateAssignment() doesn't
+      // destructure this key at all, so passing it on an edit save is
+      // harmless, not a second source of truth for the category name.
+      categoryName: assignmentConfigService.listCategories(classroom).find((c) => c.id === categorySelect.value)?.name || null,
       subjectId: subjectSelect.value || null,
+      unitId: unitSelect.value || null,
       title,
       description: descriptionInput.value.trim(),
       givenDate: givenDateInput.value,
       dueDate: dueDateInput.value,
       resourceUrl: resourceUrlInput.value.trim(),
-      conceptIds: Array.from(selectedConceptIds),
+      // Union, never a plain list of what's currently checked — a
+      // legacy, unresolvable concept link (see
+      // preservedUnresolvableConceptIds above) is never shown as a
+      // checkbox at all, so a plain "collect checked boxes" save would
+      // silently drop it. Per explicit instruction not to silently
+      // delete existing concept links, it is always carried through
+      // here regardless of which Unit is currently selected.
+      conceptIds: Array.from(new Set([...selectedConceptIds, ...preservedUnresolvableConceptIds])),
     });
   });
   actions.appendChild(saveButton);
