@@ -1,6 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createLesson, findInvalidExecutedConceptIds, getFeedbackEligibleConceptIds, carryForwardConcept, resetLessonForUnitChange, moveConcept, removeConceptFromLesson } from '../../js/models/Lesson.js';
+import {
+  createLesson,
+  findInvalidExecutedConceptIds,
+  getFeedbackEligibleConceptIds,
+  carryForwardConcept,
+  resetLessonForUnitChange,
+  moveConcept,
+  removeConceptFromLesson,
+  createRescheduleRecord,
+  rescheduleConceptsForHoliday,
+} from '../../js/models/Lesson.js';
 
 test('createLesson: executedConceptIds/carriedForwardConceptIds/conceptProvenance default to empty, planningCycleId to null', () => {
   const lesson = createLesson({ classroomId: 'c1', date: '2026-08-25', teachingSlotId: 'slot-1', conceptIds: ['A', 'B'] });
@@ -204,6 +214,78 @@ test('moveConcept: throws if the concept is already planned on the target lesson
 });
 
 // ---------------------------------------------------------------------
+// moveConcept() + existing conceptProvenance — the "moved more than
+// once" case (2026-10 fix): a concept that already arrived on its
+// current lesson via carryForwardConcept() must keep its own real
+// provenance reconstructable even after a SECOND move (whether an
+// ordinary "Move to..." planning action or a Holiday automatically
+// displacing the lesson that received it) — never silently discarded.
+// ---------------------------------------------------------------------
+
+test('moveConcept: a concept with EXISTING provenance (it already arrived via carryForwardConcept) carries that SAME provenance forward to the new target — never discarded', () => {
+  const tuesday = createLesson({ id: 'lesson-tue', classroomId: 'c1', teachingSlotId: 'slot-tue', conceptIds: ['D'] });
+  const thursday = createLesson({ id: 'lesson-thu', classroomId: 'c1', teachingSlotId: 'slot-thu', conceptIds: [] });
+  const friday = createLesson({ id: 'lesson-fri', classroomId: 'c1', teachingSlotId: 'slot-fri', conceptIds: [] });
+
+  // D is carried forward Tuesday -> Thursday first (Thursday now owns real provenance for D).
+  carryForwardConcept({ sourceLesson: tuesday, targetLesson: thursday, conceptId: 'D', sourceTeachingSlotId: 'slot-tue', carriedAt: '2026-08-25T10:00:00.000Z' });
+  assert.deepEqual(thursday.conceptProvenance.D, { fromLessonId: 'lesson-tue', fromTeachingSlotId: 'slot-tue', carriedAt: '2026-08-25T10:00:00.000Z' });
+
+  // Thursday's own date is later displaced (e.g. a Holiday) — D moves AGAIN, Thursday -> Friday, via moveConcept().
+  moveConcept({ sourceLesson: thursday, targetLesson: friday, conceptId: 'D' });
+
+  // The provenance must be gone from Thursday (it no longer holds D at all)...
+  assert.equal(thursday.conceptProvenance.D, undefined);
+  // ...and must be on Friday now, UNCHANGED — still pointing at the TRUE original source (Tuesday), never fabricated, never pointing at Thursday (the intermediate hop) instead.
+  assert.deepEqual(friday.conceptProvenance.D, { fromLessonId: 'lesson-tue', fromTeachingSlotId: 'slot-tue', carriedAt: '2026-08-25T10:00:00.000Z' });
+});
+
+test('moveConcept: a chain of THREE moves (carry-forward, then two plain moves) still preserves the ORIGINAL provenance at the very end, not the most recent hop', () => {
+  const mon = createLesson({ id: 'lesson-mon', classroomId: 'c1', teachingSlotId: 'slot-mon', conceptIds: ['X'] });
+  const wed = createLesson({ id: 'lesson-wed', classroomId: 'c1', teachingSlotId: 'slot-wed', conceptIds: [] });
+  const fri = createLesson({ id: 'lesson-fri', classroomId: 'c1', teachingSlotId: 'slot-fri', conceptIds: [] });
+  const nextMon = createLesson({ id: 'lesson-nextmon', classroomId: 'c1', teachingSlotId: 'slot-nextmon', conceptIds: [] });
+
+  carryForwardConcept({ sourceLesson: mon, targetLesson: wed, conceptId: 'X', sourceTeachingSlotId: 'slot-mon', carriedAt: '2026-08-24T10:00:00.000Z' });
+  moveConcept({ sourceLesson: wed, targetLesson: fri, conceptId: 'X' });
+  moveConcept({ sourceLesson: fri, targetLesson: nextMon, conceptId: 'X' });
+
+  assert.deepEqual(nextMon.conceptProvenance.X, { fromLessonId: 'lesson-mon', fromTeachingSlotId: 'slot-mon', carriedAt: '2026-08-24T10:00:00.000Z' });
+  assert.equal(wed.conceptProvenance.X, undefined);
+  assert.equal(fri.conceptProvenance.X, undefined);
+  assert.deepEqual(nextMon.conceptIds, ['X']);
+  assert.deepEqual(wed.conceptIds, []);
+  assert.deepEqual(fri.conceptIds, []);
+});
+
+test('rescheduleConceptsForHoliday: a concept that already had carry-forward provenance keeps it after being holiday-displaced', () => {
+  const tuesday = createLesson({ id: 'lesson-tue', classroomId: 'c1', teachingSlotId: 'slot-tue', date: '2026-08-25', conceptIds: ['D'] });
+  const thursday = createLesson({ id: 'lesson-thu', classroomId: 'c1', teachingSlotId: 'slot-thu', date: '2026-08-27', conceptIds: [] });
+  const nextTuesday = createLesson({ id: 'lesson-next-tue', classroomId: 'c1', teachingSlotId: 'slot-next-tue', date: '2026-09-01', conceptIds: [] });
+
+  carryForwardConcept({ sourceLesson: tuesday, targetLesson: thursday, conceptId: 'D', sourceTeachingSlotId: 'slot-tue', carriedAt: '2026-08-25T10:00:00.000Z' });
+
+  // Thursday is now hit by a Holiday — rescheduleConceptsForHoliday() displaces D to the following Tuesday.
+  rescheduleConceptsForHoliday({
+    sourceLesson: thursday,
+    targetLesson: nextTuesday,
+    conceptIds: ['D'],
+    fromTeachingSlotId: 'slot-thu',
+    fromDate: '2026-08-27',
+    toTeachingSlotId: 'slot-next-tue',
+    toDate: '2026-09-01',
+    exceptionId: 'exc-1',
+    movedAt: '2026-08-20T00:00:00.000Z',
+  });
+
+  assert.deepEqual(nextTuesday.conceptProvenance.D, { fromLessonId: 'lesson-tue', fromTeachingSlotId: 'slot-tue', carriedAt: '2026-08-25T10:00:00.000Z' }, 'the original carry-forward provenance must survive the holiday reschedule, not be discarded');
+  assert.equal(thursday.conceptProvenance.D, undefined);
+  // The reschedule's own audit trail is independent of, and coexists with, the preserved provenance.
+  assert.equal(thursday.rescheduleHistory[0].direction, 'sent');
+  assert.equal(nextTuesday.rescheduleHistory[0].direction, 'received');
+});
+
+// ---------------------------------------------------------------------
 // removeConceptFromLesson — "Remove from lesson" in the Concepts
 // panel's overflow menu. Never touches the canonical LearningConcept
 // (see services/learningRecordTeacherService.js's own deleteConcept()
@@ -310,4 +392,153 @@ test('resetLessonForUnitChange: an already-unassigned lesson (curriculumUnitId a
   resetLessonForUnitChange(lesson, null);
   assert.equal(lesson.curriculumUnitId, null);
   assert.deepEqual(lesson.conceptIds, []);
+});
+
+test('createLesson: rescheduleHistory defaults to an empty array', () => {
+  const lesson = createLesson({ classroomId: 'c1' });
+  assert.deepEqual(lesson.rescheduleHistory, []);
+});
+
+test('rescheduleConceptsForHoliday: moves every open concept to the target, clearing them from the source entirely (via moveConcept)', () => {
+  const source = createLesson({ classroomId: 'c1', date: '2026-08-27', teachingSlotId: 'slot-src', curriculumUnitId: 'unit-1', conceptIds: ['c1', 'c2'] });
+  const target = createLesson({ classroomId: 'c1', date: '2026-09-01', teachingSlotId: 'slot-dst', curriculumUnitId: 'unit-1' });
+
+  rescheduleConceptsForHoliday({
+    sourceLesson: source,
+    targetLesson: target,
+    conceptIds: ['c1', 'c2'],
+    fromTeachingSlotId: 'slot-src',
+    fromDate: '2026-08-27',
+    toTeachingSlotId: 'slot-dst',
+    toDate: '2026-09-01',
+    exceptionId: 'exc-1',
+    movedAt: '2026-08-20T00:00:00.000Z',
+  });
+
+  assert.deepEqual(source.conceptIds, []);
+  assert.deepEqual(target.conceptIds, ['c1', 'c2']);
+});
+
+test('rescheduleConceptsForHoliday: records a paired rescheduleHistory entry on BOTH lessons, sharing one moveId', () => {
+  const source = createLesson({ classroomId: 'c1', date: '2026-08-27', teachingSlotId: 'slot-src', curriculumUnitId: 'unit-1', conceptIds: ['c1'] });
+  const target = createLesson({ classroomId: 'c1', date: '2026-09-01', teachingSlotId: 'slot-dst', curriculumUnitId: 'unit-1' });
+
+  rescheduleConceptsForHoliday({
+    sourceLesson: source,
+    targetLesson: target,
+    conceptIds: ['c1'],
+    fromTeachingSlotId: 'slot-src',
+    fromDate: '2026-08-27',
+    toTeachingSlotId: 'slot-dst',
+    toDate: '2026-09-01',
+    exceptionId: 'exc-1',
+    movedAt: '2026-08-20T00:00:00.000Z',
+  });
+
+  assert.equal(source.rescheduleHistory.length, 1);
+  assert.equal(target.rescheduleHistory.length, 1);
+  const sentRecord = source.rescheduleHistory[0];
+  const receivedRecord = target.rescheduleHistory[0];
+  assert.equal(sentRecord.direction, 'sent');
+  assert.equal(receivedRecord.direction, 'received');
+  assert.equal(sentRecord.moveId, receivedRecord.moveId, 'both sides of the same move share one moveId');
+  assert.deepEqual(sentRecord.conceptIds, ['c1']);
+  assert.equal(sentRecord.fromTeachingSlotId, 'slot-src');
+  assert.equal(sentRecord.toTeachingSlotId, 'slot-dst');
+  assert.equal(sentRecord.exceptionId, 'exc-1');
+  assert.equal(sentRecord.reason, 'holiday');
+  assert.equal(sentRecord.movedAt, '2026-08-20T00:00:00.000Z');
+  assert.equal(sentRecord.toLessonId, target.id);
+  assert.equal(receivedRecord.fromLessonId, source.id);
+});
+
+test('rescheduleConceptsForHoliday: a fully-rescheduled source lesson (nothing else open) gets status "rescheduled"', () => {
+  const source = createLesson({ classroomId: 'c1', teachingSlotId: 'slot-src', date: '2026-08-27', curriculumUnitId: 'unit-1', conceptIds: ['c1', 'c2'] });
+  const target = createLesson({ classroomId: 'c1', teachingSlotId: 'slot-dst', date: '2026-09-01', curriculumUnitId: 'unit-1' });
+
+  rescheduleConceptsForHoliday({
+    sourceLesson: source,
+    targetLesson: target,
+    conceptIds: ['c1', 'c2'],
+    fromTeachingSlotId: 'slot-src',
+    fromDate: '2026-08-27',
+    toTeachingSlotId: 'slot-dst',
+    toDate: '2026-09-01',
+    exceptionId: 'exc-1',
+    movedAt: '2026-08-20T00:00:00.000Z',
+  });
+
+  assert.equal(source.status, 'rescheduled');
+});
+
+test('rescheduleConceptsForHoliday: a PARTIALLY-rescheduled source lesson (still has its own executed concept) keeps its normal status — completed work/history untouched', () => {
+  const source = createLesson({
+    classroomId: 'c1',
+    teachingSlotId: 'slot-src',
+    date: '2026-08-27',
+    curriculumUnitId: 'unit-1',
+    conceptIds: ['c1', 'c2'],
+    executedConceptIds: ['c1'],
+  });
+  const target = createLesson({ classroomId: 'c1', teachingSlotId: 'slot-dst', date: '2026-09-01', curriculumUnitId: 'unit-1' });
+
+  rescheduleConceptsForHoliday({
+    sourceLesson: source,
+    targetLesson: target,
+    conceptIds: ['c2'], // only the open one
+    fromTeachingSlotId: 'slot-src',
+    fromDate: '2026-08-27',
+    toTeachingSlotId: 'slot-dst',
+    toDate: '2026-09-01',
+    exceptionId: 'exc-1',
+    movedAt: '2026-08-20T00:00:00.000Z',
+  });
+
+  assert.equal(source.status, 'planned', 'c1 is still executed/open on the source — this Lesson still has real completed work of its own');
+  assert.deepEqual(source.conceptIds, ['c1'], 'c1 (executed) stays on the source — only c2 (open) actually moved');
+  assert.deepEqual(source.executedConceptIds, ['c1'], 'executed history is completely untouched by the reschedule');
+});
+
+test('rescheduleConceptsForHoliday: an empty conceptIds list is a safe no-op — no history entries, no status change', () => {
+  const source = createLesson({ classroomId: 'c1', teachingSlotId: 'slot-src', date: '2026-08-27', curriculumUnitId: 'unit-1', conceptIds: ['c1'] });
+  const target = createLesson({ classroomId: 'c1', teachingSlotId: 'slot-dst', date: '2026-09-01', curriculumUnitId: 'unit-1' });
+
+  rescheduleConceptsForHoliday({
+    sourceLesson: source,
+    targetLesson: target,
+    conceptIds: [],
+    fromTeachingSlotId: 'slot-src',
+    fromDate: '2026-08-27',
+    toTeachingSlotId: 'slot-dst',
+    toDate: '2026-09-01',
+    exceptionId: 'exc-1',
+    movedAt: '2026-08-20T00:00:00.000Z',
+  });
+
+  assert.deepEqual(source.rescheduleHistory, []);
+  assert.deepEqual(target.rescheduleHistory, []);
+  assert.equal(source.status, 'planned');
+  assert.deepEqual(source.conceptIds, ['c1']);
+});
+
+test('createRescheduleRecord: populates every field exactly as given, generating a real id when none is supplied', () => {
+  const record = createRescheduleRecord({
+    moveId: 'move-1',
+    direction: 'sent',
+    conceptIds: ['c1', 'c2'],
+    fromTeachingSlotId: 'slot-src',
+    fromDate: '2026-08-27',
+    toTeachingSlotId: 'slot-dst',
+    toDate: '2026-09-01',
+    toLessonId: 'lesson-2',
+    fromLessonId: 'lesson-1',
+    exceptionId: 'exc-1',
+    reason: 'holiday',
+    movedAt: '2026-08-20T00:00:00.000Z',
+  });
+  assert.ok(record.id);
+  assert.equal(record.moveId, 'move-1');
+  assert.equal(record.direction, 'sent');
+  assert.deepEqual(record.conceptIds, ['c1', 'c2']);
+  assert.equal(record.reason, 'holiday');
 });
