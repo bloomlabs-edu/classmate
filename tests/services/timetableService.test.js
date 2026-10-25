@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createClassroom } from '../../js/models/Classroom.js';
 import * as timetableService from '../../js/services/timetableService.js';
+import * as schoolCalendarService from '../../js/services/schoolCalendarService.js';
+import { createCustomPeriod } from '../../js/models/CalendarException.js';
 
 /**
  * A real, week-long pattern, not dummy per-test data invented ad hoc —
@@ -185,6 +187,113 @@ test('getNextFutureSlotForSubject: "Move to next Science period" — finds Thurs
   assert.equal(next.date, '2026-08-27'); // Thursday
   assert.equal(next.periodNumber, 3);
   assert.equal(next.subjectId, 'science');
+});
+
+test('getNextFutureSlotForSubject: a holiday (schoolCalendarService exception) on the next occurrence is skipped — holiday-rescheduling fix', () => {
+  const classroom = classroomWithPattern();
+  schoolCalendarService.setHolidayException(classroom, '2026-08-27', 'Test Holiday'); // the very Thursday that would otherwise be picked
+  const next = timetableService.getNextFutureSlotForSubject(classroom, {
+    subjectId: 'science',
+    afterDateKey: '2026-08-25', // Tuesday
+    afterPeriodNumber: 3,
+  });
+  assert.equal(next.date, '2026-09-01', 'must skip the holiday Thursday entirely and land on the FOLLOWING Tuesday'); // next Tuesday
+  assert.equal(next.periodNumber, 3);
+});
+
+test('getNextFutureSlotForSubject: a consecutive run of holidays (and a date-range holiday) is skipped past entirely, not just one day', () => {
+  const classroom = classroomWithPattern();
+  // A date-range holiday spanning both the Thursday AND the following Tuesday's own Science occurrences.
+  schoolCalendarService.setHolidayException(classroom, { startDate: '2026-08-27', endDate: '2026-09-01' }, 'Extended break');
+  const next = timetableService.getNextFutureSlotForSubject(classroom, {
+    subjectId: 'science',
+    afterDateKey: '2026-08-25',
+    afterPeriodNumber: 3,
+  });
+  assert.equal(next.date, '2026-09-03', 'must skip the ENTIRE holiday range, landing on the next Thursday after it ends');
+  assert.equal(next.periodNumber, 3);
+});
+
+test('getNextFutureSlotForSubject: teacherUid scoping — never suggests a period taught by a DIFFERENT teacher, even for the same subject', () => {
+  const classroom = classroomWithPattern();
+  timetableService.upsertSlot(classroom, { weekday: 2, periodNumber: 3, subjectId: 'science', teacherUid: 'teacher-A' });
+  timetableService.upsertSlot(classroom, { weekday: 4, periodNumber: 3, subjectId: 'science', teacherUid: 'teacher-B' });
+
+  const next = timetableService.getNextFutureSlotForSubject(classroom, {
+    subjectId: 'science',
+    teacherUid: 'teacher-A',
+    afterDateKey: '2026-08-25', // Tuesday, teacher-A's own period
+    afterPeriodNumber: 3,
+  });
+  assert.equal(next.date, '2026-09-01', 'must skip Thursday (teacher-B) and land on the following Tuesday (teacher-A again)');
+  assert.equal(next.periodNumber, 3);
+});
+
+test('getNextFutureSlotForSubject: a slot where the SAME teacher teaches a DIFFERENT subject is never selected as a Science destination — subject is checked before teacher, always', () => {
+  const classroom = classroomWithPattern();
+  // teacher-A teaches BOTH Science (Tue P3) and, closer to the search start, Mathematics (Wed P2) in this same classroom — a realistic "one teacher, several subjects" homeroom pattern.
+  timetableService.upsertSlot(classroom, { weekday: 2, periodNumber: 3, subjectId: 'science', teacherUid: 'teacher-A' });
+  timetableService.upsertSlot(classroom, { weekday: 3, periodNumber: 2, subjectId: 'mathematics', teacherUid: 'teacher-A' });
+
+  const next = timetableService.getNextFutureSlotForSubject(classroom, {
+    subjectId: 'science',
+    teacherUid: 'teacher-A',
+    afterDateKey: '2026-08-25', // Tuesday
+    afterPeriodNumber: 3,
+  });
+  // Wednesday's own Mathematics period (same teacher, wrong subject) comes chronologically BEFORE the next real Science occurrence — it must never be selected.
+  assert.equal(next.date, '2026-09-01', "must skip teacher-A's own Wednesday Mathematics period entirely and land on the next real Science occurrence");
+  assert.equal(next.periodNumber, 3);
+});
+
+test('getNextFutureSlotForSubject: omitting teacherUid preserves the exact pre-existing subject-only behavior (backward compatible)', () => {
+  const classroom = classroomWithPattern();
+  timetableService.upsertSlot(classroom, { weekday: 2, periodNumber: 3, subjectId: 'science', teacherUid: 'teacher-A' });
+  timetableService.upsertSlot(classroom, { weekday: 4, periodNumber: 3, subjectId: 'science', teacherUid: 'teacher-B' });
+
+  const next = timetableService.getNextFutureSlotForSubject(classroom, {
+    subjectId: 'science',
+    afterDateKey: '2026-08-25',
+    afterPeriodNumber: 3,
+  });
+  assert.equal(next.date, '2026-08-27', 'with no teacherUid filter, Thursday (teacher-B) is still a valid match, exactly as before this fix');
+});
+
+test('getNextFutureSlotForSubject: a Special Working Day exception with CUSTOM periods is a valid destination, even on a weekday with no recurring pattern of its own — holiday-rescheduling fix', () => {
+  const classroom = classroomWithPattern();
+  // Saturday (weekday 6) has no recurring Science slot at all in this
+  // pattern — before the getEffectivePeriodsForDate() fix, this date
+  // could never be found as a destination no matter what, since the
+  // search only ever consulted the recurring pattern directly.
+  schoolCalendarService.setWorkingDayException(classroom, '2026-08-29', 'Makeup Saturday', [
+    createCustomPeriod({ periodNumber: 1, startTime: '09:00', endTime: '09:45', subjectId: 'science', teacherUid: 'teacher-A' }),
+  ]);
+
+  const next = timetableService.getNextFutureSlotForSubject(classroom, {
+    subjectId: 'science',
+    teacherUid: 'teacher-A',
+    afterDateKey: '2026-08-27', // Thursday — Science's own last recurring occurrence before the makeup Saturday
+    afterPeriodNumber: 3,
+  });
+
+  assert.ok(next, 'Expected the Special Working Day\'s own custom Science period to be found as a valid destination');
+  assert.equal(next.date, '2026-08-29');
+  assert.equal(next.periodNumber, 1);
+});
+
+test('getNextFutureSlotForSubject: a Special Working Day with custom periods for a DIFFERENT subject/teacher is correctly skipped, same as any other non-match', () => {
+  const classroom = classroomWithPattern();
+  schoolCalendarService.setWorkingDayException(classroom, '2026-08-29', 'Makeup Saturday', [
+    createCustomPeriod({ periodNumber: 1, startTime: '09:00', endTime: '09:45', subjectId: 'mathematics', teacherUid: 'teacher-B' }),
+  ]);
+
+  const next = timetableService.getNextFutureSlotForSubject(classroom, {
+    subjectId: 'science',
+    afterDateKey: '2026-08-27',
+    afterPeriodNumber: 3,
+  });
+
+  assert.equal(next.date, '2026-09-01', 'the makeup Saturday has no Science period of its own — must skip to the next REAL Science occurrence');
 });
 
 test('getNextFutureSlotForSubject: returns null when the subject never occurs again within the horizon', () => {

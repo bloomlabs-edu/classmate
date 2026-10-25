@@ -131,6 +131,15 @@ export function createLesson({
   status = 'planned',
   teacherReflection = null,
   feedbackSharedAt = null,
+  // Holiday rescheduling milestone — append-only audit trail of every
+  // concept move this Lesson has been part of because a holiday (or
+  // similar calendar exception) displaced its own originally-scheduled
+  // date. `[]` for the overwhelming majority of Lessons that have never
+  // been touched by this feature; absent entirely on any Lesson
+  // document persisted before this field existed (every reader below
+  // defaults it via `|| []`, so no migration is needed). See
+  // createRescheduleRecord()/rescheduleConceptsForHoliday() below.
+  rescheduleHistory = [],
 } = {}) {
   return {
     id: id || generateId(),
@@ -183,6 +192,7 @@ export function createLesson({
     // below) — this field only gates *whether* that's happened yet,
     // never a separate copy of *which* concepts.
     feedbackSharedAt,
+    rescheduleHistory,
   };
 }
 
@@ -295,14 +305,31 @@ export function carryForwardConcept({ sourceLesson, targetLesson, conceptId, sou
  * above, and never to be confused with it (2026-10 Concepts panel
  * redesign, per explicit product direction: "Move to..." is a planning
  * action, Carry Forward is a teaching/progress action, and moving a
- * concept during planning must never create a teaching-history/
+ * concept during planning must never CREATE a NEW teaching-history/
  * carry-forward state). The concept is fully removed from
  * sourceLesson.conceptIds (not kept there and tagged, the way
- * carryForwardConcept() deliberately does) and no conceptProvenance
- * entry is recorded on the target — after this call, the concept reads
- * exactly as if it had always been planned on targetLesson and never
- * planned on sourceLesson at all, with no trace left behind of the
- * rearrangement ever happening.
+ * carryForwardConcept() deliberately does) — after this call, the
+ * concept reads exactly as if it had always been planned on
+ * targetLesson and never planned on sourceLesson at all, with no trace
+ * left behind of the rearrangement ever happening.
+ *
+ * `conceptProvenance` — IF `sourceLesson` already had a real provenance
+ * entry for this concept (i.e. the source itself was the TARGET of an
+ * earlier carryForwardConcept() call, and the concept hasn't been
+ * taught since), that entry is carried forward to `targetLesson`
+ * VERBATIM, never fabricated, regenerated, or dropped — see this
+ * function's own 2026-10 fix: previously this entry was silently
+ * discarded on every move, which meant moving an already-carried-
+ * forward concept a second time (whether via an ordinary "Move to..."
+ * planning action — services/timetableLessonService.js's own
+ * moveConceptToTeachingSlot() — or a Holiday automatically displacing
+ * the Lesson that received it — services/holidayRescheduleService.js's
+ * own rescheduleConceptsForHoliday()) made "where did this concept
+ * ORIGINALLY come from" permanently unrecoverable, breaking this
+ * field's own documented "fully reconstructable... nothing else to
+ * inspect" guarantee. A concept with no existing provenance (the
+ * overwhelming common case — an ordinarily-planned concept moved for
+ * the first time) still gets none on the target, exactly as before.
  *
  * Same eligibility guards as carryForwardConcept() (not planned on the
  * source / already executed / already carried forward / already on the
@@ -325,18 +352,143 @@ export function moveConcept({ sourceLesson, targetLesson, conceptId }) {
   }
 
   sourceLesson.conceptIds = sourceLesson.conceptIds.filter((existingId) => existingId !== conceptId);
-  // Defensive only — a concept still eligible to move (per the guards
-  // above) can't actually have arrived on the source via carry-forward
-  // and also still be unexecuted/uncarried there in a way that would
-  // leave a stale provenance entry, but cleared here anyway for the
-  // same "every concept-keyed field stays in sync" discipline
-  // removeConceptFromLesson() below always applies.
-  if (sourceLesson.conceptProvenance[conceptId]) {
+
+  const existingProvenance = sourceLesson.conceptProvenance[conceptId];
+  if (existingProvenance) {
     const { [conceptId]: _removed, ...rest } = sourceLesson.conceptProvenance;
     sourceLesson.conceptProvenance = rest;
+    // Carried forward UNCHANGED — fromLessonId/fromTeachingSlotId/
+    // carriedAt still point at the concept's own original carry-
+    // forward source, never this intermediate hop, so a chain of
+    // several moves still answers "where did this ORIGINALLY come
+    // from" with the true origin, not the most recent stop.
+    targetLesson.conceptProvenance = { ...targetLesson.conceptProvenance, [conceptId]: existingProvenance };
   }
 
   targetLesson.conceptIds = [...targetLesson.conceptIds, conceptId];
+
+  return { sourceLesson, targetLesson };
+}
+
+/**
+ * One entry in a Lesson's own `rescheduleHistory[]` — holiday
+ * rescheduling milestone. `direction` distinguishes the two sides of
+ * the SAME move (`'sent'` on the source Lesson, `'received'` on the
+ * destination Lesson), both sharing the same `moveId` so either side
+ * can be correlated back to its counterpart without a separate lookup
+ * table. Deliberately NOT reusing conceptProvenance's shape — that
+ * field exists specifically for carryForwardConcept()'s own teaching/
+ * progress semantics (see this file's own header comment on that
+ * function) and is read by ui/views/TimetableView.js's own "N carried
+ * in" badge; a holiday-displaced concept is a planning rearrangement
+ * (same category as moveConcept() itself), not a teaching-progress
+ * event, so it gets its own distinct, non-conflated record instead.
+ */
+export function createRescheduleRecord({ id, moveId, direction, conceptIds, fromTeachingSlotId, fromDate, toTeachingSlotId, toDate, toLessonId, fromLessonId, exceptionId, reason, movedAt }) {
+  return {
+    id: id || generateId(),
+    moveId,
+    direction, // 'sent' | 'received'
+    conceptIds: [...conceptIds],
+    fromTeachingSlotId,
+    fromDate,
+    toTeachingSlotId,
+    toDate,
+    toLessonId,
+    fromLessonId,
+    exceptionId, // models/CalendarException.js's own id — the holiday that caused this move
+    reason, // short, stable machine reason string — 'holiday' today, room for another cause later without a shape change
+    movedAt, // ISO string — caller-supplied (see carryForwardConcept()'s own `carriedAt` parameter for the identical, established convention of never calling getCurrentIsoDate() from inside this dependency-free model file)
+  };
+}
+
+/**
+ * Moves every one of `conceptIds` from `sourceLesson` to `targetLesson`
+ * in one coherent holiday-reschedule move, reusing moveConcept() itself
+ * for each one (never a hand-rolled bulk mutation that could drift from
+ * that function's own eligibility guards/invariants) and recording one
+ * paired rescheduleHistory entry on each Lesson. All-or-nothing: if ANY
+ * concept in `conceptIds` is ineligible (already executed, already
+ * carried forward, or already present on the target), moveConcept()
+ * itself throws before any mutation for that concept happens — but
+ * since this function calls moveConcept() in a loop, a later failure
+ * could leave earlier concepts already moved. Callers (see
+ * services/holidayRescheduleService.js) are expected to have already
+ * filtered `conceptIds` down to exactly the eligible set (lesson's own
+ * conceptIds minus executedConceptIds minus carriedForwardConceptIds)
+ * before calling this, so this guard is defense-in-depth, not the
+ * primary filter.
+ *
+ * Sets `sourceLesson.status = 'rescheduled'` when, after this move,
+ * NOTHING planned on it remains un-executed and un-moved (every
+ * concept is now either executed, carried forward, or just
+ * rescheduled) — using this model's own pre-existing `status` field
+ * (see createLesson()'s own doc comment: 'rescheduled' was already
+ * listed as a valid value, "ready for a future UI to call," and
+ * nothing else in the codebase reads/writes Lesson.status outside
+ * services/plannerService.js's own PlanningCycle-scoped
+ * updateLessonStatus(), which this function deliberately does not
+ * call — a holiday-displaced Lesson may not even belong to a
+ * PlanningCycle at all). Left as 'planned' when the source lesson still
+ * has other, untouched concepts of its own (a partially-executed
+ * lesson keeps its normal status — only ITS OWN remaining content, not
+ * this one Lesson record, determines whether more work is left).
+ */
+export function rescheduleConceptsForHoliday({ sourceLesson, targetLesson, conceptIds, fromTeachingSlotId, fromDate, toTeachingSlotId, toDate, exceptionId, movedAt, reason = 'holiday' }) {
+  if (conceptIds.length === 0) return { sourceLesson, targetLesson };
+
+  conceptIds.forEach((conceptId) => {
+    moveConcept({ sourceLesson, targetLesson, conceptId });
+  });
+
+  const moveId = generateId();
+  sourceLesson.rescheduleHistory = [
+    ...(sourceLesson.rescheduleHistory || []),
+    createRescheduleRecord({
+      moveId,
+      direction: 'sent',
+      conceptIds,
+      fromTeachingSlotId,
+      fromDate,
+      toTeachingSlotId,
+      toDate,
+      toLessonId: targetLesson.id,
+      fromLessonId: sourceLesson.id,
+      exceptionId,
+      reason,
+      movedAt,
+    }),
+  ];
+  targetLesson.rescheduleHistory = [
+    ...(targetLesson.rescheduleHistory || []),
+    createRescheduleRecord({
+      moveId,
+      direction: 'received',
+      conceptIds,
+      fromTeachingSlotId,
+      fromDate,
+      toTeachingSlotId,
+      toDate,
+      toLessonId: targetLesson.id,
+      fromLessonId: sourceLesson.id,
+      exceptionId,
+      reason,
+      movedAt,
+    }),
+  ];
+
+  // 'rescheduled' is reserved for "this whole occurrence relocated —
+  // nothing was ever taught here:" nothing executed AND nothing open
+  // left behind (every concept either just moved away, or had already
+  // been carried forward separately beforehand). A lesson where SOME
+  // concept really was taught on the original date keeps its ordinary
+  // 'planned' status — real teaching history happened here, so
+  // "rescheduled" (implying the whole thing simply moved) would
+  // misdescribe it, even though part of its own content did move.
+  const sourceHasRemainingOpenWork = sourceLesson.conceptIds.some(
+    (conceptId) => !sourceLesson.executedConceptIds.includes(conceptId) && !sourceLesson.carriedForwardConceptIds.includes(conceptId)
+  );
+  if (!sourceHasRemainingOpenWork && sourceLesson.executedConceptIds.length === 0) sourceLesson.status = 'rescheduled';
 
   return { sourceLesson, targetLesson };
 }
