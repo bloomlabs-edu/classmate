@@ -9755,6 +9755,12 @@ button.recognition-bento__hero-winner-name {
 .classroom-shell-header__back:hover {
   text-decoration: underline;
 }
+.classroom-shell-header__name-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
 .classroom-shell-header__name {
   margin: 0;
   font-size: var(--text-2xl);

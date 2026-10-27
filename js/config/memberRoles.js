@@ -63,6 +63,14 @@ export const PERMISSIONS = Object.freeze({
   IMPORT_ROSTER: 'import_roster',
   EDIT_STUDENTS: 'edit_students',
   EDIT_GROUPS: 'edit_groups',
+  // Classroom Name/Description edit (the header's "Edit Classroom
+  // Details" overflow action — see
+  // ui/components/EditClassroomDetailsModal.js). Deliberately its own
+  // permission rather than reusing EDIT_STUDENTS/EDIT_GROUPS — editing
+  // the classroom's own identity fields is a distinct capability from
+  // roster/team management, even though both happen to be granted to
+  // the same two roles today.
+  EDIT_CLASSROOM_DETAILS: 'edit_classroom_details',
   MARK_ATTENDANCE: 'mark_attendance', // future — attendance isn't built yet
   CREATE_LEARNING_ACTIVITY: 'create_learning_activity',
   INVITE_TEACHER: 'invite_teacher',
@@ -116,6 +124,7 @@ export const ROLE_PERMISSIONS = Object.freeze({
     PERMISSIONS.IMPORT_ROSTER,
     PERMISSIONS.EDIT_STUDENTS,
     PERMISSIONS.EDIT_GROUPS,
+    PERMISSIONS.EDIT_CLASSROOM_DETAILS,
     PERMISSIONS.MARK_ATTENDANCE,
     PERMISSIONS.CREATE_LEARNING_ACTIVITY,
     PERMISSIONS.INVITE_TEACHER,
@@ -136,6 +145,7 @@ export const ROLE_PERMISSIONS = Object.freeze({
     PERMISSIONS.IMPORT_ROSTER,
     PERMISSIONS.EDIT_STUDENTS,
     PERMISSIONS.EDIT_GROUPS,
+    PERMISSIONS.EDIT_CLASSROOM_DETAILS,
     PERMISSIONS.MARK_ATTENDANCE,
     PERMISSIONS.CREATE_LEARNING_ACTIVITY,
     PERMISSIONS.REVIEW_LESSON_PLAN,

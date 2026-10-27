@@ -69,6 +69,7 @@ test('ROLE_PERMISSIONS: existing roles keep their exact existing permission sets
     PERMISSIONS.IMPORT_ROSTER,
     PERMISSIONS.EDIT_STUDENTS,
     PERMISSIONS.EDIT_GROUPS,
+    PERMISSIONS.EDIT_CLASSROOM_DETAILS,
     PERMISSIONS.MARK_ATTENDANCE,
     PERMISSIONS.CREATE_LEARNING_ACTIVITY,
     PERMISSIONS.INVITE_TEACHER,
@@ -89,6 +90,7 @@ test('ROLE_PERMISSIONS: existing roles keep their exact existing permission sets
     PERMISSIONS.IMPORT_ROSTER,
     PERMISSIONS.EDIT_STUDENTS,
     PERMISSIONS.EDIT_GROUPS,
+    PERMISSIONS.EDIT_CLASSROOM_DETAILS,
     PERMISSIONS.MARK_ATTENDANCE,
     PERMISSIONS.CREATE_LEARNING_ACTIVITY,
     PERMISSIONS.REVIEW_LESSON_PLAN,
@@ -173,4 +175,26 @@ test('personalHubService.getRolesSummary: a classroom membership held only via p
   addMember(classroom, 'pm-uid', MEMBER_ROLES.PROGRAM_MANAGER, 'A Program Manager');
 
   assert.deepEqual(getRolesSummary([classroom], 'pm-uid'), []);
+});
+
+// ---------------------------------------------------------------------
+// EDIT_CLASSROOM_DETAILS — the permission gating the classroom header's
+// "Edit Classroom Details" overflow action (see
+// ui/components/EditClassroomDetailsModal.js, wired in
+// ui/views/DashboardView.js). Granted to OWNER/TEACHER, the same two
+// roles EDIT_STUDENTS/EDIT_GROUPS already grant to — VIEWER must never
+// see this action.
+// ---------------------------------------------------------------------
+
+test('PERMISSIONS.EDIT_CLASSROOM_DETAILS: granted to OWNER and TEACHER, denied to VIEWER', () => {
+  const classroom = createClassroom({ id: 'c1', schoolName: 'Test School', gradeSection: 'Grade 8A' });
+  addMember(classroom, 'owner-uid', MEMBER_ROLES.OWNER, 'The Owner');
+  addMember(classroom, 'teacher-uid', MEMBER_ROLES.TEACHER, 'A Teacher');
+  addMember(classroom, 'viewer-uid', MEMBER_ROLES.VIEWER, 'A Viewer');
+
+  assert.equal(canPerformAsUid(classroom, 'owner-uid', PERMISSIONS.EDIT_CLASSROOM_DETAILS), true);
+  assert.equal(canPerformAsUid(classroom, 'teacher-uid', PERMISSIONS.EDIT_CLASSROOM_DETAILS), true);
+  assert.equal(canPerformAsUid(classroom, 'viewer-uid', PERMISSIONS.EDIT_CLASSROOM_DETAILS), false);
+  // A uid with no membership at all on this classroom gets no permission either.
+  assert.equal(canPerformAsUid(classroom, 'stranger-uid', PERMISSIONS.EDIT_CLASSROOM_DETAILS), false);
 });
