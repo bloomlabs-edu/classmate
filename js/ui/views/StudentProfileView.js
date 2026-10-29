@@ -38,6 +38,8 @@ import * as learningActivityService from '../../services/learningActivityService
 import * as goalService from '../../services/goalService.js';
 import * as studentGoalsService from '../../services/studentGoalsService.js';
 import * as workRequestService from '../../services/workRequestService.js';
+import * as notebookReviewService from '../../services/notebookReviewService.js';
+import * as unitProgressService from '../../services/unitProgressService.js';
 import * as assignmentService from '../../services/assignmentService.js';
 import * as assignmentCheckpointService from '../../services/assignmentCheckpointService.js';
 import * as notebookConfigService from '../../services/notebookConfigService.js';
@@ -106,7 +108,7 @@ export function renderStudentProfileView(container, { classroom, studentId, tab,
   const wrapper = document.createElement('div');
   wrapper.className = 'profile-view';
 
-  wrapper.appendChild(renderProfileHeader(classroom, student, team, rerender, onBack, onSelectTeam));
+  wrapper.appendChild(renderProfileHeader(classroom, student, team, rerender, onBack, onSelectTeam, onNavigateTab));
   wrapper.appendChild(renderTabNav(activeTab, onNavigateTab));
 
   const content = document.createElement('div');
@@ -128,7 +130,7 @@ export function renderStudentProfileView(container, { classroom, studentId, tab,
   container.appendChild(wrapper);
 }
 
-function renderProfileHeader(classroom, student, team, rerender, onBack, onSelectTeam) {
+function renderProfileHeader(classroom, student, team, rerender, onBack, onSelectTeam, onNavigateTab) {
   const header = document.createElement('header');
   header.className = 'profile-header';
   const style = getBucketRowStyle(student.bucket);
@@ -263,6 +265,25 @@ function renderProfileHeader(classroom, student, team, rerender, onBack, onSelec
     ['Net Score', timelineService.getNetPoints(student), null],
     ['Positive', timelineService.getTotalPositivePoints(student), 'positive'],
     ['Negative', timelineService.getTotalNegativePoints(student), 'negative'],
+    // Deliberately a SEPARATE number from "Net Score" above — this is
+    // only the points earned from Notebook Review criteria specifically
+    // (services/notebookReviewService.js's own
+    // getCumulativeNotebookRecognitionPoints(), scoped by `source` on
+    // the same history log), never the student's whole-app star total.
+    // Opens the Notebooks tab below (the full per-award criteria
+    // breakdown — see renderNotebooksTab()) rather than showing nothing
+    // actionable, so this number is always individually verifiable, per
+    // explicit product requirement, not just a trust-me total.
+    ['Notebook Points', notebookReviewService.getCumulativeNotebookRecognitionPoints(student), 'notebook-points', () => onNavigateTab('notebooks')],
+    // CLASSROOM-WIDE, not personalized — see
+    // services/unitProgressService.js's own header comment for the
+    // full "why" (explicit product decision, 2026-10-29): Concept
+    // taught/not-taught is a classroom-wide fact today, so every
+    // student in this same classroom shows the identical ratio here.
+    // Still shown per student, per the agreed design, for scannability
+    // alongside this profile's other stats — never implying this one
+    // student personally mastered more or less than a classmate.
+    ['Units Taught', unitProgressService.formatUnitProgress(unitProgressService.getUnitProgressForClassroom(classroom)), 'units', () => onNavigateTab('learning')],
     // Deliberately labeled "Behaviour Badges," never plain "Badges" —
     // this counts student.badges (services/badgeService.js's manually
     // teacher-awarded behaviour badges), a completely separate system
@@ -280,12 +301,46 @@ function renderProfileHeader(classroom, student, team, rerender, onBack, onSelec
     ['Notes', (student.notes || []).length, null],
     ...(hasLearningActivities ? [['Learning Activities', submissionText, null]] : []),
     ...(hasNotebookActivity ? [['Notebooks', notebookText, null]] : []),
-  ].forEach(([label, value, variant]) => {
-    stats.appendChild(createHeaderChip(label, value, variant, student.bucket));
+  ].forEach(([label, value, variant, onClick]) => {
+    stats.appendChild(createHeaderChip(label, value, variant, student.bucket, onClick));
   });
 
   header.appendChild(stats);
+
+  const unitProgress = unitProgressService.getUnitProgressForClassroom(classroom);
+  if (unitProgress.assignedUnits > 0) {
+    header.appendChild(createUnitProgressBar(unitProgress));
+  }
+
   return header;
+}
+
+/** A readable, compact progress bar for "Units Taught" (see unitProgressService.js) — `role="progressbar"` with a real accessible name/value, never color-only, matching this app's own "state is never conveyed by color alone" rule. */
+function createUnitProgressBar(unitProgress) {
+  const percent = unitProgressService.getUnitProgressPercent(unitProgress);
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'profile-header__unit-progress';
+  wrapper.setAttribute('role', 'progressbar');
+  wrapper.setAttribute('aria-valuenow', String(percent));
+  wrapper.setAttribute('aria-valuemin', '0');
+  wrapper.setAttribute('aria-valuemax', '100');
+  wrapper.setAttribute('aria-label', `Units taught: ${unitProgressService.formatUnitProgress(unitProgress)}`);
+
+  const track = document.createElement('div');
+  track.className = 'profile-header__unit-progress-track';
+  const fill = document.createElement('div');
+  fill.className = 'profile-header__unit-progress-fill';
+  fill.style.width = `${percent}%`;
+  track.appendChild(fill);
+  wrapper.appendChild(track);
+
+  const label = document.createElement('span');
+  label.className = 'profile-header__unit-progress-label';
+  label.textContent = `${percent}% of assigned units taught`;
+  wrapper.appendChild(label);
+
+  return wrapper;
 }
 
 /**
@@ -366,9 +421,23 @@ async function populateRecognitionRow(container, classroom, student) {
   });
 }
 
-function createHeaderChip(label, value, variant, bucketKey) {
-  const chip = document.createElement('div');
+/**
+ * `onClick`, when provided (e.g. the "Notebook Points" chip jumping to
+ * the Notebooks tab's own full award-history breakdown), renders this
+ * chip as a real button rather than a static div — the same optional-
+ * callback convention used throughout this app (see
+ * ui/components/StudentNameElement.js's own `onSelect`) — so a number
+ * this app claims is "individually verifiable" always has somewhere to
+ * click through to, never just a trust-me total.
+ */
+function createHeaderChip(label, value, variant, bucketKey, onClick) {
+  const chip = document.createElement(onClick ? 'button' : 'div');
   chip.className = 'profile-header__chip';
+  if (onClick) {
+    chip.type = 'button';
+    chip.classList.add('profile-header__chip--clickable');
+    chip.addEventListener('click', onClick);
+  }
   if (variant) chip.classList.add(`profile-header__chip--${variant}`);
   if (variant === 'bucket') {
     const bucketStyle = getBucketRowStyle(bucketKey);
@@ -970,7 +1039,7 @@ function renderNotebooksTab(content, classroom, student) {
     const list = document.createElement('div');
     list.className = 'profile-notebook-activity';
     notebooks.forEach((notebook) => {
-      list.appendChild(createNotebookCard(classroom, notebook));
+      list.appendChild(createNotebookCard(classroom, notebook, student.id));
     });
     section.appendChild(list);
   }
@@ -988,7 +1057,7 @@ function renderNotebooksTab(content, classroom, student) {
  * Reuses WorkRequestRosterView.js's own exported getStatusMeta() so
  * this card and the roster's own chip always agree.
  */
-function createNotebookCard(classroom, notebook) {
+function createNotebookCard(classroom, notebook, studentId) {
   const card = document.createElement('div');
   card.className = 'profile-notebook-activity__card';
 
@@ -1018,6 +1087,45 @@ function createNotebookCard(classroom, notebook) {
   const lastCheckedText = notebook.lastChecked ? `Last reviewed ${formatDateKey(notebook.lastChecked.slice(0, 10))}` : 'Never reviewed';
   supportingLine.textContent = `${lastCheckedText} \u00b7 Reviewed ${notebook.totalReviewed} time${notebook.totalReviewed === 1 ? '' : 's'} overall`;
   card.appendChild(supportingLine);
+
+  // The "individually verifiable" award history for THIS notebook
+  // specifically \u2014 services/notebookReviewService.js's own
+  // getNotebookReviewAwardHistory() spans every notebook for this
+  // student, filtered here to the one this card is about. A superseded
+  // review (corrected via "Edit Review") is still shown, visually
+  // de-emphasized, since it's a real past event \u2014 never hidden.
+  const awards = notebookReviewService
+    .getNotebookReviewAwardHistory(classroom, studentId)
+    .filter((award) => award.subjectId === notebook.subjectId && award.notebookTypeId === notebook.notebookTypeId);
+
+  if (awards.length > 0) {
+    const awardsSection = document.createElement('div');
+    awardsSection.className = 'profile-notebook-activity__awards';
+    awards.forEach((award) => {
+      const awardRow = document.createElement('div');
+      awardRow.className = 'profile-notebook-activity__award';
+      if (!award.isCurrent) awardRow.classList.add('profile-notebook-activity__award--superseded');
+
+      const summaryLine = document.createElement('p');
+      summaryLine.className = 'profile-notebook-activity__award-summary';
+      summaryLine.textContent = `${formatDateKey(award.reviewedAt.slice(0, 10))} \u00b7 ${award.totalPoints} point${award.totalPoints === 1 ? '' : 's'}${award.isCurrent ? '' : ' \u00b7 Superseded'}`;
+      awardRow.appendChild(summaryLine);
+
+      if (award.criteriaAwarded.length > 0) {
+        const criteriaList = document.createElement('ul');
+        criteriaList.className = 'profile-notebook-activity__award-criteria';
+        award.criteriaAwarded.forEach((criterion) => {
+          const item = document.createElement('li');
+          item.textContent = criterion.label;
+          criteriaList.appendChild(item);
+        });
+        awardRow.appendChild(criteriaList);
+      }
+
+      awardsSection.appendChild(awardRow);
+    });
+    card.appendChild(awardsSection);
+  }
 
   return card;
 }

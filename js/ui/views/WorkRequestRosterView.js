@@ -51,12 +51,14 @@
 
 import * as workRequestService from '../../services/workRequestService.js';
 import * as notebookConfigService from '../../services/notebookConfigService.js';
+import * as notebookReviewService from '../../services/notebookReviewService.js';
 import * as workspaceService from '../../services/workspaceService.js';
 import { createStudentNameElement } from '../components/StudentNameElement.js';
 import { createBackButton } from '../components/BackButton.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { getBucketRowStyle } from '../../config/bucketConfig.js';
 import { formatDate } from '../../utils/dateHelpers.js';
+import { restoreObject } from '../../utils/objectRollback.js';
 
 export const STATUS_META = {
   assigned: { label: 'Awaiting Submission', chipClass: 'amber', icon: '\u23f3', buttonLabel: 'Mark Submitted', buttonClass: 'btn--secondary' },
@@ -94,7 +96,7 @@ const SUMMARY_CARDS = [
   { id: 'absent', label: 'Absent', statuses: ['absent'] },
 ];
 
-export function renderWorkRequestRosterView(container, { classroom, requestId, onBack, onSelectStudent }) {
+export function renderWorkRequestRosterView(container, { classroom, requestId, currentUser, onBack, onSelectStudent }) {
   const expandedStudentIds = new Set();
   let openOverflowStudentId = null;
   let activeFilterStatuses = null;
@@ -104,6 +106,7 @@ export function renderWorkRequestRosterView(container, { classroom, requestId, o
       onBack,
       onSelectStudent,
       onAdvance,
+      onEditReview,
       onMarkNeedsCorrection,
       onMarkIncomplete,
       onMarkAbsent,
@@ -115,10 +118,42 @@ export function renderWorkRequestRosterView(container, { classroom, requestId, o
     });
   }
 
+  /**
+   * The primary one-tap button. Every transition EXCEPT into 'reviewed'
+   * behaves exactly as before (services/workRequestService.js's own
+   * advanceStatus(), no criteria involved — "Mark Submitted"/"Mark
+   * Resubmitted" are not review events). The one transition INTO
+   * 'reviewed' is intercepted here and redirected to the criteria
+   * checklist modal instead of flipping the status directly —
+   * services/notebookReviewService.js's own submitNotebookReview() does
+   * that flip itself, alongside awarding whatever criteria were
+   * checked, so the two can never happen independently of each other.
+   */
   function onAdvance(studentId) {
     const request = workRequestService.getWorkRequestById(classroom, requestId);
+    const entry = workRequestService.getEntryForStudent(request, studentId);
+    if (!entry) return;
+
+    if (workRequestService.getNextStatus(entry.status) === 'reviewed') {
+      openReviewModal({ classroom, request, studentId, currentUser, mode: 'submit', onDone: rerender });
+      return;
+    }
+
     workRequestService.advanceStatus(request, studentId);
     rerender();
+  }
+
+  /**
+   * Corrects the review that was JUST given — never re-walks the
+   * lifecycle (the entry is already 'reviewed'), only reopens the same
+   * checklist pre-filled with the current award so a teacher can fix a
+   * mis-click without it reading as a second, independent review (see
+   * services/notebookReviewService.js's own editNotebookReview()).
+   */
+  function onEditReview(studentId) {
+    const request = workRequestService.getWorkRequestById(classroom, requestId);
+    openOverflowStudentId = null;
+    openReviewModal({ classroom, request, studentId, currentUser, mode: 'edit', onDone: rerender });
   }
 
   function onMarkNeedsCorrection(studentId) {
@@ -352,6 +387,28 @@ function createRosterRow(student, team, entry, isExpanded, isOverflowOpen, handl
   chip.textContent = `${meta.icon} ${meta.label}`;
   statusBlock.appendChild(chip);
 
+  // Compact, cumulative NOTEBOOK-RECOGNITION points only (see
+  // services/notebookReviewService.js's own
+  // getCumulativeNotebookRecognitionPoints() — never this student's
+  // whole-app star total, and never this one review's own score, which
+  // the expanded history panel below already shows per-award). Opens
+  // the student's own profile — the Notebooks tab there has the full,
+  // per-award criteria breakdown — so this number is always
+  // individually verifiable from right here, matching
+  // ui/components/ClassModeStudentRow.js's own compact pill styling for
+  // visual consistency with "the existing ClassMate student-list
+  // design," reused rather than inventing a second points-pill look.
+  const pointsPill = document.createElement('button');
+  pointsPill.type = 'button';
+  pointsPill.className = 'student-row__points work-request-roster__points-pill';
+  pointsPill.textContent = `${notebookReviewService.getCumulativeNotebookRecognitionPoints(student)} ⭐`;
+  pointsPill.title = 'Notebook recognition points — open profile for the full award history';
+  pointsPill.addEventListener('click', (event) => {
+    event.stopPropagation();
+    handlers.onSelectStudent(student.id);
+  });
+  statusBlock.appendChild(pointsPill);
+
   const history = workRequestService.getEntryHistory(entry);
   if (history.length > 1) {
     const dateLine = document.createElement('span');
@@ -422,6 +479,15 @@ function createOverflowMenu(student, entry, isOpen, handlers) {
     if (entry.status !== 'reviewed') {
       otherActionItems.push(createOverflowMenuItem('Mark Absent', () => handlers.onMarkAbsent(student.id)));
     }
+    // Only offered once a review actually exists to correct \u2014 a
+    // 'reviewed' entry from before this feature existed has nothing in
+    // entry.reviews yet (see models/NotebookReview.js's own
+    // getCurrentReview()), and there is deliberately no way to create
+    // one retroactively; its next genuine resubmission cycle gets a
+    // fresh, real review instead.
+    if (entry.status === 'reviewed' && notebookReviewService.getCurrentReview(entry)) {
+      otherActionItems.push(createOverflowMenuItem('Edit Review', () => handlers.onEditReview(student.id)));
+    }
     if (entry.status !== 'assigned') {
       otherActionItems.push(createOverflowMenuItem('\u21ba Reset Work Request', () => handlers.onResetEntry(student.id)));
     }
@@ -481,13 +547,303 @@ function createHistoryPanel(entry) {
     panel.appendChild(line);
   });
 
+  if (entry.reviews && entry.reviews.length > 0) {
+    panel.appendChild(createReviewHistorySection(entry));
+  }
+
   return panel;
+}
+
+/**
+ * The criteria-scoring breakdown for every review event on this entry
+ * (see models/NotebookReview.js's own append-only design) \u2014 this IS the
+ * "individually verifiable" award history for this one notebook: which
+ * criteria earned a point, who reviewed it, and when. A superseded
+ * review (one an "Edit Review" has since corrected) stays listed, just
+ * visually de-emphasized and labeled "Superseded" rather than removed
+ * \u2014 it is still a real, past event.
+ */
+function createReviewHistorySection(entry) {
+  const section = document.createElement('div');
+  section.className = 'work-request-roster__review-history';
+
+  const heading = document.createElement('p');
+  heading.className = 'work-request-roster__review-history-heading';
+  heading.textContent = 'Review scoring';
+  section.appendChild(heading);
+
+  const current = notebookReviewService.getCurrentReview(entry);
+
+  [...entry.reviews].reverse().forEach((review) => {
+    const card = document.createElement('div');
+    card.className = 'work-request-roster__review-card';
+    if (review.id !== current?.id) card.classList.add('work-request-roster__review-card--superseded');
+
+    const headerLine = document.createElement('div');
+    headerLine.className = 'work-request-roster__review-card-header';
+
+    const scoreEl = document.createElement('span');
+    scoreEl.className = 'work-request-roster__review-score';
+    scoreEl.textContent = `${review.totalPoints} point${review.totalPoints === 1 ? '' : 's'}`;
+    headerLine.appendChild(scoreEl);
+
+    if (review.id !== current?.id) {
+      const supersededTag = document.createElement('span');
+      supersededTag.className = 'work-request-roster__review-superseded-tag';
+      supersededTag.textContent = 'Superseded';
+      headerLine.appendChild(supersededTag);
+    }
+
+    const dateEl = document.createElement('span');
+    dateEl.className = 'work-request-roster__review-date';
+    dateEl.textContent = formatDate(review.reviewedAt);
+    headerLine.appendChild(dateEl);
+
+    card.appendChild(headerLine);
+
+    const criteriaList = document.createElement('ul');
+    criteriaList.className = 'work-request-roster__review-criteria-list';
+    review.criteriaAwarded.forEach((criterion) => {
+      const item = document.createElement('li');
+      item.textContent = `\u2713 ${criterion.label}`;
+      criteriaList.appendChild(item);
+    });
+    if (review.criteriaAwarded.length === 0) {
+      const item = document.createElement('li');
+      item.className = 'work-request-roster__review-criteria-empty';
+      item.textContent = 'No criteria met';
+      criteriaList.appendChild(item);
+    }
+    card.appendChild(criteriaList);
+
+    section.appendChild(card);
+  });
+
+  return section;
 }
 
 function describeMostRecentTransition(entry, isoDate) {
   const verb = { submitted: 'Submitted', resubmitted: 'Resubmitted', needs_correction: 'Reviewed', reviewed: 'Reviewed', absent: 'Marked' }[entry.status] || 'Updated';
   const outcomeSuffix = entry.status === 'reviewed' && entry.reviewOutcome === 'incomplete' ? ' \u00b7 Incomplete' : '';
   return `${verb} on ${formatDate(isoDate)}${outcomeSuffix}`;
+}
+
+/**
+ * The criteria checklist overlay — opened by onAdvance() (the entry's
+ * FIRST review for this submission cycle) or onEditReview() (correcting
+ * the current review of an already-'reviewed' entry). Shared between
+ * both modes: same checklist, same "+ Add custom criterion" control,
+ * only the submit action and the pre-checked state differ (see `mode`
+ * below). Reuses .carry-forward-overlay's own fixed-backdrop/centered-
+ * box shell, the same convention every other overlay in this app
+ * (e.g. ui/views/TimetableView.js's Manage Timetable flow) already
+ * follows.
+ */
+function openReviewModal({ classroom, request, studentId, currentUser, mode, onDone }) {
+  const entry = workRequestService.getEntryForStudent(request, studentId);
+  if (!entry) return;
+
+  const existingReview = mode === 'edit' ? notebookReviewService.getCurrentReview(entry) : null;
+  const checkedCriterionIds = new Set((existingReview?.criteriaAwarded || []).map((c) => c.criterionId));
+  let newCriterionLabel = '';
+  let errorMessage = '';
+  // Guards re-entrancy during the one real async gap in this overlay
+  // (awaiting the actual Firestore write) — without this, a second
+  // click on "Save Review"/"Add" while the first is still in flight
+  // could run the whole award/rollback logic twice concurrently.
+  let isSaving = false;
+  let isAddingCriterion = false;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'carry-forward-overlay work-request-review-overlay';
+
+  function close() {
+    overlay.remove();
+  }
+
+  function renderBox() {
+    overlay.innerHTML = '';
+    const box = document.createElement('div');
+    box.className = 'carry-forward-overlay__box work-request-review-overlay__box';
+
+    const title = document.createElement('h2');
+    title.className = 'work-request-review-overlay__title';
+    title.textContent = mode === 'edit' ? 'Edit Notebook Review' : 'Review Notebook';
+    box.appendChild(title);
+
+    const { submissionDateKey, isLate } = notebookReviewService.computeSubmissionTimeliness(entry, request);
+    const timelyRow = document.createElement('div');
+    timelyRow.className = `work-request-review-overlay__criterion work-request-review-overlay__criterion--system${isLate ? ' work-request-review-overlay__criterion--unmet' : ''}`;
+    const timelyLabel = document.createElement('span');
+    timelyLabel.textContent = `${isLate ? '✗' : '✓'} Timely submission`;
+    timelyRow.appendChild(timelyLabel);
+    const timelyNote = document.createElement('span');
+    timelyNote.className = 'work-request-review-overlay__criterion-note';
+    timelyNote.textContent = isLate
+      ? `Submitted ${submissionDateKey ? formatDate(submissionDateKey) : 'after'} — due ${formatDate(request.dueDate)}. Determined automatically; cannot be awarded.`
+      : 'Determined automatically from the submission and due dates.';
+    timelyRow.appendChild(timelyNote);
+    box.appendChild(timelyRow);
+
+    const criteria = notebookConfigService.listReviewCriteria(classroom).filter((c) => !c.isSystemDetermined);
+    const list = document.createElement('div');
+    list.className = 'work-request-review-overlay__criteria-list';
+    criteria.forEach((criterion) => {
+      const row = document.createElement('label');
+      row.className = 'work-request-review-overlay__criterion';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = checkedCriterionIds.has(criterion.id);
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) checkedCriterionIds.add(criterion.id);
+        else checkedCriterionIds.delete(criterion.id);
+      });
+      row.appendChild(checkbox);
+
+      const label = document.createElement('span');
+      label.textContent = criterion.label;
+      row.appendChild(label);
+
+      list.appendChild(row);
+    });
+    box.appendChild(list);
+
+    const addRow = document.createElement('div');
+    addRow.className = 'work-request-review-overlay__add-row';
+    const addInput = document.createElement('input');
+    addInput.type = 'text';
+    addInput.placeholder = 'Add a custom criterion (e.g. Labelled diagrams)';
+    addInput.value = newCriterionLabel;
+    addInput.addEventListener('input', () => {
+      newCriterionLabel = addInput.value;
+    });
+    const addButton = document.createElement('button');
+    addButton.type = 'button';
+    addButton.className = 'btn btn--secondary';
+    addButton.textContent = isAddingCriterion ? 'Adding…' : 'Add';
+    addButton.disabled = isAddingCriterion || isSaving;
+    addButton.addEventListener('click', async () => {
+      if (isAddingCriterion) return;
+
+      const created = notebookConfigService.addCustomReviewCriterion(classroom, newCriterionLabel);
+      if (!created) {
+        errorMessage = 'Enter a new, not-already-used criterion name.';
+        renderBox();
+        return;
+      }
+
+      isAddingCriterion = true;
+      errorMessage = '';
+      renderBox();
+
+      try {
+        await workspaceService.saveExplicitly(classroom);
+      } catch (error) {
+        // Roll back the in-memory addition exactly — removeReviewCriterion()
+        // is the same function Settings' own "remove criterion" action
+        // would use, reused here rather than re-deriving the filter.
+        notebookConfigService.removeReviewCriterion(classroom, created.id);
+        isAddingCriterion = false;
+        errorMessage = 'Could not save the new criterion — check your connection and try again. Nothing was added.';
+        renderBox();
+        return;
+      }
+
+      isAddingCriterion = false;
+      checkedCriterionIds.add(created.id); // a criterion a teacher just added for THIS review is obviously meant to apply to it
+      newCriterionLabel = '';
+      errorMessage = '';
+      renderBox();
+    });
+    addRow.append(addInput, addButton);
+    box.appendChild(addRow);
+
+    if (errorMessage) {
+      const error = document.createElement('p');
+      error.className = 'work-request-review-overlay__error';
+      error.textContent = errorMessage;
+      box.appendChild(error);
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'work-request-review-overlay__actions';
+
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'btn btn--text';
+    cancelButton.textContent = 'Cancel';
+    cancelButton.disabled = isSaving;
+    cancelButton.addEventListener('click', close);
+    actions.appendChild(cancelButton);
+
+    const saveButton = document.createElement('button');
+    saveButton.type = 'button';
+    saveButton.className = 'btn btn--primary';
+    saveButton.textContent = isSaving ? 'Saving…' : mode === 'edit' ? 'Save Correction' : 'Save Review';
+    saveButton.disabled = isSaving || isAddingCriterion;
+    saveButton.addEventListener('click', async () => {
+      if (isSaving) return;
+
+      const criterionIds = [...checkedCriterionIds];
+      const reviewedByUid = currentUser?.uid || null;
+
+      // Snapshot BEFORE mutating, so a failed save can restore both
+      // objects to exactly their pre-operation state — the entry
+      // (status/history/reviewOutcome/reviews) and the student
+      // (history/score), the full set of fields either service
+      // function can touch, without having to track each one
+      // individually and risk missing one as that logic evolves.
+      const studentForRollback = findStudentById(classroom, studentId);
+      const entrySnapshot = JSON.parse(JSON.stringify(entry));
+      const studentSnapshot = studentForRollback ? JSON.parse(JSON.stringify(studentForRollback)) : null;
+
+      const result =
+        mode === 'edit'
+          ? notebookReviewService.editNotebookReview(classroom, request, studentId, { criterionIds, reviewedByUid })
+          : notebookReviewService.submitNotebookReview(classroom, request, studentId, { criterionIds, reviewedByUid });
+
+      if (!result) {
+        errorMessage = 'This notebook can no longer be reviewed in its current state — it may have just changed elsewhere.';
+        renderBox();
+        return;
+      }
+
+      isSaving = true;
+      errorMessage = '';
+      renderBox();
+
+      try {
+        await workspaceService.saveExplicitly(classroom);
+      } catch (error) {
+        restoreObject(entry, entrySnapshot);
+        if (studentForRollback) restoreObject(studentForRollback, studentSnapshot);
+        isSaving = false;
+        errorMessage = 'Could not save this review — check your connection and try again. Nothing was recorded.';
+        renderBox();
+        return;
+      }
+
+      close();
+      onDone();
+    });
+    actions.appendChild(saveButton);
+
+    box.appendChild(actions);
+    overlay.appendChild(box);
+  }
+
+  renderBox();
+  document.body.appendChild(overlay);
+}
+
+/** Same small lookup services/notebookReviewService.js/services/recognitionService.js each keep their own private copy of — used here only to snapshot/restore a student object around a review save (see openReviewModal()'s own saveButton handler), not for anything that belongs in a shared service. */
+function findStudentById(classroom, studentId) {
+  for (const team of classroom.teams || []) {
+    const student = team.students.find((s) => s.id === studentId);
+    if (student) return student;
+  }
+  return null;
 }
 
 function getClassroomStudents(classroom) {
