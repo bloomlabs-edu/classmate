@@ -119,6 +119,29 @@ export function resolveLessonConcepts(classroom, lesson) {
  * a date must be shown, it should be visibly labeled as the last
  * taught lesson, not the completion date.
  */
+/**
+ * ClassMate's one, canonical "is this Unit complete" rule: it has at
+ * least one Concept, and every one of them has `status === 'taught'`
+ * (see models/LearningConcept.js's own doc comment — concept-level
+ * taught/not-taught is the classroom-wide half of this tree; a Unit's
+ * own completion is simply "every leaf reached," nothing more). An
+ * empty `concepts` array is deliberately NOT complete — a Unit with
+ * nothing in it yet (freshly created, still being built out) has
+ * nothing to vacuously satisfy "every concept is taught."
+ *
+ * Extracted here, exported, and reused by both deriveUnitProgress()
+ * below (which needs this plus dated-Lesson reconstruction for a
+ * completion DATE) and services/unitProgressService.js (which needs
+ * only this boolean, scoped across a Subject's own `units[]`, for the
+ * "assigned vs. completed units" student-list stat) — so there is
+ * exactly one place this rule is ever written, never two
+ * independently-arrived-at copies that could silently drift apart.
+ */
+export function isUnitTaughtComplete(unit) {
+  const concepts = unit?.concepts || [];
+  return concepts.length > 0 && concepts.every((concept) => concept.status === 'taught');
+}
+
 export function deriveUnitProgress(unit, lessonsForUnit) {
   const dates = lessonsForUnit.map((lesson) => lesson.date).filter(Boolean).sort();
   if (dates.length === 0) return null;
@@ -128,7 +151,7 @@ export function deriveUnitProgress(unit, lessonsForUnit) {
   const periodsCount = lessonsForUnit.length;
 
   const concepts = unit?.concepts || [];
-  const isCompleted = concepts.length > 0 && concepts.every((concept) => concept.status === 'taught');
+  const isCompleted = isUnitTaughtComplete(unit);
 
   let completedDate = null;
   if (isCompleted) {

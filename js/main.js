@@ -1821,6 +1821,7 @@ function renderRoute(route, reason = 'unspecified') {
       renderWorkRequestRosterView(appContainer, {
         classroom,
         requestId: route.requestId,
+        currentUser,
         onBack: () => router.navigate(`/classroom/${classroom.id}`),
         onSelectStudent: (studentId) => router.navigate(`/classroom/${classroom.id}/student/${studentId}`),
       });
