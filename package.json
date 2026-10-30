@@ -4,5 +4,8 @@
   },
   "devDependencies": {
     "playwright": "^1.63.0"
+  },
+  "scripts": {
+    "worktree:new": "node scripts/newWorktree.mjs"
   }
 }
