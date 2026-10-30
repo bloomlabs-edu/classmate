@@ -21,6 +21,57 @@ otherwise) working in this repository. Read this before editing any file.
 7. Never stage or commit files you did not intentionally change for this
    task.
 
+## Creating a worktree
+
+```
+node scripts/newWorktree.mjs <short-task-name> [options]
+npm run worktree:new -- <short-task-name> [options]
+```
+
+`<short-task-name>` is required, lowercase, alphanumeric and hyphen-
+separated (e.g. `student-progress-widget`), and must be the ONLY
+positional argument — if your task has a multi-word name, join it with
+hyphens (`fix-holiday-list`, not `fix holiday list`); extra space-
+separated words are rejected outright, never silently dropped or
+truncated to the first word.
+
+Options:
+
+| Flag | Default | Valid values | Purpose |
+|---|---|---|---|
+| `--type=<value>` | `feature` | `feature`, `investigation`, `fix` | Branch prefix (`feature/<name>`, `investigation/<name>`, `fix/<name>`). |
+| `--worker-id=<id>` | `unknown` | any string | Self-reported identity recorded in the Supervisor registry entry (e.g. `agent:claude-session-3`, `human:rejeesh`). Never inferred — Git/the OS cannot reliably tell one agent session from another, so an omitted value is honestly recorded as `unknown`, not guessed. |
+| `--task="description"` | an auto-generated description naming the task | any string | Short, human-readable description for the Supervisor registry entry. |
+| `--no-register` | registration ON | n/a (boolean) | Skip the Supervisor registry step entirely. The worktree is still created either way. |
+| `--help` / `-h` | n/a | n/a | Print usage and exit. |
+
+**`feature` vs. `fix` vs. `investigation`:** use `feature` for new
+functionality or any change with a clear implementation path, even a bug
+fix with an obvious code-level cause (`fix` is a lighter-weight synonym
+for the same case, reserved for pure defect fixes already understood
+before work starts). Use `investigation` when the task is genuinely
+exploratory — the deliverable might be findings or a report rather than
+shipped code, and you don't yet know whether a code change is warranted
+at all (e.g. auditing a flaky test, researching a data-integrity
+question). This repo already uses `investigation/term-textbooks` as a
+real example of the latter.
+
+Examples:
+
+```
+# A new feature, default options
+node scripts/newWorktree.mjs student-progress-widget
+-> branch:    feature/student-progress-widget
+-> worktree:  ../classmate-student-progress-widget
+
+# A bug fix, self-identified, with a task description, registry skipped
+node scripts/newWorktree.mjs holiday-list-fix \
+  --type=fix --worker-id=agent:claude-session-3 \
+  --task="Fix the holiday list rendering bug" --no-register
+-> branch:    fix/holiday-list-fix
+-> worktree:  ../classmate-holiday-list-fix
+```
+
 ## The main worktree is not for parallel feature development
 
 `C:\Users\...\GitHub\classroom-tracker` (this repo's primary checkout) is
