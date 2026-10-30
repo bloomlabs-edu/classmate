@@ -43,10 +43,16 @@ locally.
 
 ## Branching & Commits
 
-- Create a feature branch off `main`: `git checkout -b feature/short-description`
+- **Use a dedicated Git worktree for each independent feature or fix** —
+  run `node scripts/newWorktree.mjs short-description`, which creates
+  `feature/short-description` off `main` in a sibling directory
+  (`../classmate-short-description`). This repo's primary checkout is not
+  the default place for parallel feature work — see `AGENTS.md` for the
+  full policy (this applies to AI agents and human contributors alike).
 - Keep commits focused and descriptive
 - Write commit messages in the imperative mood, e.g. `Add classroom service
   for creating classrooms`
+- Review `git diff --cached` before every commit
 
 ## Code Style
 
