@@ -56,6 +56,7 @@
  */
 
 import * as checkpointService from '../../services/checkpointService.js';
+import * as recognitionService from '../../services/recognitionService.js';
 import * as notebookConfigService from '../../services/notebookConfigService.js';
 import * as workspaceService from '../../services/workspaceService.js';
 import * as workspaceCoordinator from '../../services/workspaceCoordinator.js';
@@ -281,7 +282,17 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
     },
     onQuickMarkSubmitted: (checkpointId, studentId) => {
       const checkpoint = checkpointService.getCheckpointById(currentClassroom, checkpointId);
-      checkpointService.setSubmission(checkpoint, studentId, { status: 'submitted', submittedDate: getTodayDateKey() });
+      // THE ACTUAL FIX: routed through recognitionService.js so marking
+      // a checkpoint submitted also awards this student's one
+      // completion star for it — see that service's own
+      // recordNotebookCheckpointSubmission() header comment. Previously
+      // called checkpointService.setSubmission() directly, which never
+      // touched star state at all; this notebook's own checkpoints
+      // participated in no star-award path in this app whatsoever.
+      recognitionService.recordNotebookCheckpointSubmission(currentClassroom, checkpoint, studentId, {
+        status: 'submitted',
+        submittedDate: getTodayDateKey(),
+      });
       persistClassroom();
       updateCellAndColumn(checkpointId, studentId); // one <td> + its column's stat boxes — no grid rebuild
     },
@@ -298,7 +309,13 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
     },
     onSaveCell: (checkpointId, studentId, submission, review, teacherNote) => {
       const checkpoint = checkpointService.getCheckpointById(currentClassroom, checkpointId);
-      checkpointService.setSubmission(checkpoint, studentId, submission);
+      // Routed through recognitionService.js — see onQuickMarkSubmitted
+      // above. This is also the one path that can walk a submission
+      // BACK to 'not_submitted' (the cell editor's own Submission
+      // select), so this is where a completion star gets reversed, not
+      // just awarded — see recordNotebookCheckpointSubmission()'s own
+      // before/after comparison.
+      recognitionService.recordNotebookCheckpointSubmission(currentClassroom, checkpoint, studentId, submission);
       checkpointService.setReview(checkpoint, studentId, review);
       checkpointService.setTeacherNote(checkpoint, studentId, teacherNote);
       openCellFor = null;
@@ -758,6 +775,49 @@ function populateCheckpointCell(cell, checkpoint, student, handlers) {
 
   content.appendChild(row);
 
+  // THE ACTUAL FIX for "restore the star indicator beside student names
+  // in the Notebook workflow": per explicit git-history audit, no such
+  // indicator ever existed here before (nor anywhere else in the
+  // Notebook workflow) -- there was nothing to regress. This is a new
+  // indicator for the completion star THIS checkpoint specifically
+  // earned (see recognitionService.js's own recordNotebookCheckpointSubmission()),
+  // deliberately scoped to the one work item it belongs to --
+  // getAutomaticStarNetForWorkItem() is net-of-reversals for this
+  // EXACT (subject, notebookType, checkpoint) triple, never the
+  // student's own overall star total (timelineService.getNetPoints()),
+  // so a star earned from some other activity can never be mistaken
+  // for this one. Clicking it opens an inspectable award history for
+  // just this work item -- see showAwardDetailsSheet() below.
+  const workItemRef = recognitionService.buildNotebookCheckpointWorkItemRef({
+    subjectId: checkpoint.subjectId,
+    notebookTypeId: checkpoint.notebookTypeId,
+    checkpointId: checkpoint.id,
+  });
+  const starNet = recognitionService.getAutomaticStarNetForWorkItem(student, workItemRef);
+  if (starNet >= 1 || hasAnyAwardHistory(student, workItemRef)) {
+    const starButton = document.createElement('button');
+    starButton.type = 'button';
+    starButton.className = `notebook-checkpoints__cell-star-indicator${starNet >= 1 ? ' notebook-checkpoints__cell-star-indicator--active' : ' notebook-checkpoints__cell-star-indicator--cancelled'}`;
+    // No dedicated star glyph exists in this icon set (see
+    // ui/components/Icon.js) -- 'award' is the same icon the
+    // NotebookRoster.js Recognize button already uses for this exact
+    // "a star/recognition was given here" meaning, so this stays
+    // consistent with the established icon vocabulary rather than
+    // introducing an emoji (explicitly against this view's own
+    // established convention — see getCellMeta()'s own header comment).
+    starButton.appendChild(createIcon('award', { size: 12 }));
+    starButton.setAttribute(
+      'aria-label',
+      `${student.name} — ${checkpoint.title}: completion star ${starNet >= 1 ? 'active' : 'cancelled'}. Activate to see award details.`
+    );
+    starButton.title = starNet >= 1 ? 'Completion star awarded' : 'Completion star cancelled';
+    starButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      showAwardDetailsSheet(student, workItemRef, `${checkpoint.title}`);
+    });
+    content.appendChild(starButton);
+  }
+
   // Always rendered, even when empty, so the action zone's own
   // presence/height never moves the icon or label above it — see
   // this function's own header comment.
@@ -1063,4 +1123,70 @@ function renderCellEditor(checkpoint, student, handlers) {
   sheet.appendChild(actions);
   overlay.appendChild(sheet);
   return overlay;
+}
+
+/** Whether this exact work item has EVER had an automatic-star entry logged (awarded, reversed, or both) — distinct from a currently-active award (net >= 1), so a cancelled award's own indicator (and its inspectable history) still renders rather than silently disappearing once reversed. */
+function hasAnyAwardHistory(student, workItemRef) {
+  return (student.history || []).some(
+    (entry) => entry.kind === 'points' && entry.source === 'auto' && recognitionService.workItemRefsEqual(entry.workItemRef, workItemRef)
+  );
+}
+
+/**
+ * Read-only inspection of one work item's own automatic-star history —
+ * per explicit requirement, a teacher must be able to see the
+ * notebook/checkpoint an award came from, its date, and whether it's
+ * currently active or cancelled, DISTINCT from the student's overall
+ * star total (timelineService.getNetPoints(), shown elsewhere in this
+ * app) which this sheet never touches or displays. Every matching
+ * `source: 'auto'` entry is shown (not just the net) so an award that
+ * was cancelled and re-awarded shows its own real history, not just a
+ * final state.
+ */
+function showAwardDetailsSheet(student, workItemRef, workItemTitle) {
+  const entries = (student.history || [])
+    .filter((entry) => entry.kind === 'points' && entry.source === 'auto' && recognitionService.workItemRefsEqual(entry.workItemRef, workItemRef))
+    .sort((a, b) => (a.recordedAt || '').localeCompare(b.recordedAt || ''));
+  const net = entries.reduce((sum, entry) => sum + entry.delta, 0);
+
+  const overlay = document.createElement('div');
+  overlay.className = 'notebook-checkpoints__cell-editor-overlay';
+
+  const sheet = document.createElement('div');
+  sheet.className = 'notebook-checkpoints__cell-editor award-details-sheet';
+
+  const heading = document.createElement('p');
+  heading.className = 'notebook-checkpoints__cell-editor-heading';
+  heading.textContent = `Completion star — ${workItemTitle}`;
+  sheet.appendChild(heading);
+
+  const statusLine = document.createElement('p');
+  statusLine.className = `award-details-sheet__status award-details-sheet__status--${net >= 1 ? 'active' : 'cancelled'}`;
+  statusLine.textContent = net >= 1 ? 'Active' : 'Cancelled';
+  sheet.appendChild(statusLine);
+
+  const list = document.createElement('ul');
+  list.className = 'award-details-sheet__history';
+  entries.forEach((entry) => {
+    const item = document.createElement('li');
+    item.className = 'award-details-sheet__history-item';
+    const action = document.createElement('span');
+    action.textContent = entry.delta > 0 ? 'Awarded' : 'Cancelled';
+    const date = document.createElement('span');
+    date.className = 'award-details-sheet__history-date';
+    date.textContent = entry.recordedAt ? formatDate(entry.recordedAt.slice(0, 10)) : '—';
+    item.append(action, date);
+    list.appendChild(item);
+  });
+  sheet.appendChild(list);
+
+  const closeButton = document.createElement('button');
+  closeButton.type = 'button';
+  closeButton.className = 'btn btn--text';
+  closeButton.textContent = 'Close';
+  closeButton.addEventListener('click', () => overlay.remove());
+  sheet.appendChild(closeButton);
+
+  overlay.appendChild(sheet);
+  document.body.appendChild(overlay);
 }

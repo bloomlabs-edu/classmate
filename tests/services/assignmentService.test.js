@@ -225,6 +225,64 @@ test('getAssignmentsForStudent sorts most-recently-updated first', async () => {
   assert.deepEqual(entries.map((e) => e.assignment.id), [second.id, first.id]);
 });
 
+// ---------------------------------------------------------------------
+// Assignment-level completion (Workstream 4C) — a third, independent
+// tracking axis from ratings above; see
+// models/StudentAssignmentRecord.js's own completionStatus comment.
+// ---------------------------------------------------------------------
+
+test('getCompletionStatus is "not_recorded" for a student with no record at all', () => {
+  const { classroom, category } = buildClassroomWithCategory();
+  const assignment = assignmentService.createNewAssignment(classroom, { categoryId: category.id, title: 'WS 1' });
+  assert.equal(assignmentService.getCompletionStatus(assignment, 's1'), 'not_recorded');
+});
+
+test('setCompletionStatus("done") is reflected by getCompletionStatus, independently of ratings', () => {
+  const { classroom, category } = buildClassroomWithCategory();
+  const assignment = assignmentService.createNewAssignment(classroom, { categoryId: category.id, title: 'WS 1' });
+
+  assignmentService.setCompletionStatus(assignment, 's1', 'done');
+
+  assert.equal(assignmentService.getCompletionStatus(assignment, 's1'), 'done');
+  assert.equal(assignmentService.getAssignmentCellStatus(category, assignmentService.getRecordForStudent(assignment, 's1')), 'not_started', 'completion must never be read as a rating');
+});
+
+test('setCompletionStatus(null) clears a record back to "not_recorded" without deleting the record itself', () => {
+  const { classroom, category } = buildClassroomWithCategory();
+  const assignment = assignmentService.createNewAssignment(classroom, { categoryId: category.id, title: 'WS 1' });
+
+  assignmentService.setCompletionStatus(assignment, 's1', 'done');
+  assignmentService.setTeacherNote(assignment, 's1', 'Great effort');
+  assignmentService.setCompletionStatus(assignment, 's1', null);
+
+  assert.equal(assignmentService.getCompletionStatus(assignment, 's1'), 'not_recorded');
+  assert.equal(assignmentService.getRecordForStudent(assignment, 's1').teacherNote, 'Great effort', 'clearing completion must never wipe an unrelated field');
+});
+
+test('works with ZERO checkpoints and ZERO configured aspects — no fake checkpoint or aspect required', () => {
+  const classroom = { assignmentConfig: { categories: [] }, assignments: [] };
+  const category = assignmentConfigService.addCategory(classroom, 'Worksheets');
+  category.aspects = []; // no aspects configured at all
+  const assignment = assignmentService.createNewAssignment(classroom, { categoryId: category.id, title: 'WS 1' });
+
+  assignmentService.setCompletionStatus(assignment, 's1', 'done');
+  assert.equal(assignmentService.getCompletionStatus(assignment, 's1'), 'done');
+});
+
+test('getAssignmentCompletionSummary counts Done/Not Done/Not Recorded against the full roster', () => {
+  const { classroom, category } = buildClassroomWithCategory();
+  const assignment = assignmentService.createNewAssignment(classroom, { categoryId: category.id, title: 'WS 1' });
+  const roster = [{ id: 's1' }, { id: 's2' }, { id: 's3' }, { id: 's4' }];
+
+  assignmentService.setCompletionStatus(assignment, 's1', 'done');
+  assignmentService.setCompletionStatus(assignment, 's2', 'done');
+  assignmentService.setCompletionStatus(assignment, 's3', 'not_done');
+  // s4 has no record at all
+
+  const summary = assignmentService.getAssignmentCompletionSummary(assignment, roster);
+  assert.deepEqual(summary, { doneCount: 2, notDoneCount: 1, notRecordedCount: 1 });
+});
+
 test('getStudentAssignmentSummary counts only this student\'s own statuses, classroom-wide across every category', () => {
   const { classroom, category } = buildClassroomWithCategory();
   const a1 = assignmentService.createNewAssignment(classroom, { categoryId: category.id, title: 'A' });

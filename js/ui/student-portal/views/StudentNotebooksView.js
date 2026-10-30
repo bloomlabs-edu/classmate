@@ -28,6 +28,8 @@ import * as notebookConfigService from '../../../services/notebookConfigService.
 import { getStatusMeta } from '../../views/WorkRequestRosterView.js';
 import { getCellMeta } from '../../views/NotebookCheckpointsView.js';
 import * as checkpointService from '../../../services/checkpointService.js';
+import * as notebookStatusService from '../../../services/notebookStatusService.js';
+import { renderNotebookStatusSummary } from '../../components/NotebookStatusSummary.js';
 import { formatDate } from '../../../utils/dateHelpers.js';
 
 export async function renderStudentNotebooksView(container, { onBack }) {
@@ -68,9 +70,21 @@ export async function renderStudentNotebooksView(container, { onBack }) {
   const checkpointNotebooks = checkpointService.getCheckpointsForStudentAcrossNotebooks(classroom, activeProfile.studentId);
 
   if (obligations.length === 0 && checkpointNotebooks.length === 0) {
-    wrapper.appendChild(createEmptyStateElement({ message: 'No notebook checks yet \u2014 nothing due right now.' }));
+    wrapper.appendChild(createEmptyStateElement({ message: 'No notebook checks yet -- nothing due right now.' }));
     return;
   }
+
+  // The same merged status counts (and, on tap, the exact notebooks
+  // contributing to each one) the teacher sees on this student's own
+  // profile -- see services/notebookStatusService.js's own header
+  // comment for why this can no longer disagree with the Notebook
+  // Tracker the way the old WorkRequest-only counts could.
+  const notebookStatus = notebookStatusService.getNotebookStatusForStudent(classroom, activeProfile.studentId);
+  const statusSummaryContainer = document.createElement('div');
+  renderNotebookStatusSummary(statusSummaryContainer, notebookStatus, {
+    emptyMessage: 'Nothing of yours in this status right now.',
+  });
+  wrapper.appendChild(statusSummaryContainer);
 
   // A genuinely separate concern from the tabbed Checkpoints
   // component below — an "obligation" (see

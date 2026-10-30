@@ -114,11 +114,22 @@
  *                    reference-not-copy principle used throughout this
  *                    file.
  *   notebookConfig - { subjects: [{id, name}], notebookTypes: [{id,
- *                    subjectId, name}] } — the classroom's configurable
- *                    notebook taxonomy (see
+ *                    subjectId, name}], reviewCriteria: [{id, label,
+ *                    isSystemDetermined, isCustom, createdAt}] } — the
+ *                    classroom's configurable notebook taxonomy (see
  *                    services/notebookConfigService.js). Kept separate
  *                    from `notebooks` since this is near-static setup,
  *                    edited from Settings, not accumulated day by day.
+ *                    `reviewCriteria` (see
+ *                    models/NotebookReviewCriterion.js) is the
+ *                    teacher-managed, reusable checklist a WorkRequest
+ *                    notebook review scores against — lazily seeded
+ *                    with the 4 default criteria by
+ *                    notebookConfigService.js's own
+ *                    ensureReviewCriteria() the first time it's needed,
+ *                    never by a migration; `[]`/missing is a real,
+ *                    valid, un-migrated state for every classroom that
+ *                    predates this feature.
  *   notebooks      - { [subjectId]: { [notebookTypeId]: { [dateKey]:
  *                    { [studentId]: NotebookSubmission } } } } (see
  *                    services/notebookService.js and
@@ -272,7 +283,7 @@ export function createClassroom({
   curriculumAssignment = null,
   assessments = [],
   planner = { planningCycles: [] },
-  notebookConfig = { subjects: [], notebookTypes: [] },
+  notebookConfig = { subjects: [], notebookTypes: [], reviewCriteria: [] },
   notebooks = {},
   notebookCheckTemplates = {},
   notebookChecks = {},
