@@ -89,8 +89,9 @@ import { renderStudentProfileView } from './ui/views/StudentProfileView.js';
 import { renderTeamProfileView } from './ui/views/TeamProfileView.js';
 import { CLASSROOM_ROUTE_NAMES } from './config/classroomRouteNames.js';
 import { resolveNotificationRoute } from './config/notificationRouting.js';
-import { MEMBER_ROLES } from './config/memberRoles.js';
+import { MEMBER_ROLES, PERMISSIONS } from './config/memberRoles.js';
 import * as memberService from './services/memberService.js';
+import { canPerformAsUid } from './services/permissionService.js';
 import { renderStudentAccessView } from './ui/views/StudentAccessView.js';
 import { renderConnectLearningHubView } from './ui/views/ConnectLearningHubView.js';
 import { renderVisitorAccessView } from './ui/views/VisitorAccessView.js';
@@ -121,6 +122,7 @@ import { renderApproveDeviceSignInView } from './ui/views/ApproveDeviceSignInVie
 import * as deviceSignInTvService from './services/deviceSignInTvService.js';
 import { renderUserBar } from './ui/components/UserBar.js';
 import { openNewClassroomModal } from './ui/components/NewClassroomModal.js';
+import { openEditClassroomDetailsModal } from './ui/components/EditClassroomDetailsModal.js';
 import { openJoinClassroomModal } from './ui/components/JoinClassroomModal.js';
 import { renderTeacherPortalSidebar, hideTeacherPortalSidebar } from './ui/components/TeacherPortalSidebar.js';
 import { renderTeacherMobileNav, hideTeacherMobileNav } from './ui/components/TeacherMobileNav.js';
@@ -680,6 +682,41 @@ function handleDeleteClassroomFromHome(classroomId) {
   }
 
   renderRoute(router.getCurrentRoute(), 'classroom-deleted');
+}
+
+/**
+ * Edit Classroom Details, from the ⋯ menu on a My Classrooms card —
+ * reuses the exact same workspaceService.updateClassroomDetails() that
+ * ui/views/SettingsView.js's own General section Save button already
+ * calls, through the same reusable ui/components/EditClassroomDetailsModal.js
+ * shell (no second modal, no second write path). Re-renders the current
+ * route after a successful save so the card's own name updates
+ * immediately, same as handleDeleteClassroomFromHome() above does after
+ * a delete.
+ */
+function handleEditClassroomDetailsFromHome(classroomId) {
+  const classroom = workspaceService.getState().classrooms.find((c) => c.id === classroomId);
+  if (!classroom) return;
+
+  // Defensive re-check, not the only gate — the card itself already
+  // hides this action from anyone without PERMISSIONS.EDIT_CLASSROOM_DETAILS
+  // (see ui/views/PersonalHubView.js's own buildClassroomCard()).
+  if (!canPerformAsUid(classroom, currentUser?.uid, PERMISSIONS.EDIT_CLASSROOM_DETAILS)) return;
+
+  openEditClassroomDetailsModal({
+    classroom,
+    // Any failure here (including a thrown ClassroomValidationError) is
+    // left to propagate into the modal's own try/catch, which already
+    // shows "Save failed" + Retry — no new error-handling mechanism, same
+    // as this modal's own doc comment describes.
+    onSave: async ({ classroomName, description }) => {
+      const updated = workspaceService.updateClassroomDetails(classroom.id, { classroomName, description });
+      if (!updated) {
+        throw new Error('Could not update classroom details — the classroom is no longer available.');
+      }
+      renderRoute(router.getCurrentRoute(), 'classroom-details-updated');
+    },
+  });
 }
 
 // Moved to config/classroomRouteNames.js so it's importable from a
@@ -1920,6 +1957,7 @@ function renderRoute(route, reason = 'unspecified') {
       onNewClassroom: handleNewClassroom,
       onJoinClassroom: handleJoinClassroom,
       onDeleteClassroom: handleDeleteClassroomFromHome,
+      onEditClassroomDetails: handleEditClassroomDetailsFromHome,
       onOpenCurriculumManagement: () => router.navigate('/curriculum-management'),
       onOpenTimetable: (classroomId) => router.navigate(`/classroom/${classroomId}/timetable`),
       onOpenWeeklyPlans: () => router.navigate('/program-manager/weekly-plans'),
