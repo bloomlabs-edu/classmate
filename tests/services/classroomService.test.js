@@ -118,12 +118,17 @@ test('upsertClassroom: never overwrites an existing student roster while backfil
 });
 
 // ---------------------------------------------------------------------
-// updateClassroomDetails — the one write path ui/components/
-// EditClassroomDetailsModal.js's "Edit Classroom Details" action goes
-// through (see ui/views/DashboardView.js). These tests exercise it the
-// same way that caller does: an existing, already-registered classroom
-// (via upsertClassroom, mirroring a real Firestore-loaded classroom),
-// updated in place by id.
+// updateClassroomDetails — the one write path every "Edit Classroom
+// Details" entry point goes through: ui/views/DashboardView.js's
+// classroom-header overflow action (directly), and both ui/views/
+// SettingsView.js's own General section Save button and the "My
+// Classrooms" dashboard card's ⋯ menu action (ui/components/
+// ClassroomCard.js + ui/components/EditClassroomDetailsModal.js, wired
+// in js/main.js's handleEditClassroomDetailsFromHome()) via
+// workspaceService.updateClassroomDetails(), which wraps this exact
+// function. These tests exercise it the same way those callers do: an
+// existing, already-registered classroom (via upsertClassroom,
+// mirroring a real Firestore-loaded classroom), updated in place by id.
 // ---------------------------------------------------------------------
 
 test('updateClassroomDetails: updates classroomName and description on the existing classroom, preserving id, members, memberUids, and teams exactly', () => {
@@ -183,40 +188,48 @@ test('updateClassroomDetails: returns null for an id that is not in memory, with
 });
 
 // ---------------------------------------------------------------------
-// Stale-reference regression (pre-commit review, 2026-10-27) —
-// ui/views/DashboardView.js's "Edit Classroom Details" save callback
-// used to pass its own outer `classroom` closure variable to
-// workspaceService.saveExplicitly(), instead of the object
-// updateClassroomDetails() actually mutated and returned. Those are
-// only the same object as long as classroomService.upsertClassroom()
-// (below) hasn't REPLACED the in-memory array slot with a new object
-// since the Dashboard captured its own `classroom` reference — which it
-// does on every incoming Firestore snapshot. The fix is to always use
-// updateClassroomDetails()'s own return value from that point on; this
-// test exercises exactly that mechanism, at the classroomService layer
-// where the actual bug and fix both live.
+// Stale-reference regression (pre-commit review, 2026-10-27) — a caller
+// that captures a `classroom` reference (e.g. ui/views/DashboardView.js's
+// own "Edit Classroom Details" save callback, or js/main.js's
+// handleEditClassroomDetailsFromHome()), then later calls
+// updateClassroomDetails(classroom.id, ...), must use THIS function's
+// own return value for anything persisted afterward — never the
+// originally-captured reference. Those are only the same object as long
+// as classroomService.upsertClassroom() (below) hasn't REPLACED the
+// in-memory array slot with a new object since the reference was
+// captured, which it does on every incoming Firestore snapshot.
+// DashboardView.js's own callback originally got this wrong (passed the
+// stale closure reference to workspaceService.saveExplicitly() instead
+// of updateClassroomDetails()'s own return value) — fixed by relying
+// entirely on this function's return value from that point on, which
+// every "Edit Classroom Details" caller now does, whether it persists
+// directly (DashboardView.js's explicit markDirty()/saveExplicitly()
+// pair) or through the workspaceService.updateClassroomDetails()
+// wrapper (js/main.js's handler). This test exercises that exact
+// mechanism, at the classroomService layer where the actual bug and fix
+// both live.
 //
-// Deliberately NOT a DashboardView.js/Playwright integration test: that
-// callback is a private closure (not exported), and
-// workspaceService.saveExplicitly() performs a real Firestore write
-// with no mocking/spy convention anywhere in this codebase (ES module
-// named exports are read-only live bindings — they can't be
-// monkey-patched from a test the way a CommonJS/Jest mock could be).
-// Reproducing the race through a full Dashboard render + emulator write
-// would mean rebuilding a large, brittle integration fixture (router,
-// widgets, a full roster) just to reach three lines of reference
-// plumbing whose entire failure mode is reproducible, deterministically
-// and non-brittly, right here with classroomService alone.
+// Deliberately NOT a DashboardView.js or main.js/Playwright integration
+// test: both callbacks are private closures (not exported), and the
+// real Firestore write paths they lead to have no mocking/spy
+// convention anywhere in this codebase (ES module named exports are
+// read-only live bindings — they can't be monkey-patched from a test
+// the way a CommonJS/Jest mock could be). Reproducing the race through
+// a full render + emulator write would mean rebuilding a large, brittle
+// integration fixture just to reach a few lines of reference plumbing
+// whose entire failure mode is reproducible, deterministically and
+// non-brittly, right here with classroomService alone.
 // ---------------------------------------------------------------------
 
 test('updateClassroomDetails: the object it returns reflects a concurrent in-memory replacement, proving a caller must use THIS return value rather than a reference captured before that replacement', () => {
   const existingStudent = { id: 's1', name: 'Anjali', score: 0, bucket: null, badges: [], notes: [], submissions: {}, history: [] };
   const members = { 'owner-uid': { role: 'owner', displayName: 'The Owner', joinedAt: '2026-01-01' } };
 
-  // 1. The Dashboard renders and captures its own `classroom` reference
-  //    — exactly what ui/views/DashboardView.js's `const { classroom } = props`
-  //    would hold, and what the "Edit Classroom Details" modal's own
-  //    closure captures when the teacher opens it.
+  // 1. The caller renders and captures its own `classroom` reference —
+  //    exactly what ui/views/DashboardView.js's `const { classroom } = props`
+  //    or js/main.js's handleEditClassroomDetailsFromHome() would hold,
+  //    and what the "Edit Classroom Details" modal's own closure
+  //    captures when the teacher opens it, from either entry point.
   const staleClassroomReference = upsertClassroom({
     id: 'race-c1',
     schoolName: 'CHS Kannamapet',
@@ -254,11 +267,11 @@ test('updateClassroomDetails: the object it returns reflects a concurrent in-mem
   // are different object references sharing the same id.
   assert.notEqual(getClassroomById('race-c1'), staleClassroomReference);
 
-  // 3. The teacher now clicks Save on the modal, which (per the fixed
-  //    ui/views/DashboardView.js) calls updateClassroomDetails() using
-  //    the stale reference's own `.id` (ids never change, so this part
-  //    is always safe) and relies ENTIRELY on the return value for
-  //    everything downstream — never the stale reference itself.
+  // 3. The teacher now clicks Save on the modal, which (from either
+  //    entry point) calls updateClassroomDetails() using the stale
+  //    reference's own `.id` (ids never change, so this part is always
+  //    safe) and relies ENTIRELY on the return value for everything
+  //    downstream — never the stale reference itself.
   const updatedClassroom = updateClassroomDetails(staleClassroomReference.id, {
     classroomName: 'New Name',
     description: 'New description',

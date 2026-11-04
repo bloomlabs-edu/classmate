@@ -32,7 +32,7 @@ import * as slackIntegrationService from './services/slackIntegrationService.js'
 import * as notificationService from './services/notificationService.js';
 import * as feedService from './services/feedService.js';
 import { showToast } from './ui/components/Toast.js';
-import { ClassroomValidationError, getDisplayName } from './services/classroomService.js';
+import { ClassroomValidationError, getDisplayName, updateClassroomDetails } from './services/classroomService.js';
 import * as router from './ui/router.js';
 import { renderWelcomeView } from './ui/views/WelcomeView.js';
 import { renderLandingView } from './ui/views/LandingView.js';
@@ -89,8 +89,9 @@ import { renderStudentProfileView } from './ui/views/StudentProfileView.js';
 import { renderTeamProfileView } from './ui/views/TeamProfileView.js';
 import { CLASSROOM_ROUTE_NAMES } from './config/classroomRouteNames.js';
 import { resolveNotificationRoute } from './config/notificationRouting.js';
-import { MEMBER_ROLES } from './config/memberRoles.js';
+import { MEMBER_ROLES, PERMISSIONS } from './config/memberRoles.js';
 import * as memberService from './services/memberService.js';
+import { canPerformAsUid } from './services/permissionService.js';
 import { renderStudentAccessView } from './ui/views/StudentAccessView.js';
 import { renderConnectLearningHubView } from './ui/views/ConnectLearningHubView.js';
 import { renderVisitorAccessView } from './ui/views/VisitorAccessView.js';
@@ -121,6 +122,7 @@ import { renderApproveDeviceSignInView } from './ui/views/ApproveDeviceSignInVie
 import * as deviceSignInTvService from './services/deviceSignInTvService.js';
 import { renderUserBar } from './ui/components/UserBar.js';
 import { openNewClassroomModal } from './ui/components/NewClassroomModal.js';
+import { openEditClassroomDetailsModal } from './ui/components/EditClassroomDetailsModal.js';
 import { openJoinClassroomModal } from './ui/components/JoinClassroomModal.js';
 import { renderTeacherPortalSidebar, hideTeacherPortalSidebar } from './ui/components/TeacherPortalSidebar.js';
 import { renderTeacherMobileNav, hideTeacherMobileNav } from './ui/components/TeacherMobileNav.js';
@@ -680,6 +682,63 @@ function handleDeleteClassroomFromHome(classroomId) {
   }
 
   renderRoute(router.getCurrentRoute(), 'classroom-deleted');
+}
+
+/**
+ * Edit Classroom Details, from the ⋯ menu on a My Classrooms card —
+ * the second entry point to the same reusable
+ * ui/components/EditClassroomDetailsModal.js shell
+ * ui/views/DashboardView.js's own classroom-header overflow action
+ * already uses (no second modal). Deliberately matches THAT caller's
+ * own explicit markDirty()/saveExplicitly() write pair, not
+ * ui/views/SettingsView.js's own General section Save button (which
+ * calls the fire-and-forget workspaceService.updateClassroomDetails()
+ * wrapper directly and has no Retry UI of its own to need the
+ * distinction) — this modal's own advertised "Save failed" + Retry
+ * state (see that file's header comment) requires `onSave` to actually
+ * reject on a real write failure, which only saveExplicitly() does.
+ * Re-renders the current route after a successful save so the card's
+ * own name updates immediately, same as
+ * handleDeleteClassroomFromHome() above does after a delete.
+ */
+function handleEditClassroomDetailsFromHome(classroomId) {
+  const classroom = workspaceService.getState().classrooms.find((c) => c.id === classroomId);
+  if (!classroom) return;
+
+  // Defensive re-check, not the only gate — the card itself already
+  // hides this action from anyone without PERMISSIONS.EDIT_CLASSROOM_DETAILS
+  // (see ui/views/PersonalHubView.js's own buildClassroomCard()).
+  if (!canPerformAsUid(classroom, currentUser?.uid, PERMISSIONS.EDIT_CLASSROOM_DETAILS)) return;
+
+  openEditClassroomDetailsModal({
+    classroom,
+    // Any failure here (including a thrown ClassroomValidationError) is
+    // left to propagate into the modal's own try/catch, which already
+    // shows "Save failed" + Retry — no new error-handling mechanism, same
+    // as this modal's own doc comment describes.
+    //
+    // Deliberately classroomService.updateClassroomDetails() +
+    // markDirty()/saveExplicitly() here, NOT the convenience
+    // workspaceService.updateClassroomDetails() wrapper — that wrapper's
+    // own persistClassroom() is fire-and-forget (catches and only logs a
+    // write failure internally, never rejects), which would make this
+    // modal's "Save failed" + Retry state unreachable for a real
+    // Firestore error. saveExplicitly() is the one write path in this
+    // app that actually rethrows on failure (see its own doc comment),
+    // so this is the same explicit save pair ui/views/DashboardView.js's
+    // own "Edit Classroom Details" entry point already uses — one real
+    // write CONTRACT for both entry points, even though they call
+    // through different classroomService wrappers.
+    onSave: async ({ classroomName, description }) => {
+      const updatedClassroom = updateClassroomDetails(classroom.id, { classroomName, description });
+      if (!updatedClassroom || updatedClassroom.id !== classroom.id) {
+        throw new Error('Could not update classroom details — the classroom is no longer available.');
+      }
+      workspaceService.markDirty(updatedClassroom.id);
+      await workspaceService.saveExplicitly(updatedClassroom);
+      renderRoute(router.getCurrentRoute(), 'classroom-details-updated');
+    },
+  });
 }
 
 // Moved to config/classroomRouteNames.js so it's importable from a
@@ -1922,6 +1981,7 @@ function renderRoute(route, reason = 'unspecified') {
       onNewClassroom: handleNewClassroom,
       onJoinClassroom: handleJoinClassroom,
       onDeleteClassroom: handleDeleteClassroomFromHome,
+      onEditClassroomDetails: handleEditClassroomDetailsFromHome,
       onOpenCurriculumManagement: () => router.navigate('/curriculum-management'),
       onOpenTimetable: (classroomId) => router.navigate(`/classroom/${classroomId}/timetable`),
       onOpenWeeklyPlans: () => router.navigate('/program-manager/weekly-plans'),

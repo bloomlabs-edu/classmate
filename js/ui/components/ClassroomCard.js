@@ -6,11 +6,17 @@
  * subtitle for context, and student/teacher counts. Purely props-driven —
  * the display name, subtitle, and counts are all computed by the view
  * (see ui/views/PersonalHubView.js) using classroomService's read-only
- * selectors, not by this component. `isOwner`/`onDeleteClassroom` are
- * the one exception to "purely props-driven, no logic" — see
- * createActionsMenu() below for why that stays a plain callback too
- * (the confirm dialog and the actual delete call live in main.js, same
- * as onNewClassroom/onJoinClassroom already do for this same view).
+ * selectors, not by this component. `isOwner`/`onDeleteClassroom` and
+ * `canEditClassroomDetails`/`onEditClassroomDetails` are the one
+ * exception to "purely props-driven, no logic" — see createActionsMenu()
+ * below for why that stays a plain callback too (the confirm dialog,
+ * opening the Edit Classroom Details modal, and the actual delete/save
+ * calls all live in main.js, same as onNewClassroom/onJoinClassroom
+ * already do for this same view). `canEditClassroomDetails` is computed
+ * by the caller via permissionService.canPerformAsUid() +
+ * PERMISSIONS.EDIT_CLASSROOM_DETAILS (OWNER/TEACHER, never VIEWER) —
+ * this component only reads the resulting boolean, it never re-derives
+ * the permission itself.
  *
  * STRUCTURAL NOTE: this card used to be a single <button> for its
  * entire surface. Adding a second, independent control (the ⋯ actions
@@ -41,6 +47,8 @@ export function createClassroomCardElement({
   onClick,
   isOwner,
   onDeleteClassroom,
+  canEditClassroomDetails,
+  onEditClassroomDetails,
   badge,
   actionLabel = 'Open Classroom',
   subjectsTaught,
@@ -118,26 +126,33 @@ export function createClassroomCardElement({
 
   card.appendChild(openButton);
 
-  // Only the owner ever sees this at all — matches the exact same gate
-  // ui/views/SettingsView.js's own Danger Zone already uses
-  // (memberService.isOwner), so a non-owner never sees a control that
-  // would do nothing for them.
-  if (isOwner) {
-    card.appendChild(createActionsMenu({ displayName, onDeleteClassroom }));
+  // The menu itself only ever appears for a member who can actually use
+  // at least one of its two actions — Edit Classroom Details (OWNER/
+  // TEACHER, gated by the caller via permissionService.canPerformAsUid()
+  // + PERMISSIONS.EDIT_CLASSROOM_DETAILS, same as everywhere else this
+  // permission is checked) and/or Delete Classroom (owner only, matches
+  // the exact same gate ui/views/SettingsView.js's own Danger Zone
+  // already uses — memberService.isOwner). An empty, do-nothing "⋯"
+  // would be worse than no menu at all.
+  if (isOwner || canEditClassroomDetails) {
+    card.appendChild(
+      createActionsMenu({ displayName, isOwner, canEditClassroomDetails, onDeleteClassroom, onEditClassroomDetails })
+    );
   }
 
   return card;
 }
 
 /**
- * The ⋯ button + its small menu. `onDeleteClassroom` is called with no
- * arguments once the user has clicked "Delete Classroom" in this
- * menu — this component never shows a confirmation dialog and never
- * calls workspaceService itself; that lives in main.js, exactly where
- * onNewClassroom/onJoinClassroom's own real behavior already lives for
- * this same view, not duplicated here.
+ * The ⋯ button + its small menu. `onEditClassroomDetails`/
+ * `onDeleteClassroom` are called with no arguments once the user has
+ * clicked the corresponding item in this menu — this component never
+ * opens the edit modal, shows a confirmation dialog, or calls
+ * classroomService/workspaceService itself; that lives in main.js,
+ * exactly where onNewClassroom/onJoinClassroom's own real behavior
+ * already lives for this same view, not duplicated here.
  */
-function createActionsMenu({ displayName, onDeleteClassroom }) {
+function createActionsMenu({ displayName, isOwner, canEditClassroomDetails, onDeleteClassroom, onEditClassroomDetails }) {
   const wrapper = document.createElement('div');
   wrapper.className = 'classroom-card__actions';
 
@@ -152,6 +167,11 @@ function createActionsMenu({ displayName, onDeleteClassroom }) {
   const menu = document.createElement('div');
   menu.className = 'classroom-card__menu';
   menu.hidden = true;
+
+  const editItem = document.createElement('button');
+  editItem.type = 'button';
+  editItem.className = 'classroom-card__menu-item';
+  editItem.textContent = 'Edit Classroom Details';
 
   const deleteItem = document.createElement('button');
   deleteItem.type = 'button';
@@ -200,13 +220,20 @@ function createActionsMenu({ displayName, onDeleteClassroom }) {
     else closeMenu();
   });
 
+  editItem.addEventListener('click', (event) => {
+    event.stopPropagation();
+    closeMenu();
+    onEditClassroomDetails?.();
+  });
+
   deleteItem.addEventListener('click', (event) => {
     event.stopPropagation();
     closeMenu();
     onDeleteClassroom?.();
   });
 
-  menu.appendChild(deleteItem);
+  if (canEditClassroomDetails) menu.appendChild(editItem);
+  if (isOwner) menu.appendChild(deleteItem);
   wrapper.append(menuButton, menu);
   return wrapper;
 }

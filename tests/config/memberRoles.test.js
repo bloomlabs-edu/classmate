@@ -180,12 +180,14 @@ test('personalHubService.getRolesSummary: a classroom membership held only via p
 });
 
 // ---------------------------------------------------------------------
-// EDIT_CLASSROOM_DETAILS — the permission gating the classroom header's
-// "Edit Classroom Details" overflow action (see
-// ui/components/EditClassroomDetailsModal.js, wired in
-// ui/views/DashboardView.js). Granted to OWNER/TEACHER, the same two
-// roles EDIT_STUDENTS/EDIT_GROUPS already grant to — VIEWER must never
-// see this action.
+// EDIT_CLASSROOM_DETAILS — the permission gating BOTH "Edit Classroom
+// Details" entry points: the classroom header's own overflow action
+// (ui/views/DashboardView.js) and the "My Classrooms" dashboard card's
+// own ⋯ menu action (ui/components/ClassroomCard.js, wired in
+// js/main.js's handleEditClassroomDetailsFromHome()) — both open the
+// same ui/components/EditClassroomDetailsModal.js. Granted to
+// OWNER/TEACHER, the same two roles EDIT_STUDENTS/EDIT_GROUPS already
+// grant to — VIEWER must never see either action.
 // ---------------------------------------------------------------------
 
 test('PERMISSIONS.EDIT_CLASSROOM_DETAILS: granted to OWNER and TEACHER, denied to VIEWER', () => {

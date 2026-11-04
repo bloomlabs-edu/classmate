@@ -1,11 +1,14 @@
 /**
  * ui/components/EditClassroomDetailsModal.js
  *
- * "Edit Classroom Details" — opened from the classroom header's
- * overflow menu (see ui/views/DashboardView.js) to rename a classroom
- * or change its description after creation. Deliberately NOT a second
- * creation form: School Name, Grade/Section, and Curriculum are fixed
- * here and never shown — this action only ever touches
+ * "Edit Classroom Details" — one shared modal, TWO entry points: the
+ * in-classroom header's own overflow menu (see
+ * ui/views/DashboardView.js) and the "My Classrooms" dashboard card's
+ * own ⋯ actions menu (see ui/components/ClassroomCard.js, wired up in
+ * js/main.js's handleEditClassroomDetailsFromHome()) — both rename a
+ * classroom or change its description after creation. Deliberately NOT
+ * a second creation form: School Name, Grade/Section, and Curriculum
+ * are fixed here and never shown — this action only ever touches
  * models/Classroom.js's `classroomName`/`description` fields, the same
  * two optional fields ui/components/NewClassroomModal.js's own last two
  * fields already collect at creation time. Shares that file's exact
@@ -16,15 +19,16 @@
  *
  * `onSave(updates)` is the caller's own async function — this file only
  * owns the form and its saving/success/error UI, never
- * classroomService/workspaceService calls directly, so there is exactly
- * one place (ui/views/DashboardView.js) that actually writes a
- * Classroom document, matching this app's "no parallel update
- * mechanism" rule. `onSave` rejecting (the same "rethrows on failure"
- * contract services/workspaceService.js's saveExplicitly() already
- * documents) is what puts this modal into its Retry state — the exact
- * saving/failed/retry shape ui/views/ConceptWorkspaceView.js's own
- * "What did we learn?" description editor already established for an
- * in-place classroom-document edit.
+ * classroomService/workspaceService calls directly, so each of the two
+ * entry points' own `onSave` is the ONE place it writes a Classroom
+ * document, both ultimately going through
+ * workspaceService.updateClassroomDetails() (the same function
+ * ui/views/SettingsView.js's own General section Save button already
+ * uses), matching this app's "no parallel update mechanism" rule.
+ * `onSave` rejecting is what puts this modal into its Retry state — the
+ * exact saving/failed/retry shape ui/views/ConceptWorkspaceView.js's
+ * own "What did we learn?" description editor already established for
+ * an in-place classroom-document edit.
  */
 
 export function openEditClassroomDetailsModal({ classroom, onSave }) {

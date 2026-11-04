@@ -63,8 +63,12 @@ export const PERMISSIONS = Object.freeze({
   IMPORT_ROSTER: 'import_roster',
   EDIT_STUDENTS: 'edit_students',
   EDIT_GROUPS: 'edit_groups',
-  // Classroom Name/Description edit (the header's "Edit Classroom
-  // Details" overflow action — see
+  // Classroom Name/Description edit — two entry points, one shared
+  // modal: the in-classroom header's own "Edit Classroom Details"
+  // overflow action (ui/views/DashboardView.js) and the "My
+  // Classrooms" dashboard card's own ⋯ menu action
+  // (ui/components/ClassroomCard.js, wired in js/main.js's
+  // handleEditClassroomDetailsFromHome()) — see
   // ui/components/EditClassroomDetailsModal.js). Deliberately its own
   // permission rather than reusing EDIT_STUDENTS/EDIT_GROUPS — editing
   // the classroom's own identity fields is a distinct capability from
