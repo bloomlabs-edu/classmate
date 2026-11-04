@@ -136,6 +136,40 @@ export function setConceptDescription(classroom, conceptId, description) {
   return concept;
 }
 
+// ---- Learning Hub concept mapping (Student-Facing External Activities,
+// ClassMate Phase 2) ------------------------------------------------
+
+/**
+ * Activates models/LearningConcept.js's own, already-existing
+ * `learningHubConcept` field — this is the ONLY place this field is
+ * ever written. Same mutate-here-caller-saves shape as
+ * setConceptDescription() above. `mapping` is `{ conceptId, title }`,
+ * as resolved by the teacher-facing picker (ui/components/
+ * LearningHubConceptMappingModal.js, backed by
+ * services/learningHubConceptService.js) — `conceptId` is Learning
+ * Hub's own opaque RepositoryConcept id and must never be typed by
+ * hand or derived from `title` here; this function trusts whatever the
+ * picker already resolved against a real, published Learning Hub
+ * concept. Does not introduce a second mapping field or a parallel
+ * concept model — this concept's own `id` remains its ClassMate-local
+ * identity, completely untouched.
+ */
+export function setLearningHubConceptMapping(classroom, conceptId, mapping) {
+  const concept = getConceptById(classroom, conceptId);
+  if (!concept) return null;
+  if (!mapping || !mapping.conceptId) return concept;
+  concept.learningHubConcept = { conceptId: mapping.conceptId, title: mapping.title || mapping.conceptId };
+  return concept;
+}
+
+/** Removes a previously-set Learning Hub mapping — back to the field's own documented `null` default ("no Learning Hub mapping"), never a fabricated placeholder. */
+export function clearLearningHubConceptMapping(classroom, conceptId) {
+  const concept = getConceptById(classroom, conceptId);
+  if (!concept) return null;
+  concept.learningHubConcept = null;
+  return concept;
+}
+
 // ---- Notebook status (per-student, teacher-set) -------------------
 
 /**

@@ -66,6 +66,8 @@ import { groupByDay } from '../../../services/learningHistoryGrouping.js';
 import { getStudentUnderstandingLabel, getStudentUnderstandingIcon } from '../../../config/learningRecordConfig.js';
 import { buildLearningHubLaunchUrl } from '../../views/ConceptWorkspaceView.js';
 import { renderConceptPreviewCard, renderConceptReferenceCard } from '../components/ConceptPreviewCard.js';
+import { listPublishedActivitiesForConcept } from '../../../services/learningHubActivityService.js';
+import { getExternalProviderLabel } from '../../../config/activityTypeConfig.js';
 
 // The 4 real progression steps a student can deliberately choose in
 // the Concept Detail view — "not_marked" (Not explored yet) is a
@@ -526,6 +528,19 @@ function renderConceptDetailLevel(classroom, concepts, conceptIndex, student, ha
   wrapper.appendChild(continueSlot);
   loadAndRenderContinueLearning(continueSlot, classroom, concept);
 
+  // Student-Facing External Activities (ClassMate Phase 2) — a
+  // separate slot, not merged into continueSlot above: Continue
+  // Learning's own single-button shape and this section's own
+  // (possibly multi-card, possibly entirely absent) shape are
+  // different enough to stay two independent async loads, same
+  // "one slot per independent piece of content" convention this
+  // function already uses for continueSlot vs. the reflection group
+  // vs. the reference card.
+  const externalActivitiesSlot = document.createElement('div');
+  externalActivitiesSlot.className = 'student-learning__external-activities';
+  wrapper.appendChild(externalActivitiesSlot);
+  loadAndRenderExternalActivities(externalActivitiesSlot, concept);
+
   const navRow = document.createElement('div');
   navRow.className = 'student-learning__concept-nav-row';
   const prevButton = document.createElement('button');
@@ -582,6 +597,81 @@ async function loadAndRenderContinueLearning(container, classroom, concept) {
     continueButton.disabled = true;
   }
   container.appendChild(continueButton);
+}
+
+/**
+ * Student-Facing External Activities (ClassMate Phase 2) — published
+ * Learning Hub externalActivities for this concept, via
+ * services/learningHubActivityService.js's own cross-project,
+ * read-only, never-throw query. Deliberately left EMPTY (no "Loading…"
+ * placeholder, unlike loadAndRenderContinueLearning() above) until this
+ * resolves, and left empty permanently if there is no Learning Hub
+ * mapping or no published activities — this section must only ever
+ * appear when there is something real to show (explicit product
+ * requirement), never a transient loading flash into nothing or a
+ * "nothing here yet" empty state of its own.
+ */
+export async function loadAndRenderExternalActivities(container, concept) {
+  if (!concept.learningHubConcept || !concept.learningHubConcept.conceptId) return;
+
+  const activities = await listPublishedActivitiesForConcept(concept.learningHubConcept.conceptId);
+  if (!container.isConnected || !activities.length) return;
+
+  container.innerHTML = '';
+  const heading = document.createElement('p');
+  heading.className = 'student-learning__external-activities-heading';
+  heading.textContent = 'External Activities';
+  container.appendChild(heading);
+
+  const cardGrid = document.createElement('div');
+  cardGrid.className = 'student-learning__external-activities-grid';
+  activities.forEach((activity) => cardGrid.appendChild(createExternalActivityCard(activity)));
+  container.appendChild(cardGrid);
+}
+
+/**
+ * One External Activity card — visually distinct from
+ * .student-learning__resource-card (a colored provider badge, a
+ * dashed/accented border — see css/styles.css) so a student never
+ * mistakes a third-party link for an ordinary ClassMate resource.
+ * Always opens in a new tab via window.open(url, '_blank',
+ * 'noopener,noreferrer') — never an iframe, never this app's own
+ * in-page navigation. `activity.url` is already re-validated as a real
+ * https:// link by learningHubActivityService.js before this card is
+ * ever built (defense in depth — Learning Hub's own rules are the real
+ * enforcement), so this function trusts it without re-checking.
+ */
+export function createExternalActivityCard(activity) {
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'student-learning__external-activity-card';
+  card.addEventListener('click', () => {
+    window.open(activity.url, '_blank', 'noopener,noreferrer');
+  });
+
+  const badge = document.createElement('span');
+  badge.className = `student-learning__external-activity-badge student-learning__external-activity-badge--${activity.provider}`;
+  badge.textContent = getExternalProviderLabel(activity.provider);
+  card.appendChild(badge);
+
+  const titleEl = document.createElement('p');
+  titleEl.className = 'student-learning__external-activity-title';
+  titleEl.textContent = activity.title;
+  card.appendChild(titleEl);
+
+  if (activity.description) {
+    const descEl = document.createElement('p');
+    descEl.className = 'student-learning__external-activity-description';
+    descEl.textContent = activity.description;
+    card.appendChild(descEl);
+  }
+
+  const openHint = document.createElement('span');
+  openHint.className = 'student-learning__external-activity-open-hint';
+  openHint.textContent = 'Open →';
+  card.appendChild(openHint);
+
+  return card;
 }
 
 /**

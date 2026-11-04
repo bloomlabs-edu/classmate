@@ -4,7 +4,13 @@ import { createClassroom } from '../../js/models/Classroom.js';
 import { createLearningSubject } from '../../js/models/LearningSubject.js';
 import { createLearningUnit } from '../../js/models/LearningUnit.js';
 import { createLearningConcept } from '../../js/models/LearningConcept.js';
-import { setConceptDescription, setConceptTaughtStatus, renameConcept } from '../../js/services/learningRecordTeacherService.js';
+import {
+  setConceptDescription,
+  setConceptTaughtStatus,
+  renameConcept,
+  setLearningHubConceptMapping,
+  clearLearningHubConceptMapping,
+} from '../../js/services/learningRecordTeacherService.js';
 
 function makeClassroomWithConcept({ learningHubConcept = null } = {}) {
   const concept = createLearningConcept({ id: 'concept-1', title: 'Forces', learningHubConcept });
@@ -75,5 +81,62 @@ test('renameConcept/setConceptTaughtStatus/setConceptDescription: a concept with
   renameConcept(classroom, 'concept-1', 'Newtonian Forces');
   setConceptTaughtStatus(classroom, 'concept-1', 'taught');
   setConceptDescription(classroom, 'concept-1', 'A force is a push or pull.');
+  assert.equal(concept.learningHubConcept, null);
+});
+
+// ---------------------------------------------------------------------
+// setLearningHubConceptMapping / clearLearningHubConceptMapping — the
+// Phase 2 picker's own save/remove actions. Same mutate-and-return,
+// caller-saves convention as setConceptDescription() above: these never
+// touch Firestore themselves, the caller (ConceptWorkspaceView.js)
+// persists via workspaceService after a non-null return.
+// ---------------------------------------------------------------------
+
+test('setLearningHubConceptMapping: saves conceptId + title onto the concept and returns the concept', () => {
+  const { classroom, concept } = makeClassroomWithConcept();
+  const result = setLearningHubConceptMapping(classroom, 'concept-1', { conceptId: 'hub-weather', title: 'Weather' });
+  assert.equal(result, concept);
+  assert.deepEqual(concept.learningHubConcept, { conceptId: 'hub-weather', title: 'Weather' });
+});
+
+test('setLearningHubConceptMapping: overwrites a previous mapping (change flow), never merges fields from the old one', () => {
+  const { classroom, concept } = makeClassroomWithConcept({ learningHubConcept: { conceptId: 'hub-old', title: 'Old Concept' } });
+  setLearningHubConceptMapping(classroom, 'concept-1', { conceptId: 'hub-new', title: 'New Concept' });
+  assert.deepEqual(concept.learningHubConcept, { conceptId: 'hub-new', title: 'New Concept' });
+});
+
+test('setLearningHubConceptMapping: a missing title falls back to the conceptId itself, never crashes or saves undefined', () => {
+  const { classroom, concept } = makeClassroomWithConcept();
+  setLearningHubConceptMapping(classroom, 'concept-1', { conceptId: 'hub-weather' });
+  assert.deepEqual(concept.learningHubConcept, { conceptId: 'hub-weather', title: 'hub-weather' });
+});
+
+test('setLearningHubConceptMapping: an unknown conceptId returns null and does not throw', () => {
+  const { classroom } = makeClassroomWithConcept();
+  const result = setLearningHubConceptMapping(classroom, 'does-not-exist', { conceptId: 'hub-weather', title: 'Weather' });
+  assert.equal(result, null);
+});
+
+test('setLearningHubConceptMapping: a null/empty mapping (Cancel with nothing selected) leaves the existing mapping untouched', () => {
+  const { classroom, concept } = makeClassroomWithConcept({ learningHubConcept: { conceptId: 'hub-old', title: 'Old Concept' } });
+  setLearningHubConceptMapping(classroom, 'concept-1', null);
+  assert.deepEqual(concept.learningHubConcept, { conceptId: 'hub-old', title: 'Old Concept' });
+});
+
+test('clearLearningHubConceptMapping: removes the mapping, setting it back to null', () => {
+  const { classroom, concept } = makeClassroomWithConcept({ learningHubConcept: { conceptId: 'hub-weather', title: 'Weather' } });
+  const result = clearLearningHubConceptMapping(classroom, 'concept-1');
+  assert.equal(result, concept);
+  assert.equal(concept.learningHubConcept, null);
+});
+
+test('clearLearningHubConceptMapping: an unknown conceptId returns null and does not throw', () => {
+  const { classroom } = makeClassroomWithConcept();
+  assert.equal(clearLearningHubConceptMapping(classroom, 'does-not-exist'), null);
+});
+
+test('clearLearningHubConceptMapping: a concept that was never mapped stays null (idempotent, no crash)', () => {
+  const { classroom, concept } = makeClassroomWithConcept();
+  clearLearningHubConceptMapping(classroom, 'concept-1');
   assert.equal(concept.learningHubConcept, null);
 });

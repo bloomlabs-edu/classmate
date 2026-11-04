@@ -45,6 +45,7 @@ import { getActivityTypeLabel, getExternalProviderLabel } from '../../config/act
 import { fetchLearningHubCatalogue, groupExperiencesByType } from '../../services/learningHubCatalogueService.js';
 import { resolveLearningHubConceptBucketUrl } from '../../services/learningHubLaunchUrlService.js';
 import { openLearningHubPanel } from '../components/LearningHubPanel.js';
+import { openLearningHubConceptMappingModal } from '../components/LearningHubConceptMappingModal.js';
 import { getUnderstandingLabel, getNotebookStatusLabel } from '../../config/learningRecordConfig.js';
 import {
   RESOURCE_TYPE_KEYS,
@@ -254,6 +255,37 @@ export function renderConceptWorkspaceView(container, { classroom, subject, unit
           // Already logged by saveExplicitly() itself. The description
           // stays set in memory; the Overview tab shows Retry.
           descriptionSaveState = { status: 'failed' };
+        }
+        rerender();
+      },
+      // Student-Facing External Activities (ClassMate Phase 2) — opens
+      // the searchable Learning Hub concept picker and persists the
+      // selection onto this concept's own, already-existing
+      // learningHubConcept field. The modal's own onSave rejecting
+      // (an unsaved workspaceService failure) is what puts IT into its
+      // own Retry state — this handler never swallows that, matching
+      // onSaveDescription's own "propagate the real failure" contract.
+      onOpenLearningHubConceptMapping: () => {
+        openLearningHubConceptMappingModal({
+          currentMapping: concept.learningHubConcept,
+          onSave: async ({ conceptId, title }) => {
+            learningRecordTeacherService.setLearningHubConceptMapping(classroom, concept.id, { conceptId, title });
+            workspaceService.markDirty(classroom.id);
+            await workspaceService.saveExplicitly(classroom);
+            rerender();
+          },
+        });
+      },
+      onClearLearningHubConceptMapping: async () => {
+        learningRecordTeacherService.clearLearningHubConceptMapping(classroom, concept.id);
+        workspaceService.markDirty(classroom.id);
+        try {
+          await workspaceService.saveExplicitly(classroom);
+        } catch (error) {
+          // Already logged by saveExplicitly() itself — the mapping
+          // stays cleared in memory either way; a future save will
+          // pick it up, same tolerance this file's other handlers use
+          // for a transient save failure.
         }
         rerender();
       },
@@ -611,6 +643,7 @@ function renderOverviewTab(classroom, concept, resources, resourceState, handler
   section.className = 'concept-workspace__section';
 
   section.appendChild(renderConceptDescriptionEditor(concept, resourceState, handlers));
+  section.appendChild(renderLearningHubConceptMappingControl(concept, handlers));
 
   const allStudents = classroom.teams.flatMap((team) => team.students);
   const records = allStudents.map((student) => learningRecordService.getStudentConceptRecord(student, concept.id));
@@ -737,6 +770,58 @@ function renderConceptDescriptionEditor(concept, resourceState, handlers) {
     errorNote.textContent = 'Save failed. Check your connection and try again.';
     wrap.appendChild(errorNote);
   }
+
+  return wrap;
+}
+
+/**
+ * Student-Facing External Activities (ClassMate Phase 2) — the
+ * teacher-facing control activating models/LearningConcept.js's own
+ * `learningHubConcept` field. Deliberately its own small section, not
+ * folded into the existing "Learning Hub" trigger button above (that
+ * button's own job — jump straight to this concept's Concept Bucket
+ * once mapped, or open the resource-import panel otherwise — is
+ * unrelated and unchanged by this). Read-mode shows the current
+ * mapping (or an honest "Not linked yet" prompt) with Change/Remove —
+ * exactly the same read-mode/edit-action shape
+ * renderConceptDescriptionEditor() above already established for this
+ * same tab, not a second control language.
+ */
+export function renderLearningHubConceptMappingControl(concept, handlers) {
+  const wrap = document.createElement('div');
+  wrap.className = 'concept-workspace__learning-hub-mapping';
+
+  const heading = document.createElement('p');
+  heading.className = 'concept-workspace__description-heading';
+  heading.textContent = 'Learning Hub concept link';
+  wrap.appendChild(heading);
+
+  const mapping = concept.learningHubConcept;
+
+  const statusText = document.createElement('p');
+  statusText.className = 'concept-workspace__description-text' + (mapping ? '' : ' concept-workspace__description-text--empty');
+  statusText.textContent = mapping ? `Linked to "${mapping.title}"` : 'Not linked yet — students will not see any External Activities for this concept.';
+  wrap.appendChild(statusText);
+
+  const actions = document.createElement('div');
+  actions.className = 'concept-workspace__description-actions';
+
+  const changeButton = document.createElement('button');
+  changeButton.type = 'button';
+  changeButton.className = 'btn btn--text';
+  changeButton.textContent = mapping ? 'Change' : '+ Link to Learning Hub concept';
+  changeButton.addEventListener('click', handlers.onOpenLearningHubConceptMapping);
+  actions.appendChild(changeButton);
+
+  if (mapping) {
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'btn btn--text';
+    removeButton.textContent = 'Remove';
+    removeButton.addEventListener('click', handlers.onClearLearningHubConceptMapping);
+    actions.appendChild(removeButton);
+  }
+  wrap.appendChild(actions);
 
   return wrap;
 }
