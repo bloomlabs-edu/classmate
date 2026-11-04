@@ -1510,11 +1510,18 @@ select:focus-visible,
   font: inherit;
   font-size: 0.9rem;
   font-weight: var(--font-weight-medium);
-  color: var(--color-danger);
+  color: var(--color-ink);
   cursor: pointer;
 }
 .classroom-card__menu-item:hover {
   background-color: var(--color-bg);
+}
+/* Destructive actions only (e.g. "Delete Classroom") — matches
+   ui/components/OverflowMenu.js's own .overflow-menu__item--danger,
+   the one other reusable card-row menu in this app with the same
+   neutral-by-default/danger-by-modifier shape. */
+.classroom-card__menu-item--danger {
+  color: var(--color-danger);
 }
 
 .classroom-card__meta {
