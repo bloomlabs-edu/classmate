@@ -171,11 +171,15 @@ function createActionsMenu({ displayName, isOwner, canEditClassroomDetails, onDe
   const editItem = document.createElement('button');
   editItem.type = 'button';
   editItem.className = 'classroom-card__menu-item';
-  editItem.textContent = 'Edit Classroom Details';
+  editItem.textContent = 'Edit';
 
+  // The one destructive action in this menu — classroom-card__menu-item
+  // itself stays neutral (matches ui/components/OverflowMenu.js's own
+  // overflow-menu__item/--danger split), so only this item opts into
+  // the danger color via the modifier class.
   const deleteItem = document.createElement('button');
   deleteItem.type = 'button';
-  deleteItem.className = 'classroom-card__menu-item';
+  deleteItem.className = 'classroom-card__menu-item classroom-card__menu-item--danger';
   deleteItem.textContent = 'Delete Classroom';
 
   function closeMenu() {

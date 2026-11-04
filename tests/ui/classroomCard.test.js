@@ -9,6 +9,10 @@
  * `canEditClassroomDetails`/`onEditClassroomDetails` at all — "Edit
  * Classroom Details" was wired into a different menu entirely
  * (ui/views/DashboardView.js's in-classroom header), never this card.
+ * This menu's own item label is the shorter "Edit" (the modal it opens
+ * is still titled "Edit Classroom Details" — only the ⋯ menu's label
+ * was shortened, for a tighter two-item menu alongside "Delete
+ * Classroom").
  *
  * Creates real DOM via createClassroomCardElement() directly — same
  * reasoning as tests/ui/editClassroomDetailsModal.test.js's own header
@@ -32,7 +36,7 @@ function startStaticServer() {
     const urlPath = decodeURIComponent(req.url.split('?')[0]);
     if (urlPath === '/') {
       res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end('<!doctype html><html><body></body></html>');
+      res.end('<!doctype html><html><head><link rel="stylesheet" href="/css/styles.css"></head><body></body></html>');
       return;
     }
     const filePath = path.join(REPO_ROOT, urlPath);
@@ -75,7 +79,7 @@ test.after(async () => {
 // instead, passing in only plain, serializable flags (isOwner,
 // canEditClassroomDetails).
 
-test('OWNER sees both "Edit Classroom Details" and "Delete Classroom" in the ⋯ menu', async () => {
+test('OWNER sees both "Edit" and "Delete Classroom" in the ⋯ menu', async () => {
   const result = await page.evaluate(async ({ isOwner, canEditClassroomDetails }) => {
     const { createClassroomCardElement } = await import('/js/ui/components/ClassroomCard.js');
     document.body.innerHTML = '';
@@ -91,10 +95,10 @@ test('OWNER sees both "Edit Classroom Details" and "Delete Classroom" in the ⋯
   }, { isOwner: true, canEditClassroomDetails: true });
 
   assert.equal(result.hasMenuButton, true);
-  assert.deepEqual(result.items, ['Edit Classroom Details', 'Delete Classroom']);
+  assert.deepEqual(result.items, ['Edit', 'Delete Classroom']);
 });
 
-test('TEACHER (non-owner) sees only "Edit Classroom Details" — never "Delete Classroom"', async () => {
+test('TEACHER (non-owner) sees only "Edit" — never "Delete Classroom"', async () => {
   const result = await page.evaluate(async ({ isOwner, canEditClassroomDetails }) => {
     const { createClassroomCardElement } = await import('/js/ui/components/ClassroomCard.js');
     document.body.innerHTML = '';
@@ -110,7 +114,34 @@ test('TEACHER (non-owner) sees only "Edit Classroom Details" — never "Delete C
   }, { isOwner: false, canEditClassroomDetails: true });
 
   assert.equal(result.hasMenuButton, true);
-  assert.deepEqual(result.items, ['Edit Classroom Details']);
+  assert.deepEqual(result.items, ['Edit']);
+});
+
+test('styling: "Edit" uses the standard neutral menu-item color; "Delete Classroom" alone carries the danger modifier class/color', async () => {
+  const result = await page.evaluate(async ({ isOwner, canEditClassroomDetails }) => {
+    const { createClassroomCardElement } = await import('/js/ui/components/ClassroomCard.js');
+    document.body.innerHTML = '';
+    const card = createClassroomCardElement({
+      displayName: 'Bloom Force 19', subtitle: 'Grade 8A', studentCount: 20, memberCount: 2,
+      onClick: () => {}, onDeleteClassroom: () => {}, onEditClassroomDetails: () => {},
+      isOwner, canEditClassroomDetails,
+    });
+    document.body.appendChild(card);
+    const editItem = [...card.querySelectorAll('.classroom-card__menu-item')].find((el) => el.textContent === 'Edit');
+    const deleteItem = [...card.querySelectorAll('.classroom-card__menu-item')].find((el) => el.textContent === 'Delete Classroom');
+    return {
+      editHasDangerClass: editItem.classList.contains('classroom-card__menu-item--danger'),
+      deleteHasDangerClass: deleteItem.classList.contains('classroom-card__menu-item--danger'),
+      editColor: getComputedStyle(editItem).color,
+      deleteColor: getComputedStyle(deleteItem).color,
+    };
+  }, { isOwner: true, canEditClassroomDetails: true });
+
+  assert.equal(result.editHasDangerClass, false);
+  assert.equal(result.deleteHasDangerClass, true);
+  // Computed colors must actually differ, not just the class list — proves
+  // the danger modifier's CSS rule is real and applied, not dead code.
+  assert.notEqual(result.editColor, result.deleteColor);
 });
 
 test('VIEWER (neither owner nor editor) sees no ⋯ menu at all', async () => {
@@ -132,7 +163,7 @@ test('VIEWER (neither owner nor editor) sees no ⋯ menu at all', async () => {
   assert.deepEqual(result.items, []);
 });
 
-test('clicking "Edit Classroom Details" calls onEditClassroomDetails with no arguments, and never touches onDeleteClassroom', async () => {
+test('clicking "Edit" calls onEditClassroomDetails with no arguments, and never touches onDeleteClassroom', async () => {
   const result = await page.evaluate(async () => {
     const { createClassroomCardElement } = await import('/js/ui/components/ClassroomCard.js');
     document.body.innerHTML = '';
@@ -146,7 +177,7 @@ test('clicking "Edit Classroom Details" calls onEditClassroomDetails with no arg
     });
     document.body.appendChild(card);
     card.querySelector('.classroom-card__menu-button').click();
-    const editItem = [...card.querySelectorAll('.classroom-card__menu-item')].find((el) => el.textContent === 'Edit Classroom Details');
+    const editItem = [...card.querySelectorAll('.classroom-card__menu-item')].find((el) => el.textContent === 'Edit');
     editItem.click();
     return { editCalls, deleteCalls, menuClosed: card.querySelector('.classroom-card__menu').hidden };
   });
