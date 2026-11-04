@@ -23,6 +23,7 @@ import { getDefaultGroupColor } from '../config/groupColorConfig.js';
 import { isNonEmptyString } from '../utils/validators.js';
 import { buildDefaultSettings } from '../config/classroomDefaults.js';
 import { DEFAULT_BADGE_CATALOG } from '../config/badgeConfig.js';
+import { DEFAULT_NOTEBOOK_BADGE_TYPES } from '../config/notebookBadgeConfig.js';
 import * as memberService from './memberService.js';
 import { MEMBER_ROLES } from '../config/memberRoles.js';
 import * as notebookService from './notebookService.js';
@@ -92,6 +93,7 @@ function normalizeClassroom(classroom) {
   classroom.settings.bucketScoring = classroom.settings.bucketScoring || defaults.bucketScoring;
   classroom.settings.scoring = classroom.settings.scoring || defaults.scoring;
   classroom.settings.badgeCatalog = classroom.settings.badgeCatalog || [...DEFAULT_BADGE_CATALOG];
+  classroom.settings.notebookBadgeTypes = classroom.settings.notebookBadgeTypes || DEFAULT_NOTEBOOK_BADGE_TYPES.map((type) => ({ ...type }));
   classroom.settings.setupProgress = classroom.settings.setupProgress || defaults.setupProgress;
 
   return classroom;
@@ -110,6 +112,7 @@ function normalizeStudent(student) {
   student.notes = student.notes || [];
   student.submissions = student.submissions || {};
   student.history = student.history || [];
+  student.notebookBadgeCounts = student.notebookBadgeCounts || {};
   return student;
 }
 

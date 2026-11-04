@@ -16562,7 +16562,14 @@ button.recognition-bento__hero-winner-name {
    saturated warning/error colors; the white glyph stays fully
    legible against both. */
 .notebook-checkpoints__status-icon--green { background-color: #4FAF78; }
-.notebook-checkpoints__status-icon--orange { background-color: #b7691a; }
+/* Student Row Redesign (Section 3) — replaced the previous brown/amber
+   #b7691a with a clearer, more distinctly "orange" shade, so Incomplete
+   reads unambiguously apart from both Complete (green) and Not
+   Submitted (red) at a glance. Scoped to this matrix's own two rules
+   only (this one + .notebook-checkpoints__cell-quick-review-button--incomplete
+   below) — ui/student-portal/views/StudentNotebooksView.js's own,
+   unrelated student-facing classes keep the original colour. */
+.notebook-checkpoints__status-icon--orange { background-color: #F2994A; }
 .notebook-checkpoints__status-icon--red { background-color: #D95C5C; }
 /* Secondary metadata, deliberately receding behind the icon above —
    centered beneath it now that the row is a vertical stack, not a
@@ -16632,15 +16639,18 @@ button.recognition-bento__hero-winner-name {
 .notebook-checkpoints__cell-quick-review-button--complete:hover {
   background: rgba(46, 158, 91, 0.12);
 }
-/* Orange — matches .notebook-checkpoints__status-icon--orange's own
-   #b7691a, the color the cell itself will actually show once this
-   quick action's own Incomplete review status lands. */
+/* Orange family — matches .notebook-checkpoints__status-icon--orange's
+   own #F2994A hue (the color the cell itself will actually show once
+   this quick action's own Incomplete review status lands), but darker
+   here (#c9741f) since this is text-on-white rather than a solid badge
+   with a white glyph on top — #F2994A alone is too light for
+   comfortable text contrast. */
 .notebook-checkpoints__cell-quick-review-button--incomplete {
-  border-color: rgba(183, 105, 26, 0.4);
-  color: #b7691a;
+  border-color: rgba(242, 153, 74, 0.5);
+  color: #c9741f;
 }
 .notebook-checkpoints__cell-quick-review-button--incomplete:hover {
-  background: rgba(183, 105, 26, 0.12);
+  background: rgba(242, 153, 74, 0.15);
 }
 
 /* These 6 background tints are kept exactly as they were before this
@@ -16700,9 +16710,9 @@ button.recognition-bento__hero-winner-name {
   cursor: pointer;
   text-align: left;
 }
-.notebook-checkpoints__student-name:hover {
-  text-decoration: underline;
-}
+/* Deliberately no text-decoration here at all, including on hover
+   (Student Row Redesign — explicit "do not underline the name"
+   direction) — color + cursor remain the only interactive affordance. */
 /* Subtle initial-letter avatar before each student's name — mirrors
    ui/components/UserBar.js's own existing fallback-avatar convention;
    never more visually prominent than the name itself. */
@@ -16719,6 +16729,140 @@ button.recognition-bento__hero-winner-name {
   font-weight: 700;
   flex-shrink: 0;
 }
+
+/* ---------------------------------------------------------------------
+   Student Row Redesign — info column below/beside the name (points,
+   compact achievement badges, progress summary, progress bar). Kept
+   deliberately small/quiet throughout (per explicit design direction)
+   so the unit/checkpoint matrix to the right stays the primary focus.
+   --------------------------------------------------------------------- */
+.notebook-checkpoints__student-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  width: 100%;
+}
+/* "⭐ 24 pts" — reuses the exact same gold/amber already established
+   for recognition elsewhere in this app (ui/components/Icon.js's own
+   ICON_CATEGORIES.recognition/BADGE_THEMES.amber primary, #C9971D),
+   rather than inventing a new "points" colour. */
+.notebook-checkpoints__student-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin-left: auto;
+  padding-left: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-medium);
+  color: #C9971D;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.notebook-checkpoints__student-badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+/* One compact shield/emblem + bare count — a plain button only so the
+   click interaction (reveal full name) and native title tooltip both
+   work; no border/background of its own beyond a subtle hover state,
+   so it reads as a small inline indicator, never a heavy control. */
+.notebook-checkpoints__badge-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  background: none;
+  border: none;
+  padding: 0.1rem;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+.notebook-checkpoints__badge-chip:hover {
+  background-color: var(--color-bg);
+}
+.notebook-checkpoints__badge-chip-count {
+  font-size: 0.7rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+}
+/* The click-interaction reveal (see buildBadgeChip() in
+   NotebookCheckpointsView.js) — a small floating label, auto-dismissed
+   after 2s or on the next click, never a modal/popover. */
+.notebook-checkpoints__badge-chip-label {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 0.25rem;
+  background-color: var(--color-ink);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  padding: 0.2rem 0.45rem;
+  border-radius: var(--radius-control);
+  z-index: 2;
+  pointer-events: none;
+}
+/* "Status: 8/12 | 4 pending" — deliberately one uniform text style
+   throughout (explicit design direction: no added hierarchy between
+   the pending number and the word "pending," normal weight, not
+   larger than the surrounding text) — only the colour changes for the
+   pending portion, reusing the app's existing danger/red token rather
+   than inventing a new red. */
+.notebook-checkpoints__student-progress-summary {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+.notebook-checkpoints__student-progress-pending {
+  color: var(--color-danger);
+}
+.notebook-checkpoints__student-progress-bar {
+  width: 100%;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background-color: var(--color-bg);
+  overflow: hidden;
+}
+.notebook-checkpoints__student-progress-bar-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background-color: var(--color-primary-strong);
+}
+
+/* The Student column header's own "+ Add Badge Type" action — a
+   compact, secondary text button beside the "Student"/"Students"
+   label, never competing with it for visual weight. */
+.notebook-checkpoints__student-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.notebook-checkpoints__add-badge-type-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  background: none;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: 0.2rem 0.5rem;
+  font-size: 0.68rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.notebook-checkpoints__add-badge-type-button:hover {
+  color: var(--color-ink);
+  border-color: var(--color-muted);
+}
+
 /* Assignment Tracker redesign (2026-10) — the Overall Rating compact
    action (ui/views/AssignmentDetailView.js's own buildOverallRatingPill()),
    a small pill under the student's name, deliberately smaller/quieter
