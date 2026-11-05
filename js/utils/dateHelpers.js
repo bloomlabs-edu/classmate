@@ -103,6 +103,28 @@ export function toDateKey(date) {
   return `${year}-${month}-${day}`;
 }
 
+const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * True only for a well-formed "YYYY-MM-DD" string naming a real calendar
+ * date — rejects non-strings, empty/missing values, malformed shapes,
+ * and out-of-range values like "2026-13-40" or "2026-02-30" (which
+ * `new Date(year, month - 1, day)` would otherwise silently roll over
+ * into the following month). Deliberately also rejects a full ISO
+ * timestamp (e.g. `getCurrentIsoDate()`'s own "2026-11-04T10:00:00.000Z"
+ * shape) — comparing a date-key against a timestamp with plain `>`/`<`
+ * happens to mostly work by lexicographic accident, which is exactly
+ * the class of bug this guards call sites against; see
+ * services/notebookBadgeAwardService.js's own evaluateReadinessChampion()
+ * for why this distinction matters.
+ */
+export function isValidDateKey(value) {
+  if (typeof value !== 'string' || !DATE_KEY_PATTERN.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+}
+
 /** Adds (or subtracts, with a negative number) whole days to a "YYYY-MM-DD" key. */
 export function shiftDateKey(dateKey, deltaDays) {
   const [year, month, day] = dateKey.split('-').map(Number);

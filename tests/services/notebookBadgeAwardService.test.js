@@ -647,3 +647,179 @@ test('REGRESSION: overrideReadinessChampion still throws if an active award alre
     /already been awarded/
   );
 });
+
+// ---------------------------------------------------------------------
+// BUG FIX — a late resubmission/date-correction that never passes back
+// through 'not_submitted' must not retain an earlier on-time automatic
+// award. Root cause: checkpointService.setSubmission() overwrites
+// submittedDate in place (no separate attempt identity), and
+// evaluateReadinessChampion() previously short-circuited on
+// hasActiveBadgeAward() alone on every re-evaluation, never
+// re-validating whether the CURRENT submission still supports an
+// already-active AUTOMATIC award. revokeReadinessChampionOnWithdrawal()
+// alone cannot catch this because no withdrawal ever happens in this
+// sequence — the record stays 'submitted' throughout, exactly what a
+// teacher editing a submitted date (quick-mark-submitted run twice, or
+// the detailed cell editor's date field changed without touching the
+// status dropdown) produces in the real UI
+// (ui/views/NotebookCheckpointsView.js's own onQuickMarkSubmitted/
+// onSaveCell handlers).
+// ---------------------------------------------------------------------
+
+test('BUG REPRO / FIX: resubmitting LATE while remaining "submitted" throughout (no withdrawal step) revokes the earlier on-time AUTOMATIC award', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' }); // on time
+  notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1, 'sanity check: on-time submission was awarded');
+
+  // Resubmission/correction — status never leaves 'submitted', so
+  // revokeReadinessChampionOnWithdrawal() is never called by the real
+  // UI here. This is the exact sequence that produced the deployed bug.
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-20' }); // now late
+  const result = notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+
+  assert.equal(result, null);
+  assert.equal(student.notebookBadgeCounts['readiness-champion'], 0, 'the stale award must no longer be reflected in the displayed count');
+  const record = checkpointService.getRecordForStudent(checkpoint, student.id);
+  assert.equal(notebookBadgeAwardService.hasActiveBadgeAward(record, 'readiness-champion'), false);
+  const entry = record.badgeAwards.find((e) => e.badgeTypeId === 'readiness-champion');
+  assert.equal(entry.revoked, true);
+  assert.equal(entry.revokedReason, 'resubmitted_late');
+  assert.equal(entry.source, 'automatic'); // the original award's own source is preserved, unchanged
+  assert.equal(record.badgeAwards.length, 1, 'the original entry is mutated in place, never deleted or duplicated');
+});
+
+test('BUG FIX, boundary check: resubmitting to exactly the due date (still on time) keeps the automatic award active — never revokes a genuinely still-eligible submission', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+  notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-10' }); // corrected, still on time (boundary)
+  const result = notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+
+  assert.equal(result, null); // no NEW award (one is already active) — but also not revoked
+  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1);
+  const record = checkpointService.getRecordForStudent(checkpoint, student.id);
+  assert.equal(notebookBadgeAwardService.hasActiveBadgeAward(record, 'readiness-champion'), true);
+});
+
+test('BUG FIX: a teacher OVERRIDE award is never auto-revoked by re-evaluation, even when the current submittedDate is late — override is a deliberate, date-independent decision', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-15' }); // late
+  notebookBadgeAwardService.overrideReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1);
+
+  // Submission edited again, still late (a different late date) — the
+  // override must survive re-evaluation.
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-18' });
+  const result = notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+
+  assert.equal(result, null);
+  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1, 'the override must NOT be revoked by automatic re-evaluation');
+  const record = checkpointService.getRecordForStudent(checkpoint, student.id);
+  const entry = record.badgeAwards.find((e) => e.badgeTypeId === 'readiness-champion');
+  assert.equal(entry.revoked, false);
+  assert.equal(entry.source, 'override');
+});
+
+test('BUG FIX: resubmitting with a missing submittedDate while remaining "submitted" revokes an active AUTOMATIC award — missing submission date is never eligible', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+  notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+
+  // Simulate a corrupted/incomplete record directly (defends against any
+  // caller that ever records 'submitted' without a real date, bypassing
+  // the real UI's own <input type="date"> requirement).
+  const record = checkpointService.getRecordForStudent(checkpoint, student.id);
+  record.submittedDate = null;
+
+  const result = notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+
+  assert.equal(result, null);
+  assert.equal(student.notebookBadgeCounts['readiness-champion'], 0);
+  const entry = record.badgeAwards.find((e) => e.badgeTypeId === 'readiness-champion');
+  assert.equal(entry.revoked, true);
+  assert.equal(entry.revokedReason, 'submission_date_invalid');
+});
+
+test('BUG FIX: an INVALID (malformed, non-empty) submittedDate is treated identically to a missing one — never eligible, revokes a stale automatic award', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+  notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+
+  const record = checkpointService.getRecordForStudent(checkpoint, student.id);
+  record.submittedDate = '2026-09-05T10:00:00.000Z'; // a full ISO timestamp snuck in, not a date key
+
+  const result = notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+
+  assert.equal(result, null);
+  assert.equal(student.notebookBadgeCounts['readiness-champion'], 0);
+  const entry = record.badgeAwards.find((e) => e.badgeTypeId === 'readiness-champion');
+  assert.equal(entry.revoked, true);
+  assert.equal(entry.revokedReason, 'submission_date_invalid');
+});
+
+test('BUG FIX: an INVALID (malformed, non-empty) checkpoint.dueDate never auto-awards and logs a diagnostic, but leaves an existing active award untouched', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+  notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1);
+
+  checkpoint.dueDate = '2026-13-40'; // corrupted after the fact
+  const originalWarn = console.warn;
+  let warned = false;
+  console.warn = () => { warned = true; };
+  try {
+    const result = notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+    assert.equal(result, null);
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  assert.equal(warned, true, 'a malformed due date must surface a diagnostic, not fail silently');
+  // Conservative: an existing award earned under what may have been a
+  // genuine due date at the time is not blindly revoked just because the
+  // due date is now unreadable.
+  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1);
+});
+
+test('BUG FIX: a MISSING checkpoint.dueDate (cleared, not malformed) never auto-awards and never logs a diagnostic — this is the routine, already-covered "no due date" case, not a data-corruption case', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+  notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+
+  checkpoint.dueDate = '';
+  const originalWarn = console.warn;
+  let warned = false;
+  console.warn = () => { warned = true; };
+  try {
+    notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  assert.equal(warned, false);
+  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1); // untouched
+});
+
+test('BUG FIX: an alternate award path (overrideReadinessChampion) is never reachable automatically — it always requires an explicit call with a real submission, and remains gated by canAwardNotebookBadge', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-20' }); // late
+
+  // evaluateReadinessChampion() alone, however many times, never awards
+  // or reaches the override path on its own.
+  notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+  notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+  assert.equal(student.notebookBadgeCounts['readiness-champion'], undefined);
+
+  assert.throws(
+    () => notebookBadgeAwardService.overrideReadinessChampion(classroom, checkpoint, student, VIEWER_UID),
+    /Not authorized/
+  );
+  assert.equal(student.notebookBadgeCounts['readiness-champion'], undefined);
+});

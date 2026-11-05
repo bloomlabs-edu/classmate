@@ -91,7 +91,7 @@ import * as notebookBadgeService from './notebookBadgeService.js';
 import { canPerformAsUid } from './permissionService.js';
 import { PERMISSIONS } from '../config/memberRoles.js';
 import { generateId } from '../utils/idGenerator.js';
-import { getCurrentIsoDate } from '../utils/dateHelpers.js';
+import { getCurrentIsoDate, isValidDateKey } from '../utils/dateHelpers.js';
 
 export const REVIEW_COMPLETION_BADGE_IDS = Object.freeze(['organization', 'punctuation-champion']);
 export const READINESS_CHAMPION_BADGE_ID = 'readiness-champion';
@@ -214,21 +214,67 @@ export function awardReviewCompletionBadge(classroom, checkpoint, student, badge
  * to award (see below) — this must never abort or roll back the
  * submission it's reacting to.
  *
- * `actingUid` lacking AWARD_NOTEBOOK_BADGE silently skips the award
- * rather than throwing, deliberately different from every other
- * function in this file: this is a SIDE EFFECT of an already-permitted
- * action (recording a submission), not a primary teacher command, and
- * must never surface as an error that could be mistaken for the
- * submission itself having failed to save. A later Review-Complete
- * manual award, or a later Override, both remain available to recover
- * from a skipped automatic grant.
+ * ROOT-CAUSE FIX (late-submission badge-awarding bug): `submittedDate`
+ * is overwritten in place on every resubmission (see this file's own
+ * "SUBMISSION ATTEMPT IDENTITY" header comment — there is no separate
+ * attempt identity), and this function is re-called on every submission
+ * recorded, not only the first one. Previously, once an AUTOMATIC award
+ * was active, every later re-evaluation short-circuited on
+ * hasActiveBadgeAward() alone — so a teacher correcting/resubmitting an
+ * already-"submitted" record's own date (never passing back through
+ * 'not_submitted', the only transition revokeReadinessChampionOnWithdrawal()
+ * reacts to) could turn a genuinely on-time submission into a late one
+ * while the earlier, now-factually-wrong automatic award stayed active
+ * forever. This function now re-validates the CURRENT submission on
+ * every call: if it is now late, or its date is no longer a real,
+ * well-formed date, any active AUTOMATIC award is revoked right here
+ * (the same ungated, data-integrity-correction shape as
+ * revokeReadinessChampionOnWithdrawal() — never a discretionary act, so
+ * never gated by canAwardNotebookBadge()). A teacher OVERRIDE is a
+ * deliberate decision independent of the date rule and is never touched
+ * by this re-validation.
+ *
+ * Invalid/missing `checkpoint.dueDate` is handled separately and
+ * conservatively: an existing award is never revoked just because a due
+ * date was cleared or is malformed (there is no way to tell whether the
+ * award was earned honestly under a real due date that existed at the
+ * time), but automatic awarding is still refused, and a malformed
+ * (present but unparsable) due date is surfaced via `console.warn` as a
+ * diagnostic rather than silently misbehaving.
  */
 export function evaluateReadinessChampion(classroom, checkpoint, student, actingUid) {
   const record = checkpointService.getRecordForStudent(checkpoint, student.id);
-  if (!record || record.submissionStatus !== 'submitted' || !record.submittedDate) return null;
-  if (!checkpoint.dueDate) return null;
-  if (record.submittedDate > checkpoint.dueDate) return null; // late — the automatic rule never applies; see overrideReadinessChampion() for that case
-  if (hasActiveBadgeAward(record, READINESS_CHAMPION_BADGE_ID)) return null;
+  if (!record || record.submissionStatus !== 'submitted') return null;
+
+  if (!isValidDateKey(checkpoint.dueDate)) {
+    if (checkpoint.dueDate) {
+      console.warn(
+        `evaluateReadinessChampion: checkpoint "${checkpoint.id}" has an invalid dueDate (${JSON.stringify(checkpoint.dueDate)}) — automatic evaluation skipped.`
+      );
+    }
+    return null; // missing or invalid due date — never auto-award; an existing award is left untouched (see header comment)
+  }
+
+  const activeEntry = listBadgeAwardsForRecord(record, READINESS_CHAMPION_BADGE_ID).find((entry) => !entry.revoked);
+  const isAutomaticActive = activeEntry && activeEntry.source === 'automatic';
+
+  if (!isValidDateKey(record.submittedDate)) {
+    // Missing or invalid submission date: never eligible. A stale
+    // AUTOMATIC award can no longer be verified as on-time, so it is
+    // revoked; a teacher OVERRIDE is untouched.
+    if (isAutomaticActive) revokeActiveReadinessAward(classroom, checkpoint, student, actingUid, 'submission_date_invalid');
+    return null;
+  }
+
+  if (record.submittedDate > checkpoint.dueDate) {
+    // Late — the automatic rule never applies; see overrideReadinessChampion()
+    // for that case. See this function's own header comment for why an
+    // active AUTOMATIC award must be revoked here, not merely skipped.
+    if (isAutomaticActive) revokeActiveReadinessAward(classroom, checkpoint, student, actingUid, 'resubmitted_late');
+    return null;
+  }
+
+  if (activeEntry) return null; // already active (automatic and still genuinely on time, or an override) — nothing to do
   if (!canAwardNotebookBadge(classroom, actingUid)) return null;
 
   pushAwardEntry(record, { badgeTypeId: READINESS_CHAMPION_BADGE_ID, source: 'automatic', awardedBy: actingUid });
