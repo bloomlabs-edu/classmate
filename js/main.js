@@ -1896,6 +1896,7 @@ function renderRoute(route, reason = 'unspecified') {
       // route/view (AssignmentCategoryView.js, removed).
       renderAssignmentDetailView(appContainer, {
         classroom,
+        currentUser,
         assignmentId: route.assignmentId,
         onBack: () => router.navigate(`/classroom/${classroom.id}/assignments`),
         onSelectStudent: (studentId) => {
