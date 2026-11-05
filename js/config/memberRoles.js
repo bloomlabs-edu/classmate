@@ -69,6 +69,12 @@ export const PERMISSIONS = Object.freeze({
   REMOVE_TEACHER: 'remove_teacher',
   TRANSFER_OWNERSHIP: 'transfer_ownership', // future
   DELETE_CLASSROOM: 'delete_classroom',
+  // Notebook Tracker badge awarding (Organization / Punctuation Champion
+  // manual awards on review completion; Readiness Champion's automatic
+  // award, teacher override, and revocation — see
+  // services/notebookBadgeAwardService.js) — granted to OWNER/TEACHER
+  // only, same scope as AWARD_POINTS above, never VIEWER/STUDENT/PARENT.
+  AWARD_NOTEBOOK_BADGE: 'award_notebook_badge',
   // Lesson Planning & Review — granted to every classroom TEACHER, and
   // (Programme Manager Weekly Plan Review) to PROGRAM_MANAGER too. Both
   // are still exactly "same-classroom member" in scope — see
@@ -122,6 +128,7 @@ export const ROLE_PERMISSIONS = Object.freeze({
     PERMISSIONS.REMOVE_TEACHER,
     PERMISSIONS.TRANSFER_OWNERSHIP,
     PERMISSIONS.DELETE_CLASSROOM,
+    PERMISSIONS.AWARD_NOTEBOOK_BADGE,
     PERMISSIONS.REVIEW_LESSON_PLAN,
     PERMISSIONS.APPROVE_LESSON_PLAN,
     PERMISSIONS.REVIEW_WEEKLY_PLAN,
@@ -138,6 +145,7 @@ export const ROLE_PERMISSIONS = Object.freeze({
     PERMISSIONS.EDIT_GROUPS,
     PERMISSIONS.MARK_ATTENDANCE,
     PERMISSIONS.CREATE_LEARNING_ACTIVITY,
+    PERMISSIONS.AWARD_NOTEBOOK_BADGE,
     PERMISSIONS.REVIEW_LESSON_PLAN,
     PERMISSIONS.APPROVE_LESSON_PLAN,
     PERMISSIONS.REVIEW_WEEKLY_PLAN,

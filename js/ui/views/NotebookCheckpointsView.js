@@ -58,6 +58,7 @@
 import * as checkpointService from '../../services/checkpointService.js';
 import * as notebookConfigService from '../../services/notebookConfigService.js';
 import * as notebookBadgeService from '../../services/notebookBadgeService.js';
+import * as notebookBadgeAwardService from '../../services/notebookBadgeAwardService.js';
 import * as workspaceService from '../../services/workspaceService.js';
 import * as workspaceCoordinator from '../../services/workspaceCoordinator.js';
 import * as notificationService from '../../services/notificationService.js';
@@ -70,6 +71,7 @@ import { createIcon } from '../components/Icon.js';
 import { createOverflowMenu } from '../components/OverflowMenu.js';
 import { createBadge } from '../components/Badge.js';
 import { openAddBadgeTypeModal } from '../components/AddNotebookBadgeTypeModal.js';
+import { openAwardReviewBadgesModal } from '../components/AwardReviewBadgesModal.js';
 import { getScoreDisplay, getProgressSummary } from './NotebookStudentRowDisplay.js';
 
 /**
@@ -236,6 +238,44 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
     });
   }
 
+  /**
+   * The "evaluation prompt" — opened right after a review is marked
+   * 'complete' (never merely 'submitted'; see
+   * services/notebookBadgeAwardService.js's own header comment),
+   * wherever that transition happens (onQuickReview or onSaveCell
+   * below). Resolves each badge's own already-awarded state from the
+   * real, just-persisted record before opening, so re-opening this for
+   * an already-decided badge shows "Awarded ✓" rather than offering a
+   * duplicate award.
+   */
+  function openReviewCompletionBadgePrompt(checkpoint, student) {
+    const record = checkpointService.getRecordForStudent(checkpoint, student.id);
+    const badges = notebookBadgeAwardService.REVIEW_COMPLETION_BADGE_IDS.map((badgeTypeId) => {
+      const type = notebookBadgeService.getBadgeTypeById(currentClassroom, badgeTypeId);
+      return {
+        id: badgeTypeId,
+        name: type ? type.name : badgeTypeId,
+        alreadyAwarded: notebookBadgeAwardService.hasActiveBadgeAward(record, badgeTypeId),
+      };
+    });
+    openAwardReviewBadgesModal({
+      studentName: student.name,
+      checkpointTitle: checkpoint.title,
+      badges,
+      onAward: (badgeTypeId) => {
+        try {
+          notebookBadgeAwardService.awardReviewCompletionBadge(currentClassroom, checkpoint, student, badgeTypeId, currentUser?.uid);
+          persistClassroom();
+          updateCellAndColumn(checkpoint.id, student.id);
+          return true;
+        } catch (error) {
+          window.alert(error.message);
+          return false;
+        }
+      },
+    });
+  }
+
   const handlers = {
     onStartCreate: () => {
       editingCheckpointId = 'new';
@@ -286,6 +326,11 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
     onQuickMarkSubmitted: (checkpointId, studentId) => {
       const checkpoint = checkpointService.getCheckpointById(currentClassroom, checkpointId);
       checkpointService.setSubmission(checkpoint, studentId, { status: 'submitted', submittedDate: getTodayDateKey() });
+      // Readiness Champion's own automatic trigger — a direct
+      // consequence of THIS submission, never of a review outcome. See
+      // services/notebookBadgeAwardService.js's own header comment.
+      const student = getSortedStudents().find((s) => s.id === studentId);
+      if (student) notebookBadgeAwardService.evaluateReadinessChampion(currentClassroom, checkpoint, student, currentUser?.uid);
       persistClassroom();
       updateCellAndColumn(checkpointId, studentId); // one <td> + its column's stat boxes — no grid rebuild
     },
@@ -295,6 +340,12 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
       persistClassroom();
       notifyIfIncomplete(checkpointId, studentId, status);
       updateCellAndColumn(checkpointId, studentId);
+      // Organization/Punctuation Champion's own one trigger point — a
+      // review genuinely marked Complete, never merely Submitted.
+      if (status === 'complete') {
+        const student = getSortedStudents().find((s) => s.id === studentId);
+        if (student) openReviewCompletionBadgePrompt(checkpoint, student);
+      }
     },
     onCloseCell: () => {
       openCellFor = null;
@@ -305,11 +356,47 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
       checkpointService.setSubmission(checkpoint, studentId, submission);
       checkpointService.setReview(checkpoint, studentId, review);
       checkpointService.setTeacherNote(checkpoint, studentId, teacherNote);
+      const student = getSortedStudents().find((s) => s.id === studentId);
+      // Same two triggers as the quick actions above, reached here via
+      // the detailed cell editor's own single Save instead — never
+      // conflated with each other, same as there.
+      if (student && submission.status === 'submitted') {
+        notebookBadgeAwardService.evaluateReadinessChampion(currentClassroom, checkpoint, student, currentUser?.uid);
+      }
       openCellFor = null;
       persistClassroom();
       notifyIfIncomplete(checkpointId, studentId, review.status);
       refreshCellEditor();
       updateCellAndColumn(checkpointId, studentId);
+      if (student && review.status === 'complete') {
+        openReviewCompletionBadgePrompt(checkpoint, student);
+      }
+    },
+    onOverrideReadiness: (checkpointId, studentId) => {
+      const checkpoint = checkpointService.getCheckpointById(currentClassroom, checkpointId);
+      const student = getSortedStudents().find((s) => s.id === studentId);
+      if (!checkpoint || !student) return;
+      try {
+        notebookBadgeAwardService.overrideReadinessChampion(currentClassroom, checkpoint, student, currentUser?.uid);
+        persistClassroom();
+        updateCellAndColumn(checkpointId, studentId);
+        refreshCellEditor();
+      } catch (error) {
+        window.alert(error.message);
+      }
+    },
+    onRevokeReadiness: (checkpointId, studentId) => {
+      const checkpoint = checkpointService.getCheckpointById(currentClassroom, checkpointId);
+      const student = getSortedStudents().find((s) => s.id === studentId);
+      if (!checkpoint || !student) return;
+      try {
+        notebookBadgeAwardService.revokeReadinessChampion(currentClassroom, checkpoint, student, currentUser?.uid);
+        persistClassroom();
+        updateCellAndColumn(checkpointId, studentId);
+        refreshCellEditor();
+      } catch (error) {
+        window.alert(error.message);
+      }
     },
     // Reuses the existing app-wide student-profile navigation prop
     // (identical to GoalDashboardView.js's own handlers.onSelectStudent)
@@ -1133,7 +1220,7 @@ function renderCheckpointForm(checkpoint, handlers) {
   return form;
 }
 
-function renderCellEditor(checkpoint, student, handlers) {
+export function renderCellEditor(checkpoint, student, handlers) {
   const record = checkpointService.getRecordForStudent(checkpoint, student.id);
 
   const overlay = document.createElement('div');
@@ -1226,6 +1313,49 @@ function renderCellEditor(checkpoint, student, handlers) {
   const noteInput = document.createElement('textarea');
   noteInput.value = record?.teacherNote || '';
   sheet.appendChild(noteInput);
+
+  // --- Readiness Champion (override/revoke) ---
+  // Organization/Punctuation Champion are never shown here — this
+  // editor's own review dropdown above is still an UNSAVED, pending
+  // value, and those two badges are only ever offered once a review is
+  // genuinely, persistently marked Complete (see
+  // openReviewCompletionBadgePrompt() above, triggered right after a
+  // real Save). Readiness Champion is different: it reacts to the
+  // SUBMISSION, which this editor's own PERSISTED `record` (captured at
+  // the top of this function) already reflects accurately.
+  const readinessLabel = document.createElement('p');
+  readinessLabel.className = 'notebook-checkpoints__cell-editor-section-label';
+  readinessLabel.textContent = 'Readiness Champion';
+  sheet.appendChild(readinessLabel);
+
+  const activeReadinessAward = (record?.badgeAwards || []).find(
+    (entry) => entry.badgeTypeId === notebookBadgeAwardService.READINESS_CHAMPION_BADGE_ID && !entry.revoked
+  );
+
+  const readinessStatus = document.createElement('p');
+  readinessStatus.textContent = activeReadinessAward
+    ? `Awarded (${activeReadinessAward.source === 'automatic' ? 'automatic — on time' : 'teacher override'})`
+    : 'Not awarded';
+  sheet.appendChild(readinessStatus);
+
+  const readinessActions = document.createElement('div');
+  readinessActions.className = 'notebook-checkpoints__cell-editor-actions';
+  if (activeReadinessAward) {
+    const revokeButton = document.createElement('button');
+    revokeButton.type = 'button';
+    revokeButton.className = 'btn btn--text';
+    revokeButton.textContent = 'Revoke';
+    revokeButton.addEventListener('click', () => handlers.onRevokeReadiness(checkpoint.id, student.id));
+    readinessActions.appendChild(revokeButton);
+  } else if (record?.submissionStatus === 'submitted') {
+    const overrideButton = document.createElement('button');
+    overrideButton.type = 'button';
+    overrideButton.className = 'btn btn--text';
+    overrideButton.textContent = 'Award anyway (override)';
+    overrideButton.addEventListener('click', () => handlers.onOverrideReadiness(checkpoint.id, student.id));
+    readinessActions.appendChild(overrideButton);
+  }
+  sheet.appendChild(readinessActions);
 
   // --- Actions ---
   const actions = document.createElement('div');

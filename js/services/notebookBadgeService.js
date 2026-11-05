@@ -92,3 +92,26 @@ export function awardNotebookBadge(classroom, student, badgeTypeId) {
   logEntry(student, { kind: 'notebook-badge', label: type.name, delta: 0 });
   return student.notebookBadgeCounts[badgeTypeId];
 }
+
+/**
+ * The symmetric inverse of awardNotebookBadge() — decrements this
+ * student's own count for `badgeTypeId` by one, floored at 0 (never
+ * negative, regardless of how many times this is called). Used by
+ * services/notebookBadgeAwardService.js's revocation flows (currently
+ * Readiness Champion only) once that service has already found and
+ * marked the specific submission-scoped award entry revoked; this
+ * function only ever touches the aggregate display count, never the
+ * per-submission audit trail itself. Logs a Participation History
+ * entry mirroring awardNotebookBadge()'s own shape, so a revocation is
+ * just as visible in that history as the original award was.
+ */
+export function revokeNotebookBadge(classroom, student, badgeTypeId) {
+  const type = getBadgeTypeById(classroom, badgeTypeId);
+  if (!type) return 0;
+
+  if (!student.notebookBadgeCounts) student.notebookBadgeCounts = {};
+  const current = student.notebookBadgeCounts[badgeTypeId] || 0;
+  student.notebookBadgeCounts[badgeTypeId] = Math.max(0, current - 1);
+  logEntry(student, { kind: 'notebook-badge-revoked', label: type.name, delta: 0 });
+  return student.notebookBadgeCounts[badgeTypeId];
+}

@@ -102,3 +102,52 @@ test('addBadgeType: starts the catalog fresh (never throws) when a classroom has
   assert.equal(added.name, 'Custom Type');
   assert.equal(classroom.settings.notebookBadgeTypes.length, 1);
 });
+
+// ---------------------------------------------------------------------
+// revokeNotebookBadge — the symmetric inverse of awardNotebookBadge(),
+// used by services/notebookBadgeAwardService.js's revocation flows.
+// ---------------------------------------------------------------------
+
+test('revokeNotebookBadge: decrements an existing count by exactly one, and logs a Participation History entry', () => {
+  const classroom = makeClassroom();
+  const student = createStudent({ name: 'Anjali' });
+  notebookBadgeService.awardNotebookBadge(classroom, student, 'readiness-champion');
+  notebookBadgeService.awardNotebookBadge(classroom, student, 'readiness-champion');
+
+  const result = notebookBadgeService.revokeNotebookBadge(classroom, student, 'readiness-champion');
+
+  assert.equal(result, 1);
+  assert.equal(notebookBadgeService.getBadgeCount(student, 'readiness-champion'), 1);
+  assert.equal(student.history.length, 3);
+  assert.equal(student.history[2].kind, 'notebook-badge-revoked');
+  assert.equal(student.history[2].label, 'Readiness Champion');
+});
+
+test('revokeNotebookBadge: floors at 0, never goes negative even when revoked more times than it was awarded', () => {
+  const classroom = makeClassroom();
+  const student = createStudent({ name: 'Anjali' });
+  notebookBadgeService.awardNotebookBadge(classroom, student, 'organization');
+
+  notebookBadgeService.revokeNotebookBadge(classroom, student, 'organization');
+  const secondRevoke = notebookBadgeService.revokeNotebookBadge(classroom, student, 'organization');
+
+  assert.equal(secondRevoke, 0);
+  assert.equal(notebookBadgeService.getBadgeCount(student, 'organization'), 0);
+});
+
+test('revokeNotebookBadge: a student who never earned the badge at all stays at 0, never negative', () => {
+  const classroom = makeClassroom();
+  const student = createStudent({ name: 'Anjali' });
+  const result = notebookBadgeService.revokeNotebookBadge(classroom, student, 'organization');
+  assert.equal(result, 0);
+  assert.equal(notebookBadgeService.getBadgeCount(student, 'organization'), 0);
+});
+
+test('revokeNotebookBadge: an unknown badge type id is a no-op, never throws, never creates a phantom count', () => {
+  const classroom = makeClassroom();
+  const student = createStudent({ name: 'Anjali' });
+  const result = notebookBadgeService.revokeNotebookBadge(classroom, student, 'does-not-exist');
+  assert.equal(result, 0);
+  assert.deepEqual(student.notebookBadgeCounts, {});
+  assert.equal(student.history.length, 0);
+});

@@ -48,6 +48,28 @@
  * `teacherNote` is optional and independent of both status
  * dimensions — a teacher may leave a note on a student who has not
  * submitted anything at all.
+ *
+ * `badgeAwards` — this submission's own audit trail for Notebook
+ * Tracker achievement badges (Organization / Punctuation Champion /
+ * Readiness Champion — see services/notebookBadgeAwardService.js).
+ * Sparse, append-only, SUBMISSION-scoped: one entry per award actually
+ * granted for THIS checkpoint/student pair, never a classroom- or
+ * student-wide log (that's services/notebookBadgeService.js's own
+ * aggregate count, which this feeds). Each entry:
+ *   { id, badgeTypeId, source, awardedBy, awardedAt,
+ *     revoked, revokedBy, revokedAt }
+ * `source` is 'manual' (Organization/Punctuation, awarded by a teacher
+ * right after marking this review Complete), 'automatic' (Readiness
+ * Champion, submittedDate <= the checkpoint's own dueDate), or
+ * 'override' (Readiness Champion, teacher-granted despite the
+ * automatic rule not applying). Entries are never deleted — a
+ * revocation sets `revoked: true` plus `revokedBy`/`revokedAt` in
+ * place, preserving the fact an award once existed, exactly like
+ * `submittedDate`/`reviewedDate` above are corrected in place rather
+ * than replaced by a new record. Never more than one ACTIVE (non-
+ * revoked) entry per badgeTypeId on one record — that is the
+ * duplicate-prevention invariant notebookBadgeAwardService.js enforces
+ * before ever pushing a new entry here.
  */
 
 import { generateId } from '../utils/idGenerator.js';
@@ -61,6 +83,7 @@ export function createStudentCheckpointRecord({
   reviewStatus = 'not_reviewed',
   reviewedDate = null,
   teacherNote = '',
+  badgeAwards = [],
   updatedAt,
 } = {}) {
   return {
@@ -71,6 +94,7 @@ export function createStudentCheckpointRecord({
     reviewStatus,
     reviewedDate,
     teacherNote,
+    badgeAwards,
     updatedAt: updatedAt || getCurrentIsoDate(),
   };
 }
