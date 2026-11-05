@@ -19,6 +19,7 @@
 import { createAssignment } from '../models/Assignment.js';
 import { createStudentAssignmentRecord } from '../models/StudentAssignmentRecord.js';
 import * as assignmentConfigService from './assignmentConfigService.js';
+import { generateWorksheetCode } from './worksheetCodeService.js';
 import { getCurrentIsoDate } from '../utils/dateHelpers.js';
 
 export function listAssignmentsForCategory(classroom, categoryId) {
@@ -31,20 +32,40 @@ export function getAssignmentById(classroom, assignmentId) {
   return (classroom.assignments || []).find((a) => a.id === assignmentId) || null;
 }
 
-/** `order` defaults to one past the current highest order within this exact category, mirroring checkpointService.js's own createNewCheckpoint(). `subjectId` is the Assignment Tracker redesign's own addition — optional, `null`-safe, same reference-not-copy convention as `conceptIds`. */
-export function createNewAssignment(classroom, { categoryId, title, description, givenDate, dueDate, conceptIds, resourceUrl, subjectId }) {
+/**
+ * `order` defaults to one past the current highest order within this
+ * exact category, mirroring checkpointService.js's own
+ * createNewCheckpoint(). `subjectId`/`unitId` are optional, `null`-safe,
+ * same reference-not-copy convention as `conceptIds`. `code` is
+ * generated here, once, via services/worksheetCodeService.js — never
+ * accepted as a caller-supplied param, so nothing can ever create an
+ * Assignment with a teacher-typed or duplicated code (see that
+ * service's own header comment).
+ */
+export function createNewAssignment(classroom, { categoryId, title, description, givenDate, dueDate, conceptIds, resourceUrl, subjectId, unitId, categoryName = null }) {
   if (!classroom.assignments) classroom.assignments = [];
 
   const existingInCategory = listAssignmentsForCategory(classroom, categoryId);
   const nextOrder = existingInCategory.length > 0 ? Math.max(...existingInCategory.map((a) => a.order)) + 1 : 0;
 
-  const assignment = createAssignment({ categoryId, title, description, givenDate, dueDate, order: nextOrder, conceptIds, resourceUrl, subjectId });
+  const code = generateWorksheetCode(classroom, { subjectId, unitId, categoryName });
+  const assignment = createAssignment({ categoryId, title, description, givenDate, dueDate, order: nextOrder, conceptIds, resourceUrl, subjectId, unitId, code });
   classroom.assignments.push(assignment);
   return assignment;
 }
 
-/** Metadata only — title/description/givenDate/dueDate/conceptIds/resourceUrl/subjectId/categoryId. Never touches `records`, `order`, or `id`; use reorderAssignments() for ordering. `categoryId` is included here (unlike the retired per-category creation flow) because the redesigned landing page lets a teacher change an Assignment's own Type after creation, not just at creation time. */
-export function updateAssignment(assignment, { title, description, givenDate, dueDate, conceptIds, resourceUrl, subjectId, categoryId }) {
+/**
+ * Metadata only — title/description/givenDate/dueDate/conceptIds/
+ * resourceUrl/subjectId/unitId/categoryId. Never touches `records`,
+ * `order`, `id`, or `code` (see models/Assignment.js's own `code` field
+ * comment: generated once at creation, never regenerated even if
+ * Subject/Unit change later) — use reorderAssignments() for ordering.
+ * `categoryId` is included here (unlike the retired per-category
+ * creation flow) because the redesigned landing page lets a teacher
+ * change an Assignment's own Type after creation, not just at creation
+ * time.
+ */
+export function updateAssignment(assignment, { title, description, givenDate, dueDate, conceptIds, resourceUrl, subjectId, unitId, categoryId }) {
   if (title !== undefined) assignment.title = title;
   if (description !== undefined) assignment.description = description;
   if (givenDate !== undefined) assignment.givenDate = givenDate;
@@ -52,6 +73,7 @@ export function updateAssignment(assignment, { title, description, givenDate, du
   if (conceptIds !== undefined) assignment.conceptIds = conceptIds;
   if (resourceUrl !== undefined) assignment.resourceUrl = resourceUrl;
   if (subjectId !== undefined) assignment.subjectId = subjectId;
+  if (unitId !== undefined) assignment.unitId = unitId;
   if (categoryId !== undefined) assignment.categoryId = categoryId;
 }
 

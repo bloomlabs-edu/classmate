@@ -41,6 +41,8 @@ import * as workRequestService from '../../services/workRequestService.js';
 import * as assignmentService from '../../services/assignmentService.js';
 import * as assignmentCheckpointService from '../../services/assignmentCheckpointService.js';
 import * as notebookConfigService from '../../services/notebookConfigService.js';
+import * as notebookStatusService from '../../services/notebookStatusService.js';
+import { renderNotebookStatusSummary } from '../components/NotebookStatusSummary.js';
 import { getStatusMeta } from './WorkRequestRosterView.js';
 import { getAssignmentCellMeta } from './AssignmentDetailView.js';
 import * as studentEventService from '../../services/studentEventService.js';
@@ -242,8 +244,15 @@ function renderProfileHeader(classroom, student, team, rerender, onBack, onSelec
   const summary = learningActivityService.getSubmissionSummary(classroom, student);
   const submissionText = `${summary.Submitted} Submitted \u00b7 ${summary['Submitted Late']} Late \u00b7 ${summary.Missing} Missing`;
 
-  const notebookSummary = workRequestService.getStudentSummary(classroom, student.id);
-  const hasNotebookActivity = workRequestService.listWorkRequests(classroom).some((request) => workRequestService.getEntryForStudent(request, student.id));
+  // Merged across both notebook-tracking systems (see
+  // services/notebookStatusService.js's own header comment) \u2014 this
+  // used to read workRequestService.getStudentSummary() alone, which
+  // has no knowledge of classroom.checkpoints at all, so a student
+  // tracked entirely via Checkpoints (the default tracking mode)
+  // always showed "0 Awaiting" here regardless of their real status.
+  const notebookStatusForHeader = notebookStatusService.getNotebookStatusForStudent(classroom, student.id);
+  const notebookSummary = notebookStatusForHeader.summary;
+  const hasNotebookActivity = Object.values(notebookSummary).some((count) => count > 0);
   const notebookText = `${notebookSummary.awaitingSubmission} Awaiting \u00b7 ${notebookSummary.awaitingReview} Review \u00b7 ${notebookSummary.needsCorrection} Correction \u00b7 ${notebookSummary.reviewed} Reviewed`;
 
   const stats = document.createElement('div');
@@ -941,14 +950,18 @@ function renderNotebooksTab(content, classroom, student) {
   heading.textContent = 'Notebooks';
   section.appendChild(heading);
 
-  const summary = workRequestService.getStudentSummary(classroom, student.id);
-  const statsRow = document.createElement('div');
-  statsRow.className = 'profile-overview';
-  statsRow.appendChild(createStatCard('Awaiting Submission', summary.awaitingSubmission));
-  statsRow.appendChild(createStatCard('Awaiting Review', summary.awaitingReview));
-  statsRow.appendChild(createStatCard('Needs Correction', summary.needsCorrection));
-  statsRow.appendChild(createStatCard('Reviewed', summary.reviewed));
-  section.appendChild(statsRow);
+  // THE ACTUAL FIX for the teacher-profile/tracker disagreement: this
+  // used to read workRequestService.getStudentSummary() alone, which
+  // has zero knowledge of classroom.checkpoints — the system the
+  // primary Notebook Tracker grid (ui/views/NotebookCheckpointsView.js)
+  // actually uses for any notebook in its default tracking mode. See
+  // services/notebookStatusService.js's own header comment for the
+  // full story. This now merges both systems, so this tab and the
+  // Notebook Tracker can never disagree about the same student again.
+  const notebookStatus = notebookStatusService.getNotebookStatusForStudent(classroom, student.id);
+  const statusSummaryContainer = document.createElement('div');
+  renderNotebookStatusSummary(statusSummaryContainer, notebookStatus);
+  section.appendChild(statusSummaryContainer);
 
   const notebooks = workRequestService.getNotebooksForStudent(classroom, student.id);
   if (notebooks.length === 0) {
