@@ -59,6 +59,7 @@ import * as checkpointService from '../../services/checkpointService.js';
 import * as notebookConfigService from '../../services/notebookConfigService.js';
 import * as notebookBadgeService from '../../services/notebookBadgeService.js';
 import * as notebookBadgeAwardService from '../../services/notebookBadgeAwardService.js';
+import * as recognitionService from '../../services/recognitionService.js';
 import * as workspaceService from '../../services/workspaceService.js';
 import * as workspaceCoordinator from '../../services/workspaceCoordinator.js';
 import * as notificationService from '../../services/notificationService.js';
@@ -325,10 +326,20 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
     },
     onQuickMarkSubmitted: (checkpointId, studentId) => {
       const checkpoint = checkpointService.getCheckpointById(currentClassroom, checkpointId);
-      checkpointService.setSubmission(checkpoint, studentId, { status: 'submitted', submittedDate: getTodayDateKey() });
+      // Routed through recognitionService.js (WORK-0038) rather than
+      // calling checkpointService.setSubmission() directly — makes that
+      // exact same call, but Completion Star is no longer earned here
+      // at all (submission alone never awards it; see
+      // recordNotebookCheckpointReview() below for the real trigger).
+      recognitionService.recordNotebookCheckpointSubmission(currentClassroom, checkpoint, studentId, {
+        status: 'submitted',
+        submittedDate: getTodayDateKey(),
+      });
       // Readiness Champion's own automatic trigger — a direct
       // consequence of THIS submission, never of a review outcome. See
       // services/notebookBadgeAwardService.js's own header comment.
+      // Unchanged by WORK-0038 — Completion Star and Readiness Champion
+      // remain entirely separate mechanisms.
       const student = getSortedStudents().find((s) => s.id === studentId);
       if (student) notebookBadgeAwardService.evaluateReadinessChampion(currentClassroom, checkpoint, student, currentUser?.uid);
       persistClassroom();
@@ -336,12 +347,19 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
     },
     onQuickReview: (checkpointId, studentId, status) => {
       const checkpoint = checkpointService.getCheckpointById(currentClassroom, checkpointId);
-      checkpointService.setReview(checkpoint, studentId, { status, reviewedDate: getTodayDateKey() });
+      // Routed through recognitionService.js (WORK-0038) — THE real
+      // Completion Star trigger: awards once this exact review reaches
+      // 'complete' (never merely 'submitted'), reverses on Complete ->
+      // Incomplete, and correctly supports re-completion. See that
+      // function's own header comment.
+      recognitionService.recordNotebookCheckpointReview(currentClassroom, checkpoint, studentId, { status, reviewedDate: getTodayDateKey() }, currentUser?.uid);
       persistClassroom();
       notifyIfIncomplete(checkpointId, studentId, status);
       updateCellAndColumn(checkpointId, studentId);
       // Organization/Punctuation Champion's own one trigger point — a
       // review genuinely marked Complete, never merely Submitted.
+      // Unchanged by WORK-0038 — a distinct, manual-award badge system,
+      // never conflated with the automatic Completion Star above.
       if (status === 'complete') {
         const student = getSortedStudents().find((s) => s.id === studentId);
         if (student) openReviewCompletionBadgePrompt(checkpoint, student);
@@ -357,8 +375,12 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
       // way to tell a genuine Submitted -> Not Submitted WITHDRAWAL
       // apart from "already not submitted, still not submitted."
       const wasSubmitted = checkpointService.getRecordForStudent(checkpoint, studentId)?.submissionStatus === 'submitted';
-      checkpointService.setSubmission(checkpoint, studentId, submission);
-      checkpointService.setReview(checkpoint, studentId, review);
+      // Submission wrapper first (handles a withdrawal silently
+      // un-completing an already-'complete' review — see that
+      // function's own header comment), then the review wrapper (THE
+      // real Completion Star trigger) — WORK-0038.
+      recognitionService.recordNotebookCheckpointSubmission(currentClassroom, checkpoint, studentId, submission);
+      recognitionService.recordNotebookCheckpointReview(currentClassroom, checkpoint, studentId, review, currentUser?.uid);
       checkpointService.setTeacherNote(checkpoint, studentId, teacherNote);
       const student = getSortedStudents().find((s) => s.id === studentId);
       // Same two triggers as the quick actions above, reached here via
@@ -402,6 +424,30 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
       if (!checkpoint || !student) return;
       try {
         notebookBadgeAwardService.revokeReadinessChampion(currentClassroom, checkpoint, student, currentUser?.uid);
+        persistClassroom();
+        updateCellAndColumn(checkpointId, studentId);
+        refreshCellEditor();
+      } catch (error) {
+        window.alert(error.message);
+      }
+    },
+    // Explicit teacher removal of an active Completion Star (WORK-0038)
+    // — mirrors onRevokeReadiness above exactly, but for
+    // recognitionService.js's own separate mechanism, never
+    // notebookBadgeAwardService.js's. Reverses the EXACT associated +1
+    // points event via recognitionService.removeCompletionStar()'s own
+    // ledger mechanics; never touches Readiness Champion.
+    onRemoveCompletionStar: (checkpointId, studentId) => {
+      const checkpoint = checkpointService.getCheckpointById(currentClassroom, checkpointId);
+      const student = getSortedStudents().find((s) => s.id === studentId);
+      if (!checkpoint || !student) return;
+      const workItemRef = recognitionService.buildNotebookCheckpointWorkItemRef({
+        subjectId: checkpoint.subjectId,
+        notebookTypeId: checkpoint.notebookTypeId,
+        checkpointId: checkpoint.id,
+      });
+      try {
+        recognitionService.removeCompletionStar(currentClassroom, student, workItemRef, currentUser?.uid);
         persistClassroom();
         updateCellAndColumn(checkpointId, studentId);
         refreshCellEditor();
@@ -1367,6 +1413,42 @@ export function renderCellEditor(checkpoint, student, handlers) {
     readinessActions.appendChild(overrideButton);
   }
   sheet.appendChild(readinessActions);
+
+  // --- Completion Star (WORK-0038: remove only — awarding/reversal is
+  // entirely automatic, tied to the review transition above; there is
+  // no "award anyway" override for this one, unlike Readiness
+  // Champion, since eligibility here has no date rule to override). A
+  // genuinely separate mechanism from Readiness Champion throughout —
+  // different service (recognitionService.js, never
+  // notebookBadgeAwardService.js), different ledger (points/history,
+  // never badgeAwards), different work-item identity, never conflated.
+  const completionStarLabel = document.createElement('p');
+  completionStarLabel.className = 'notebook-checkpoints__cell-editor-section-label';
+  completionStarLabel.textContent = 'Completion Star';
+  sheet.appendChild(completionStarLabel);
+
+  const completionStarWorkItemRef = recognitionService.buildNotebookCheckpointWorkItemRef({
+    subjectId: checkpoint.subjectId,
+    notebookTypeId: checkpoint.notebookTypeId,
+    checkpointId: checkpoint.id,
+  });
+  const completionStarActive = recognitionService.getAutomaticStarNetForWorkItem(student, completionStarWorkItemRef) >= 1;
+
+  const completionStarStatus = document.createElement('p');
+  completionStarStatus.textContent = completionStarActive ? 'Awarded' : 'Not awarded';
+  sheet.appendChild(completionStarStatus);
+
+  if (completionStarActive) {
+    const completionStarActions = document.createElement('div');
+    completionStarActions.className = 'notebook-checkpoints__cell-editor-actions';
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'btn btn--text';
+    removeButton.textContent = 'Remove';
+    removeButton.addEventListener('click', () => handlers.onRemoveCompletionStar(checkpoint.id, student.id));
+    completionStarActions.appendChild(removeButton);
+    sheet.appendChild(completionStarActions);
+  }
 
   // --- Actions ---
   const actions = document.createElement('div');

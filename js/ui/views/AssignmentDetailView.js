@@ -91,7 +91,7 @@ function getCheckpointCellMeta(checkpoint, record) {
     : { label: 'Not Reviewed', chipClass: 'purple', icon: 'circle-dot' };
 }
 
-export function renderAssignmentDetailView(container, { classroom, assignmentId, onBack, onSelectStudent, onGoToClassMode }) {
+export function renderAssignmentDetailView(container, { classroom, assignmentId, currentUser, onBack, onSelectStudent, onGoToClassMode }) {
   let currentClassroom = classroom;
   let editingCheckpointId = null; // null | 'new' | an existing checkpoint's own id
   let openCellFor = null; // null | { checkpointId, studentId } — checkpoint editor
@@ -235,10 +235,14 @@ export function renderAssignmentDetailView(container, { classroom, assignmentId,
     onQuickMarkSubmitted: (checkpointId, studentId) => {
       const checkpoint = assignmentCheckpointService.getCheckpointById(currentClassroom, checkpointId);
       // Routed through recognitionService.js rather than calling
-      // assignmentCheckpointService.setSubmission() directly — it still
-      // makes that exact same call, but also awards (idempotently) this
-      // student's own automatic completion star for THIS checkpoint —
-      // see that function's own header comment.
+      // assignmentCheckpointService.setSubmission() directly — makes
+      // that exact same call, but also handles the one Completion Star
+      // consequence submission ALONE still has (WORK-0038): none, on
+      // award — a star is never earned here. See
+      // recordAssignmentCheckpointSubmission()'s own header comment for
+      // why this wrapper still exists (a withdrawal can still silently
+      // un-complete an already-'complete' review, which must reverse an
+      // active star).
       recognitionService.recordAssignmentCheckpointSubmission(currentClassroom, checkpoint, studentId, {
         status: 'submitted',
         submittedDate: getTodayDateKey(),
@@ -248,7 +252,12 @@ export function renderAssignmentDetailView(container, { classroom, assignmentId,
     },
     onQuickReview: (checkpointId, studentId, status) => {
       const checkpoint = assignmentCheckpointService.getCheckpointById(currentClassroom, checkpointId);
-      assignmentCheckpointService.setReview(checkpoint, studentId, { status, reviewedDate: getTodayDateKey() });
+      // Routed through recognitionService.js (WORK-0038) — THE real
+      // Completion Star trigger: awards once this exact review reaches
+      // 'complete' (never merely 'submitted'), reverses on Complete ->
+      // Incomplete, and correctly supports re-completion. See that
+      // function's own header comment.
+      recognitionService.recordAssignmentCheckpointReview(currentClassroom, checkpoint, studentId, { status, reviewedDate: getTodayDateKey() }, currentUser?.uid);
       persistClassroom();
       updateCellAndColumn(checkpointId, studentId);
     },
@@ -258,17 +267,38 @@ export function renderAssignmentDetailView(container, { classroom, assignmentId,
     },
     onSaveCell: (checkpointId, studentId, submission, review, teacherNote) => {
       const checkpoint = assignmentCheckpointService.getCheckpointById(currentClassroom, checkpointId);
-      // Same automatic-star wrapping as onQuickMarkSubmitted above —
-      // this is also how a submission gets walked BACK to
-      // 'not_submitted' from the full cell editor, which is exactly
-      // the transition that must reverse (not re-award) the star.
+      // Submission wrapper first (handles the withdrawal-reverses-a-
+      // completed-review edge case), then the review wrapper (THE real
+      // Completion Star trigger) — same two-step shape as
+      // onQuickMarkSubmitted/onQuickReview above, just reached here via
+      // the detailed cell editor's own single Save instead.
       recognitionService.recordAssignmentCheckpointSubmission(currentClassroom, checkpoint, studentId, submission);
-      assignmentCheckpointService.setReview(checkpoint, studentId, review);
+      recognitionService.recordAssignmentCheckpointReview(currentClassroom, checkpoint, studentId, review, currentUser?.uid);
       assignmentCheckpointService.setTeacherNote(checkpoint, studentId, teacherNote);
       openCellFor = null;
       persistClassroom();
       refreshCellEditor();
       updateCellAndColumn(checkpointId, studentId);
+    },
+    // Explicit teacher removal of an active Completion Star (WORK-0038)
+    // — reverses the EXACT associated +1 points event via
+    // recognitionService.removeCompletionStar()'s own ledger mechanics.
+    onRemoveCompletionStar: (checkpointId, studentId) => {
+      const checkpoint = assignmentCheckpointService.getCheckpointById(currentClassroom, checkpointId);
+      const student = getSortedStudents().find((s) => s.id === studentId);
+      if (!checkpoint || !student) return;
+      const workItemRef = recognitionService.buildAssignmentCheckpointWorkItemRef({
+        assignmentId: checkpoint.assignmentId,
+        checkpointId: checkpoint.id,
+      });
+      try {
+        recognitionService.removeCompletionStar(currentClassroom, student, workItemRef, currentUser?.uid);
+        persistClassroom();
+        updateCellAndColumn(checkpointId, studentId);
+        refreshCellEditor();
+      } catch (error) {
+        window.alert(error.message);
+      }
     },
     onOpenOverallRating: (studentId) => {
       openOverallRatingFor = studentId;
@@ -903,6 +933,35 @@ function renderCheckpointCellEditor(checkpoint, student, handlers) {
   const noteInput = document.createElement('textarea');
   noteInput.value = record?.teacherNote || '';
   sheet.appendChild(noteInput);
+
+  // --- Completion Star (WORK-0038: remove only — awarding/reversal is
+  // entirely automatic, tied to the review transition above). ---
+  const completionStarLabel = document.createElement('p');
+  completionStarLabel.className = 'notebook-checkpoints__cell-editor-section-label';
+  completionStarLabel.textContent = 'Completion Star';
+  sheet.appendChild(completionStarLabel);
+
+  const completionStarWorkItemRef = recognitionService.buildAssignmentCheckpointWorkItemRef({
+    assignmentId: checkpoint.assignmentId,
+    checkpointId: checkpoint.id,
+  });
+  const completionStarActive = recognitionService.getAutomaticStarNetForWorkItem(student, completionStarWorkItemRef) >= 1;
+
+  const completionStarStatus = document.createElement('p');
+  completionStarStatus.textContent = completionStarActive ? 'Awarded' : 'Not awarded';
+  sheet.appendChild(completionStarStatus);
+
+  if (completionStarActive) {
+    const completionStarActions = document.createElement('div');
+    completionStarActions.className = 'notebook-checkpoints__cell-editor-actions';
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'btn btn--text';
+    removeButton.textContent = 'Remove';
+    removeButton.addEventListener('click', () => handlers.onRemoveCompletionStar(checkpoint.id, student.id));
+    completionStarActions.appendChild(removeButton);
+    sheet.appendChild(completionStarActions);
+  }
 
   const actions = document.createElement('div');
   actions.className = 'notebook-checkpoints__cell-editor-actions';
