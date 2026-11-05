@@ -16,6 +16,7 @@
  */
 
 import { DEFAULT_BADGE_CATALOG } from './badgeConfig.js';
+import { DEFAULT_NOTEBOOK_BADGE_TYPES } from './notebookBadgeConfig.js';
 
 export const PROGRESS_STEP_KEYS = Object.freeze([
   'classroomDetails',
@@ -37,6 +38,9 @@ export function buildDefaultSettings() {
     // array itself — so one classroom adding/removing a badge type never
     // affects another (see services/badgeService.js).
     badgeCatalog: [...DEFAULT_BADGE_CATALOG],
+    // Same "fresh copy per classroom" reasoning as badgeCatalog above —
+    // see services/notebookBadgeService.js's own addBadgeType().
+    notebookBadgeTypes: DEFAULT_NOTEBOOK_BADGE_TYPES.map((type) => ({ ...type })),
     setupProgress: {
       classroomDetails: true, // captured at creation, so this starts done
       importStudents: false,

@@ -30,6 +30,12 @@
 
 export const BADGE_FAMILIES = Object.freeze({
   WEEKLY_STANDING: 'weekly-standing',
+  // Notebook Tracker's own compact achievement badges (Student Row
+  // Redesign) — manually awarded per notebook-habit, not cycle-based
+  // like WEEKLY_STANDING. `level` here means "times earned" directly
+  // (no Standing Cycle concept applies), same as WEEKLY_STANDING's own
+  // summarizeStudentBadges() already treats event count as level.
+  NOTEBOOK_HABITS: 'notebook-habits',
 });
 
 /**
@@ -131,6 +137,36 @@ export const BADGE_DEFINITIONS = Object.freeze([
     title: 'Helper',
     description: 'Meaningfully supported classmates.',
     icon: 'user-plus',
+    theme: 'purple',
+    assetPath: null,
+  },
+  // Notebook Tracker's three seed badge types (Student Row Redesign) —
+  // see services/notebookBadgeService.js for how a teacher's own
+  // "+ Add Badge Type" additions extend this same family per-classroom.
+  {
+    family: BADGE_FAMILIES.NOTEBOOK_HABITS,
+    recognitionType: 'organization',
+    title: 'Organization',
+    description: 'Organises notebook content neatly.',
+    icon: 'folder',
+    theme: 'green',
+    assetPath: null,
+  },
+  {
+    family: BADGE_FAMILIES.NOTEBOOK_HABITS,
+    recognitionType: 'punctuation-champion',
+    title: 'Punctuation Champion',
+    description: 'Correct capitalization and punctuation.',
+    icon: 'quote',
+    theme: 'blue',
+    assetPath: null,
+  },
+  {
+    family: BADGE_FAMILIES.NOTEBOOK_HABITS,
+    recognitionType: 'readiness-champion',
+    title: 'Readiness Champion',
+    description: 'Submits on or before the due date.',
+    icon: 'calendar-check',
     theme: 'purple',
     assetPath: null,
   },

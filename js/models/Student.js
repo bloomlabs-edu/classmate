@@ -56,6 +56,13 @@
  *                 recordedAt } entries (see services/timelineService.js).
  *                 This is the append-only log `score` is derived from,
  *                 matching the event-driven approach used elsewhere.
+ *   notebookBadgeCounts - { [badgeTypeId]: count } — how many times
+ *                 each Notebook Tracker badge type (see
+ *                 config/notebookBadgeConfig.js and
+ *                 services/notebookBadgeService.js) has been earned.
+ *                 Deliberately a count, not a presence array like
+ *                 `badges` above — these badges are explicitly
+ *                 repeatable (Student Row Redesign).
  */
 
 import { generateId } from '../utils/idGenerator.js';
@@ -71,6 +78,7 @@ export function createStudent({
   submissions = {},
   learningRecord = {},
   history = [],
+  notebookBadgeCounts = {},
 } = {}) {
   return {
     id: id || generateId(),
@@ -83,5 +91,6 @@ export function createStudent({
     submissions,
     learningRecord,
     history,
+    notebookBadgeCounts,
   };
 }

@@ -155,8 +155,19 @@ function buildShield(theme, stageId) {
  * detail" — silhouette, colour, and icon are the only things that must
  * survive at small sizes).
  */
-export function createBadge({ family, recognitionType, level = 0, size = 64, showLevel = true }) {
-  const definition = getBadgeDefinition(family, recognitionType);
+/**
+ * `definition` (optional) — supply a definition object directly
+ * (`{ title, icon, theme }`) instead of resolving one via
+ * getBadgeDefinition(family, recognitionType). Needed for a
+ * per-classroom, teacher-added badge type (see
+ * services/notebookBadgeService.js's own "+ Add Badge Type" catalog),
+ * which by definition can never live in config/badgeDefinitions.js's
+ * own fixed, global BADGE_DEFINITIONS array. family/recognitionType are
+ * simply ignored when this is provided — same shield/star/theme
+ * rendering path either way, never a second component.
+ */
+export function createBadge({ family, recognitionType, level = 0, size = 64, showLevel = true, definition: definitionOverride = null }) {
+  const definition = definitionOverride || getBadgeDefinition(family, recognitionType);
 
   const wrapper = document.createElement('div');
   wrapper.className = 'badge-emblem-wrapper';

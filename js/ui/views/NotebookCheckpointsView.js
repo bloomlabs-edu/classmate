@@ -57,6 +57,8 @@
 
 import * as checkpointService from '../../services/checkpointService.js';
 import * as notebookConfigService from '../../services/notebookConfigService.js';
+import * as notebookBadgeService from '../../services/notebookBadgeService.js';
+import * as notebookBadgeAwardService from '../../services/notebookBadgeAwardService.js';
 import * as workspaceService from '../../services/workspaceService.js';
 import * as workspaceCoordinator from '../../services/workspaceCoordinator.js';
 import * as notificationService from '../../services/notificationService.js';
@@ -67,6 +69,10 @@ import { createBackButton } from '../components/BackButton.js';
 import { createEmptyStateElement } from '../components/EmptyState.js';
 import { createIcon } from '../components/Icon.js';
 import { createOverflowMenu } from '../components/OverflowMenu.js';
+import { createBadge } from '../components/Badge.js';
+import { openAddBadgeTypeModal } from '../components/AddNotebookBadgeTypeModal.js';
+import { openAwardReviewBadgesModal } from '../components/AwardReviewBadgesModal.js';
+import { getScoreDisplay, getProgressSummary } from './NotebookStudentRowDisplay.js';
 
 /**
  * Cell status metadata — deliberately mirrors
@@ -232,6 +238,44 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
     });
   }
 
+  /**
+   * The "evaluation prompt" — opened right after a review is marked
+   * 'complete' (never merely 'submitted'; see
+   * services/notebookBadgeAwardService.js's own header comment),
+   * wherever that transition happens (onQuickReview or onSaveCell
+   * below). Resolves each badge's own already-awarded state from the
+   * real, just-persisted record before opening, so re-opening this for
+   * an already-decided badge shows "Awarded ✓" rather than offering a
+   * duplicate award.
+   */
+  function openReviewCompletionBadgePrompt(checkpoint, student) {
+    const record = checkpointService.getRecordForStudent(checkpoint, student.id);
+    const badges = notebookBadgeAwardService.REVIEW_COMPLETION_BADGE_IDS.map((badgeTypeId) => {
+      const type = notebookBadgeService.getBadgeTypeById(currentClassroom, badgeTypeId);
+      return {
+        id: badgeTypeId,
+        name: type ? type.name : badgeTypeId,
+        alreadyAwarded: notebookBadgeAwardService.hasActiveBadgeAward(record, badgeTypeId),
+      };
+    });
+    openAwardReviewBadgesModal({
+      studentName: student.name,
+      checkpointTitle: checkpoint.title,
+      badges,
+      onAward: (badgeTypeId) => {
+        try {
+          notebookBadgeAwardService.awardReviewCompletionBadge(currentClassroom, checkpoint, student, badgeTypeId, currentUser?.uid);
+          persistClassroom();
+          updateCellAndColumn(checkpoint.id, student.id);
+          return true;
+        } catch (error) {
+          window.alert(error.message);
+          return false;
+        }
+      },
+    });
+  }
+
   const handlers = {
     onStartCreate: () => {
       editingCheckpointId = 'new';
@@ -282,6 +326,11 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
     onQuickMarkSubmitted: (checkpointId, studentId) => {
       const checkpoint = checkpointService.getCheckpointById(currentClassroom, checkpointId);
       checkpointService.setSubmission(checkpoint, studentId, { status: 'submitted', submittedDate: getTodayDateKey() });
+      // Readiness Champion's own automatic trigger — a direct
+      // consequence of THIS submission, never of a review outcome. See
+      // services/notebookBadgeAwardService.js's own header comment.
+      const student = getSortedStudents().find((s) => s.id === studentId);
+      if (student) notebookBadgeAwardService.evaluateReadinessChampion(currentClassroom, checkpoint, student, currentUser?.uid);
       persistClassroom();
       updateCellAndColumn(checkpointId, studentId); // one <td> + its column's stat boxes — no grid rebuild
     },
@@ -291,6 +340,12 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
       persistClassroom();
       notifyIfIncomplete(checkpointId, studentId, status);
       updateCellAndColumn(checkpointId, studentId);
+      // Organization/Punctuation Champion's own one trigger point — a
+      // review genuinely marked Complete, never merely Submitted.
+      if (status === 'complete') {
+        const student = getSortedStudents().find((s) => s.id === studentId);
+        if (student) openReviewCompletionBadgePrompt(checkpoint, student);
+      }
     },
     onCloseCell: () => {
       openCellFor = null;
@@ -298,19 +353,84 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
     },
     onSaveCell: (checkpointId, studentId, submission, review, teacherNote) => {
       const checkpoint = checkpointService.getCheckpointById(currentClassroom, checkpointId);
+      // Captured BEFORE setSubmission() below overwrites it — the only
+      // way to tell a genuine Submitted -> Not Submitted WITHDRAWAL
+      // apart from "already not submitted, still not submitted."
+      const wasSubmitted = checkpointService.getRecordForStudent(checkpoint, studentId)?.submissionStatus === 'submitted';
       checkpointService.setSubmission(checkpoint, studentId, submission);
       checkpointService.setReview(checkpoint, studentId, review);
       checkpointService.setTeacherNote(checkpoint, studentId, teacherNote);
+      const student = getSortedStudents().find((s) => s.id === studentId);
+      // Same two triggers as the quick actions above, reached here via
+      // the detailed cell editor's own single Save instead — never
+      // conflated with each other, same as there.
+      if (student && submission.status === 'submitted') {
+        notebookBadgeAwardService.evaluateReadinessChampion(currentClassroom, checkpoint, student, currentUser?.uid);
+      }
+      // Withdrawal — the one place a submission can be walked back to
+      // 'not_submitted' (no quick action does this, only this detailed
+      // editor). Revokes any active Readiness Champion award this exact
+      // submission earned; never touches Organization/Punctuation.
+      if (student && wasSubmitted && submission.status === 'not_submitted') {
+        notebookBadgeAwardService.revokeReadinessChampionOnWithdrawal(currentClassroom, checkpoint, student, currentUser?.uid);
+      }
       openCellFor = null;
       persistClassroom();
       notifyIfIncomplete(checkpointId, studentId, review.status);
       refreshCellEditor();
       updateCellAndColumn(checkpointId, studentId);
+      if (student && review.status === 'complete') {
+        openReviewCompletionBadgePrompt(checkpoint, student);
+      }
+    },
+    onOverrideReadiness: (checkpointId, studentId) => {
+      const checkpoint = checkpointService.getCheckpointById(currentClassroom, checkpointId);
+      const student = getSortedStudents().find((s) => s.id === studentId);
+      if (!checkpoint || !student) return;
+      try {
+        notebookBadgeAwardService.overrideReadinessChampion(currentClassroom, checkpoint, student, currentUser?.uid);
+        persistClassroom();
+        updateCellAndColumn(checkpointId, studentId);
+        refreshCellEditor();
+      } catch (error) {
+        window.alert(error.message);
+      }
+    },
+    onRevokeReadiness: (checkpointId, studentId) => {
+      const checkpoint = checkpointService.getCheckpointById(currentClassroom, checkpointId);
+      const student = getSortedStudents().find((s) => s.id === studentId);
+      if (!checkpoint || !student) return;
+      try {
+        notebookBadgeAwardService.revokeReadinessChampion(currentClassroom, checkpoint, student, currentUser?.uid);
+        persistClassroom();
+        updateCellAndColumn(checkpointId, studentId);
+        refreshCellEditor();
+      } catch (error) {
+        window.alert(error.message);
+      }
     },
     // Reuses the existing app-wide student-profile navigation prop
     // (identical to GoalDashboardView.js's own handlers.onSelectStudent)
     // — no new route or navigation mechanism introduced here.
     onSelectStudent,
+    // Student Row Redesign — "+ Add Badge Type" in the Student column
+    // header. A purely additive, classroom-scoped catalog change (see
+    // services/notebookBadgeService.js); never awards anything by
+    // itself, so it never touches any student's own counts.
+    onAddBadgeType: () => {
+      openAddBadgeTypeModal({
+        onSave: (name) => {
+          const added = notebookBadgeService.addBadgeType(currentClassroom, name);
+          if (!added) {
+            window.alert('A badge type with that name already exists.');
+            return false;
+          }
+          persistClassroom();
+          refreshGrid(); // structural change (a new badge type can now appear on any student row)
+          return true;
+        },
+      });
+    },
   };
 
   function refreshForm() {
@@ -361,9 +481,9 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
       gridSlot.appendChild(createEmptyStateElement({ message: 'No students on this roster yet.' }));
     } else if (checkpoints.length === 0) {
       gridSlot.appendChild(renderEmptyCheckpointsInstructionalCue());
-      gridSlot.appendChild(renderEmptyCheckpointsGrid(students, handlers));
+      gridSlot.appendChild(renderEmptyCheckpointsGrid(students, handlers, currentClassroom));
     } else {
-      gridSlot.appendChild(renderGrid(checkpoints, students, handlers));
+      gridSlot.appendChild(renderGrid(checkpoints, students, handlers, currentClassroom));
     }
 
     const scrollEl = gridSlot.querySelector('.assessment-gradebook__scroll');
@@ -404,6 +524,17 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
     const statsEl = scrollEl.querySelector(`th[data-checkpoint-id="${checkpointId}"] .notebook-checkpoints__column-stats`);
     if (statsEl) {
       statsEl.replaceWith(buildColumnStats(checkpoint, students));
+    }
+
+    // A review outcome change can move this ONE student's own
+    // completed/pending counts (see getProgressSummary() in
+    // NotebookStudentRowDisplay.js) — refresh only their own name
+    // cell's progress summary + bar, never a full grid rebuild for
+    // this targeted action.
+    const nameCell = scrollEl.querySelector(`td.assessment-gradebook__name-cell[data-student-id="${studentId}"]`);
+    if (nameCell && student) {
+      const checkpoints = checkpointService.listCheckpointsForNotebook(currentClassroom, subjectId, notebookTypeId);
+      populateStudentNameCell(nameCell, student, handlers, checkpoints, currentClassroom);
     }
   }
 
@@ -472,7 +603,7 @@ function renderEmptyCheckpointsInstructionalCue() {
  * and this function creates neither a Checkpoint nor any
  * StudentCheckpointRecord merely by rendering.
  */
-function renderEmptyCheckpointsGrid(students, handlers) {
+function renderEmptyCheckpointsGrid(students, handlers, classroom) {
   const scroll = document.createElement('div');
   scroll.className = 'assessment-gradebook__scroll';
 
@@ -482,10 +613,7 @@ function renderEmptyCheckpointsGrid(students, handlers) {
   const thead = document.createElement('thead');
   const headerRow = document.createElement('tr');
 
-  const nameTh = document.createElement('th');
-  nameTh.className = 'assessment-gradebook__name-header';
-  nameTh.textContent = 'Students';
-  headerRow.appendChild(nameTh);
+  headerRow.appendChild(buildStudentColumnHeader('Students', handlers));
 
   const placeholderTh = document.createElement('th');
   placeholderTh.className = 'notebook-checkpoints__column-header';
@@ -509,7 +637,8 @@ function renderEmptyCheckpointsGrid(students, handlers) {
     const row = document.createElement('tr');
     const nameCell = document.createElement('td');
     nameCell.className = 'assessment-gradebook__name-cell';
-    populateStudentNameCell(nameCell, student, handlers);
+    nameCell.dataset.studentId = student.id;
+    populateStudentNameCell(nameCell, student, handlers, [], classroom);
     row.appendChild(nameCell);
 
     const placeholderCell = document.createElement('td');
@@ -523,6 +652,32 @@ function renderEmptyCheckpointsGrid(students, handlers) {
 
   scroll.appendChild(table);
   return scroll;
+}
+
+/**
+ * The Student column's own header — "Students"/"Student" text plus the
+ * Student Row Redesign's "+ Add Badge Type" action, shared by both
+ * renderEmptyCheckpointsGrid() and renderGrid() (identical markup
+ * either way; only the roster below it differs).
+ */
+export function buildStudentColumnHeader(labelText, handlers) {
+  const nameTh = document.createElement('th');
+  nameTh.className = 'assessment-gradebook__name-header notebook-checkpoints__student-header';
+
+  const label = document.createElement('span');
+  label.textContent = labelText;
+  nameTh.appendChild(label);
+
+  const addBadgeTypeButton = document.createElement('button');
+  addBadgeTypeButton.type = 'button';
+  addBadgeTypeButton.className = 'notebook-checkpoints__add-badge-type-button';
+  addBadgeTypeButton.appendChild(createIcon('plus', { size: 12 }));
+  addBadgeTypeButton.append('Add Badge Type');
+  addBadgeTypeButton.setAttribute('aria-label', 'Add a new badge type');
+  addBadgeTypeButton.addEventListener('click', handlers.onAddBadgeType);
+  nameTh.appendChild(addBadgeTypeButton);
+
+  return nameTh;
 }
 
 /** One compact "2/21 · Submitted" stat box for a checkpoint column header — the number is the visually prominent part, the label is smaller and muted, per the explicit visual hierarchy. */
@@ -654,17 +809,39 @@ function buildUnitCard(checkpoint, index, checkpoints, students, handlers) {
  * hint text — the name's own interactive styling is the only
  * affordance.
  */
-function populateStudentNameCell(nameCell, student, handlers) {
+/**
+ * The student row's own info column (Student Row Redesign) —
+ * `checkpoints`/`classroom` are needed for this one student's own
+ * progress summary and earned-badge lookup; `checkpoints` is `[]`
+ * before this Notebook has any (renderEmptyCheckpointsGrid()'s own
+ * placeholder grid), which correctly suppresses the progress
+ * summary/bar below rather than showing a fabricated "0/0".
+ *
+ * Hierarchy, top to bottom (explicit design direction): name + points,
+ * then compact badge chips, then the completed/pending summary, then
+ * the progress bar — each visually smaller/quieter than the one above
+ * it, so the unit matrix to the right stays the primary focus.
+ */
+export function populateStudentNameCell(nameCell, student, handlers, checkpoints, classroom) {
   nameCell.innerHTML = '';
 
-  const wrapper = document.createElement('span');
-  wrapper.className = 'notebook-checkpoints__student';
+  const container = document.createElement('div');
+  container.className = 'notebook-checkpoints__student-info';
+
+  const topRow = document.createElement('span');
+  topRow.className = 'notebook-checkpoints__student';
 
   const avatar = document.createElement('span');
   avatar.className = 'notebook-checkpoints__student-avatar';
   avatar.textContent = (student.name || '?').charAt(0).toUpperCase();
   avatar.setAttribute('aria-hidden', 'true');
 
+  // Only the name itself is the click target — per existing, preserved
+  // design direction (see this function's own prior header comment):
+  // the avatar/points are decorative, never part of onSelectStudent's
+  // own click target. Deliberately no text-decoration at all, including
+  // on hover (see css/styles.css's own .notebook-checkpoints__student-name
+  // rule) — color + cursor remain the only interactive affordance.
   const nameButton = document.createElement('button');
   nameButton.type = 'button';
   nameButton.className = 'notebook-checkpoints__student-name';
@@ -672,8 +849,121 @@ function populateStudentNameCell(nameCell, student, handlers) {
   nameButton.setAttribute('aria-label', `View ${student.name}'s profile`);
   nameButton.addEventListener('click', () => handlers.onSelectStudent(student.id));
 
-  wrapper.append(avatar, nameButton);
-  nameCell.appendChild(wrapper);
+  topRow.append(avatar, nameButton);
+
+  const scoreDisplay = getScoreDisplay(student);
+  const scoreEl = document.createElement('span');
+  scoreEl.className = 'notebook-checkpoints__student-score';
+  scoreEl.setAttribute('aria-label', scoreDisplay.ariaLabel);
+  const scoreIcon = document.createElement('span');
+  scoreIcon.setAttribute('aria-hidden', 'true');
+  scoreIcon.textContent = scoreDisplay.icon;
+  const scoreNumber = document.createElement('span');
+  scoreNumber.setAttribute('aria-hidden', 'true');
+  scoreNumber.textContent = `${scoreDisplay.number} ${scoreDisplay.suffix}`;
+  scoreEl.append(scoreIcon, scoreNumber);
+  topRow.appendChild(scoreEl);
+
+  container.appendChild(topRow);
+
+  // Compact achievement badges — omitted entirely (not an empty row)
+  // when this student has earned none, per explicit product decision:
+  // a student's row must never display a badge they have not earned.
+  const earnedBadges = notebookBadgeService.listEarnedBadges(classroom, student);
+  if (earnedBadges.length > 0) {
+    const badgesRow = document.createElement('div');
+    badgesRow.className = 'notebook-checkpoints__student-badges';
+    earnedBadges.forEach((badge) => badgesRow.appendChild(buildBadgeChip(badge)));
+    container.appendChild(badgesRow);
+  }
+
+  // Status summary + progress bar — this Notebook's own checkpoints
+  // only (see getProgressSummary()'s own header comment in
+  // NotebookStudentRowDisplay.js), omitted until at least one exists.
+  if (checkpoints.length > 0) {
+    const summary = getProgressSummary(checkpoints, student.id);
+
+    const summaryEl = document.createElement('p');
+    summaryEl.className = 'notebook-checkpoints__student-progress-summary';
+    const statusText = document.createElement('span');
+    statusText.textContent = `Status: ${summary.completedCount}/${summary.totalCount}`;
+    const separator = document.createElement('span');
+    separator.setAttribute('aria-hidden', 'true');
+    separator.textContent = ' | ';
+    const pendingText = document.createElement('span');
+    pendingText.className = 'notebook-checkpoints__student-progress-pending';
+    pendingText.textContent = `${summary.pendingCount} pending`;
+    summaryEl.append(statusText, separator, pendingText);
+    container.appendChild(summaryEl);
+
+    const progressBar = document.createElement('div');
+    progressBar.className = 'notebook-checkpoints__student-progress-bar';
+    progressBar.setAttribute('role', 'progressbar');
+    progressBar.setAttribute('aria-valuenow', String(summary.percentComplete));
+    progressBar.setAttribute('aria-valuemin', '0');
+    progressBar.setAttribute('aria-valuemax', '100');
+    progressBar.setAttribute('aria-label', `${student.name}: ${summary.completedCount} of ${summary.totalCount} complete`);
+    const progressFill = document.createElement('div');
+    progressFill.className = 'notebook-checkpoints__student-progress-bar-fill';
+    progressFill.style.width = `${summary.percentComplete}%`;
+    progressBar.appendChild(progressFill);
+    container.appendChild(progressBar);
+  }
+
+  nameCell.appendChild(container);
+}
+
+/**
+ * One compact shield/emblem badge chip — reuses
+ * ui/components/Badge.js's own createBadge() for the shield/icon/theme
+ * rendering (never a second badge-drawing implementation), at its
+ * smallest documented tier (config/badgeDefinitions.js's own
+ * BADGE_SIZES.small — "a tiny supporting indicator only") and with its
+ * built-in "LV N" label suppressed (showLevel: false) so this chip's
+ * own bare count can sit directly beside the icon instead, matching
+ * the "4", not "LV 4", visual requirement exactly.
+ *
+ * createBadge() already sets the emblem's own `title` to the badge's
+ * full name (a native hover tooltip); this button is also focusable
+ * and clickable, so a tap on a touch device (no hover state) reveals
+ * the same full name via a small, auto-dismissing inline label —
+ * satisfying "a tooltip OR click interaction" either way, without a
+ * new overlay/popover component.
+ */
+function buildBadgeChip(badge) {
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className = 'notebook-checkpoints__badge-chip';
+  chip.title = badge.name;
+  chip.setAttribute('aria-label', `${badge.name}: earned ${badge.count} time${badge.count === 1 ? '' : 's'}`);
+
+  const emblem = createBadge({
+    definition: { title: badge.name, icon: badge.icon, theme: badge.theme },
+    level: badge.count,
+    size: 24,
+    showLevel: false,
+  });
+  chip.appendChild(emblem);
+
+  const count = document.createElement('span');
+  count.className = 'notebook-checkpoints__badge-chip-count';
+  count.setAttribute('aria-hidden', 'true');
+  count.textContent = String(badge.count);
+  chip.appendChild(count);
+
+  let dismissTimer = null;
+  chip.addEventListener('click', (event) => {
+    event.stopPropagation();
+    chip.querySelector('.notebook-checkpoints__badge-chip-label')?.remove();
+    const nameLabel = document.createElement('span');
+    nameLabel.className = 'notebook-checkpoints__badge-chip-label';
+    nameLabel.textContent = badge.name;
+    chip.appendChild(nameLabel);
+    clearTimeout(dismissTimer);
+    dismissTimer = setTimeout(() => nameLabel.remove(), 2000);
+  });
+
+  return chip;
 }
 
 /**
@@ -706,7 +996,7 @@ function populateStudentNameCell(nameCell, student, handlers) {
  *     .cell-row (button — icon-zone + label-zone; opens the full editor)
  *     .cell-action-zone (Mark Submitted / quick-review, or empty)
  */
-function populateCheckpointCell(cell, checkpoint, student, handlers) {
+export function populateCheckpointCell(cell, checkpoint, student, handlers) {
   const record = checkpointService.getRecordForStudent(checkpoint, student.id);
   const meta = getCellMeta(checkpoint, record);
   const isNotSubmitted = !record || record.submissionStatus === 'not_submitted';
@@ -823,7 +1113,7 @@ function populateCheckpointCell(cell, checkpoint, student, handlers) {
   cell.appendChild(content);
 }
 
-function renderGrid(checkpoints, students, handlers) {
+function renderGrid(checkpoints, students, handlers, classroom) {
   const scroll = document.createElement('div');
   scroll.className = 'assessment-gradebook__scroll';
 
@@ -833,10 +1123,7 @@ function renderGrid(checkpoints, students, handlers) {
   const thead = document.createElement('thead');
   const headerRow = document.createElement('tr');
 
-  const nameTh = document.createElement('th');
-  nameTh.className = 'assessment-gradebook__name-header';
-  nameTh.textContent = 'Student';
-  headerRow.appendChild(nameTh);
+  headerRow.appendChild(buildStudentColumnHeader('Student', handlers));
 
   checkpoints.forEach((checkpoint, index) => {
     const th = document.createElement('th');
@@ -857,7 +1144,11 @@ function renderGrid(checkpoints, students, handlers) {
     const row = document.createElement('tr');
     const nameCell = document.createElement('td');
     nameCell.className = 'assessment-gradebook__name-cell';
-    populateStudentNameCell(nameCell, student, handlers);
+    // Lookup key for updateCellAndColumn()'s own targeted progress-
+    // summary refresh (see renderNotebookCheckpointsView() above) —
+    // never read for anything else.
+    nameCell.dataset.studentId = student.id;
+    populateStudentNameCell(nameCell, student, handlers, checkpoints, classroom);
     row.appendChild(nameCell);
 
     checkpoints.forEach((checkpoint) => {
@@ -940,7 +1231,7 @@ function renderCheckpointForm(checkpoint, handlers) {
   return form;
 }
 
-function renderCellEditor(checkpoint, student, handlers) {
+export function renderCellEditor(checkpoint, student, handlers) {
   const record = checkpointService.getRecordForStudent(checkpoint, student.id);
 
   const overlay = document.createElement('div');
@@ -1033,6 +1324,49 @@ function renderCellEditor(checkpoint, student, handlers) {
   const noteInput = document.createElement('textarea');
   noteInput.value = record?.teacherNote || '';
   sheet.appendChild(noteInput);
+
+  // --- Readiness Champion (override/revoke) ---
+  // Organization/Punctuation Champion are never shown here — this
+  // editor's own review dropdown above is still an UNSAVED, pending
+  // value, and those two badges are only ever offered once a review is
+  // genuinely, persistently marked Complete (see
+  // openReviewCompletionBadgePrompt() above, triggered right after a
+  // real Save). Readiness Champion is different: it reacts to the
+  // SUBMISSION, which this editor's own PERSISTED `record` (captured at
+  // the top of this function) already reflects accurately.
+  const readinessLabel = document.createElement('p');
+  readinessLabel.className = 'notebook-checkpoints__cell-editor-section-label';
+  readinessLabel.textContent = 'Readiness Champion';
+  sheet.appendChild(readinessLabel);
+
+  const activeReadinessAward = (record?.badgeAwards || []).find(
+    (entry) => entry.badgeTypeId === notebookBadgeAwardService.READINESS_CHAMPION_BADGE_ID && !entry.revoked
+  );
+
+  const readinessStatus = document.createElement('p');
+  readinessStatus.textContent = activeReadinessAward
+    ? `Awarded (${activeReadinessAward.source === 'automatic' ? 'automatic — on time' : 'teacher override'})`
+    : 'Not awarded';
+  sheet.appendChild(readinessStatus);
+
+  const readinessActions = document.createElement('div');
+  readinessActions.className = 'notebook-checkpoints__cell-editor-actions';
+  if (activeReadinessAward) {
+    const revokeButton = document.createElement('button');
+    revokeButton.type = 'button';
+    revokeButton.className = 'btn btn--text';
+    revokeButton.textContent = 'Revoke';
+    revokeButton.addEventListener('click', () => handlers.onRevokeReadiness(checkpoint.id, student.id));
+    readinessActions.appendChild(revokeButton);
+  } else if (record?.submissionStatus === 'submitted') {
+    const overrideButton = document.createElement('button');
+    overrideButton.type = 'button';
+    overrideButton.className = 'btn btn--text';
+    overrideButton.textContent = 'Award anyway (override)';
+    overrideButton.addEventListener('click', () => handlers.onOverrideReadiness(checkpoint.id, student.id));
+    readinessActions.appendChild(overrideButton);
+  }
+  sheet.appendChild(readinessActions);
 
   // --- Actions ---
   const actions = document.createElement('div');

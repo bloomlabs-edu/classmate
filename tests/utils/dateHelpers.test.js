@@ -8,7 +8,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getWeekLabel, getMondayStartOfWeek, shiftDateKey, formatDateKeyRange, getTodayDateKey } from '../../js/utils/dateHelpers.js';
+import { getWeekLabel, getMondayStartOfWeek, shiftDateKey, formatDateKeyRange, getTodayDateKey, toDateKey, isValidDateKey } from '../../js/utils/dateHelpers.js';
 
 const TODAY = '2026-09-10'; // Thursday
 const THIS_WEEK_MONDAY = getMondayStartOfWeek(TODAY); // 2026-09-07
@@ -87,4 +87,66 @@ test('shiftDateKey(getMondayStartOfWeek(getTodayDateKey()), 7): the "next week s
 test('REGRESSION CHARACTERIZATION — feeding a full ISO timestamp (getCurrentIsoDate()-shaped input) into getMondayStartOfWeek() is exactly the deployed bug: it silently produces "NaN-NaN-NaN" instead of throwing, which is why this must never be done again', () => {
   const isoTimestamp = new Date().toISOString(); // e.g. "2026-09-29T10:39:57.123Z"
   assert.equal(getMondayStartOfWeek(isoTimestamp), 'NaN-NaN-NaN');
+});
+
+// ---------------------------------------------------------------------
+// isValidDateKey — the Readiness Champion late-submission bug's own
+// date-validity guard (services/notebookBadgeAwardService.js).
+// ---------------------------------------------------------------------
+
+test('isValidDateKey: true for a well-formed real calendar date', () => {
+  assert.equal(isValidDateKey('2026-09-10'), true);
+  assert.equal(isValidDateKey('2026-01-01'), true);
+  assert.equal(isValidDateKey('2024-02-29'), true); // real leap day
+});
+
+test('isValidDateKey: false for missing/empty/non-string values', () => {
+  assert.equal(isValidDateKey(null), false);
+  assert.equal(isValidDateKey(undefined), false);
+  assert.equal(isValidDateKey(''), false);
+  assert.equal(isValidDateKey(20260910), false);
+});
+
+test('isValidDateKey: false for a full ISO timestamp — the exact shape getCurrentIsoDate() produces, never a valid date key', () => {
+  assert.equal(isValidDateKey('2026-09-10T10:39:57.123Z'), false);
+  assert.equal(isValidDateKey(new Date().toISOString()), false);
+});
+
+test('isValidDateKey: false for out-of-range month/day that Date() would otherwise silently roll over (e.g. "2026-13-40" -> some date in 2027)', () => {
+  assert.equal(isValidDateKey('2026-13-01'), false);
+  assert.equal(isValidDateKey('2026-02-30'), false); // Feb never has 30 days
+  assert.equal(isValidDateKey('2025-02-29'), false); // 2025 is not a leap year
+});
+
+test('isValidDateKey: false for malformed strings that merely resemble a date', () => {
+  assert.equal(isValidDateKey('not-a-date'), false);
+  assert.equal(isValidDateKey('2026/09/10'), false);
+  assert.equal(isValidDateKey('10-09-2026'), false);
+});
+
+// ---------------------------------------------------------------------
+// toDateKey / getTodayDateKey — timezone-boundary behaviour. These
+// build the date key from LOCAL getFullYear()/getMonth()/getDate()
+// (never UTC/toISOString()), so a moment near a UTC day boundary keys
+// correctly to the CALLER's own local calendar day regardless of how
+// far local time is offset from UTC — exactly the property
+// evaluateReadinessChampion()'s due-date comparison depends on.
+// ---------------------------------------------------------------------
+
+test('toDateKey: keys to the LOCAL calendar day, not the UTC day, for a moment where the two disagree', () => {
+  // 2026-11-04T23:30:00 in a UTC+5:30 locale (e.g. IST) is already
+  // 2026-11-05T18:00:00Z in UTC — if a date key were ever derived via
+  // toISOString().slice(0, 10) instead of local getters, this moment
+  // would wrongly key to "2026-11-05". toDateKey() must key to whatever
+  // this JS runtime's own local calendar day actually is for that
+  // instant, consistently with new Date().getFullYear()/getMonth()/getDate().
+  const instant = new Date(2026, 10, 4, 23, 30, 0); // local: 4 Nov 2026, 11:30 PM
+  const key = toDateKey(instant);
+  assert.equal(key, '2026-11-04');
+  assert.equal(key, `${instant.getFullYear()}-${String(instant.getMonth() + 1).padStart(2, '0')}-${String(instant.getDate()).padStart(2, '0')}`);
+});
+
+test('toDateKey: a moment just after local midnight keys to the NEW local day, not the previous one', () => {
+  const instant = new Date(2026, 10, 5, 0, 15, 0); // local: 5 Nov 2026, 12:15 AM
+  assert.equal(toDateKey(instant), '2026-11-05');
 });
