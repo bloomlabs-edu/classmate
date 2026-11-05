@@ -353,6 +353,10 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
     },
     onSaveCell: (checkpointId, studentId, submission, review, teacherNote) => {
       const checkpoint = checkpointService.getCheckpointById(currentClassroom, checkpointId);
+      // Captured BEFORE setSubmission() below overwrites it — the only
+      // way to tell a genuine Submitted -> Not Submitted WITHDRAWAL
+      // apart from "already not submitted, still not submitted."
+      const wasSubmitted = checkpointService.getRecordForStudent(checkpoint, studentId)?.submissionStatus === 'submitted';
       checkpointService.setSubmission(checkpoint, studentId, submission);
       checkpointService.setReview(checkpoint, studentId, review);
       checkpointService.setTeacherNote(checkpoint, studentId, teacherNote);
@@ -362,6 +366,13 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
       // conflated with each other, same as there.
       if (student && submission.status === 'submitted') {
         notebookBadgeAwardService.evaluateReadinessChampion(currentClassroom, checkpoint, student, currentUser?.uid);
+      }
+      // Withdrawal — the one place a submission can be walked back to
+      // 'not_submitted' (no quick action does this, only this detailed
+      // editor). Revokes any active Readiness Champion award this exact
+      // submission earned; never touches Organization/Punctuation.
+      if (student && wasSubmitted && submission.status === 'not_submitted') {
+        notebookBadgeAwardService.revokeReadinessChampionOnWithdrawal(currentClassroom, checkpoint, student, currentUser?.uid);
       }
       openCellFor = null;
       persistClassroom();

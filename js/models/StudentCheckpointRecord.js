@@ -57,19 +57,28 @@
  * student-wide log (that's services/notebookBadgeService.js's own
  * aggregate count, which this feeds). Each entry:
  *   { id, badgeTypeId, source, awardedBy, awardedAt,
- *     revoked, revokedBy, revokedAt }
+ *     revoked, revokedBy, revokedAt, revokedReason }
  * `source` is 'manual' (Organization/Punctuation, awarded by a teacher
  * right after marking this review Complete), 'automatic' (Readiness
  * Champion, submittedDate <= the checkpoint's own dueDate), or
  * 'override' (Readiness Champion, teacher-granted despite the
  * automatic rule not applying). Entries are never deleted — a
- * revocation sets `revoked: true` plus `revokedBy`/`revokedAt` in
- * place, preserving the fact an award once existed, exactly like
- * `submittedDate`/`reviewedDate` above are corrected in place rather
- * than replaced by a new record. Never more than one ACTIVE (non-
+ * revocation sets `revoked: true` plus `revokedBy`/`revokedAt`/
+ * `revokedReason` in place, preserving the fact an award once existed,
+ * exactly like `submittedDate`/`reviewedDate` above are corrected in
+ * place rather than replaced by a new record. `revokedReason` is
+ * 'teacher_revoked' (an explicit Revoke action) or 'submission_withdrawn'
+ * (automatic — see notebookBadgeAwardService.revokeReadinessChampionOnWithdrawal(),
+ * fired when this exact submission is walked back to 'not_submitted');
+ * null while an entry is still active. Never more than one ACTIVE (non-
  * revoked) entry per badgeTypeId on one record — that is the
  * duplicate-prevention invariant notebookBadgeAwardService.js enforces
- * before ever pushing a new entry here.
+ * before ever pushing a new entry here, including across a withdraw/
+ * resubmit cycle (checkpointService.js reuses this SAME record rather
+ * than creating a new one per submission attempt — see that service's
+ * own header comment, and notebookBadgeAwardService.js's own
+ * "SUBMISSION ATTEMPT IDENTITY" comment, for why that still keeps this
+ * invariant correct with no separate attempt-id needed).
  */
 
 import { generateId } from '../utils/idGenerator.js';

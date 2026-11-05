@@ -160,6 +160,14 @@ function findOrCreateRecord(checkpoint, studentId) {
  * disallowed state (not_submitted + reviewed) via a different path
  * than setReview()'s own direct check guards against. The constraint
  * must hold regardless of which function reaches it.
+ *
+ * This function itself has no concept of badges at all — a caller
+ * transitioning status to 'not_submitted' is responsible for also
+ * calling services/notebookBadgeAwardService.js's own
+ * revokeReadinessChampionOnWithdrawal() (see ui/views/
+ * NotebookCheckpointsView.js's own onSaveCell handler for the one real
+ * call site), which needs the real Classroom/Student objects and an
+ * acting uid this function was never given.
  */
 export function setSubmission(checkpoint, studentId, { status, submittedDate = null }) {
   const record = findOrCreateRecord(checkpoint, studentId);

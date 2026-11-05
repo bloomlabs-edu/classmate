@@ -26,6 +26,17 @@
  *     produced (award it despite the date rule not applying, or take
  *     back an award that was wrong). See overrideReadinessChampion()/
  *     revokeReadinessChampion() below.
+ *   - Readiness Champion, automatic revocation on submission withdrawal:
+ *     when a submission is walked back from 'submitted' to
+ *     'not_submitted' (checkpointService.setSubmission()'s own
+ *     'not_submitted' branch), any ACTIVE Readiness Champion award tied
+ *     to that submission — automatic or override, source doesn't matter
+ *     — is no longer honest, since the thing it certified ("submitted
+ *     on or before the due date") no longer happened. See
+ *     revokeReadinessChampionOnWithdrawal() below. Organization/
+ *     Punctuation Champion are NEVER touched by a withdrawal — they
+ *     certify something about the notebook content a teacher already
+ *     reviewed, which withdrawing the submission record doesn't retract.
  *
  * Every mutating function here takes the real StudentCheckpointRecord
  * (found via checkpointService.getRecordForStudent() — always expected
@@ -34,20 +45,45 @@
  * the given Student in place; the caller persists afterward, mirroring
  * checkpointService.js's own established convention exactly.
  *
- * PERMISSIONS — enforced here, at the application/service layer, via
- * services/permissionService.js's own canPerformAsUid() against the new
- * PERMISSIONS.AWARD_NOTEBOOK_BADGE (config/memberRoles.js), granted to
- * OWNER/TEACHER only. This is the SAME enforcement shape every
- * comparable existing permission in this app already uses (AWARD_POINTS,
- * EDIT_STUDENTS, REVIEW_LESSON_PLAN, etc.) — none of them are backed by
- * a role-aware Firestore rule either; the classroom document's one
- * `allow update` rule (firestore.rules) grants any authenticated member
- * write access to the whole document, with no per-field/per-role
- * narrowing anywhere in this app today. Retrofitting true rule-layer
- * role enforcement for just this one feature's fields would require
- * restructuring that single, shared, every-feature-depends-on-it rule —
- * a disproportionate, high-blast-radius change out of scope here, and
- * flagged separately rather than assumed.
+ * SUBMISSION ATTEMPT IDENTITY — checkpointService.js reuses exactly ONE
+ * StudentCheckpointRecord per (checkpoint, studentId) pair for the
+ * record's entire lifetime; `submittedDate` is directly overwritten on
+ * every resubmission, never append-only (see that model's own header
+ * comment: "independently, directly editable facts, not derived from
+ * history or any append-only log"). There is no separate "submission
+ * attempt" identity anywhere in this app's data model — a withdrawal
+ * followed by a resubmission is, structurally, the exact same record,
+ * not a new one. This file's own duplicate-prevention key (student +
+ * badge type + this one record's own badgeAwards array) already matches
+ * that reality: hasActiveBadgeAward() only ever looks at the CURRENT
+ * record's non-revoked entries, so revoking on withdrawal and then
+ * re-evaluating on resubmission is sufficient — no migration to a
+ * per-attempt data model is needed for this feature. See
+ * revokeReadinessChampionOnWithdrawal()'s own comment for exactly how
+ * this plays out across a withdraw/resubmit cycle.
+ *
+ * PERMISSIONS — enforced here, at the application/service layer ONLY,
+ * via services/permissionService.js's own canPerformAsUid() against the
+ * new PERMISSIONS.AWARD_NOTEBOOK_BADGE (config/memberRoles.js), granted
+ * to OWNER/TEACHER only. THIS IS NOT FIRESTORE-ENFORCED AUTHORIZATION —
+ * explicit product decision, not an oversight: the classroom document's
+ * one blanket `allow update` rule (firestore.rules) already grants any
+ * authenticated member write access to the ENTIRE document (no
+ * per-field/per-role narrowing exists anywhere in this app today, for
+ * ANY permission — AWARD_POINTS, EDIT_STUDENTS, etc. are all exactly
+ * this same shape), so a client that writes to Firestore directly,
+ * bypassing this service's own canPerformAsUid() checks, CAN currently
+ * award/override/revoke a Notebook Tracker badge regardless of role.
+ * Retrofitting true rule-layer enforcement would mean restructuring
+ * that single, shared, every-feature-depends-on-it rule — a
+ * disproportionate, high-blast-radius change explicitly ruled out of
+ * scope for this feature. Do not treat this file's own permission
+ * checks as satisfying a "data/security-layer" authorization
+ * requirement — they satisfy the APPLICATION layer only. See the
+ * tracked follow-up: investigate targeted Firestore rule enforcement
+ * (or routing badge-award writes through a trusted backend/Cloud
+ * Function) before this feature is considered for production
+ * deployment.
  */
 
 import * as checkpointService from './checkpointService.js';
@@ -100,9 +136,34 @@ function pushAwardEntry(record, { badgeTypeId, source, awardedBy }) {
     revoked: false,
     revokedBy: null,
     revokedAt: null,
+    revokedReason: null,
   };
   record.badgeAwards.push(entry);
   return entry;
+}
+
+/**
+ * Shared revocation mechanics for Readiness Champion — finds whichever
+ * entry is currently active (regardless of source: automatic or
+ * override) and marks it revoked IN PLACE, decrementing the displayed
+ * count. Returns the revoked entry, or null if nothing was active
+ * (idempotent — safe to call repeatedly with no further effect past the
+ * first real revocation). Callers decide what "nothing active" means
+ * for their own case: revokeReadinessChampion() (explicit teacher
+ * action) throws on it; revokeReadinessChampionOnWithdrawal() (an
+ * automatic side effect) treats it as the normal, already-handled case.
+ */
+function revokeActiveReadinessAward(classroom, checkpoint, student, actingUid, reason) {
+  const record = checkpointService.getRecordForStudent(checkpoint, student.id);
+  const activeEntry = listBadgeAwardsForRecord(record, READINESS_CHAMPION_BADGE_ID).find((entry) => !entry.revoked);
+  if (!activeEntry) return null;
+
+  activeEntry.revoked = true;
+  activeEntry.revokedBy = actingUid;
+  activeEntry.revokedAt = getCurrentIsoDate();
+  activeEntry.revokedReason = reason;
+  notebookBadgeService.revokeNotebookBadge(classroom, student, READINESS_CHAMPION_BADGE_ID);
+  return activeEntry;
 }
 
 /**
@@ -219,14 +280,60 @@ export function overrideReadinessChampion(classroom, checkpoint, student, acting
 export function revokeReadinessChampion(classroom, checkpoint, student, actingUid) {
   assertCanAward(classroom, actingUid, 'revoke Readiness Champion');
 
-  const record = checkpointService.getRecordForStudent(checkpoint, student.id);
-  const activeEntry = listBadgeAwardsForRecord(record, READINESS_CHAMPION_BADGE_ID).find((entry) => !entry.revoked);
-  if (!activeEntry) {
+  const revoked = revokeActiveReadinessAward(classroom, checkpoint, student, actingUid, 'teacher_revoked');
+  if (!revoked) {
     throw new Error('No active Readiness Champion award to revoke for this student on this checkpoint.');
   }
+  return student.notebookBadgeCounts?.[READINESS_CHAMPION_BADGE_ID] ?? 0;
+}
 
-  activeEntry.revoked = true;
-  activeEntry.revokedBy = actingUid;
-  activeEntry.revokedAt = getCurrentIsoDate();
-  return notebookBadgeService.revokeNotebookBadge(classroom, student, READINESS_CHAMPION_BADGE_ID);
+/**
+ * Automatic counterpart to revokeReadinessChampion() — called whenever
+ * a submission is walked back from 'submitted' to 'not_submitted' (see
+ * checkpointService.setSubmission()'s own 'not_submitted' branch),
+ * never a primary teacher command. Revokes whichever Readiness Champion
+ * award is currently active on this exact record, AUTOMATIC or
+ * OVERRIDE alike — an override is a teacher's own belief that "this
+ * submission counts as on time," and that belief no longer has a real
+ * submission underneath it once withdrawn, so it is revoked exactly the
+ * same way (this is what satisfies "an override associated with a
+ * withdrawn submission cannot leave a stale award active").
+ *
+ * IDEMPOTENT and NEVER THROWS: if there is nothing active to revoke
+ * (nothing was ever awarded, or a prior call/undo already revoked it —
+ * e.g. the teacher toggles Submitted -> Not Submitted -> Submitted ->
+ * Not Submitted again before saving), this is simply a no-op, matching
+ * evaluateReadinessChampion()'s own "a side effect of an
+ * already-permitted action must never abort or surface as an error"
+ * contract. Organization/Punctuation Champion are never touched here —
+ * see this file's own header comment on why.
+ *
+ * Because checkpointService.js reuses the SAME record across a
+ * withdraw/resubmit cycle (see this file's own "SUBMISSION ATTEMPT
+ * IDENTITY" header comment), this revocation plus
+ * evaluateReadinessChampion()'s own existing duplicate guard together
+ * are sufficient to prevent a stale or duplicate award surviving a
+ * resubmission: withdrawing revokes whatever was active; a later
+ * resubmission calls evaluateReadinessChampion() fresh, which only ever
+ * sees the CURRENT submittedDate (not the withdrawn one) and the
+ * CURRENT badgeAwards state (the earlier entry now revoked, so it no
+ * longer blocks a new award) — a late resubmission correctly does NOT
+ * retain an earlier on-time award, and an on-time resubmission
+ * correctly CAN earn a fresh one.
+ *
+ * Deliberately UNGATED by canAwardNotebookBadge(), unlike every other
+ * mutating function in this file — this is not a discretionary "award"
+ * decision an unprivileged uid could abuse, it is a deterministic
+ * data-integrity correction tied 1:1 to a submission fact that the
+ * caller (already performing the withdrawal itself) has already
+ * changed. Gating this the same way as a grant would risk exactly the
+ * outcome this function exists to prevent: a stale, factually-wrong
+ * "submitted on time" badge surviving a withdrawal because the acting
+ * uid happened to lack the narrower badge permission. `actingUid` is
+ * still recorded as `revokedBy` on the audit entry either way — this
+ * only skips the AUTHORIZATION check, never the audit trail.
+ */
+export function revokeReadinessChampionOnWithdrawal(classroom, checkpoint, student, actingUid) {
+  const revoked = revokeActiveReadinessAward(classroom, checkpoint, student, actingUid, 'submission_withdrawn');
+  return revoked ? student.notebookBadgeCounts?.[READINESS_CHAMPION_BADGE_ID] ?? 0 : null;
 }

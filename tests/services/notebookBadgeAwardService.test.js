@@ -343,6 +343,7 @@ test('revokeReadinessChampion: revokes an automatic award — marks the audit en
   assert.equal(entry.revoked, true);
   assert.equal(entry.revokedBy, OWNER_UID);
   assert.ok(entry.revokedAt);
+  assert.equal(entry.revokedReason, 'teacher_revoked');
   // The original entry is preserved, not deleted.
   assert.equal(record.badgeAwards.length, 1);
 });
@@ -418,4 +419,231 @@ test('listBadgeAwardsForRecord: returns only entries matching the given badge ty
   assert.equal(readiness.length, 2);
   assert.equal(readiness[0].source, 'automatic');
   assert.equal(readiness[1].source, 'override');
+});
+
+// ---------------------------------------------------------------------
+// revokeReadinessChampionOnWithdrawal — automatic revocation when a
+// submission is walked back from 'submitted' to 'not_submitted'.
+// ---------------------------------------------------------------------
+
+test('revokeReadinessChampionOnWithdrawal: revokes an active AUTOMATIC award, preserving the entry and recording the withdrawal reason', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+  notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+
+  // The withdrawal itself — matches ui/views/NotebookCheckpointsView.js's
+  // own onSaveCell handler: setSubmission() back to not_submitted, then
+  // the revocation side effect.
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'not_submitted' });
+  const count = notebookBadgeAwardService.revokeReadinessChampionOnWithdrawal(classroom, checkpoint, student, TEACHER_UID);
+
+  assert.equal(count, 0);
+  assert.equal(student.notebookBadgeCounts['readiness-champion'], 0);
+  const record = checkpointService.getRecordForStudent(checkpoint, student.id);
+  assert.equal(record.badgeAwards.length, 1); // preserved, not deleted
+  const entry = record.badgeAwards[0];
+  assert.equal(entry.revoked, true);
+  assert.equal(entry.revokedBy, TEACHER_UID);
+  assert.ok(entry.revokedAt);
+  assert.equal(entry.revokedReason, 'submission_withdrawn');
+  assert.equal(entry.source, 'automatic'); // the original award's own source is untouched
+});
+
+test('revokeReadinessChampionOnWithdrawal: revokes an active OVERRIDE award exactly the same way — "cannot leave a stale award active" applies to overrides too', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-15' }); // late
+  notebookBadgeAwardService.overrideReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'not_submitted' });
+  notebookBadgeAwardService.revokeReadinessChampionOnWithdrawal(classroom, checkpoint, student, TEACHER_UID);
+
+  assert.equal(student.notebookBadgeCounts['readiness-champion'], 0);
+  const record = checkpointService.getRecordForStudent(checkpoint, student.id);
+  const entry = record.badgeAwards.find((e) => e.badgeTypeId === 'readiness-champion');
+  assert.equal(entry.revoked, true);
+  assert.equal(entry.revokedReason, 'submission_withdrawn');
+  assert.equal(entry.source, 'override');
+});
+
+test('revokeReadinessChampionOnWithdrawal: never touches Organization or Punctuation Champion', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+  checkpointService.setReview(checkpoint, student.id, { status: 'complete', reviewedDate: '2026-09-06' });
+  notebookBadgeAwardService.awardReviewCompletionBadge(classroom, checkpoint, student, 'organization', TEACHER_UID);
+  notebookBadgeAwardService.awardReviewCompletionBadge(classroom, checkpoint, student, 'punctuation-champion', TEACHER_UID);
+  notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'not_submitted' }); // this also resets reviewStatus — see checkpointService.setSubmission()
+  notebookBadgeAwardService.revokeReadinessChampionOnWithdrawal(classroom, checkpoint, student, TEACHER_UID);
+
+  assert.equal(student.notebookBadgeCounts.organization, 1, 'Organization must survive a submission withdrawal untouched');
+  assert.equal(student.notebookBadgeCounts['punctuation-champion'], 1, 'Punctuation Champion must survive a submission withdrawal untouched');
+  assert.equal(student.notebookBadgeCounts['readiness-champion'], 0);
+  const record = checkpointService.getRecordForStudent(checkpoint, student.id);
+  assert.equal(notebookBadgeAwardService.hasActiveBadgeAward(record, 'organization'), true);
+  assert.equal(notebookBadgeAwardService.hasActiveBadgeAward(record, 'punctuation-champion'), true);
+});
+
+test('revokeReadinessChampionOnWithdrawal: idempotent — calling it with nothing active is a safe no-op, never throws', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+  // Never submitted at all.
+  let threw = false;
+  let result;
+  try {
+    result = notebookBadgeAwardService.revokeReadinessChampionOnWithdrawal(classroom, checkpoint, student, TEACHER_UID);
+  } catch {
+    threw = true;
+  }
+  assert.equal(threw, false);
+  assert.equal(result, null);
+});
+
+test('revokeReadinessChampionOnWithdrawal: calling it twice in a row (e.g. Submitted -> Not Submitted -> Submitted -> Not Submitted before the first ever persisted) never creates a second revocation entry', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+  notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+
+  notebookBadgeAwardService.revokeReadinessChampionOnWithdrawal(classroom, checkpoint, student, TEACHER_UID);
+  const second = notebookBadgeAwardService.revokeReadinessChampionOnWithdrawal(classroom, checkpoint, student, TEACHER_UID);
+
+  assert.equal(second, null); // idempotent: nothing active left the second time
+  const record = checkpointService.getRecordForStudent(checkpoint, student.id);
+  assert.equal(record.badgeAwards.length, 1); // still only the one original entry, not a second revocation record
+  assert.equal(student.notebookBadgeCounts['readiness-champion'], 0); // never decremented twice
+});
+
+test('revokeReadinessChampionOnWithdrawal: even an unauthorized/non-member acting uid still revokes — this is a data-integrity correction, never a discretionary award decision', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+  notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'not_submitted' });
+  const count = notebookBadgeAwardService.revokeReadinessChampionOnWithdrawal(classroom, checkpoint, student, VIEWER_UID);
+
+  assert.equal(count, 0);
+  assert.equal(student.notebookBadgeCounts['readiness-champion'], 0);
+});
+
+// ---------------------------------------------------------------------
+// Full withdraw -> resubmit cycles — the "no separate attempt identity"
+// consequence this file's own header comment describes, confirmed
+// end-to-end here.
+// ---------------------------------------------------------------------
+
+test('withdraw -> resubmit ON TIME again: the earlier (now-revoked) entry never blocks a fresh award, and exactly one active entry exists afterward', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+  notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'not_submitted' });
+  notebookBadgeAwardService.revokeReadinessChampionOnWithdrawal(classroom, checkpoint, student, TEACHER_UID);
+
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-08' }); // resubmitted, still on time
+  const count = notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+
+  assert.equal(count, 1);
+  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1);
+  const record = checkpointService.getRecordForStudent(checkpoint, student.id);
+  const readinessEntries = record.badgeAwards.filter((e) => e.badgeTypeId === 'readiness-champion');
+  assert.equal(readinessEntries.length, 2); // the withdrawn one, plus the new one
+  assert.equal(readinessEntries[0].revoked, true);
+  assert.equal(readinessEntries[1].revoked, false);
+});
+
+test('withdraw -> resubmit LATE: a late resubmission does NOT retain the earlier on-time award — the automatic rule correctly refuses it', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' }); // on time
+  notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'not_submitted' });
+  notebookBadgeAwardService.revokeReadinessChampionOnWithdrawal(classroom, checkpoint, student, TEACHER_UID);
+
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-20' }); // resubmitted LATE
+  const count = notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+
+  assert.equal(count, null); // the automatic rule correctly refuses a late resubmission
+  assert.equal(student.notebookBadgeCounts['readiness-champion'], 0); // not left at 1 from the withdrawn award
+  const record = checkpointService.getRecordForStudent(checkpoint, student.id);
+  assert.equal(notebookBadgeAwardService.hasActiveBadgeAward(record, 'readiness-champion'), false);
+});
+
+test('withdraw -> resubmit LATE, but the teacher overrides anyway: override still works after a withdrawal, is not blocked by the earlier revoked entry', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+  notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'not_submitted' });
+  notebookBadgeAwardService.revokeReadinessChampionOnWithdrawal(classroom, checkpoint, student, TEACHER_UID);
+
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-20' }); // late resubmission
+  const count = notebookBadgeAwardService.overrideReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+
+  assert.equal(count, 1);
+  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1);
+});
+
+test('override -> withdraw -> override again: the second override is not blocked by the first (now-revoked-on-withdrawal) one', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-15' }); // late
+  notebookBadgeAwardService.overrideReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'not_submitted' });
+  notebookBadgeAwardService.revokeReadinessChampionOnWithdrawal(classroom, checkpoint, student, TEACHER_UID);
+
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-16' }); // late again
+  const count = notebookBadgeAwardService.overrideReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+
+  assert.equal(count, 1);
+  const record = checkpointService.getRecordForStudent(checkpoint, student.id);
+  const readinessEntries = record.badgeAwards.filter((e) => e.badgeTypeId === 'readiness-champion');
+  assert.equal(readinessEntries.length, 2);
+  assert.equal(readinessEntries.filter((e) => !e.revoked).length, 1); // exactly one active entry, never two
+});
+
+// ---------------------------------------------------------------------
+// Existing manual award / override / explicit revocation workflows
+// still work unchanged after this feature's own refactor
+// (revokeActiveReadinessAward() shared internal helper).
+// ---------------------------------------------------------------------
+
+test('REGRESSION: explicit teacher revokeReadinessChampion() still works exactly as before, and sets revokedReason to teacher_revoked (not submission_withdrawn)', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+  notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+
+  const count = notebookBadgeAwardService.revokeReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+
+  assert.equal(count, 0);
+  const record = checkpointService.getRecordForStudent(checkpoint, student.id);
+  const entry = record.badgeAwards.find((e) => e.badgeTypeId === 'readiness-champion');
+  assert.equal(entry.revokedReason, 'teacher_revoked');
+});
+
+test('REGRESSION: explicit revokeReadinessChampion() still throws for an unauthorized uid — unlike the automatic withdrawal path, this one IS gated', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+  notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+
+  assert.throws(() => notebookBadgeAwardService.revokeReadinessChampion(classroom, checkpoint, student, VIEWER_UID), /Not authorized/);
+  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1); // untouched
+});
+
+test('REGRESSION: awardReviewCompletionBadge (manual Organization/Punctuation) still works, unaffected by the withdrawal feature', () => {
+  const { classroom, checkpoint, student } = buildFixture();
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+  checkpointService.setReview(checkpoint, student.id, { status: 'complete', reviewedDate: '2026-09-06' });
+
+  const count = notebookBadgeAwardService.awardReviewCompletionBadge(classroom, checkpoint, student, 'organization', TEACHER_UID);
+  assert.equal(count, 1);
+});
+
+test('REGRESSION: overrideReadinessChampion still throws if an active award already exists, unaffected by the shared revocation helper refactor', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+  notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+
+  assert.throws(
+    () => notebookBadgeAwardService.overrideReadinessChampion(classroom, checkpoint, student, TEACHER_UID),
+    /already been awarded/
+  );
 });
