@@ -82,6 +82,30 @@
  * either — it's one more metadata pill on the Assignment card, per the
  * explicit product instruction that "assignment type is metadata, not
  * the primary navigation structure," extended to Subject too.
+ *
+ * `unitId` — the Worksheet Codes milestone's own addition: an optional
+ * reference to one of the selected Subject's own `units[]` entries
+ * (models/LearningUnit.js), resolved live at read time, NEVER copied/
+ * denormalized — the exact same reference-not-copy convention
+ * `subjectId` above already established. `null` for every Assignment
+ * created before this field existed, and for any Assignment whose
+ * teacher never picked a Unit (Unit selection is optional, same as
+ * Subject). Only ever meaningful alongside a real `subjectId` — a Unit
+ * without a Subject has no scope to belong to.
+ *
+ * `code` — an automatically generated, stable display code (e.g.
+ * "WS-SCI-U12-01"), see services/worksheetCodeService.js. Generated
+ * ONCE at creation time and never regenerated afterward, even if
+ * `subjectId`/`unitId` are later changed via Edit — a teacher or
+ * student may already be referring to this Assignment by its code
+ * (on a printed worksheet, in conversation), so silently changing it
+ * later would break that reference. `null` for every Assignment
+ * created before this field existed; display code elsewhere treats a
+ * missing code as "no code" (e.g. falls back to just the title), never
+ * as an error. This is a DISPLAY identifier only — `id` above remains
+ * the one stable internal record id everything else (records,
+ * conceptIds reverse-lookups, routes) keys off; nothing here repurposes
+ * `code` as a second id.
  */
 
 import { generateId } from '../utils/idGenerator.js';
@@ -100,6 +124,8 @@ export function createAssignment({
   conceptIds = [],
   resourceUrl = '',
   subjectId = null,
+  unitId = null,
+  code = null,
 } = {}) {
   return {
     id: id || generateId(),
@@ -114,5 +140,7 @@ export function createAssignment({
     conceptIds,
     resourceUrl,
     subjectId,
+    unitId,
+    code,
   };
 }
