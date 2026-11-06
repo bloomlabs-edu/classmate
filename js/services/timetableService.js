@@ -21,6 +21,13 @@
 import { createTimetable, createTimetableSlot } from '../models/Timetable.js';
 import { createTeachingSlot } from '../models/TeachingSlot.js';
 import { toDateKey, shiftDateKey } from '../utils/dateHelpers.js';
+// Circular with schoolCalendarService.js (that file imports this one) —
+// safe because both modules only ever call across the cycle from
+// INSIDE a function body (getNextFutureSlotForSubject() below), never
+// at module-evaluation time; confirmed with a direct cross-call smoke
+// test before relying on it. See getNextFutureSlotForSubject()'s own
+// doc comment for why this import exists.
+import * as schoolCalendarService from './schoolCalendarService.js';
 
 function ensureTimetable(classroom) {
   if (!classroom.timetable) classroom.timetable = createTimetable({ classroomId: classroom.id });
@@ -201,19 +208,53 @@ function minutesBetween(startTime, endTime) {
  * `horizonDays` (default 60 — generously beyond a single term) so a
  * classroom with no future occurrence of this subject configured
  * returns null rather than scanning forever.
+ *
+ * Holiday-rescheduling fix: previously consulted ONLY the recurring
+ * weekly pattern (getSlot()), completely blind to
+ * services/schoolCalendarService.js's own calendar exceptions — it
+ * could (and did, before this fix) suggest a date that is itself a
+ * Holiday, or skip a temporary Special Working Day on a weekday with no
+ * recurring pattern at all. Now consults
+ * schoolCalendarService.getWorkingDayStatus() per candidate date first;
+ * a non-working date (Holiday, or an ordinary non-working weekday with
+ * no override) is skipped entirely before its periods are even
+ * considered, so the scan correctly progresses across a single holiday,
+ * a consecutive run of holidays, or a whole date-range holiday alike —
+ * each is just more non-working dates to skip past, not a special case.
+ *
+ * `teacherUid` — optional, backward-compatible addition (every
+ * pre-existing call site omits it and keeps matching on subjectId
+ * alone, unchanged). When given, a candidate slot must ALSO belong to
+ * this exact teacher — never suggesting a period that merely happens to
+ * be free for a DIFFERENT teacher who teaches the same subject in this
+ * classroom.
  */
-export function getNextFutureSlotForSubject(classroom, { subjectId, afterDateKey, afterPeriodNumber, horizonDays = 60 }) {
-  const periods = getPeriods(classroom);
-
+export function getNextFutureSlotForSubject(classroom, { subjectId, teacherUid, afterDateKey, afterPeriodNumber, horizonDays = 60 }) {
   for (let offset = 0; offset <= horizonDays; offset += 1) {
     const dateKey = shiftDateKey(afterDateKey, offset);
     const weekday = weekdayOfDateKey(dateKey);
 
-    for (const period of periods) {
-      if (offset === 0 && period.periodNumber <= afterPeriodNumber) continue;
+    // schoolCalendarService.getEffectivePeriodsForDate() is THE one
+    // place "what are this specific date's real periods, including
+    // whichever subject/teacher is actually in each" is already
+    // correctly resolved — [] for a Holiday (or an ordinary
+    // non-working weekday with no override), the recurring weekly
+    // pattern's own periods for a normal working day, or a Special
+    // Working Day exception's own `customPeriods` when the teacher
+    // explicitly set them (see models/CalendarException.js's own
+    // header comment). Calling it here — instead of this function's
+    // own previous direct getPeriods()/getSlot() pair, which only ever
+    // knew about the recurring pattern — is what makes this search
+    // correctly skip Holidays AND correctly find a real subject/teacher
+    // match on a Special Working Day (a weekday with no recurring
+    // pattern of its own, e.g. a temporary working Saturday, previously
+    // could never be found at all).
+    const effectivePeriods = schoolCalendarService.getEffectivePeriodsForDate(classroom, dateKey);
 
-      const slot = getSlot(classroom, weekday, period.periodNumber);
-      if (!slot || slot.subjectId !== subjectId) continue;
+    for (const period of effectivePeriods) {
+      if (offset === 0 && period.periodNumber <= afterPeriodNumber) continue;
+      if (period.subjectId !== subjectId) continue;
+      if (teacherUid && period.teacherUid !== teacherUid) continue;
 
       return createTeachingSlot({
         id: buildTeachingSlotId(classroom.id, dateKey, period.periodNumber),
@@ -221,7 +262,7 @@ export function getNextFutureSlotForSubject(classroom, { subjectId, afterDateKey
         weekday,
         periodNumber: period.periodNumber,
         duration: minutesBetween(period.startTime, period.endTime),
-        subjectId: slot.subjectId,
+        subjectId: period.subjectId,
       });
     }
   }

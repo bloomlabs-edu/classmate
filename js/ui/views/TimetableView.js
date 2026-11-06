@@ -56,8 +56,10 @@ import { createScheduledEvent } from '../../models/ScheduledEvent.js';
 import * as schoolCalendarService from '../../services/schoolCalendarService.js';
 import * as scheduledEventService from '../../services/scheduledEventService.js';
 import * as scheduledEventRepository from '../../services/scheduledEventRepository.js';
+import * as holidayRescheduleService from '../../services/holidayRescheduleService.js';
 import { hydrateConceptRecordsForConcepts } from '../../services/conceptRecordHydrationService.js';
-import { getFeedbackEligibleConceptIds, resetLessonForUnitChange, removeConceptFromLesson } from '../../models/Lesson.js';
+import { getFeedbackEligibleConceptIds, resetLessonForUnitChange, removeConceptFromLesson, createLesson, rescheduleConceptsForHoliday } from '../../models/Lesson.js';
+import { generateId } from '../../utils/idGenerator.js';
 import { getWeeklyPlanReadiness } from '../../services/weeklyPlanValidationService.js';
 import * as weeklyPlanSubmissionService from '../../services/weeklyPlanSubmissionService.js';
 import * as weeklyPlanSubmissionRepository from '../../repositories/weeklyPlanSubmissionRepository.js';
@@ -75,6 +77,7 @@ import {
   getDaysInYearMonth,
   formatDateKeyWithWeekday,
   getMondayStartOfWeek,
+  getCurrentIsoDate,
 } from '../../utils/dateHelpers.js';
 import { createIcon } from '../components/Icon.js';
 import { createOverflowMenu } from '../components/OverflowMenu.js';
@@ -862,6 +865,143 @@ export async function renderTimetableView(
    * with no explicit exception gets a quieter, honest "Weekend" label
    * instead of implying a real Holiday was declared.
    */
+  /**
+   * How many of the currently-loaded Lessons (state.lessonsByTeachingSlotId
+   * — already fetched for whatever range is on screen, see loadAndRender())
+   * sit on `dateKey` AND still have open (un-executed, non-carried-forward)
+   * concepts left over from a Holiday that hid them — see
+   * services/holidayRescheduleService.js's own findUnresolvedHolidayLessons()
+   * for the shared, single definition of "unresolved" this and the
+   * School Calendar's own review panel both use. Scoped to only the
+   * visible range's own already-fetched Lessons — never a second,
+   * wider fetch just to render a small badge.
+   */
+  function countUnresolvedHolidayLessonsForDate(dateKey) {
+    const lessons = Object.values(state.lessonsByTeachingSlotId);
+    return holidayRescheduleService.findUnresolvedHolidayLessons(classroom, lessons).filter((entry) => entry.lesson.date === dateKey).length;
+  }
+
+  /** The small, clickable "N lesson(s) need attention" indicator shared by both the Day banner and the Week holiday column — opens the same review panel School Calendar's own Exceptions tab offers, so there is exactly one place this ever gets resolved from. */
+  function renderUnresolvedHolidayIndicator(dateKey) {
+    const unresolvedCount = countUnresolvedHolidayLessonsForDate(dateKey);
+    if (unresolvedCount === 0) return null;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'timetable-view__unresolved-holiday-indicator';
+    button.textContent = `⚠ ${unresolvedCount} lesson${unresolvedCount === 1 ? '' : 's'} need attention →`;
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      openUnresolvedHolidayLessonsPanel();
+    });
+    return button;
+  }
+
+  /**
+   * Part F — "unresolved lessons must remain visible": the
+   * discoverable review surface for every Holiday-affected Lesson no
+   * automatic destination was ever found for (see
+   * services/holidayRescheduleService.js's own findUnresolvedHolidayLessons()
+   * — the exact same definition renderUnresolvedHolidayIndicator() above
+   * uses, never a second one). Fetches across EVERY Holiday exception's
+   * own date range, not just whatever range the Timetable grid currently
+   * happens to be showing, so this is always a complete picture
+   * regardless of where the teacher navigated from. Deliberately
+   * read-only/informational here — resolving an item reuses the
+   * EXISTING "Edit lesson"/Carry Forward tools a teacher already knows
+   * from the period's own detail panel, rather than this panel growing
+   * a second, parallel resolution mechanism.
+   *
+   * Deliberately defined here, at renderTimetableView()'s own top
+   * level — NOT nested inside openSchoolCalendarFlow() (a real bug
+   * caught by actual browser inspection, not by any DOM-assertion
+   * test: the Day/Week indicator's own click handler above lives in
+   * this outer scope and threw a ReferenceError trying to reach a
+   * same-named function that only ever existed inside that OTHER,
+   * nested closure) — so both this file's own callers
+   * (renderUnresolvedHolidayIndicator() above and School Calendar's own
+   * "Lessons needing attention" button) can reach the exact same
+   * function.
+   */
+  async function openUnresolvedHolidayLessonsPanel() {
+    const overlay = document.createElement('div');
+    overlay.className = 'carry-forward-overlay manage-timetable-overlay';
+    const box = document.createElement('div');
+    box.className = 'carry-forward-overlay__box manage-timetable-overlay__box';
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    const eyebrow = document.createElement('p');
+    eyebrow.className = 'carry-forward-overlay__eyebrow';
+    eyebrow.textContent = 'LESSONS NEEDING ATTENTION';
+    box.appendChild(eyebrow);
+
+    const heading = document.createElement('h3');
+    heading.className = 'manage-timetable-overlay__heading';
+    heading.textContent = 'Lessons needing attention';
+    box.appendChild(heading);
+
+    const loadingNote = document.createElement('p');
+    loadingNote.textContent = 'Loading…';
+    box.appendChild(loadingNote);
+
+    const closeActions = document.createElement('div');
+    closeActions.className = 'carry-forward-overlay__actions';
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'btn btn--ghost';
+    closeButton.textContent = 'Close';
+    closeButton.addEventListener('click', () => overlay.remove());
+    closeActions.appendChild(closeButton);
+    box.appendChild(closeActions);
+
+    try {
+      const holidayExceptions = schoolCalendarService.getCalendarExceptions(classroom).filter((exception) => exception.type === CALENDAR_EXCEPTION_TYPES.HOLIDAY);
+      const lessonsPerException = await Promise.all(
+        holidayExceptions.map((exception) => plannerRepository.getLessonsForDateRange(classroom.id, exception.startDate, exception.endDate))
+      );
+      const allLessons = lessonsPerException.flat();
+      const unresolved = holidayRescheduleService.findUnresolvedHolidayLessons(classroom, allLessons);
+
+      loadingNote.remove();
+
+      if (unresolved.length === 0) {
+        const empty = document.createElement('p');
+        empty.className = 'manage-timetable-overlay__hint';
+        empty.textContent = 'Nothing needs attention right now — every Holiday-affected lesson has either been rescheduled, carried forward, or already taught.';
+        box.insertBefore(empty, closeActions);
+        return;
+      }
+
+      const list = document.createElement('div');
+      list.className = 'school-calendar__list';
+      unresolved.forEach(({ exception, lesson, openConceptIds }) => {
+        const row = document.createElement('div');
+        row.className = 'school-calendar__row';
+        const info = document.createElement('div');
+        info.className = 'school-calendar__row-info';
+
+        const periodNumber = timetableService.parsePeriodNumberFromTeachingSlotId(lesson.teachingSlotId);
+        const subjectTitle = timetableDisplayService.resolveLessonTopic(classroom, lesson) || 'Lesson';
+        const dateLabel = document.createElement('span');
+        dateLabel.className = 'school-calendar__row-date';
+        dateLabel.textContent = `${formatDateKey(lesson.date)}${periodNumber != null ? ` · Period ${periodNumber}` : ''} — ${subjectTitle}`;
+        info.appendChild(dateLabel);
+
+        const reasonEl = document.createElement('span');
+        reasonEl.className = 'school-calendar__row-reason';
+        reasonEl.textContent = `${openConceptIds.length} concept(s) still unplaced — Holiday "${exception.reason || formatDateKey(exception.startDate)}." Use this period's own "Edit lesson" or Carry Forward to move it manually.`;
+        info.appendChild(reasonEl);
+
+        row.appendChild(info);
+        list.appendChild(row);
+      });
+      box.insertBefore(list, closeActions);
+    } catch (error) {
+      console.error('[TimetableView] Failed to load unresolved Holiday-affected lessons:', error);
+      loadingNote.textContent = "Couldn't load this list. Check your connection and try again.";
+    }
+  }
+
   function renderHolidayColumnBlock(schedule, isWeekend) {
     const block = document.createElement('div');
     const isRealHoliday = schedule.exceptionType === CALENDAR_EXCEPTION_TYPES.HOLIDAY;
@@ -879,6 +1019,11 @@ export async function renderTimetableView(
       reason.className = 'timetable-view__holiday-column__reason';
       reason.textContent = schedule.exceptionReason;
       block.appendChild(reason);
+    }
+
+    if (isRealHoliday) {
+      const indicator = renderUnresolvedHolidayIndicator(schedule.dateKey);
+      if (indicator) block.appendChild(indicator);
     }
 
     return block;
@@ -1018,6 +1163,8 @@ export async function renderTimetableView(
       const text = document.createElement('span');
       text.textContent = schedule.exceptionReason ? `Holiday — ${schedule.exceptionReason}` : 'Holiday';
       banner.appendChild(text);
+      const indicator = renderUnresolvedHolidayIndicator(schedule.dateKey);
+      if (indicator) banner.appendChild(indicator);
     } else if (schedule.exceptionType === CALENDAR_EXCEPTION_TYPES.WORKING_DAY) {
       banner.className = 'timetable-view__calendar-banner timetable-view__calendar-banner--working-day';
       banner.appendChild(createIcon('calendar-check', { size: 16 }));
@@ -5050,6 +5197,17 @@ export async function renderTimetableView(
       });
       wrap.appendChild(addButton);
 
+      // Part F's own discoverable entry point — always offered here,
+      // not only via the Day/Week indicator, so a teacher who never
+      // scrolled back to an affected date can still find it from School
+      // Calendar directly.
+      const reviewUnresolvedButton = document.createElement('button');
+      reviewUnresolvedButton.type = 'button';
+      reviewUnresolvedButton.className = 'btn btn--text';
+      reviewUnresolvedButton.textContent = 'Lessons needing attention →';
+      reviewUnresolvedButton.addEventListener('click', () => openUnresolvedHolidayLessonsPanel());
+      wrap.appendChild(reviewUnresolvedButton);
+
       const exceptions = schoolCalendarService.getCalendarExceptions(classroom);
       if (exceptions.length === 0) {
         wrap.appendChild(createEmptyStateElement({ message: 'No holidays or special working days marked yet.' }));
@@ -5274,11 +5432,15 @@ export async function renderTimetableView(
         }
         exceptionDraft.validationError = null;
 
-        await runAction(async () => {
-          const range = { startDate: exceptionDraft.startDate, endDate: exceptionDraft.endDate };
-          if (exceptionDraft.type === CALENDAR_EXCEPTION_TYPES.HOLIDAY) {
-            schoolCalendarService.setHolidayException(classroom, range, exceptionDraft.reason, { id: exceptionDraft.id });
-          } else {
+        const range = { startDate: exceptionDraft.startDate, endDate: exceptionDraft.endDate };
+
+        if (exceptionDraft.type !== CALENDAR_EXCEPTION_TYPES.HOLIDAY) {
+          // Special Working Day — unchanged from before this feature.
+          // Only a HOLIDAY can ever hide an already-scheduled Lesson
+          // (a Working Day only ever ADDS periods to a date, never
+          // removes any), so only the Holiday branch below needs the
+          // reschedule check at all.
+          await runAction(async () => {
             schoolCalendarService.setWorkingDayException(
               classroom,
               range,
@@ -5286,17 +5448,295 @@ export async function renderTimetableView(
               exceptionDraft.customize && exceptionDraft.customPeriods.length > 0 ? exceptionDraft.customPeriods : null,
               { id: exceptionDraft.id }
             );
-          }
-          await workspaceService.saveExplicitly(classroom);
-          exceptionDraft = null;
-          await loadAndRender();
-          renderBox();
-        });
+            await workspaceService.saveExplicitly(classroom);
+            exceptionDraft = null;
+            await loadAndRender();
+            renderBox();
+          });
+          return;
+        }
+
+        await runAction(() => planAndConfirmHolidaySave(exceptionDraft, range));
       });
       actions.appendChild(saveButton);
 
       form.appendChild(actions);
       return form;
+    }
+
+    /**
+     * THE FIX for the "adding a holiday silently hides scheduled
+     * lessons" gap — see services/holidayRescheduleService.js's own
+     * header comment for the full three-piece design this orchestrates
+     * (draft-classroom planning, confirmation, revalidate-and-apply).
+     * Resolves a STABLE exception id up front (reused for the draft
+     * plan, the real saved exception, AND every rescheduleHistory
+     * record this produces) rather than letting
+     * schoolCalendarService.setHolidayException() generate a fresh one
+     * later — so the audit trail always points at the exact exception
+     * that actually caused each move, for a brand-new Holiday exactly
+     * as reliably as for an edit of an existing one.
+     */
+    async function planAndConfirmHolidaySave(draft, range) {
+      const resolvedExceptionId = draft.id || generateId();
+      const draftClassroom = holidayRescheduleService.buildDraftClassroomWithPendingHoliday(classroom, { ...range, id: resolvedExceptionId });
+      const horizonDays = holidayRescheduleService.DEFAULT_SEARCH_HORIZON_DAYS;
+      const searchWindowStart = shiftDateKey(range.endDate, 1);
+      const searchWindowEnd = shiftDateKey(range.endDate, horizonDays + 1);
+
+      const [lessonsAffected, lessonsInSearchWindow, eventsAffected] = await Promise.all([
+        plannerRepository.getLessonsForDateRange(classroom.id, range.startDate, range.endDate),
+        plannerRepository.getLessonsForDateRange(classroom.id, searchWindowStart, searchWindowEnd),
+        scheduledEventRepository.getScheduledEventsForDateRange(classroom.id, range.startDate, range.endDate),
+      ]);
+
+      const plan = holidayRescheduleService.planHolidayReschedule(draftClassroom, {
+        startDate: range.startDate,
+        endDate: range.endDate,
+        lessonsAffected,
+        lessonsInSearchWindow,
+        eventsAffected,
+        horizonDays,
+      });
+
+      if (plan.entries.length === 0 && !plan.requiresExamDecision) {
+        // Nothing this Holiday would displace — save directly, exactly
+        // as before this feature existed. No new friction for the
+        // overwhelming common case (a Holiday on a date with no Lesson
+        // attached yet, or with nothing left un-executed on it).
+        schoolCalendarService.setHolidayException(classroom, range, draft.reason, { id: resolvedExceptionId });
+        await workspaceService.saveExplicitly(classroom);
+        exceptionDraft = null;
+        await loadAndRender();
+        renderBox();
+        return;
+      }
+
+      openHolidayRescheduleConfirmation(plan, {
+        onCancel: () => {
+          // Deliberately does nothing at all — per this feature's own
+          // explicit requirement, cancelling must leave the Holiday
+          // configuration and every Lesson/concept/exam completely
+          // unchanged. The exception form itself stays open, exactly
+          // as the teacher left it, so they can adjust the dates and
+          // try again rather than losing their in-progress edit.
+        },
+        onConfirm: async () => {
+          await runAction(async () => {
+            const result = await applyReschedulePlanAndSaveHoliday({ plan, range, reason: draft.reason, exceptionId: resolvedExceptionId });
+            exceptionDraft = null;
+            await loadAndRender();
+            renderBox();
+            if (result.unresolvedEntries.length > 0) {
+              window.alert(
+                `Holiday saved. ${result.movedCount} lesson(s) rescheduled successfully, but ${result.unresolvedEntries.length} lesson(s) could not be moved automatically — see "Lessons needing attention" in School Calendar to resolve them manually.`
+              );
+            }
+          });
+        },
+      });
+    }
+
+    /**
+     * Phase 3 (real Firestore writes) — revalidates each planned
+     * destination immediately before committing (a fresh
+     * getLessonByTeachingSlotId() per destination; deliberately not
+     * trusting the plan's own lessonsInSearchWindow snapshot, which may
+     * be stale by the time the teacher actually clicks Confirm),
+     * applies models/Lesson.js's own rescheduleConceptsForHoliday() for
+     * every entry that still has a free destination, persists every
+     * touched Lesson in ONE atomic plannerRepository.saveLessons()
+     * batch, and ONLY THEN commits the Holiday exception itself. This
+     * order means a failure while saving the Lessons never leaves a
+     * Holiday half-committed with no record of what was supposed to
+     * move; a failure saving the Holiday itself after the Lessons
+     * batch already succeeded is also safe to retry — re-opening and
+     * re-saving the identical Holiday finds nothing left to move for
+     * any Lesson already handled (see holidayRescheduleService.js's own
+     * header comment on idempotency) and simply finishes committing the
+     * exception.
+     */
+    async function applyReschedulePlanAndSaveHoliday({ plan, range, reason, exceptionId }) {
+      const now = getCurrentIsoDate();
+      const lessonsToSave = [];
+      const unresolvedEntries = [];
+      let movedCount = 0;
+
+      for (const entry of plan.entries) {
+        if (!entry.destination) {
+          unresolvedEntries.push(entry);
+          continue;
+        }
+
+        const existingAtDestination = await plannerRepository.getLessonByTeachingSlotId(classroom.id, entry.destination.id);
+        const claimedThisRun = lessonsToSave.some((lesson) => lesson.teachingSlotId === entry.destination.id);
+        if (existingAtDestination || claimedThisRun) {
+          unresolvedEntries.push({ ...entry, unresolvedReason: 'The destination period was taken by another lesson just before this could be saved — please try rescheduling this item again.' });
+          continue;
+        }
+
+        const targetLesson = createLesson({
+          classroomId: classroom.id,
+          date: entry.destination.date,
+          teachingSlotId: entry.destination.id,
+          curriculumUnitId: entry.lesson.curriculumUnitId,
+        });
+
+        rescheduleConceptsForHoliday({
+          sourceLesson: entry.lesson,
+          targetLesson,
+          conceptIds: entry.openConceptIds,
+          fromTeachingSlotId: entry.lesson.teachingSlotId,
+          fromDate: entry.lesson.date,
+          toTeachingSlotId: entry.destination.id,
+          toDate: entry.destination.date,
+          exceptionId,
+          movedAt: now,
+        });
+
+        lessonsToSave.push(entry.lesson, targetLesson);
+        movedCount += 1;
+      }
+
+      if (lessonsToSave.length > 0) {
+        await plannerRepository.saveLessons(classroom.id, lessonsToSave);
+      }
+
+      // The Holiday itself is only ever committed AFTER the Lesson
+      // batch above has already succeeded — see this function's own
+      // header comment for the full failure-ordering rationale.
+      schoolCalendarService.setHolidayException(classroom, range, reason, { id: exceptionId });
+      await workspaceService.saveExplicitly(classroom);
+
+      return { movedCount, unresolvedEntries };
+    }
+
+    /**
+     * The confirmation step itself — per explicit requirement, shown
+     * BEFORE any Lesson/concept/exam is touched and before the Holiday
+     * itself is saved. Names the real impact (how many lessons/concepts,
+     * each one's own original slot -> proposed destination, or its own
+     * specific unresolved reason), and — when the Holiday overlaps a
+     * real ScheduledEvent — requires an explicit acknowledgement
+     * checkbox before Confirm becomes clickable at all: this never
+     * moves, deletes, or silently proceeds past an exam conflict on its
+     * own.
+     */
+    function openHolidayRescheduleConfirmation(plan, { onCancel, onConfirm }) {
+      let examAcknowledged = !plan.requiresExamDecision;
+
+      const overlay = document.createElement('div');
+      overlay.className = 'carry-forward-overlay holiday-reschedule-overlay';
+      const box = document.createElement('div');
+      box.className = 'carry-forward-overlay__box';
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+
+      function close() {
+        overlay.remove();
+      }
+
+      const eyebrow = document.createElement('p');
+      eyebrow.className = 'carry-forward-overlay__eyebrow';
+      eyebrow.textContent = 'CONFIRM HOLIDAY — LESSONS AFFECTED';
+      box.appendChild(eyebrow);
+
+      const heading = document.createElement('h3');
+      heading.className = 'manage-timetable-overlay__heading';
+      const resolvableCount = plan.entries.filter((entry) => entry.destination).length;
+      heading.textContent =
+        plan.entries.length > 0
+          ? `${plan.totalOpenConceptCount} concept(s) across ${plan.entries.length} lesson(s) will be affected`
+          : 'This holiday overlaps a scheduled exam';
+      box.appendChild(heading);
+
+      const summary = document.createElement('p');
+      summary.className = 'manage-timetable-overlay__hint';
+      summary.textContent =
+        plan.entries.length > 0
+          ? `${resolvableCount} lesson(s) will be automatically moved to their next available period (same subject, same teacher). ${plan.unresolvedCount > 0 ? `${plan.unresolvedCount} could not be — they'll be kept as-is and flagged for your review.` : 'Only concepts that have not yet been taught are moved; anything already taught stays exactly as recorded.'}`
+          : '';
+      box.appendChild(summary);
+
+      if (plan.entries.length > 0) {
+        const list = document.createElement('div');
+        list.className = 'school-calendar__list';
+        plan.entries.forEach((entry) => {
+          const row = document.createElement('div');
+          row.className = 'school-calendar__row';
+          const info = document.createElement('div');
+          info.className = 'school-calendar__row-info';
+
+          const subjectTitle = entry.subjectId ? timetableDisplayService.resolveSubjectTitle(classroom, entry.subjectId) : 'Unknown subject';
+          const fromLabel = document.createElement('span');
+          fromLabel.className = 'school-calendar__row-date';
+          fromLabel.textContent = `${subjectTitle} — ${formatDateKey(entry.lesson.date)}`;
+          info.appendChild(fromLabel);
+
+          const arrowLabel = document.createElement('span');
+          arrowLabel.className = 'school-calendar__row-reason';
+          arrowLabel.textContent = entry.destination
+            ? `→ ${formatDateKey(entry.destination.date)}, Period ${entry.destination.periodNumber} (${entry.openConceptIds.length} concept(s))`
+            : `⚠ Unresolved — ${entry.unresolvedReason}`;
+          info.appendChild(arrowLabel);
+
+          row.appendChild(info);
+          list.appendChild(row);
+        });
+        box.appendChild(list);
+      }
+
+      if (plan.requiresExamDecision) {
+        const examWarning = document.createElement('div');
+        examWarning.className = 'manage-timetable-overlay__errors';
+        const examHeading = document.createElement('p');
+        examHeading.textContent = `${plan.affectedEvents.length} scheduled exam(s)/event(s) fall within this holiday range:`;
+        examWarning.appendChild(examHeading);
+        plan.affectedEvents.forEach((event) => {
+          const line = document.createElement('p');
+          const eventSubjectTitle = scheduledEventService.resolveEventSubjectTitle(classroom, event);
+          line.textContent = `• ${eventSubjectTitle} — ${formatDateKey(event.date)}${event.date !== event.endDate ? ` to ${formatDateKey(event.endDate)}` : ''}`;
+          examWarning.appendChild(line);
+        });
+        box.appendChild(examWarning);
+
+        const ackLabel = document.createElement('label');
+        const ackCheckbox = document.createElement('input');
+        ackCheckbox.type = 'checkbox';
+        ackCheckbox.checked = examAcknowledged;
+        ackCheckbox.addEventListener('change', () => {
+          examAcknowledged = ackCheckbox.checked;
+          confirmButton.disabled = !examAcknowledged;
+        });
+        ackLabel.append(ackCheckbox, ' I understand this holiday is not changing the exam(s)/event(s) above — I will resolve them myself.');
+        box.appendChild(ackLabel);
+      }
+
+      const actions = document.createElement('div');
+      actions.className = 'carry-forward-overlay__actions';
+
+      const cancelButton = document.createElement('button');
+      cancelButton.type = 'button';
+      cancelButton.className = 'btn btn--ghost';
+      cancelButton.textContent = 'Cancel';
+      cancelButton.addEventListener('click', () => {
+        close();
+        onCancel();
+      });
+      actions.appendChild(cancelButton);
+
+      const confirmButton = document.createElement('button');
+      confirmButton.type = 'button';
+      confirmButton.className = 'btn btn--primary';
+      confirmButton.textContent = 'Confirm & Save Holiday';
+      confirmButton.disabled = !examAcknowledged;
+      confirmButton.addEventListener('click', async () => {
+        close();
+        await onConfirm();
+      });
+      actions.appendChild(confirmButton);
+
+      box.appendChild(actions);
     }
 
     function renderCustomPeriodsEditor() {
