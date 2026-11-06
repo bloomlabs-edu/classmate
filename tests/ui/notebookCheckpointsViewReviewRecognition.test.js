@@ -282,6 +282,30 @@ test('LATE SUBMISSION: a checkpoint reviewed Complete after its own due date sti
   assert.equal(result.score, 1, 'eligibility is untouched by lateness -- Completion Star has no date rule');
 });
 
+test('WITHDRAWAL: walking a submission back to Not Submitted through the cell editor reverses an already-active Completion Star (recordNotebookCheckpointSubmission\'s own reversal branch)', async () => {
+  const workItemRef = { type: 'notebook_checkpoint', subjectId: 'subj-1', notebookTypeId: 'type-1', checkpointId: 'cp-8' };
+  const checkpoint = buildCheckpoint({ id: 'cp-8', records: [buildRecord({ submissionStatus: 'submitted', submittedDate: '2026-01-05', reviewStatus: 'complete', reviewedDate: '2026-01-06' })] });
+  const classroom = buildClassroom({
+    checkpoint,
+    student: buildStudent({ score: 1, history: [{ id: 'h1', kind: 'points', label: 'Completion Star', delta: 1, source: 'auto', workItemRef, recordedAt: '2026-01-06' }] }),
+  });
+
+  const result = await runInView(classroom, { uid: OWNER_UID }, async ({ container, classroom }) => {
+    container.querySelector('td[data-checkpoint-id="cp-8"][data-student-id="s1"] .notebook-checkpoints__cell-row').click();
+    const [submissionSelect] = container.querySelectorAll('.notebook-checkpoints__cell-editor select');
+    submissionSelect.value = 'not_submitted';
+    submissionSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    [...container.querySelectorAll('button')].find((b) => b.textContent === 'Save').click();
+    const student = classroom.teams[0].students[0];
+    return { score: student.score, autoEntries: student.history.filter((e) => e.source === 'auto') };
+  });
+
+  assert.equal(result.score, 0, 'the active star was reversed, not left stranded for a submission that no longer exists');
+  assert.equal(result.autoEntries.length, 2, 'append-only: the original award and this reversal both survive');
+  assert.equal(result.autoEntries[1].delta, -1);
+  assert.equal(result.autoEntries[1].reason, 'submission_withdrawn');
+});
+
 test('AUTHORIZATION: an acting uid without AWARD_POINTS still successfully marks a review Complete, but no Completion Star is awarded (the write is never gated, only the award)', async () => {
   const checkpoint = buildCheckpoint({ id: 'cp-7', records: [buildRecord({ submissionStatus: 'submitted', submittedDate: '2026-01-05' })] });
   const classroom = buildClassroom({ checkpoint, student: buildStudent(), members: { 'nobody-in-particular': { role: 'owner' } } });
