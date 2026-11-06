@@ -2468,13 +2468,22 @@ function createDynamicListRow({ value, placeholder, onChange, onRemove, disabled
     row.appendChild(reorderGroup);
   }
 
-  const input = document.createElement('input');
-  input.type = 'text';
+  // A textarea, not a single-line input (WORK-0024) -- a dynamic-row
+  // item (Lesson Objective, Assessment/evidence item) is exactly the
+  // same kind of real, potentially long-form writing every other
+  // Builder field already auto-grows for (see AutoGrowTextarea.js's own
+  // doc comment); a fixed single line clipped the text with no
+  // indication more was there. The Spark title field (~L2612 below)
+  // reuses this SAME class name standalone, outside a dynamic-row, and
+  // stays a plain single-line `<input>` -- untouched by this change.
+  const input = document.createElement('textarea');
   input.className = 'lesson-plan-builder__dynamic-input';
+  input.rows = 1; // the browser's own UA default is 2 -- would inflate a short, single-line objective/assessment taller than before this fix, for no reason; auto-grow (below) still takes over the instant real content needs more.
   input.placeholder = placeholder;
   input.value = value;
   input.disabled = disabled;
   input.addEventListener('change', () => onChange(input.value));
+  attachAutoGrowTextarea(input);
   row.appendChild(input);
 
   if (!disabled) {

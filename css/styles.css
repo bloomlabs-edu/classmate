@@ -3866,7 +3866,11 @@ textarea.reading-editor__block-input {
    distinct pieces of the lesson being assembled. */
 .lesson-plan-builder__dynamic-row {
   display: flex;
-  align-items: center;
+  /* flex-start, not center (WORK-0024): the row's own input is now an
+     auto-growing textarea, not a fixed single-line input -- centering
+     would drift the reorder/remove buttons toward the middle of a tall,
+     multi-line box instead of staying level with its first line. */
+  align-items: flex-start;
   gap: 0.5rem;
   margin-bottom: 0.5rem;
   padding: 0.35rem;
@@ -3897,6 +3901,24 @@ textarea.reading-editor__block-input {
   border-radius: var(--radius-control);
   font-family: inherit;
   font-size: 0.9rem;
+}
+/* The textarea variant only (createDynamicListRow() -- Lesson
+   Objectives + Assessment/evidence items, WORK-0024) -- the Spark
+   title field reuses the bare `.lesson-plan-builder__dynamic-input`
+   class on a plain single-line `<input>` (see this file's own comment
+   a few lines up) and must stay completely unaffected by this. Same
+   resize:none/overflow:hidden/box-sizing contract as
+   `.lesson-plan-builder__textarea` -- height is owned entirely by
+   AutoGrowTextarea.js, never a manual resize handle or an internal
+   scrollbar. line-height matched to the single-line padding above so
+   an un-grown row (short text) renders at the same height as before. */
+textarea.lesson-plan-builder__dynamic-input {
+  width: 100%;
+  min-height: 2.1rem;
+  line-height: 1.4;
+  resize: none;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 /* The Spark title reuses this input style standalone (not inside a
    .dynamic-row), where `flex: 1` has no flex container to size
