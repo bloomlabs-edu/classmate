@@ -70,7 +70,7 @@ export async function renderStudentNotebooksView(container, { onBack }) {
   const checkpointNotebooks = checkpointService.getCheckpointsForStudentAcrossNotebooks(classroom, activeProfile.studentId);
 
   if (obligations.length === 0 && checkpointNotebooks.length === 0) {
-    wrapper.appendChild(createEmptyStateElement({ message: 'No notebook checks yet -- nothing due right now.' }));
+    wrapper.appendChild(createEmptyStateElement({ message: 'No notebook checks yet — nothing due right now.' }));
     return;
   }
 
