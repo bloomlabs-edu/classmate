@@ -10,6 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as recognitionService from '../../js/services/recognitionService.js';
 import * as checkpointService from '../../js/services/checkpointService.js';
+import * as assignmentCheckpointService from '../../js/services/assignmentCheckpointService.js';
 import { createStudent } from '../../js/models/Student.js';
 import { createTeam } from '../../js/models/Team.js';
 import { createClassroom } from '../../js/models/Classroom.js';
@@ -306,13 +307,65 @@ test('Notebook Checkpoints: Submitted + Complete awards exactly one star', () =>
   assert.equal(student.history.filter((e) => e.source === 'auto').length, 1);
 });
 
-test('Notebook Checkpoints: a LATE submission still earns the star once marked Complete — Completion Star has no due-date rule', () => {
+test('TIMELINESS FIX: Notebook Checkpoints — a LATE submission marked Complete is NEVER awarded a star, regardless of authorization', () => {
   const { classroom, checkpoint, student } = buildNotebookCheckpointFixture(); // dueDate: 2026-09-10
 
   recognitionService.recordNotebookCheckpointSubmission(classroom, checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-20' }); // late
   recognitionService.recordNotebookCheckpointReview(classroom, checkpoint, student.id, { status: 'complete', reviewedDate: '2026-09-21' }, TEACHER_UID);
 
+  assert.equal(student.score, 0, 'supersedes the earlier product decision that Completion Star had no due-date rule');
+  assert.equal(student.history.filter((e) => e.source === 'auto').length, 0);
+});
+
+test('TIMELINESS FIX: Notebook Checkpoints — a submission on the exact due date is still on time (boundary is inclusive)', () => {
+  const { classroom, checkpoint, student } = buildNotebookCheckpointFixture(); // dueDate: 2026-09-10
+
+  recognitionService.recordNotebookCheckpointSubmission(classroom, checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-10' });
+  recognitionService.recordNotebookCheckpointReview(classroom, checkpoint, student.id, { status: 'complete', reviewedDate: '2026-09-11' }, TEACHER_UID);
+
   assert.equal(student.score, 1);
+});
+
+test('TIMELINESS FIX: Notebook Checkpoints — a checkpoint with no dueDate at all is never late, so Complete still earns a star', () => {
+  const { classroom, student } = buildPermissionedClassroom();
+  const checkpoint = checkpointService.createNewCheckpoint(classroom, { subjectId: 'subj-1', notebookTypeId: 'type-1', title: 'Unit X', givenDate: '2026-09-01' }); // no dueDate
+
+  recognitionService.recordNotebookCheckpointSubmission(classroom, checkpoint, student.id, { status: 'submitted', submittedDate: '2026-12-31' });
+  recognitionService.recordNotebookCheckpointReview(classroom, checkpoint, student.id, { status: 'complete', reviewedDate: '2026-12-31' }, TEACHER_UID);
+
+  assert.equal(student.score, 1, 'isLate() can never determine lateness with no dueDate to compare against — mirrors evaluateReadinessChampion()\'s own stance');
+});
+
+test('TIMELINESS FIX: Notebook Checkpoints — correcting an on-time submission\'s date to AFTER the due date, then re-saving an already-Complete review, reverses the already-active star', () => {
+  const { classroom, checkpoint, student } = buildNotebookCheckpointFixture(); // dueDate: 2026-09-10
+
+  recognitionService.recordNotebookCheckpointSubmission(classroom, checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' }); // on time
+  recognitionService.recordNotebookCheckpointReview(classroom, checkpoint, student.id, { status: 'complete', reviewedDate: '2026-09-06' }, TEACHER_UID);
+  assert.equal(student.score, 1, 'sanity: the on-time award happened first');
+
+  // The detailed cell editor's own onSaveCell always calls the submission
+  // wrapper first, then the review wrapper again with the SAME status —
+  // simulated here directly, matching exactly how a submittedDate
+  // correction reaches recordNotebookCheckpointReview() in production.
+  recognitionService.recordNotebookCheckpointSubmission(classroom, checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-20' }); // corrected to late
+  recognitionService.recordNotebookCheckpointReview(classroom, checkpoint, student.id, { status: 'complete', reviewedDate: '2026-09-06' }, TEACHER_UID); // re-saved, still 'complete'
+
+  assert.equal(student.score, 0, 'a star that is no longer honest once the real submission date is known must not survive a re-save');
+  const autoEntries = student.history.filter((e) => e.source === 'auto');
+  assert.equal(autoEntries.length, 2, 'append-only: the original award and this reversal both survive');
+  assert.equal(autoEntries[1].delta, -1);
+  assert.equal(autoEntries[1].reason, 'late_submission_ineligible');
+});
+
+test('TIMELINESS FIX: Notebook Checkpoints — re-saving an already-Complete, genuinely still-on-time record is a no-op (no spurious reversal)', () => {
+  const { classroom, checkpoint, student } = buildNotebookCheckpointFixture(); // dueDate: 2026-09-10
+
+  recognitionService.recordNotebookCheckpointSubmission(classroom, checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+  recognitionService.recordNotebookCheckpointReview(classroom, checkpoint, student.id, { status: 'complete', reviewedDate: '2026-09-06' }, TEACHER_UID);
+  recognitionService.recordNotebookCheckpointReview(classroom, checkpoint, student.id, { status: 'complete', reviewedDate: '2026-09-07' }, TEACHER_UID); // re-saved (e.g. teacher corrects reviewedDate only), still on time
+
+  assert.equal(student.score, 1, 'nothing about timeliness changed, so the active star must not be disturbed');
+  assert.equal(student.history.filter((e) => e.source === 'auto').length, 1);
 });
 
 test('Notebook Checkpoints: editing an already-Complete record (re-saving Complete) is idempotent — never a double award', () => {
@@ -540,13 +593,39 @@ test('Assignment Checkpoints: Submitted + Incomplete never awards a star', () =>
   assert.equal(student.score, 0);
 });
 
-test('Assignment Checkpoints: Submitted + Complete awards exactly one star, including when the submission was late', () => {
+test('Assignment Checkpoints: Submitted + Complete, ON TIME, awards exactly one star', () => {
+  const { classroom, checkpoint, student } = buildAssignmentCheckpointFixture(); // dueDate: 2026-09-10
+
+  recognitionService.recordAssignmentCheckpointSubmission(classroom, checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+  recognitionService.recordAssignmentCheckpointReview(classroom, checkpoint, student.id, { status: 'complete', reviewedDate: '2026-09-06' }, TEACHER_UID);
+
+  assert.equal(student.score, 1);
+});
+
+test('TIMELINESS FIX: Assignment Checkpoints — a LATE submission marked Complete is NEVER awarded a star', () => {
   const { classroom, checkpoint, student } = buildAssignmentCheckpointFixture(); // dueDate: 2026-09-10
 
   recognitionService.recordAssignmentCheckpointSubmission(classroom, checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-20' }); // late
   recognitionService.recordAssignmentCheckpointReview(classroom, checkpoint, student.id, { status: 'complete', reviewedDate: '2026-09-21' }, TEACHER_UID);
 
+  assert.equal(student.score, 0, 'supersedes the earlier product decision that Completion Star had no due-date rule');
+  assert.equal(student.history.filter((e) => e.source === 'auto').length, 0);
+});
+
+test('TIMELINESS FIX: Assignment Checkpoints — correcting an on-time submission to late, then re-saving an already-Complete review, reverses the already-active star', () => {
+  const { classroom, checkpoint, student } = buildAssignmentCheckpointFixture(); // dueDate: 2026-09-10
+
+  recognitionService.recordAssignmentCheckpointSubmission(classroom, checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+  recognitionService.recordAssignmentCheckpointReview(classroom, checkpoint, student.id, { status: 'complete', reviewedDate: '2026-09-06' }, TEACHER_UID);
   assert.equal(student.score, 1);
+
+  recognitionService.recordAssignmentCheckpointSubmission(classroom, checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-20' }); // corrected to late
+  recognitionService.recordAssignmentCheckpointReview(classroom, checkpoint, student.id, { status: 'complete', reviewedDate: '2026-09-06' }, TEACHER_UID); // re-saved, still 'complete'
+
+  assert.equal(student.score, 0);
+  const autoEntries = student.history.filter((e) => e.source === 'auto');
+  assert.equal(autoEntries.length, 2);
+  assert.equal(autoEntries[1].reason, 'late_submission_ineligible');
 });
 
 test('Assignment Checkpoints: Complete -> Incomplete reverses; re-completion awards a fresh star', () => {
@@ -622,7 +701,45 @@ test('auditCompletionStarsForClassroom: flags an active star whose underlying re
   assert.equal(findings.length, 1);
   assert.equal(findings[0].studentId, student.id);
   assert.deepEqual(findings[0].workItemRef, ref);
+  assert.equal(findings[0].reason, 'review_not_complete');
   assert.equal(student.score, 1); // audit never modifies — the incorrect star is still there, only reported
+});
+
+test('TIMELINESS FIX: auditCompletionStarsForClassroom flags an active, genuinely Complete Notebook Checkpoint star whose submission was actually late (e.g. a pre-fix award produced before the timeliness rule existed)', () => {
+  const { classroom, checkpoint, student } = buildNotebookCheckpointFixture(); // dueDate: 2026-09-10
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-20' }); // late
+  checkpointService.setReview(checkpoint, student.id, { status: 'complete', reviewedDate: '2026-09-21' }); // genuinely Complete
+  const ref = recognitionService.buildNotebookCheckpointWorkItemRef({ subjectId: checkpoint.subjectId, notebookTypeId: checkpoint.notebookTypeId, checkpointId: checkpoint.id });
+  recognitionService.awardAutomaticCompletionStar(student, ref); // simulates a star awarded before the timeliness fix existed
+
+  const findings = recognitionService.auditCompletionStarsForClassroom(classroom);
+
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].studentId, student.id);
+  assert.equal(findings[0].reason, 'late_submission');
+  assert.equal(student.score, 1, 'audit never modifies — the incorrect star is still there, only reported');
+});
+
+test('TIMELINESS FIX: auditCompletionStarsForClassroom never flags an active, genuinely Complete, genuinely on-time star', () => {
+  const { classroom, checkpoint, student } = buildNotebookCheckpointFixture(); // dueDate: 2026-09-10
+  recognitionService.recordNotebookCheckpointSubmission(classroom, checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+  recognitionService.recordNotebookCheckpointReview(classroom, checkpoint, student.id, { status: 'complete', reviewedDate: '2026-09-06' }, TEACHER_UID);
+
+  const findings = recognitionService.auditCompletionStarsForClassroom(classroom);
+  assert.equal(findings.length, 0);
+});
+
+test('TIMELINESS FIX: auditCompletionStarsForClassroom flags a late Assignment Checkpoint star using assignmentCheckpointService’s own isLate(), never cross-wired with the notebook checkpoint due-date source', () => {
+  const { classroom, checkpoint, student } = buildAssignmentCheckpointFixture(); // dueDate: 2026-09-10
+  classroom.assignmentCheckpoints = [checkpoint]; // the audit resolves the checkpoint via assignmentCheckpointService.getCheckpointById(), which reads this array — the fixture itself never populates it
+  assignmentCheckpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-20' }); // late
+  assignmentCheckpointService.setReview(checkpoint, student.id, { status: 'complete', reviewedDate: '2026-09-21' });
+  const ref = recognitionService.buildAssignmentCheckpointWorkItemRef({ assignmentId: checkpoint.assignmentId, checkpointId: checkpoint.id });
+  recognitionService.awardAutomaticCompletionStar(student, ref);
+
+  const findings = recognitionService.auditCompletionStarsForClassroom(classroom);
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].reason, 'late_submission');
 });
 
 test('auditCompletionStarsForClassroom: a reversed (no longer active) star is never flagged, regardless of eligibility', () => {

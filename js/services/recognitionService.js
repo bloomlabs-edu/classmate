@@ -64,17 +64,39 @@
  * than deleting it, and is itself idempotent (undoing the same manual
  * award twice is a no-op).
  *
- * COMPLETION STAR ELIGIBILITY (corrected — WORK-0038, 2026-11-05):
- * a Completion Star is now awarded ONLY once a checkpoint's own review
- * is genuinely marked 'complete' (services/checkpointService.js /
- * services/assignmentCheckpointService.js's own reviewStatus), never
- * merely on submission. Submitted + 'incomplete': no star. Submitted +
- * 'complete': award one star, regardless of whether the submission
- * itself was on time or late — Completion Star has never been, and
- * still is not, date-gated (that is Readiness Champion's own, entirely
- * separate rule — see notebookBadgeAwardService.js). This mirrors
- * Organization/Punctuation Champion's own established trigger shape
- * (awarded only once a review reaches 'complete') — see
+ * COMPLETION STAR ELIGIBILITY (corrected twice — WORK-0038, 2026-11-05,
+ * then the recognition-integrity TIMELINESS fix, 2026-11-06):
+ * a Completion Star is awarded only once BOTH of two conditions hold:
+ *   1. a checkpoint's own review is genuinely marked 'complete'
+ *      (services/checkpointService.js / services/assignmentCheckpointService.js's
+ *      own reviewStatus), never merely on submission (WORK-0038's own
+ *      correction, unchanged) — submitted + 'incomplete': no star.
+ *   2. the submission itself was ON OR BEFORE the checkpoint's own
+ *      dueDate (checkpointService.isLate()/assignmentCheckpointService.isLate()
+ *      — each system's own function, never cross-wired, since each has
+ *      its own distinct checkpoint object with its own dueDate). A late
+ *      submission reviewed 'complete' is NEVER awarded one, no matter
+ *      who reviews it or when — lateness is checked unconditionally,
+ *      before `actingUid` authorization is even considered. THIS
+ *      SUPERSEDES THE EARLIER, EXPLICITLY-APPROVED STANCE THAT
+ *      COMPLETION STAR WAS NEVER DATE-GATED — that stance produced a
+ *      real recognition-integrity bug (a late-but-eventually-complete
+ *      notebook outscoring an on-time one in the Student Profile/Notebook
+ *      Tracker) and has been withdrawn as a product decision, not merely
+ *      patched around. A checkpoint with no dueDate at all is never
+ *      late, by isLate()'s own established contract (unchanged) — the
+ *      SAME stance notebookBadgeAwardService.evaluateReadinessChampion()
+ *      already takes for the identical reason, keeping both automatic-
+ *      recognition systems consistent on this one point.
+ * Re-saving an already-'complete' record (no status transition) still
+ * re-validates timeliness against the CURRENT submittedDate and reverses
+ * an already-active star if it is now determined late — see
+ * record*CheckpointReview()'s own header comment for exactly why and
+ * auditCompletionStarsForClassroom()'s own extended eligibility check
+ * for the read-only, classroom-wide historical sweep that catches every
+ * star this call-site-triggered re-validation can't reach on its own.
+ * This mirrors Organization/Punctuation Champion's own established
+ * trigger shape (awarded only once a review reaches 'complete') — see
  * notebookBadgeAwardService.js's own header comment for why that
  * trigger is correct and why "submission alone" never was. Each
  * checkpoint system below (Notebook Checkpoints / Assignment
@@ -363,12 +385,49 @@ export function recordNotebookCheckpointSubmission(classroom, checkpoint, studen
  * is a no-op by construction (awardAutomaticCompletionStar()'s own
  * idempotency guard), never a double award.
  *
+ * TIMELINESS (corrected — recognition-integrity fix, 2026-11-06): a
+ * Completion Star now requires the submission itself to have been ON
+ * TIME (checkpointService.isLate() against the checkpoint's own
+ * dueDate), not merely that a review eventually reached 'complete'. A
+ * late submission reviewed Complete is never awarded one, regardless of
+ * `actingUid`'s own authorization — lateness is a fact about the
+ * submission, not a discretionary grant, so it is checked unconditionally
+ * before authorization is even considered. A checkpoint with no dueDate
+ * is never late, by isLate()'s own established contract — this mirrors
+ * notebookBadgeAwardService.evaluateReadinessChampion()'s own identical
+ * stance (no due date to compare against means timeliness can never be
+ * established as a FAILURE, so it does not block the award) and keeps
+ * both automatic-recognition systems consistent on this exact point.
+ *
+ * RE-VALIDATION ON RE-SAVE: re-saving an already-'complete' record
+ * (status stays 'complete', wasComplete is already true) re-checks
+ * timeliness against the CURRENT submittedDate — this is the one path
+ * that can discover a previously-on-time-looking submission was actually
+ * late (a teacher corrects submittedDate via the detailed cell editor,
+ * which always re-invokes this function as part of onSaveCell's own
+ * submission-then-review sequence) and reverses an already-active star
+ * for it. This reversal is deliberately UNGATED, same reasoning as the
+ * uncomplete-reversal branch below: it is a deterministic data-integrity
+ * correction (the fact the star certified — "submitted on or before the
+ * due date" — no longer holds), never a discretionary act an
+ * unauthorized uid could abuse. A submission that was always on time and
+ * is merely re-saved as 'complete' again is untouched (idempotent
+ * no-op), same as before this fix.
+ *
+ * This function does NOT retroactively re-scan every OTHER existing
+ * record for lateness — only the one this call is actually acting on.
+ * See auditCompletionStarsForClassroom()'s own extended
+ * isCompletionStarStillEligible() check for the read-only, classroom-wide
+ * historical sweep that finds already-awarded-but-now-ineligible stars
+ * this function's own call-site-triggered re-validation can never reach
+ * on its own (nothing re-saves a record nobody is currently editing).
+ *
  * `actingUid` gates the AWARD only (mirrors
  * notebookBadgeAwardService.evaluateReadinessChampion() exactly): an
  * unauthorized uid silently skips the star — never throws, and never
  * blocks the underlying setReview() write itself, since marking a
  * review Complete is a side effect this function reacts to, not a
- * primary command it owns. The REVERSAL branch is deliberately never
+ * primary command it owns. Every REVERSAL branch is deliberately never
  * gated — see canManageCompletionStar()'s own header comment.
  */
 export function recordNotebookCheckpointReview(classroom, checkpoint, studentId, { status, reviewedDate = null }, actingUid) {
@@ -377,17 +436,23 @@ export function recordNotebookCheckpointReview(classroom, checkpoint, studentId,
     notebookTypeId: checkpoint.notebookTypeId,
     checkpointId: checkpoint.id,
   });
-  const wasComplete = checkpointService.getRecordForStudent(checkpoint, studentId)?.reviewStatus === 'complete';
+  const recordBefore = checkpointService.getRecordForStudent(checkpoint, studentId);
+  const wasComplete = recordBefore?.reviewStatus === 'complete';
+  const isOnTime = !checkpointService.isLate(checkpoint, recordBefore);
 
   checkpointService.setReview(checkpoint, studentId, { status, reviewedDate });
 
   const isNowComplete = status === 'complete';
   const found = findStudentById(classroom, studentId);
   if (found) {
-    if (isNowComplete && !wasComplete && canManageCompletionStar(classroom, actingUid)) {
-      awardAutomaticCompletionStar(found.student, workItemRef);
+    if (isNowComplete && !wasComplete) {
+      if (isOnTime && canManageCompletionStar(classroom, actingUid)) {
+        awardAutomaticCompletionStar(found.student, workItemRef);
+      }
     } else if (!isNowComplete && wasComplete) {
       reverseAutomaticCompletionStar(found.student, workItemRef, { label: 'Completion Star Reversed', reason: 'review_uncompleted' });
+    } else if (isNowComplete && wasComplete && !isOnTime) {
+      reverseAutomaticCompletionStar(found.student, workItemRef, { label: 'Completion Star Reversed', reason: 'late_submission_ineligible' });
     }
   }
 }
@@ -410,20 +475,26 @@ export function recordAssignmentCheckpointSubmission(classroom, checkpoint, stud
   }
 }
 
-/** Mirrors recordNotebookCheckpointReview() exactly, for Assignment Checkpoints — THE real Completion Star trigger for this system. `actingUid` gates the AWARD only, same reasoning. */
+/** Mirrors recordNotebookCheckpointReview() exactly, for Assignment Checkpoints — THE real Completion Star trigger for this system, including the same TIMELINESS gate and re-validation-on-re-save reversal (see that function's own header comment). `actingUid` gates the AWARD only, same reasoning. Uses assignmentCheckpointService's own isLate() — a separate function from checkpointService's, never cross-wired, since each system's due date lives on its own, distinct checkpoint object. */
 export function recordAssignmentCheckpointReview(classroom, checkpoint, studentId, { status, reviewedDate = null }, actingUid) {
   const workItemRef = buildAssignmentCheckpointWorkItemRef({ assignmentId: checkpoint.assignmentId, checkpointId: checkpoint.id });
-  const wasComplete = assignmentCheckpointService.getRecordForStudent(checkpoint, studentId)?.reviewStatus === 'complete';
+  const recordBefore = assignmentCheckpointService.getRecordForStudent(checkpoint, studentId);
+  const wasComplete = recordBefore?.reviewStatus === 'complete';
+  const isOnTime = !assignmentCheckpointService.isLate(checkpoint, recordBefore);
 
   assignmentCheckpointService.setReview(checkpoint, studentId, { status, reviewedDate });
 
   const isNowComplete = status === 'complete';
   const found = findStudentById(classroom, studentId);
   if (found) {
-    if (isNowComplete && !wasComplete && canManageCompletionStar(classroom, actingUid)) {
-      awardAutomaticCompletionStar(found.student, workItemRef);
+    if (isNowComplete && !wasComplete) {
+      if (isOnTime && canManageCompletionStar(classroom, actingUid)) {
+        awardAutomaticCompletionStar(found.student, workItemRef);
+      }
     } else if (!isNowComplete && wasComplete) {
       reverseAutomaticCompletionStar(found.student, workItemRef, { label: 'Completion Star Reversed', reason: 'review_uncompleted' });
+    } else if (isNowComplete && wasComplete && !isOnTime) {
+      reverseAutomaticCompletionStar(found.student, workItemRef, { label: 'Completion Star Reversed', reason: 'late_submission_ineligible' });
     }
   }
 }
@@ -451,31 +522,49 @@ function findStudentById(classroom, studentId) {
 // ---------------------------------------------------------------------
 
 /**
- * Resolves whether `entry` (an active, `source: 'auto'`, `kind: 'points'`
- * Completion Star entry) is still eligible under the corrected rule —
- * i.e. whether its own `workItemRef`'s CURRENT reviewStatus is genuinely
- * 'complete'. The legacy `notebook` work-item type has no review concept
- * at all (see this file's own "COMPLETION STAR ELIGIBILITY" header
- * comment) and so can never be eligible under the corrected rule — every
- * active star of that type is automatically incorrect, regardless of
- * any other data. An unresolvable work item (its own checkpoint was
- * since deleted) is conservatively treated as incorrect too, rather than
- * silently assumed fine.
+ * Resolves WHY `entry` (an active, `source: 'auto'`, `kind: 'points'`
+ * Completion Star entry) is no longer eligible under the corrected
+ * rule — `null` means it is still genuinely eligible. Two independent
+ * checks, in order, so the audit can distinguish them:
+ *   'review_not_complete' — the work item's CURRENT reviewStatus is no
+ *     longer genuinely 'complete' (the original WORK-0038 check).
+ *   'late_submission' — TIMELINESS (recognition-integrity fix,
+ *     2026-11-06): the review IS 'complete', but the submission itself
+ *     was after the checkpoint's own dueDate (checkpointService.isLate()/
+ *     assignmentCheckpointService.isLate() — each system's own, never
+ *     cross-wired, since each has its own distinct checkpoint object
+ *     with its own dueDate). This is the retroactive counterpart to
+ *     record*CheckpointReview()'s own re-validate-on-re-save reversal —
+ *     it catches every star that fix's own call-site-triggered check can
+ *     never reach on its own (a record nobody is currently re-saving).
+ * The legacy `notebook` work-item type has no review concept at all (see
+ * this file's own "COMPLETION STAR ELIGIBILITY" header comment) and so
+ * can never be eligible under the corrected rule — every active star of
+ * that type is automatically incorrect, regardless of any other data. An
+ * unresolvable work item (its own checkpoint was since deleted) is
+ * conservatively treated as incorrect too, rather than silently assumed
+ * fine.
  */
-function isCompletionStarStillEligible(classroom, entry) {
+function resolveCompletionStarIneligibilityReason(classroom, entry) {
   const ref = entry.workItemRef;
-  if (!ref) return false; // a manual-looking auto entry with no ref at all — can't verify, treat as incorrect
+  if (!ref) return 'missing_work_item_ref'; // a manual-looking auto entry with no ref at all — can't verify, treat as incorrect
   if (ref.type === 'notebook_checkpoint') {
     const checkpoint = checkpointService.getCheckpointById(classroom, ref.checkpointId);
-    if (!checkpoint) return false;
-    return checkpointService.getRecordForStudent(checkpoint, entry.__studentId)?.reviewStatus === 'complete';
+    if (!checkpoint) return 'checkpoint_deleted';
+    const record = checkpointService.getRecordForStudent(checkpoint, entry.__studentId);
+    if (record?.reviewStatus !== 'complete') return 'review_not_complete';
+    if (checkpointService.isLate(checkpoint, record)) return 'late_submission';
+    return null;
   }
   if (ref.type === 'assignment_checkpoint') {
     const checkpoint = assignmentCheckpointService.getCheckpointById(classroom, ref.checkpointId);
-    if (!checkpoint) return false;
-    return assignmentCheckpointService.getRecordForStudent(checkpoint, entry.__studentId)?.reviewStatus === 'complete';
+    if (!checkpoint) return 'checkpoint_deleted';
+    const record = assignmentCheckpointService.getRecordForStudent(checkpoint, entry.__studentId);
+    if (record?.reviewStatus !== 'complete') return 'review_not_complete';
+    if (assignmentCheckpointService.isLate(checkpoint, record)) return 'late_submission';
+    return null;
   }
-  return false; // 'notebook' (legacy) and any unrecognized type: never eligible under the corrected rule
+  return 'unrecognized_work_item_type'; // 'notebook' (legacy) and any unrecognized type: never eligible under the corrected rule
 }
 
 /**
@@ -483,9 +572,12 @@ function isCompletionStarStillEligible(classroom, entry) {
  * ACTIVE (net >= 1) automatic Completion Star that is no longer
  * eligible under the corrected rule (never awarded/revoked/modified by
  * this function — purely a report). Returns one entry per incorrect
- * star: `{ studentId, studentName, workItemRef, entryId, awardedAt }`.
- * Safe to call repeatedly, safe to call against a read-only snapshot —
- * performs zero writes of any kind, to any object it's given.
+ * star: `{ studentId, studentName, workItemRef, entryId, awardedAt,
+ * reason }`, where `reason` is one of resolveCompletionStarIneligibilityReason()'s
+ * own return values (most actionably, 'late_submission' — the exact
+ * category the recognition-integrity fix was written for). Safe to call
+ * repeatedly, safe to call against a read-only snapshot — performs zero
+ * writes of any kind, to any object it's given.
  */
 export function auditCompletionStarsForClassroom(classroom) {
   const findings = [];
@@ -502,14 +594,15 @@ export function auditCompletionStarsForClassroom(classroom) {
       }
       for (const { lastEntry, net } of activeAutoEntries.values()) {
         if (net < 1 || !lastEntry) continue; // not currently active
-        const eligible = isCompletionStarStillEligible(classroom, { ...lastEntry, __studentId: student.id });
-        if (!eligible) {
+        const reason = resolveCompletionStarIneligibilityReason(classroom, { ...lastEntry, __studentId: student.id });
+        if (reason) {
           findings.push({
             studentId: student.id,
             studentName: student.name,
             workItemRef: lastEntry.workItemRef,
             entryId: lastEntry.id,
             awardedAt: lastEntry.recordedAt,
+            reason,
           });
         }
       }

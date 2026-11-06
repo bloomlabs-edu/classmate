@@ -823,3 +823,114 @@ test('BUG FIX: an alternate award path (overrideReadinessChampion) is never reac
   );
   assert.equal(student.notebookBadgeCounts['readiness-champion'], undefined);
 });
+
+// ---------------------------------------------------------------------
+// auditRetroactiveReadinessChampionEligibility (recognition-integrity
+// fix, 2026-11-06) — read-only, classroom-wide, never awards anything.
+// ---------------------------------------------------------------------
+
+test('auditRetroactiveReadinessChampionEligibility: an on-time submission with no badge history is flagged as a clean backfill candidate', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+
+  const result = notebookBadgeAwardService.auditRetroactiveReadinessChampionEligibility(classroom);
+
+  assert.equal(result.eligibleForBackfill.length, 1);
+  assert.equal(result.eligibleForBackfill[0].studentId, student.id);
+  assert.equal(result.eligibleForBackfill[0].checkpointId, checkpoint.id);
+  assert.equal(result.hasPriorAwardHistory.length, 0);
+  assert.equal(result.cannotEstablishEligibility.length, 0);
+});
+
+test('auditRetroactiveReadinessChampionEligibility: a submission on the exact due date counts as on time (inclusive boundary)', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-10' });
+
+  const result = notebookBadgeAwardService.auditRetroactiveReadinessChampionEligibility(classroom);
+  assert.equal(result.eligibleForBackfill.length, 1);
+});
+
+test('auditRetroactiveReadinessChampionEligibility: a genuinely late submission is not flagged in any bucket', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-20' });
+
+  const result = notebookBadgeAwardService.auditRetroactiveReadinessChampionEligibility(classroom);
+  assert.equal(result.eligibleForBackfill.length, 0);
+  assert.equal(result.hasPriorAwardHistory.length, 0);
+  assert.equal(result.cannotEstablishEligibility.length, 0);
+});
+
+test('auditRetroactiveReadinessChampionEligibility: a student with no submission at all is never a candidate in any bucket', () => {
+  const { classroom } = buildFixture({ dueDate: '2026-09-10' });
+
+  const result = notebookBadgeAwardService.auditRetroactiveReadinessChampionEligibility(classroom);
+  assert.equal(result.eligibleForBackfill.length, 0);
+  assert.equal(result.hasPriorAwardHistory.length, 0);
+  assert.equal(result.cannotEstablishEligibility.length, 0);
+});
+
+test('auditRetroactiveReadinessChampionEligibility: an on-time submission that already has an active Readiness Champion award is not re-flagged for backfill', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+  notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+
+  const result = notebookBadgeAwardService.auditRetroactiveReadinessChampionEligibility(classroom);
+  assert.equal(result.eligibleForBackfill.length, 0);
+  assert.equal(result.hasPriorAwardHistory.length, 1);
+  assert.equal(result.hasPriorAwardHistory[0].priorAwards[0].revoked, false);
+});
+
+test('auditRetroactiveReadinessChampionEligibility: an on-time submission whose award was previously revoked by a teacher is reported as prior history, never re-recommended as a fresh backfill', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+  notebookBadgeAwardService.evaluateReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+  notebookBadgeAwardService.revokeReadinessChampion(classroom, checkpoint, student, TEACHER_UID);
+
+  const result = notebookBadgeAwardService.auditRetroactiveReadinessChampionEligibility(classroom);
+  assert.equal(result.eligibleForBackfill.length, 0, 'a prior teacher revocation must never be silently overridden by an automated backfill recommendation');
+  assert.equal(result.hasPriorAwardHistory.length, 1);
+  assert.equal(result.hasPriorAwardHistory[0].priorAwards[0].revoked, true);
+});
+
+test('auditRetroactiveReadinessChampionEligibility: a submission with a missing dueDate is reported as unable-to-establish, never guessed either way', () => {
+  const { classroom, student } = buildFixture();
+  const checkpoint = checkpointService.createNewCheckpoint(classroom, { subjectId: 'subj-2', notebookTypeId: 'type-2', title: 'Unit 3', givenDate: '2026-09-01' });
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+
+  const result = notebookBadgeAwardService.auditRetroactiveReadinessChampionEligibility(classroom);
+  assert.equal(result.eligibleForBackfill.length, 0);
+  assert.equal(result.cannotEstablishEligibility.length, 1);
+  assert.equal(result.cannotEstablishEligibility[0].checkpointId, checkpoint.id);
+});
+
+test('auditRetroactiveReadinessChampionEligibility: a submission with a malformed submittedDate is reported as unable-to-establish', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: 'not-a-real-date' });
+
+  const result = notebookBadgeAwardService.auditRetroactiveReadinessChampionEligibility(classroom);
+  assert.equal(result.eligibleForBackfill.length, 0);
+  assert.equal(result.cannotEstablishEligibility.length, 1);
+});
+
+test('auditRetroactiveReadinessChampionEligibility: scans every checkpoint and every student, never just the first', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+
+  const secondCheckpoint = checkpointService.createNewCheckpoint(classroom, { subjectId: 'subj-3', notebookTypeId: 'type-3', title: 'Unit 4', givenDate: '2026-09-01', dueDate: '2026-09-15' });
+  const secondStudent = createStudent({ id: 's2', name: 'Raban' });
+  checkpointService.setSubmission(secondCheckpoint, secondStudent.id, { status: 'submitted', submittedDate: '2026-09-14' });
+
+  const result = notebookBadgeAwardService.auditRetroactiveReadinessChampionEligibility(classroom);
+  assert.equal(result.eligibleForBackfill.length, 2);
+  assert.deepEqual(result.eligibleForBackfill.map((e) => e.studentId).sort(), ['s1', 's2']);
+});
+
+test('auditRetroactiveReadinessChampionEligibility: performs zero writes -- the classroom is byte-for-byte unchanged after the call', () => {
+  const { classroom, checkpoint, student } = buildFixture({ dueDate: '2026-09-10' });
+  checkpointService.setSubmission(checkpoint, student.id, { status: 'submitted', submittedDate: '2026-09-05' });
+  const before = JSON.stringify(classroom);
+
+  notebookBadgeAwardService.auditRetroactiveReadinessChampionEligibility(classroom);
+
+  assert.equal(JSON.stringify(classroom), before);
+});
