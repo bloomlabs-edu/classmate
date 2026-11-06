@@ -383,3 +383,96 @@ export function revokeReadinessChampionOnWithdrawal(classroom, checkpoint, stude
   const revoked = revokeActiveReadinessAward(classroom, checkpoint, student, actingUid, 'submission_withdrawn');
   return revoked ? student.notebookBadgeCounts?.[READINESS_CHAMPION_BADGE_ID] ?? 0 : null;
 }
+
+// ---------------------------------------------------------------------
+// Read-only retroactive-eligibility audit (recognition-integrity fix,
+// 2026-11-06) — finds students whose historical submissions already
+// satisfy the Readiness Champion rule but never received it, because
+// evaluateReadinessChampion() is only ever invoked as a direct REACTION
+// to a submission event (see this file's own header comment) — it has
+// never been, and still is not, a retroactive/backfill scan. A student
+// whose on-time submission happened before this badge-awarding workflow
+// existed at all (or before their teacher adopted it) was simply never
+// evaluated — not found ineligible, never evaluated in the first place.
+// This audit runs the EXACT SAME eligibility facts
+// evaluateReadinessChampion() itself already trusts (checkpoint.dueDate,
+// record.submittedDate) against every existing record, without awarding
+// anything — purely a report, matching recognitionService.js's own
+// auditCompletionStarsForClassroom() convention (pure, in-memory, never
+// connects to Firestore, safe to run repeatedly against a read-only
+// snapshot). Per explicit instruction, this never invents a historical
+// timestamp and never infers eligibility where the real data can't
+// establish it — see `cannotEstablishEligibility` below.
+// ---------------------------------------------------------------------
+
+/**
+ * Every (student, notebook checkpoint) pair where a genuine, on-time
+ * submission already exists on the record but Readiness Champion was
+ * never evaluated for it — split into three buckets so a human reviewer
+ * can tell "a clean backfill candidate" apart from "someone already made
+ * a decision here" apart from "we genuinely can't tell":
+ *
+ *   eligibleForBackfill — submitted on or before the checkpoint's own
+ *     dueDate, both dates real and well-formed, and NO badgeAwards entry
+ *     of any kind (active OR revoked) exists yet for this badge type on
+ *     this record. The clean, unambiguous case: this student should
+ *     already have this badge and nothing on file disagrees.
+ *
+ *   hasPriorAwardHistory — the same on-time facts hold, but at least one
+ *     badgeAwards entry (active OR, notably, REVOKED) already exists for
+ *     this badge type on this record. Deliberately excluded from
+ *     `eligibleForBackfill` even when the only entry is revoked: a
+ *     teacher's own past revocation is an informed decision this
+ *     read-only audit must never silently override by re-recommending
+ *     the same award — reported here for visibility, not as a backfill
+ *     candidate.
+ *
+ *   cannotEstablishEligibility — the submission exists but either
+ *     `record.submittedDate` or `checkpoint.dueDate` is missing or not a
+ *     well-formed date key (isValidDateKey()). Per explicit instruction
+ *     not to invent historical timestamps or infer eligibility from
+ *     insufficient evidence, these are never guessed at either way —
+ *     reported separately so a human can decide, never defaulted to
+ *     eligible or ineligible.
+ *
+ * A student with no submission at all for a checkpoint is not a
+ * candidate and is not reported in any bucket. Safe to call repeatedly;
+ * performs zero writes of any kind.
+ */
+export function auditRetroactiveReadinessChampionEligibility(classroom) {
+  const eligibleForBackfill = [];
+  const hasPriorAwardHistory = [];
+  const cannotEstablishEligibility = [];
+
+  for (const checkpoint of classroom.checkpoints || []) {
+    for (const record of checkpoint.records || []) {
+      if (record.submissionStatus !== 'submitted') continue;
+
+      const entry = {
+        studentId: record.studentId,
+        checkpointId: checkpoint.id,
+        subjectId: checkpoint.subjectId,
+        notebookTypeId: checkpoint.notebookTypeId,
+        submittedDate: record.submittedDate,
+        dueDate: checkpoint.dueDate,
+      };
+
+      if (!isValidDateKey(record.submittedDate) || !isValidDateKey(checkpoint.dueDate)) {
+        cannotEstablishEligibility.push(entry);
+        continue;
+      }
+
+      if (record.submittedDate > checkpoint.dueDate) continue; // genuinely late — not a candidate, not an error either
+
+      const priorAwards = listBadgeAwardsForRecord(record, READINESS_CHAMPION_BADGE_ID);
+      if (priorAwards.length > 0) {
+        hasPriorAwardHistory.push({ ...entry, priorAwards: priorAwards.map((a) => ({ id: a.id, source: a.source, revoked: a.revoked })) });
+        continue;
+      }
+
+      eligibleForBackfill.push(entry);
+    }
+  }
+
+  return { eligibleForBackfill, hasPriorAwardHistory, cannotEstablishEligibility };
+}

@@ -237,7 +237,7 @@ test('CELL EDITOR SAVE: a brand-new submission saved as "submitted" with review 
   assert.equal(result.score, 0);
 });
 
-test('LATE SUBMISSION: a checkpoint reviewed Complete after its own due date still earns a Completion Star', async () => {
+test('TIMELINESS FIX: a checkpoint reviewed Complete AFTER its own due date is NEVER awarded a Completion Star', async () => {
   const assignment = buildAssignment();
   const checkpoint = buildCheckpoint({ id: 'cp-6', dueDate: '2026-01-01', records: [buildRecord({ submissionStatus: 'submitted', submittedDate: '2026-01-10' })] });
   const classroom = buildClassroom({ assignment, student: buildStudent() });
@@ -247,11 +247,26 @@ test('LATE SUBMISSION: a checkpoint reviewed Complete after its own due date sti
     cell.querySelector('.notebook-checkpoints__cell-quick-review-button--complete').click();
     const updatedCell = container.querySelector('td[data-checkpoint-id="cp-6"][data-student-id="s1"]');
     const student = classroom.teams[0].students[0];
-    return { cellLabel: updatedCell.querySelector('.notebook-checkpoints__cell-label').textContent, score: student.score };
+    return { cellLabel: updatedCell.querySelector('.notebook-checkpoints__cell-label').textContent, score: student.score, autoEntryCount: student.history.filter((e) => e.source === 'auto').length };
   });
 
   assert.equal(result.cellLabel, 'Submitted late · Complete');
-  assert.equal(result.score, 1, 'eligibility is untouched by lateness');
+  assert.equal(result.score, 0, 'a late submission reviewed Complete must never earn a Completion Star');
+  assert.equal(result.autoEntryCount, 0);
+});
+
+test('TIMELINESS FIX: a checkpoint reviewed Complete ON its own due date (inclusive boundary) still earns a Completion Star', async () => {
+  const assignment = buildAssignment();
+  const checkpoint = buildCheckpoint({ id: 'cp-9', dueDate: '2026-01-10', records: [buildRecord({ submissionStatus: 'submitted', submittedDate: '2026-01-10' })] });
+  const classroom = buildClassroom({ assignment, student: buildStudent() });
+
+  const result = await runInView(classroom, checkpoint, { uid: OWNER_UID }, async ({ container, classroom }) => {
+    container.querySelector('td[data-checkpoint-id="cp-9"][data-student-id="s1"] .notebook-checkpoints__cell-quick-review-button--complete').click();
+    const student = classroom.teams[0].students[0];
+    return { score: student.score };
+  });
+
+  assert.equal(result.score, 1);
 });
 
 test('WITHDRAWAL: walking a submission back to Not Submitted through the cell editor reverses an already-active Completion Star (recordAssignmentCheckpointSubmission\'s own reversal branch)', async () => {

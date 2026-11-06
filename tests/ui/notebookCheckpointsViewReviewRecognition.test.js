@@ -266,7 +266,7 @@ test('CELL EDITOR SAVE: a brand-new submission saved as "submitted" with review 
   assert.equal(result.score, 0, 'no star for a submission-only save, exactly like the quick-mark path');
 });
 
-test('LATE SUBMISSION: a checkpoint reviewed Complete after its own due date still earns a Completion Star -- unlike Readiness Champion, this is never date-gated', async () => {
+test('TIMELINESS FIX: a checkpoint reviewed Complete AFTER its own due date is NEVER awarded a Completion Star -- supersedes the earlier, now-withdrawn "never date-gated" product decision', async () => {
   const checkpoint = buildCheckpoint({ id: 'cp-6', dueDate: '2026-01-01', records: [buildRecord({ submissionStatus: 'submitted', submittedDate: '2026-01-10' })] });
   const classroom = buildClassroom({ checkpoint, student: buildStudent() });
 
@@ -275,11 +275,25 @@ test('LATE SUBMISSION: a checkpoint reviewed Complete after its own due date sti
     cell.querySelector('.notebook-checkpoints__cell-quick-review-button--complete').click();
     const updatedCell = container.querySelector('td[data-checkpoint-id="cp-6"][data-student-id="s1"]');
     const student = classroom.teams[0].students[0];
-    return { cellLabel: updatedCell.querySelector('.notebook-checkpoints__cell-label').textContent, score: student.score };
+    return { cellLabel: updatedCell.querySelector('.notebook-checkpoints__cell-label').textContent, score: student.score, autoEntryCount: student.history.filter((e) => e.source === 'auto').length };
   });
 
-  assert.equal(result.cellLabel, 'Submitted late · Complete', 'lateness is still shown as a label detail');
-  assert.equal(result.score, 1, 'eligibility is untouched by lateness -- Completion Star has no date rule');
+  assert.equal(result.cellLabel, 'Submitted late · Complete', 'the review status itself is never blocked -- only the award is refused');
+  assert.equal(result.score, 0, 'a late submission reviewed Complete must never earn a Completion Star');
+  assert.equal(result.autoEntryCount, 0);
+});
+
+test('TIMELINESS FIX: a checkpoint reviewed Complete ON its own due date (inclusive boundary) still earns a Completion Star', async () => {
+  const checkpoint = buildCheckpoint({ id: 'cp-9', dueDate: '2026-01-10', records: [buildRecord({ submissionStatus: 'submitted', submittedDate: '2026-01-10' })] });
+  const classroom = buildClassroom({ checkpoint, student: buildStudent() });
+
+  const result = await runInView(classroom, { uid: OWNER_UID }, async ({ container, classroom }) => {
+    container.querySelector('td[data-checkpoint-id="cp-9"][data-student-id="s1"] .notebook-checkpoints__cell-quick-review-button--complete').click();
+    const student = classroom.teams[0].students[0];
+    return { score: student.score };
+  });
+
+  assert.equal(result.score, 1);
 });
 
 test('WITHDRAWAL: walking a submission back to Not Submitted through the cell editor reverses an already-active Completion Star (recordNotebookCheckpointSubmission\'s own reversal branch)', async () => {
