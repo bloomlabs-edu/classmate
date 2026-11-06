@@ -26,6 +26,41 @@ import { createStudentCheckpointRecord } from '../models/StudentCheckpointRecord
 import * as notebookConfigService from './notebookConfigService.js';
 import { getCurrentIsoDate } from '../utils/dateHelpers.js';
 
+/**
+ * Single source of truth for one structural fact about this data model,
+ * referenced by notebookReadinessChampionService.js's own
+ * computeNotebookCompleteness() and by
+ * notebookReadinessChampionAuditService.js's historical backfill audit:
+ * deleteCheckpoint() below (and deleteAllCheckpointsForNotebook()) is a
+ * hard, in-place array filter — no tombstone, no `deletedAt`, no entry
+ * written anywhere else in this data model. A checkpoint that no longer
+ * appears in `classroom.checkpoints` is therefore indistinguishable from
+ * one that never existed, and nothing in this app can recover its
+ * `dueDate`/records/award history once it's gone.
+ *
+ * This is a limitation of the entire historical record, not evidence
+ * against any individual notebook, submission, or badge — per explicit
+ * product decision, no audit may treat "this checkpoint can't be found"
+ * as proof that a specific award is wrong (that would be inferring a
+ * rule violation from an absence of data, not from evidence). Every
+ * audit that surfaces this gap must disclose it exactly once, clearly,
+ * and must classify individual records only from whatever surviving,
+ * concrete evidence those records still carry.
+ */
+export const CHECKPOINT_DELETION_STRUCTURAL_LIMITATION =
+  'Checkpoint deletion is undetectable in this data model: deleteCheckpoint() removes a ' +
+  'checkpoint and every student record attached to it with no tombstone, no deletedAt flag, ' +
+  'and no trace left anywhere else. A notebook\'s own "required checkpoints" list is always ' +
+  'derived from whichever checkpoints currently survive — this audit cannot confirm whether ' +
+  'any additional checkpoints once existed and were later deleted, which could mean a ' +
+  'notebook reported complete here was not actually complete against its full original ' +
+  'checkpoint list, or vice versa. This is a structural limitation of the entire historical ' +
+  'audit, not evidence that any individual notebook, submission, or award below is ' +
+  'incomplete, late, or otherwise suspect. Every result in this report is classified strictly ' +
+  'from concrete, surviving evidence; this caveat applies uniformly to the whole audit and is ' +
+  'not a finding about any one result in particular, and is never, on its own, grounds to ' +
+  'revoke an existing award.';
+
 export function listCheckpointsForNotebook(classroom, subjectId, notebookTypeId) {
   return (classroom.checkpoints || [])
     .filter((c) => c.subjectId === subjectId && c.notebookTypeId === notebookTypeId)
@@ -162,12 +197,16 @@ function findOrCreateRecord(checkpoint, studentId) {
  * must hold regardless of which function reaches it.
  *
  * This function itself has no concept of badges at all — a caller
- * transitioning status to 'not_submitted' is responsible for also
- * calling services/notebookBadgeAwardService.js's own
- * revokeReadinessChampionOnWithdrawal() (see ui/views/
- * NotebookCheckpointsView.js's own onSaveCell handler for the one real
- * call site), which needs the real Classroom/Student objects and an
- * acting uid this function was never given.
+ * transitioning status to 'not_submitted' (or any other change here) is
+ * responsible for also re-evaluating Readiness Champion via
+ * services/notebookReadinessChampionService.js's own
+ * evaluateReadinessChampionForNotebook() (see ui/views/
+ * NotebookCheckpointsView.js's own onSaveCell/onQuickMarkSubmitted
+ * handlers for the real call sites), which needs the real
+ * Classroom/Student objects and an acting uid this function was never
+ * given, and which auto-revokes an active automatic award on its own
+ * when the withdrawal makes the notebook no longer complete-and-on-time
+ * — never gated behind a separate withdrawal-specific function.
  */
 export function setSubmission(checkpoint, studentId, { status, submittedDate = null }) {
   const record = findOrCreateRecord(checkpoint, studentId);

@@ -104,8 +104,9 @@
  *
  * TEACHER REMOVAL (WORK-0038): removeCompletionStar() is the explicit,
  * OWNER/TEACHER-gated counterpart to the automatic reversal paths above
- * — mirrors notebookBadgeAwardService.js's own revokeReadinessChampion()
- * exactly: throws (never silently no-ops) on an unauthorized uid or on
+ * — mirrors notebookReadinessChampionService.js's own
+ * revokeReadinessChampionForNotebook() exactly: throws (never silently
+ * no-ops) on an unauthorized uid or on
  * "nothing active to remove," since silently no-op-ing would hide a
  * teacher's own mistaken belief that a star existed. Reuses the SAME
  * reverseAutomaticCompletionStar() ledger mechanics as every other
@@ -255,8 +256,9 @@ export function undoManualStarAward(student, entryId) {
  * already uses. AUTOMATIC REVERSALS (Complete -> Incomplete,
  * withdrawal) are deliberately NEVER gated by this — see
  * record*CheckpointReview()/record*CheckpointSubmission()'s own header
- * comments for why, mirroring notebookBadgeAwardService.js's own
- * revokeReadinessChampionOnWithdrawal() precedent exactly: a reversal
+ * comments for why, mirroring notebookReadinessChampionService.js's own
+ * automatic-revoke-on-no-longer-honest precedent (see
+ * evaluateReadinessChampionForNotebook()) exactly: a reversal
  * is a deterministic data-integrity correction, never a discretionary
  * grant, so gating it the same way would risk a stale, factually-wrong
  * star surviving because the acting uid happened to lack this
@@ -268,8 +270,9 @@ export function canManageCompletionStar(classroom, uid) {
 
 /**
  * Explicit teacher removal of an active Completion Star — mirrors
- * notebookBadgeAwardService.js's own revokeReadinessChampion() exactly:
- * throws for an unauthorized uid, and throws (rather than silently
+ * notebookReadinessChampionService.js's own
+ * revokeReadinessChampionForNotebook() exactly: throws for an
+ * unauthorized uid, and throws (rather than silently
  * no-op-ing) when there is nothing active to remove, since a silent
  * no-op here would hide a teacher's own mistaken belief that a star
  * existed. Reverses the EXACT associated +1 points event via the same
@@ -364,7 +367,8 @@ export function recordNotebookCheckpointSubmission(classroom, checkpoint, studen
  * idempotency guard), never a double award.
  *
  * `actingUid` gates the AWARD only (mirrors
- * notebookBadgeAwardService.evaluateReadinessChampion() exactly): an
+ * notebookReadinessChampionService.evaluateReadinessChampionForNotebook()
+ * exactly): an
  * unauthorized uid silently skips the star — never throws, and never
  * blocks the underlying setReview() write itself, since marking a
  * review Complete is a side effect this function reacts to, not a

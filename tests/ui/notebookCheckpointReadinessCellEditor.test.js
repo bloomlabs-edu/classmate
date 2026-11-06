@@ -6,6 +6,18 @@
  * renderCellEditor() — drives that real, exported function directly in
  * a real Chromium page, same reasoning as
  * tests/ui/notebookCheckpointsStudentRow.test.js's own header comment.
+ *
+ * Rewritten for the notebook-level Readiness Champion redesign
+ * (2026-11-06): this section now reads the STUDENT's own append-only
+ * `history` (via notebookReadinessChampionService.js's own
+ * getActiveReadinessSourcesForNotebook()), never the checkpoint
+ * record's own (now Organization/Punctuation-only) `badgeAwards`
+ * array — see services/notebookReadinessChampionService.js's own
+ * header comment for why. `checkpoint` fixtures below accordingly carry
+ * `subjectId`/`notebookTypeId` (needed to build the notebook identity),
+ * and `student` fixtures carry `history` instead of the checkpoint
+ * record carrying `badgeAwards` for this badge type.
+ *
  * Organization/Punctuation Champion are deliberately NOT covered here —
  * they're only ever offered via the separate post-Save
  * AwardReviewBadgesModal prompt (see
@@ -67,26 +79,28 @@ test.after(async () => {
   await new Promise((resolve) => server.close(resolve));
 });
 
-test('a student who has not submitted shows "Not awarded" with no override/revoke button at all', async () => {
+test('a student who has not submitted shows "Not awarded" with no revoke button, but still offers the whole-notebook override', async () => {
   const result = await page.evaluate(async () => {
     const { renderCellEditor } = await import('/js/ui/views/NotebookCheckpointsView.js');
-    const checkpoint = { id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10', records: [] };
-    const student = { id: 's1', name: 'Anjali' };
+    const checkpoint = { id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [] };
+    const student = { id: 's1', name: 'Anjali', history: [] };
     const editor = renderCellEditor(checkpoint, student, {});
     const labels = [...editor.querySelectorAll('.notebook-checkpoints__cell-editor-section-label')].map((el) => el.textContent);
     const actionsButtons = [...editor.querySelectorAll('button')].map((b) => b.textContent);
-    return { hasReadinessLabel: labels.includes('Readiness Champion'), actionsButtons };
+    return { hasReadinessLabel: labels.includes('Readiness Champion (whole notebook)'), actionsButtons };
   });
   assert.equal(result.hasReadinessLabel, true);
-  assert.ok(!result.actionsButtons.includes('Award anyway (override)'));
   assert.ok(!result.actionsButtons.includes('Revoke'));
+  // Override is offered regardless of THIS checkpoint's own submission
+  // status now -- it is a whole-notebook decision, not gated per cell.
+  assert.ok(result.actionsButtons.includes('Award anyway (override)'));
 });
 
-test('a submitted student with no active Readiness award shows "Not awarded" and an "Award anyway (override)" button', async () => {
+test('a notebook with no Readiness history at all shows "Not awarded" and an "Award anyway (override)" button', async () => {
   const result = await page.evaluate(async () => {
     const { renderCellEditor } = await import('/js/ui/views/NotebookCheckpointsView.js');
-    const checkpoint = { id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10', records: [{ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-15', reviewStatus: 'not_reviewed', badgeAwards: [] }] };
-    const student = { id: 's1', name: 'Anjali' };
+    const checkpoint = { id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [{ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-15', reviewStatus: 'not_reviewed', badgeAwards: [] }] };
+    const student = { id: 's1', name: 'Anjali', history: [] };
     const editor = renderCellEditor(checkpoint, student, {});
     const text = editor.textContent;
     const buttons = [...editor.querySelectorAll('button')].map((b) => b.textContent);
@@ -97,23 +111,20 @@ test('a submitted student with no active Readiness award shows "Not awarded" and
   assert.ok(!result.buttons.includes('Revoke'));
 });
 
-test('an active AUTOMATIC Readiness award shows the correct status text and a Revoke button, never an override button', async () => {
+test('an active AUTOMATIC Readiness award (on the STUDENT\'s own history, not this checkpoint\'s record) shows the correct status text and a Revoke button, never an override button', async () => {
   const result = await page.evaluate(async () => {
     const { renderCellEditor } = await import('/js/ui/views/NotebookCheckpointsView.js');
-    const checkpoint = {
-      id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10',
-      records: [{
-        studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-05', reviewStatus: 'not_reviewed',
-        badgeAwards: [{ id: 'a1', badgeTypeId: 'readiness-champion', source: 'automatic', revoked: false }],
-      }],
+    const checkpoint = { id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [{ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-05', reviewStatus: 'not_reviewed', badgeAwards: [] }] };
+    const student = {
+      id: 's1', name: 'Anjali',
+      history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: { type: 'notebook_readiness', subjectId: 'subj-1', notebookTypeId: 'type-1' }, recordedAt: '2026-09-05T00:00:00.000Z' }],
     };
-    const student = { id: 's1', name: 'Anjali' };
     const editor = renderCellEditor(checkpoint, student, {});
     const text = editor.textContent;
     const buttons = [...editor.querySelectorAll('button')].map((b) => b.textContent);
     return { text, buttons };
   });
-  assert.match(result.text, /Awarded \(automatic — on time\)/);
+  assert.match(result.text, /Awarded \(automatic — notebook complete and on time\)/);
   assert.ok(result.buttons.includes('Revoke'));
   assert.ok(!result.buttons.includes('Award anyway (override)'));
 });
@@ -121,31 +132,43 @@ test('an active AUTOMATIC Readiness award shows the correct status text and a Re
 test('an active OVERRIDE Readiness award shows "teacher override" in its status text', async () => {
   const result = await page.evaluate(async () => {
     const { renderCellEditor } = await import('/js/ui/views/NotebookCheckpointsView.js');
-    const checkpoint = {
-      id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10',
-      records: [{
-        studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-15', reviewStatus: 'not_reviewed',
-        badgeAwards: [{ id: 'a1', badgeTypeId: 'readiness-champion', source: 'override', revoked: false }],
-      }],
+    const checkpoint = { id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [{ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-15', reviewStatus: 'not_reviewed', badgeAwards: [] }] };
+    const student = {
+      id: 's1', name: 'Anjali',
+      history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'override', workItemRef: { type: 'notebook_readiness', subjectId: 'subj-1', notebookTypeId: 'type-1' }, recordedAt: '2026-09-15T00:00:00.000Z' }],
     };
-    const student = { id: 's1', name: 'Anjali' };
     const editor = renderCellEditor(checkpoint, student, {});
     return editor.textContent;
   });
   assert.match(result, /Awarded \(teacher override\)/);
 });
 
-test('a REVOKED award is treated as not-active — shows "Not awarded" and the override button again, not Revoke', async () => {
+test('an active RETROACTIVE BACKFILL Readiness award shows "retroactive backfill" in its status text', async () => {
   const result = await page.evaluate(async () => {
     const { renderCellEditor } = await import('/js/ui/views/NotebookCheckpointsView.js');
-    const checkpoint = {
-      id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10',
-      records: [{
-        studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-05', reviewStatus: 'not_reviewed',
-        badgeAwards: [{ id: 'a1', badgeTypeId: 'readiness-champion', source: 'automatic', revoked: true, revokedBy: 'teacher-uid', revokedAt: '2026-09-06T00:00:00.000Z' }],
-      }],
+    const checkpoint = { id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [{ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-05', reviewStatus: 'not_reviewed', badgeAwards: [] }] };
+    const student = {
+      id: 's1', name: 'Anjali',
+      history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'retroactive_backfill', workItemRef: { type: 'notebook_readiness', subjectId: 'subj-1', notebookTypeId: 'type-1' }, recordedAt: '2026-09-05T00:00:00.000Z' }],
     };
-    const student = { id: 's1', name: 'Anjali' };
+    const editor = renderCellEditor(checkpoint, student, {});
+    return editor.textContent;
+  });
+  assert.match(result, /Awarded \(retroactive backfill\)/);
+});
+
+test('a REVOKED award (net zero) is treated as not-active -- shows "Not awarded" and the override button again, not Revoke', async () => {
+  const result = await page.evaluate(async () => {
+    const { renderCellEditor } = await import('/js/ui/views/NotebookCheckpointsView.js');
+    const checkpoint = { id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [{ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-05', reviewStatus: 'not_reviewed', badgeAwards: [] }] };
+    const ref = { type: 'notebook_readiness', subjectId: 'subj-1', notebookTypeId: 'type-1' };
+    const student = {
+      id: 's1', name: 'Anjali',
+      history: [
+        { id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: ref, recordedAt: '2026-09-05T00:00:00.000Z' },
+        { id: 'h2', kind: 'readiness-champion', delta: -1, source: 'automatic', workItemRef: ref, reason: 'teacher_revoked', revokedBy: 'teacher-uid', recordedAt: '2026-09-06T00:00:00.000Z' },
+      ],
+    };
     const editor = renderCellEditor(checkpoint, student, {});
     const text = editor.textContent;
     const buttons = [...editor.querySelectorAll('button')].map((b) => b.textContent);
@@ -156,11 +179,28 @@ test('a REVOKED award is treated as not-active — shows "Not awarded" and the o
   assert.ok(!result.buttons.includes('Revoke'));
 });
 
+test('a Readiness award recorded against a DIFFERENT notebook (different subjectId) is never shown as active here -- notebooks never cross-contaminate', async () => {
+  const result = await page.evaluate(async () => {
+    const { renderCellEditor } = await import('/js/ui/views/NotebookCheckpointsView.js');
+    const checkpoint = { id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [{ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-05', reviewStatus: 'not_reviewed', badgeAwards: [] }] };
+    const student = {
+      id: 's1', name: 'Anjali',
+      history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: { type: 'notebook_readiness', subjectId: 'OTHER-SUBJECT', notebookTypeId: 'type-1' }, recordedAt: '2026-09-05T00:00:00.000Z' }],
+    };
+    const editor = renderCellEditor(checkpoint, student, {});
+    const text = editor.textContent;
+    const buttons = [...editor.querySelectorAll('button')].map((b) => b.textContent);
+    return { text, buttons };
+  });
+  assert.match(result.text, /Not awarded/);
+  assert.ok(result.buttons.includes('Award anyway (override)'));
+});
+
 test('clicking "Award anyway (override)" calls handlers.onOverrideReadiness with the checkpoint and student ids', async () => {
   const result = await page.evaluate(async () => {
     const { renderCellEditor } = await import('/js/ui/views/NotebookCheckpointsView.js');
-    const checkpoint = { id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10', records: [{ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-15', reviewStatus: 'not_reviewed', badgeAwards: [] }] };
-    const student = { id: 's1', name: 'Anjali' };
+    const checkpoint = { id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [{ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-15', reviewStatus: 'not_reviewed', badgeAwards: [] }] };
+    const student = { id: 's1', name: 'Anjali', history: [] };
     const calls = [];
     const editor = renderCellEditor(checkpoint, student, { onOverrideReadiness: (checkpointId, studentId) => calls.push([checkpointId, studentId]) });
     [...editor.querySelectorAll('button')].find((b) => b.textContent === 'Award anyway (override)').click();
@@ -172,14 +212,11 @@ test('clicking "Award anyway (override)" calls handlers.onOverrideReadiness with
 test('clicking "Revoke" calls handlers.onRevokeReadiness with the checkpoint and student ids', async () => {
   const result = await page.evaluate(async () => {
     const { renderCellEditor } = await import('/js/ui/views/NotebookCheckpointsView.js');
-    const checkpoint = {
-      id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10',
-      records: [{
-        studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-05', reviewStatus: 'not_reviewed',
-        badgeAwards: [{ id: 'a1', badgeTypeId: 'readiness-champion', source: 'automatic', revoked: false }],
-      }],
+    const checkpoint = { id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [{ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-05', reviewStatus: 'not_reviewed', badgeAwards: [] }] };
+    const student = {
+      id: 's1', name: 'Anjali',
+      history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: { type: 'notebook_readiness', subjectId: 'subj-1', notebookTypeId: 'type-1' }, recordedAt: '2026-09-05T00:00:00.000Z' }],
     };
-    const student = { id: 's1', name: 'Anjali' };
     const calls = [];
     const editor = renderCellEditor(checkpoint, student, { onRevokeReadiness: (checkpointId, studentId) => calls.push([checkpointId, studentId]) });
     [...editor.querySelectorAll('button')].find((b) => b.textContent === 'Revoke').click();
