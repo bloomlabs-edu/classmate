@@ -5,13 +5,13 @@
       "classification": "confirmed_real",
       "reason": "Bloom Force 19 (CHS Kannamapet, Grade 8A) -- extensively, independently verified across multiple rounds of actual read-only production investigation this session: real checkpoint/submission/review records, real student roster, and the genuine historical-consistency audit (R. Varalaxmi, Jasmine, Pugazh, Blessy) that this entire feature was built to recognize.",
       "reviewedBy": "rejeesh.mohan2025@teachforindia.org",
-      "reviewedAt": "2026-11-07T00:00:00.000Z"
+      "reviewedAt": "2026-11-07T17:46:54Z"
     },
     "dcc6429b-b1b4-42a7-b1e1-2fb00e497cdb": {
       "classification": "confirmed_test",
       "reason": "Self-declared test classroom -- both the classroom name (\"[TEST] Identity Bridge Redemption\") and school name (\"Test School\") explicitly state TEST; 1 student, 0 checkpoints configured, no genuine notebook activity found in the organisation-wide audit.",
       "reviewedBy": "rejeesh.mohan2025@teachforindia.org",
-      "reviewedAt": "2026-11-07T00:00:00.000Z"
+      "reviewedAt": "2026-11-07T17:46:54Z"
     }
   }
 }
