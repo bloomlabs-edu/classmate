@@ -2693,13 +2693,12 @@ function renderActivitiesSection(plan, collapsedActivityIds, handlers, state = n
     addButton.addEventListener('click', handlers.onAddActivity);
     addButtonRow.appendChild(addButton);
 
-    const fromTeachingIdeasButton = document.createElement('button');
-    fromTeachingIdeasButton.type = 'button';
-    fromTeachingIdeasButton.className = 'btn btn--secondary lesson-plan-builder__add-activity-button';
-    fromTeachingIdeasButton.appendChild(createIcon('search', { size: 14 }));
-    fromTeachingIdeasButton.append(' Browse Ideas');
-    fromTeachingIdeasButton.addEventListener('click', handlers.onOpenActivityPicker);
-    addButtonRow.appendChild(fromTeachingIdeasButton);
+    // WORK-0025: reuses the SAME shared createFromTeachingIdeasButton()
+    // helper Spark's own identical "Browse Ideas" action already uses
+    // (see renderSparkSection() above) — this is the same action at a
+    // different call site, never a second, independently-styled button
+    // for it.
+    addButtonRow.appendChild(createFromTeachingIdeasButton(handlers.onOpenActivityPicker));
 
     wrap.appendChild(addButtonRow);
   }

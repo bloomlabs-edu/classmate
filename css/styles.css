@@ -4209,6 +4209,15 @@ textarea.lesson-plan-builder__dynamic-input {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.9rem;
 }
+/* WORK-0028: matches this file's own established 3-column responsive
+   convention (see .operational-work-grid above) -- 2 columns at
+   tablet-ish widths rather than staying cramped at 3 all the way down
+   to the 640px mobile breakpoint below. */
+@media (max-width: 960px) {
+  .lesson-plan-builder__differentiation-buckets {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 @media (max-width: 640px) {
   .lesson-plan-builder__differentiation-buckets {
     grid-template-columns: 1fr;
