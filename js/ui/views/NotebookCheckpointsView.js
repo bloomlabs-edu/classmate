@@ -922,7 +922,28 @@ export function populateStudentNameCell(nameCell, student, handlers, checkpoints
   // Compact achievement badges — omitted entirely (not an empty row)
   // when this student has earned none, per explicit product decision:
   // a student's row must never display a badge they have not earned.
-  const earnedBadges = notebookBadgeService.listEarnedBadges(classroom, student);
+  //
+  // Readiness Champion's own count is corrected here to read the real,
+  // live notebook-level ledger (notebookReadinessChampionService.js's
+  // own countActiveReadinessChampionNotebooksForStudent()) instead of
+  // notebookBadgeService.listEarnedBadges()'s own legacy
+  // student.notebookBadgeCounts lookup for this one badge type —
+  // found during the 2026-11-07 production display-discrepancy
+  // investigation: that legacy counter is disconnected from this
+  // file's own cell-editor Readiness display just below (which already
+  // reads the correct ledger via getActiveReadinessSourcesForNotebook()),
+  // so the two could silently disagree on the same screen. Every OTHER
+  // badge type's own count is untouched, still exactly
+  // notebookBadgeService.listEarnedBadges()'s own legacy-counter read —
+  // this correction is scoped to Readiness Champion alone.
+  const earnedBadges = notebookBadgeService
+    .listBadgeTypes(classroom)
+    .map((type) =>
+      type.id === notebookBadgeAwardService.READINESS_CHAMPION_BADGE_ID
+        ? { ...type, count: notebookReadinessChampionService.countActiveReadinessChampionNotebooksForStudent(student) }
+        : { ...type, count: notebookBadgeService.getBadgeCount(student, type.id) }
+    )
+    .filter((type) => type.count > 0);
   if (earnedBadges.length > 0) {
     const badgesRow = document.createElement('div');
     badgesRow.className = 'notebook-checkpoints__student-badges';
