@@ -21,10 +21,20 @@ export function getActivityTypeLabel(activityType) {
   return ACTIVITY_TYPE_LABELS[activityType] || activityType;
 }
 
-export const EXTERNAL_PROVIDER_KEYS = Object.freeze(['kahoot']);
+// quizizz/google-forms/other added for Student-Facing External
+// Activities (ClassMate Phase 2) — same provider vocabulary Learning
+// Hub's own externalActivities.provider field already uses (see that
+// repo's config/notebookBadgeConfig.js-sibling
+// external-activity-contribution-service.js PROVIDERS list), so a
+// provider badge reads identically on both sides, not a second,
+// drifting vocabulary.
+export const EXTERNAL_PROVIDER_KEYS = Object.freeze(['kahoot', 'quizizz', 'google-forms', 'other']);
 
 const EXTERNAL_PROVIDER_LABELS = {
   kahoot: 'Kahoot',
+  quizizz: 'Quizizz',
+  'google-forms': 'Google Forms',
+  other: 'Other',
 };
 
 export function getExternalProviderLabel(provider) {

@@ -2794,6 +2794,51 @@ select:focus-visible,
   display: flex;
   gap: 0.6rem;
 }
+/* Student-Facing External Activities (ClassMate Phase 2) — the
+   teacher-facing Learning Hub concept mapping control, same visual
+   weight as .concept-workspace__description immediately above (it is
+   not a primary action for this tab). */
+.concept-workspace__learning-hub-mapping {
+  margin-top: 1rem;
+}
+
+/* The mapping picker's own search-result list (ui/components/
+   LearningHubConceptMappingModal.js) — reuses .modal__form's own
+   spacing, adds a simple selectable-list treatment with no existing
+   precedent in this codebase to reuse (NewClassroomModal.js's own
+   fields are plain inputs, never a result list). */
+.learning-hub-concept-mapping-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 240px;
+  overflow-y: auto;
+  margin-top: 0.5rem;
+}
+.learning-hub-concept-mapping-result {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+  cursor: pointer;
+  font: inherit;
+}
+.learning-hub-concept-mapping-result:hover {
+  background-color: var(--color-bg);
+}
+.learning-hub-concept-mapping-result--selected {
+  border-color: var(--color-primary-strong);
+  background-color: var(--color-bg);
+}
+.learning-hub-concept-mapping-result small {
+  color: var(--color-muted);
+  font-size: 0.78rem;
+}
 .concept-workspace__stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -17398,6 +17443,75 @@ button.recognition-bento__hero-winner-name {
 .student-learning__resource-action {
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+/* Student-Facing External Activities (ClassMate Phase 2) — a dashed
+   border, not .student-learning__resource-card's own solid surface,
+   deliberately reusing the exact same "you are about to leave this
+   app" visual convention Notebook Tracker's own Configure panel
+   already established (see css/styles.css's own
+   .notebook-tracker__configure-panel — same reasoning: a third-party
+   link should never look like an ordinary in-app resource). */
+.student-learning__external-activities-heading {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+.student-learning__external-activities-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.student-learning__external-activity-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--color-surface, #fff);
+  border: 1.5px dashed var(--color-border);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.student-learning__external-activity-card:hover {
+  border-color: var(--color-primary-strong);
+  background-color: var(--color-bg);
+}
+.student-learning__external-activity-badge {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  margin-bottom: 0.35rem;
+  background-color: var(--color-bg);
+  color: var(--color-muted);
+}
+.student-learning__external-activity-badge--kahoot { background-color: #FBF0D9; color: #8a6110; }
+.student-learning__external-activity-badge--quizizz { background-color: #E6F1FB; color: #2f6ea3; }
+.student-learning__external-activity-badge--google-forms { background-color: #EAF5E3; color: #356b1d; }
+.student-learning__external-activity-title {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+.student-learning__external-activity-description {
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+.student-learning__external-activity-open-hint {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-primary-strong);
 }
 
 /* Learning Hub Experience creation flow (see ui/views/ConceptWorkspaceView.js) */
