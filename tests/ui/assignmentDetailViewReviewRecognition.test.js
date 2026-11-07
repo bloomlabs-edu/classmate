@@ -237,7 +237,7 @@ test('CELL EDITOR SAVE: a brand-new submission saved as "submitted" with review 
   assert.equal(result.score, 0);
 });
 
-test('LATE SUBMISSION: a checkpoint reviewed Complete after its own due date still earns a Completion Star', async () => {
+test('TIMELINESS FIX: a checkpoint reviewed Complete after its own due date NEVER earns a Completion Star (supersedes this file\'s own earlier "eligibility is untouched by lateness" assertion -- see services/recognitionService.js\'s own header comment for the 2026-11-06/07 timeliness follow-up to WORK-0038)', async () => {
   const assignment = buildAssignment();
   const checkpoint = buildCheckpoint({ id: 'cp-6', dueDate: '2026-01-01', records: [buildRecord({ submissionStatus: 'submitted', submittedDate: '2026-01-10' })] });
   const classroom = buildClassroom({ assignment, student: buildStudent() });
@@ -251,7 +251,7 @@ test('LATE SUBMISSION: a checkpoint reviewed Complete after its own due date sti
   });
 
   assert.equal(result.cellLabel, 'Submitted late · Complete');
-  assert.equal(result.score, 1, 'eligibility is untouched by lateness');
+  assert.equal(result.score, 0, 'a late submission must never earn a Completion Star, even though lateness is still shown as a label detail');
 });
 
 test('WITHDRAWAL: walking a submission back to Not Submitted through the cell editor reverses an already-active Completion Star (recordAssignmentCheckpointSubmission\'s own reversal branch)', async () => {
