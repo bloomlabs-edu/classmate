@@ -115,8 +115,8 @@ const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
  * shape) — comparing a date-key against a timestamp with plain `>`/`<`
  * happens to mostly work by lexicographic accident, which is exactly
  * the class of bug this guards call sites against; see
- * services/notebookBadgeAwardService.js's own evaluateReadinessChampion()
- * for why this distinction matters.
+ * services/notebookReadinessChampionService.js's own
+ * computeNotebookCompleteness() for why this distinction matters.
  */
 export function isValidDateKey(value) {
   if (typeof value !== 'string' || !DATE_KEY_PATTERN.test(value)) return false;

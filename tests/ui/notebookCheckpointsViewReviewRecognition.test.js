@@ -266,7 +266,7 @@ test('CELL EDITOR SAVE: a brand-new submission saved as "submitted" with review 
   assert.equal(result.score, 0, 'no star for a submission-only save, exactly like the quick-mark path');
 });
 
-test('LATE SUBMISSION: a checkpoint reviewed Complete after its own due date still earns a Completion Star -- unlike Readiness Champion, this is never date-gated', async () => {
+test('TIMELINESS FIX: a checkpoint reviewed Complete after its own due date NEVER earns a Completion Star (supersedes this file\'s own earlier "never date-gated" assertion -- see services/recognitionService.js\'s own header comment for the 2026-11-06/07 timeliness follow-up to WORK-0038)', async () => {
   const checkpoint = buildCheckpoint({ id: 'cp-6', dueDate: '2026-01-01', records: [buildRecord({ submissionStatus: 'submitted', submittedDate: '2026-01-10' })] });
   const classroom = buildClassroom({ checkpoint, student: buildStudent() });
 
@@ -279,7 +279,7 @@ test('LATE SUBMISSION: a checkpoint reviewed Complete after its own due date sti
   });
 
   assert.equal(result.cellLabel, 'Submitted late · Complete', 'lateness is still shown as a label detail');
-  assert.equal(result.score, 1, 'eligibility is untouched by lateness -- Completion Star has no date rule');
+  assert.equal(result.score, 0, 'a late submission must never earn a Completion Star -- this is now date-gated, same as Readiness Champion');
 });
 
 test('WITHDRAWAL: walking a submission back to Not Submitted through the cell editor reverses an already-active Completion Star (recordNotebookCheckpointSubmission\'s own reversal branch)', async () => {

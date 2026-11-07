@@ -59,6 +59,7 @@ import * as checkpointService from '../../services/checkpointService.js';
 import * as notebookConfigService from '../../services/notebookConfigService.js';
 import * as notebookBadgeService from '../../services/notebookBadgeService.js';
 import * as notebookBadgeAwardService from '../../services/notebookBadgeAwardService.js';
+import * as notebookReadinessChampionService from '../../services/notebookReadinessChampionService.js';
 import * as recognitionService from '../../services/recognitionService.js';
 import * as workspaceService from '../../services/workspaceService.js';
 import * as workspaceCoordinator from '../../services/workspaceCoordinator.js';
@@ -299,6 +300,13 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
       }
       editingCheckpointId = null;
       refreshForm();
+      // A new checkpoint adds a required item (can turn an already-complete
+      // notebook incomplete again); editing a due date can turn an
+      // already-on-time notebook late, or vice versa. Either way this is a
+      // structural change to the notebook itself, not one student's own
+      // submission event — re-evaluate every student against this one
+      // notebook, not just whoever happens to be open in the cell editor.
+      notebookReadinessChampionService.reevaluateReadinessChampionForAllStudents(currentClassroom, subjectId, notebookTypeId, currentUser?.uid);
       persistClassroom();
       refreshGrid(); // structural change (a column was added/edited) — genuine full grid rebuild, scroll preserved
     },
@@ -306,6 +314,10 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
       const confirmed = window.confirm(`Delete "${title}"? This removes every student's own record for it too. This cannot be undone.`);
       if (!confirmed) return;
       checkpointService.deleteCheckpoint(currentClassroom, checkpointId);
+      // Removing a required checkpoint can newly complete a notebook that
+      // was only ever pending on this one — same structural-change
+      // reasoning as onSaveCheckpoint above.
+      notebookReadinessChampionService.reevaluateReadinessChampionForAllStudents(currentClassroom, subjectId, notebookTypeId, currentUser?.uid);
       persistClassroom();
       refreshGrid(); // structural change (a column was removed)
     },
@@ -335,13 +347,13 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
         status: 'submitted',
         submittedDate: getTodayDateKey(),
       });
-      // Readiness Champion's own automatic trigger — a direct
-      // consequence of THIS submission, never of a review outcome. See
-      // services/notebookBadgeAwardService.js's own header comment.
-      // Unchanged by WORK-0038 — Completion Star and Readiness Champion
-      // remain entirely separate mechanisms.
+      // Readiness Champion's own automatic trigger — re-evaluates the
+      // ENTIRE subject notebook's completeness, not just this one
+      // checkpoint. See services/notebookReadinessChampionService.js's
+      // own header comment. Unchanged by WORK-0038 — Completion Star
+      // and Readiness Champion remain entirely separate mechanisms.
       const student = getSortedStudents().find((s) => s.id === studentId);
-      if (student) notebookBadgeAwardService.evaluateReadinessChampion(currentClassroom, checkpoint, student, currentUser?.uid);
+      if (student) notebookReadinessChampionService.evaluateReadinessChampionForNotebook(currentClassroom, checkpoint.subjectId, checkpoint.notebookTypeId, student, currentUser?.uid);
       persistClassroom();
       updateCellAndColumn(checkpointId, studentId); // one <td> + its column's stat boxes — no grid rebuild
     },
@@ -371,10 +383,6 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
     },
     onSaveCell: (checkpointId, studentId, submission, review, teacherNote) => {
       const checkpoint = checkpointService.getCheckpointById(currentClassroom, checkpointId);
-      // Captured BEFORE setSubmission() below overwrites it — the only
-      // way to tell a genuine Submitted -> Not Submitted WITHDRAWAL
-      // apart from "already not submitted, still not submitted."
-      const wasSubmitted = checkpointService.getRecordForStudent(checkpoint, studentId)?.submissionStatus === 'submitted';
       // Submission wrapper first (handles a withdrawal silently
       // un-completing an already-'complete' review — see that
       // function's own header comment), then the review wrapper (THE
@@ -383,18 +391,17 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
       recognitionService.recordNotebookCheckpointReview(currentClassroom, checkpoint, studentId, review, currentUser?.uid);
       checkpointService.setTeacherNote(checkpoint, studentId, teacherNote);
       const student = getSortedStudents().find((s) => s.id === studentId);
-      // Same two triggers as the quick actions above, reached here via
-      // the detailed cell editor's own single Save instead — never
-      // conflated with each other, same as there.
-      if (student && submission.status === 'submitted') {
-        notebookBadgeAwardService.evaluateReadinessChampion(currentClassroom, checkpoint, student, currentUser?.uid);
-      }
-      // Withdrawal — the one place a submission can be walked back to
-      // 'not_submitted' (no quick action does this, only this detailed
-      // editor). Revokes any active Readiness Champion award this exact
-      // submission earned; never touches Organization/Punctuation.
-      if (student && wasSubmitted && submission.status === 'not_submitted') {
-        notebookBadgeAwardService.revokeReadinessChampionOnWithdrawal(currentClassroom, checkpoint, student, currentUser?.uid);
+      // Readiness Champion re-evaluation — unconditional, not branched
+      // on submission.status, because evaluateReadinessChampionForNotebook()
+      // itself decides whether this notebook is now complete-and-on-time
+      // (award), still active but no longer honest (auto-revoke), or
+      // neither (no-op) — covers a fresh on-time submission, a
+      // withdrawal (submitted -> not_submitted), and a corrected date on
+      // an already-submitted record, with the one same call. See
+      // services/notebookReadinessChampionService.js's own header
+      // comment.
+      if (student) {
+        notebookReadinessChampionService.evaluateReadinessChampionForNotebook(currentClassroom, checkpoint.subjectId, checkpoint.notebookTypeId, student, currentUser?.uid);
       }
       openCellFor = null;
       persistClassroom();
@@ -410,7 +417,7 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
       const student = getSortedStudents().find((s) => s.id === studentId);
       if (!checkpoint || !student) return;
       try {
-        notebookBadgeAwardService.overrideReadinessChampion(currentClassroom, checkpoint, student, currentUser?.uid);
+        notebookReadinessChampionService.overrideReadinessChampionForNotebook(currentClassroom, checkpoint.subjectId, checkpoint.notebookTypeId, student, currentUser?.uid);
         persistClassroom();
         updateCellAndColumn(checkpointId, studentId);
         refreshCellEditor();
@@ -423,7 +430,7 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
       const student = getSortedStudents().find((s) => s.id === studentId);
       if (!checkpoint || !student) return;
       try {
-        notebookBadgeAwardService.revokeReadinessChampion(currentClassroom, checkpoint, student, currentUser?.uid);
+        notebookReadinessChampionService.revokeReadinessChampionForNotebook(currentClassroom, checkpoint.subjectId, checkpoint.notebookTypeId, student, currentUser?.uid);
         persistClassroom();
         updateCellAndColumn(checkpointId, studentId);
         refreshCellEditor();
@@ -434,7 +441,7 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
     // Explicit teacher removal of an active Completion Star (WORK-0038)
     // — mirrors onRevokeReadiness above exactly, but for
     // recognitionService.js's own separate mechanism, never
-    // notebookBadgeAwardService.js's. Reverses the EXACT associated +1
+    // notebookReadinessChampionService.js's. Reverses the EXACT associated +1
     // points event via recognitionService.removeCompletionStar()'s own
     // ledger mechanics; never touches Readiness Champion.
     onRemoveCompletionStar: (checkpointId, studentId) => {
@@ -1377,34 +1384,50 @@ export function renderCellEditor(checkpoint, student, handlers) {
   // value, and those two badges are only ever offered once a review is
   // genuinely, persistently marked Complete (see
   // openReviewCompletionBadgePrompt() above, triggered right after a
-  // real Save). Readiness Champion is different: it reacts to the
-  // SUBMISSION, which this editor's own PERSISTED `record` (captured at
-  // the top of this function) already reflects accurately.
+  // real Save). Readiness Champion is different, and — per the
+  // notebook-level redesign — is no longer about THIS checkpoint's own
+  // record at all: it reflects the ENTIRE subject notebook's own
+  // Readiness Champion state (every checkpoint currently configured
+  // under this same subjectId/notebookTypeId), read from the student's
+  // own append-only history via notebookReadinessChampionService.js,
+  // never from this one record's (now-unused-for-this-purpose)
+  // `badgeAwards`. Revoking or overriding from here affects the whole
+  // notebook — identical to doing so from any other checkpoint's own
+  // cell editor within it.
   const readinessLabel = document.createElement('p');
   readinessLabel.className = 'notebook-checkpoints__cell-editor-section-label';
-  readinessLabel.textContent = 'Readiness Champion';
+  readinessLabel.textContent = 'Readiness Champion (whole notebook)';
   sheet.appendChild(readinessLabel);
 
-  const activeReadinessAward = (record?.badgeAwards || []).find(
-    (entry) => entry.badgeTypeId === notebookBadgeAwardService.READINESS_CHAMPION_BADGE_ID && !entry.revoked
-  );
+  const readinessWorkItemRef = notebookReadinessChampionService.buildNotebookReadinessWorkItemRef({
+    subjectId: checkpoint.subjectId,
+    notebookTypeId: checkpoint.notebookTypeId,
+  });
+  const activeReadinessSources = notebookReadinessChampionService.getActiveReadinessSourcesForNotebook(student, readinessWorkItemRef);
+  const isReadinessActive = activeReadinessSources.length > 0;
 
   const readinessStatus = document.createElement('p');
-  readinessStatus.textContent = activeReadinessAward
-    ? `Awarded (${activeReadinessAward.source === 'automatic' ? 'automatic — on time' : 'teacher override'})`
+  readinessStatus.textContent = isReadinessActive
+    ? `Awarded (${
+        activeReadinessSources.includes('automatic')
+          ? 'automatic — notebook complete and on time'
+          : activeReadinessSources.includes('override')
+            ? 'teacher override'
+            : 'retroactive backfill'
+      })`
     : 'Not awarded';
   sheet.appendChild(readinessStatus);
 
   const readinessActions = document.createElement('div');
   readinessActions.className = 'notebook-checkpoints__cell-editor-actions';
-  if (activeReadinessAward) {
+  if (isReadinessActive) {
     const revokeButton = document.createElement('button');
     revokeButton.type = 'button';
     revokeButton.className = 'btn btn--text';
     revokeButton.textContent = 'Revoke';
     revokeButton.addEventListener('click', () => handlers.onRevokeReadiness(checkpoint.id, student.id));
     readinessActions.appendChild(revokeButton);
-  } else if (record?.submissionStatus === 'submitted') {
+  } else {
     const overrideButton = document.createElement('button');
     overrideButton.type = 'button';
     overrideButton.className = 'btn btn--text';

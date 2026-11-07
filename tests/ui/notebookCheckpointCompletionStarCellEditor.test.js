@@ -154,12 +154,17 @@ test('Completion Star and Readiness Champion sections coexist independently in t
       id: 'cp1', subjectId: 'subj-1', notebookTypeId: 'type-1', title: 'Unit 2', dueDate: '2026-09-10',
       records: [{
         studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-05', reviewStatus: 'complete',
-        badgeAwards: [{ id: 'a1', badgeTypeId: 'readiness-champion', source: 'automatic', revoked: false }],
+        badgeAwards: [],
       }],
     };
     const student = {
       id: 's1', name: 'Anjali', score: 1,
-      history: [], // Completion Star NOT awarded, even though Readiness Champion is
+      // Completion Star NOT awarded (empty points/'auto' history); Readiness
+      // Champion IS active, on the student's own append-only history, never
+      // this checkpoint record's own (now Organization/Punctuation-only)
+      // `badgeAwards` -- see services/notebookReadinessChampionService.js's
+      // own header comment for why.
+      history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: { type: 'notebook_readiness', subjectId: 'subj-1', notebookTypeId: 'type-1' }, recordedAt: '2026-09-05T00:00:00.000Z' }],
     };
     const editor = renderCellEditor(checkpoint, student, {});
     const labels = [...editor.querySelectorAll('.notebook-checkpoints__cell-editor-section-label')].map((el) => el.textContent);
@@ -167,9 +172,9 @@ test('Completion Star and Readiness Champion sections coexist independently in t
     const buttons = [...editor.querySelectorAll('button')].map((b) => b.textContent);
     return { labels, text, buttons };
   });
-  assert.ok(result.labels.includes('Readiness Champion'));
+  assert.ok(result.labels.includes('Readiness Champion (whole notebook)'));
   assert.ok(result.labels.includes('Completion Star'));
-  assert.match(result.text, /Awarded \(automatic — on time\)/); // Readiness Champion active
+  assert.match(result.text, /Awarded \(automatic — notebook complete and on time\)/); // Readiness Champion active
   assert.ok(result.buttons.includes('Revoke')); // Readiness Champion's own action
   assert.ok(!result.buttons.includes('Remove')); // Completion Star has nothing to remove
 });

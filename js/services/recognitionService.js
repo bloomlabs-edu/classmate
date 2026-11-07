@@ -64,20 +64,25 @@
  * than deleting it, and is itself idempotent (undoing the same manual
  * award twice is a no-op).
  *
- * COMPLETION STAR ELIGIBILITY (corrected — WORK-0038, 2026-11-05):
+ * COMPLETION STAR ELIGIBILITY (corrected — WORK-0038, 2026-11-05;
+ * TIMELINESS FIX layered on top — WORK-0038 follow-up, 2026-11-06):
  * a Completion Star is now awarded ONLY once a checkpoint's own review
  * is genuinely marked 'complete' (services/checkpointService.js /
- * services/assignmentCheckpointService.js's own reviewStatus), never
- * merely on submission. Submitted + 'incomplete': no star. Submitted +
- * 'complete': award one star, regardless of whether the submission
- * itself was on time or late — Completion Star has never been, and
- * still is not, date-gated (that is Readiness Champion's own, entirely
- * separate rule — see notebookBadgeAwardService.js). This mirrors
- * Organization/Punctuation Champion's own established trigger shape
- * (awarded only once a review reaches 'complete') — see
- * notebookBadgeAwardService.js's own header comment for why that
- * trigger is correct and why "submission alone" never was. Each
- * checkpoint system below (Notebook Checkpoints / Assignment
+ * services/assignmentCheckpointService.js's own reviewStatus), AND the
+ * underlying submission was on time (services/checkpointService.js's
+ * own isLate(), the exact same due-date comparison Readiness Champion
+ * already uses — never a second, independently-defined notion of
+ * lateness). Submitted + 'incomplete': no star. Submitted + 'complete'
+ * + on time: award one star. Submitted + 'complete' + late: never
+ * awarded, and if an already-active star's own submission is later
+ * corrected to late (a re-saved 'complete' review now reads as no
+ * longer on time), that star is automatically reversed — a star that is
+ * no longer honest once the real submission date is known must not
+ * survive a re-save. This mirrors Organization/Punctuation Champion's
+ * own established trigger shape (awarded only once a review reaches
+ * 'complete') — see notebookBadgeAwardService.js's own header comment
+ * for why that trigger is correct and why "submission alone" never was.
+ * Each checkpoint system below (Notebook Checkpoints / Assignment
  * Checkpoints) gets TWO wrapper functions, not one:
  *   - record*CheckpointReview() — the PRIMARY trigger: awards on a
  *     genuine not_reviewed/incomplete -> complete transition, reverses
@@ -104,8 +109,9 @@
  *
  * TEACHER REMOVAL (WORK-0038): removeCompletionStar() is the explicit,
  * OWNER/TEACHER-gated counterpart to the automatic reversal paths above
- * — mirrors notebookBadgeAwardService.js's own revokeReadinessChampion()
- * exactly: throws (never silently no-ops) on an unauthorized uid or on
+ * — mirrors notebookReadinessChampionService.js's own
+ * revokeReadinessChampionForNotebook() exactly: throws (never silently
+ * no-ops) on an unauthorized uid or on
  * "nothing active to remove," since silently no-op-ing would hide a
  * teacher's own mistaken belief that a star existed. Reuses the SAME
  * reverseAutomaticCompletionStar() ledger mechanics as every other
@@ -255,8 +261,9 @@ export function undoManualStarAward(student, entryId) {
  * already uses. AUTOMATIC REVERSALS (Complete -> Incomplete,
  * withdrawal) are deliberately NEVER gated by this — see
  * record*CheckpointReview()/record*CheckpointSubmission()'s own header
- * comments for why, mirroring notebookBadgeAwardService.js's own
- * revokeReadinessChampionOnWithdrawal() precedent exactly: a reversal
+ * comments for why, mirroring notebookReadinessChampionService.js's own
+ * automatic-revoke-on-no-longer-honest precedent (see
+ * evaluateReadinessChampionForNotebook()) exactly: a reversal
  * is a deterministic data-integrity correction, never a discretionary
  * grant, so gating it the same way would risk a stale, factually-wrong
  * star surviving because the acting uid happened to lack this
@@ -268,8 +275,9 @@ export function canManageCompletionStar(classroom, uid) {
 
 /**
  * Explicit teacher removal of an active Completion Star — mirrors
- * notebookBadgeAwardService.js's own revokeReadinessChampion() exactly:
- * throws for an unauthorized uid, and throws (rather than silently
+ * notebookReadinessChampionService.js's own
+ * revokeReadinessChampionForNotebook() exactly: throws for an
+ * unauthorized uid, and throws (rather than silently
  * no-op-ing) when there is nothing active to remove, since a silent
  * no-op here would hide a teacher's own mistaken belief that a star
  * existed. Reverses the EXACT associated +1 points event via the same
@@ -364,7 +372,8 @@ export function recordNotebookCheckpointSubmission(classroom, checkpoint, studen
  * idempotency guard), never a double award.
  *
  * `actingUid` gates the AWARD only (mirrors
- * notebookBadgeAwardService.evaluateReadinessChampion() exactly): an
+ * notebookReadinessChampionService.evaluateReadinessChampionForNotebook()
+ * exactly): an
  * unauthorized uid silently skips the star — never throws, and never
  * blocks the underlying setReview() write itself, since marking a
  * review Complete is a side effect this function reacts to, not a
@@ -377,17 +386,31 @@ export function recordNotebookCheckpointReview(classroom, checkpoint, studentId,
     notebookTypeId: checkpoint.notebookTypeId,
     checkpointId: checkpoint.id,
   });
-  const wasComplete = checkpointService.getRecordForStudent(checkpoint, studentId)?.reviewStatus === 'complete';
+  const recordBefore = checkpointService.getRecordForStudent(checkpoint, studentId);
+  const isOnTime = !checkpointService.isLate(checkpoint, recordBefore);
 
   checkpointService.setReview(checkpoint, studentId, { status, reviewedDate });
 
   const isNowComplete = status === 'complete';
   const found = findStudentById(classroom, studentId);
   if (found) {
-    if (isNowComplete && !wasComplete && canManageCompletionStar(classroom, actingUid)) {
-      awardAutomaticCompletionStar(found.student, workItemRef);
-    } else if (!isNowComplete && wasComplete) {
+    // Keyed off the recognition ledger's own net-sum (the same
+    // "never a boolean flag" invariant this file's own header comment
+    // establishes for every other star here) — NEVER off
+    // checkpointService's own `reviewStatus`, which stays 'complete'
+    // across a late-then-corrected-back-to-on-time re-save and would
+    // otherwise permanently block a legitimately-re-earned star from
+    // ever being re-awarded (found and fixed during the
+    // recognition-integrity reconciliation review, 2026-11-07).
+    const isActive = getAutomaticStarNetForWorkItem(found.student, workItemRef) >= 1;
+    if (isNowComplete && isOnTime && !isActive) {
+      if (canManageCompletionStar(classroom, actingUid)) {
+        awardAutomaticCompletionStar(found.student, workItemRef);
+      }
+    } else if (!isNowComplete && isActive) {
       reverseAutomaticCompletionStar(found.student, workItemRef, { label: 'Completion Star Reversed', reason: 'review_uncompleted' });
+    } else if (isNowComplete && !isOnTime && isActive) {
+      reverseAutomaticCompletionStar(found.student, workItemRef, { label: 'Completion Star Reversed', reason: 'late_submission_ineligible' });
     }
   }
 }
@@ -413,17 +436,26 @@ export function recordAssignmentCheckpointSubmission(classroom, checkpoint, stud
 /** Mirrors recordNotebookCheckpointReview() exactly, for Assignment Checkpoints — THE real Completion Star trigger for this system. `actingUid` gates the AWARD only, same reasoning. */
 export function recordAssignmentCheckpointReview(classroom, checkpoint, studentId, { status, reviewedDate = null }, actingUid) {
   const workItemRef = buildAssignmentCheckpointWorkItemRef({ assignmentId: checkpoint.assignmentId, checkpointId: checkpoint.id });
-  const wasComplete = assignmentCheckpointService.getRecordForStudent(checkpoint, studentId)?.reviewStatus === 'complete';
+  const recordBefore = assignmentCheckpointService.getRecordForStudent(checkpoint, studentId);
+  const isOnTime = !assignmentCheckpointService.isLate(checkpoint, recordBefore);
 
   assignmentCheckpointService.setReview(checkpoint, studentId, { status, reviewedDate });
 
   const isNowComplete = status === 'complete';
   const found = findStudentById(classroom, studentId);
   if (found) {
-    if (isNowComplete && !wasComplete && canManageCompletionStar(classroom, actingUid)) {
-      awardAutomaticCompletionStar(found.student, workItemRef);
-    } else if (!isNowComplete && wasComplete) {
+    // Keyed off the recognition ledger's own net-sum, never off
+    // assignmentCheckpointService's own `reviewStatus` — see
+    // recordNotebookCheckpointReview()'s own comment for why.
+    const isActive = getAutomaticStarNetForWorkItem(found.student, workItemRef) >= 1;
+    if (isNowComplete && isOnTime && !isActive) {
+      if (canManageCompletionStar(classroom, actingUid)) {
+        awardAutomaticCompletionStar(found.student, workItemRef);
+      }
+    } else if (!isNowComplete && isActive) {
       reverseAutomaticCompletionStar(found.student, workItemRef, { label: 'Completion Star Reversed', reason: 'review_uncompleted' });
+    } else if (isNowComplete && !isOnTime && isActive) {
+      reverseAutomaticCompletionStar(found.student, workItemRef, { label: 'Completion Star Reversed', reason: 'late_submission_ineligible' });
     }
   }
 }
@@ -451,44 +483,75 @@ function findStudentById(classroom, studentId) {
 // ---------------------------------------------------------------------
 
 /**
- * Resolves whether `entry` (an active, `source: 'auto'`, `kind: 'points'`
- * Completion Star entry) is still eligible under the corrected rule —
- * i.e. whether its own `workItemRef`'s CURRENT reviewStatus is genuinely
- * 'complete'. The legacy `notebook` work-item type has no review concept
- * at all (see this file's own "COMPLETION STAR ELIGIBILITY" header
- * comment) and so can never be eligible under the corrected rule — every
- * active star of that type is automatically incorrect, regardless of
- * any other data. An unresolvable work item (its own checkpoint was
- * since deleted) is conservatively treated as incorrect too, rather than
- * silently assumed fine.
+ * CONCRETE_VIOLATION_REASONS vs. structurally-unverifiable (WORK-0038 +
+ * recognition-integrity reconciliation, 2026-11-06): resolving WHY an
+ * active star is no longer eligible must distinguish a genuine rule
+ * violation, backed by surviving concrete evidence (the review record
+ * itself still exists and plainly shows 'review_not_complete' or a late
+ * submittedDate), from a work item this audit can no longer verify at
+ * all because its own checkpoint record was since deleted — deletion
+ * leaves no trace (see checkpointService.js's own
+ * CHECKPOINT_DELETION_STRUCTURAL_LIMITATION). Per explicit product
+ * decision, "the checkpoint is gone" is never, on its own, evidence of
+ * a rule violation — it must never be classified or recommended for
+ * revocation the same way a concrete violation is.
  */
-function isCompletionStarStillEligible(classroom, entry) {
+const CONCRETE_VIOLATION_REASONS = new Set(['missing_work_item_ref', 'review_not_complete', 'late_submission', 'unrecognized_work_item_type']);
+
+/**
+ * Resolves WHY `entry` (an active, `source: 'auto'`, `kind: 'points'`
+ * Completion Star entry) is no longer eligible under the corrected rule
+ * — or `null` if it is still genuinely eligible. The legacy `notebook`
+ * work-item type has no review concept at all (see this file's own
+ * "COMPLETION STAR ELIGIBILITY" header comment) and so can never be
+ * eligible under the corrected rule — every active star of that type is
+ * automatically incorrect ('unrecognized_work_item_type'), regardless of
+ * any other data. A checkpoint that no longer exists resolves to
+ * 'checkpoint_deleted' — structurally unverifiable, never a concrete
+ * violation (see CONCRETE_VIOLATION_REASONS above).
+ */
+function resolveCompletionStarIneligibilityReason(classroom, entry) {
   const ref = entry.workItemRef;
-  if (!ref) return false; // a manual-looking auto entry with no ref at all — can't verify, treat as incorrect
+  if (!ref) return 'missing_work_item_ref'; // a manual-looking auto entry with no ref at all — can't verify, treat as incorrect
   if (ref.type === 'notebook_checkpoint') {
     const checkpoint = checkpointService.getCheckpointById(classroom, ref.checkpointId);
-    if (!checkpoint) return false;
-    return checkpointService.getRecordForStudent(checkpoint, entry.__studentId)?.reviewStatus === 'complete';
+    if (!checkpoint) return 'checkpoint_deleted';
+    const record = checkpointService.getRecordForStudent(checkpoint, entry.__studentId);
+    if (record?.reviewStatus !== 'complete') return 'review_not_complete';
+    if (checkpointService.isLate(checkpoint, record)) return 'late_submission';
+    return null; // genuinely eligible
   }
   if (ref.type === 'assignment_checkpoint') {
     const checkpoint = assignmentCheckpointService.getCheckpointById(classroom, ref.checkpointId);
-    if (!checkpoint) return false;
-    return assignmentCheckpointService.getRecordForStudent(checkpoint, entry.__studentId)?.reviewStatus === 'complete';
+    if (!checkpoint) return 'checkpoint_deleted';
+    const record = assignmentCheckpointService.getRecordForStudent(checkpoint, entry.__studentId);
+    if (record?.reviewStatus !== 'complete') return 'review_not_complete';
+    if (assignmentCheckpointService.isLate(checkpoint, record)) return 'late_submission';
+    return null; // genuinely eligible
   }
-  return false; // 'notebook' (legacy) and any unrecognized type: never eligible under the corrected rule
+  return 'unrecognized_work_item_type'; // 'notebook' (legacy) and any unrecognized type: never eligible under the corrected rule
 }
 
 /**
  * Read-only audit across one already-loaded Classroom: every currently
  * ACTIVE (net >= 1) automatic Completion Star that is no longer
  * eligible under the corrected rule (never awarded/revoked/modified by
- * this function — purely a report). Returns one entry per incorrect
- * star: `{ studentId, studentName, workItemRef, entryId, awardedAt }`.
- * Safe to call repeatedly, safe to call against a read-only snapshot —
- * performs zero writes of any kind, to any object it's given.
+ * this function — purely a report), split into two buckets per explicit
+ * product decision (see CONCRETE_VIOLATION_REASONS above):
+ *   - `incorrectActiveStars`: backed by concrete, surviving evidence of
+ *     a genuine rule violation.
+ *   - `unverifiableActiveStars`: the underlying checkpoint was since
+ *     deleted, so this audit cannot confirm either way — each entry
+ *     here carries a `structuralLimitation` disclosure, never grounds
+ *     for revocation on its own.
+ * Each finding: `{ studentId, studentName, workItemRef, entryId,
+ * awardedAt, reason[, structuralLimitation] }`. Safe to call repeatedly,
+ * safe to call against a read-only snapshot — performs zero writes of
+ * any kind, to any object it's given.
  */
 export function auditCompletionStarsForClassroom(classroom) {
-  const findings = [];
+  const incorrectActiveStars = [];
+  const unverifiableActiveStars = [];
   for (const team of classroom.teams || []) {
     for (const student of team.students || []) {
       const activeAutoEntries = new Map(); // workItemRef key -> { entry, net }
@@ -502,18 +565,23 @@ export function auditCompletionStarsForClassroom(classroom) {
       }
       for (const { lastEntry, net } of activeAutoEntries.values()) {
         if (net < 1 || !lastEntry) continue; // not currently active
-        const eligible = isCompletionStarStillEligible(classroom, { ...lastEntry, __studentId: student.id });
-        if (!eligible) {
-          findings.push({
-            studentId: student.id,
-            studentName: student.name,
-            workItemRef: lastEntry.workItemRef,
-            entryId: lastEntry.id,
-            awardedAt: lastEntry.recordedAt,
-          });
+        const reason = resolveCompletionStarIneligibilityReason(classroom, { ...lastEntry, __studentId: student.id });
+        if (!reason) continue; // genuinely eligible — never flagged
+        const finding = {
+          studentId: student.id,
+          studentName: student.name,
+          workItemRef: lastEntry.workItemRef,
+          entryId: lastEntry.id,
+          awardedAt: lastEntry.recordedAt,
+          reason,
+        };
+        if (CONCRETE_VIOLATION_REASONS.has(reason)) {
+          incorrectActiveStars.push(finding);
+        } else {
+          unverifiableActiveStars.push({ ...finding, structuralLimitation: checkpointService.CHECKPOINT_DELETION_STRUCTURAL_LIMITATION });
         }
       }
     }
   }
-  return findings;
+  return { incorrectActiveStars, unverifiableActiveStars };
 }
