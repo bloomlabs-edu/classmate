@@ -196,17 +196,15 @@ function findOrCreateRecord(checkpoint, studentId) {
  * than setReview()'s own direct check guards against. The constraint
  * must hold regardless of which function reaches it.
  *
- * This function itself has no concept of badges at all — a caller
- * transitioning status to 'not_submitted' (or any other change here) is
- * responsible for also re-evaluating Readiness Champion via
- * services/notebookReadinessChampionService.js's own
- * evaluateReadinessChampionForNotebook() (see ui/views/
- * NotebookCheckpointsView.js's own onSaveCell/onQuickMarkSubmitted
- * handlers for the real call sites), which needs the real
- * Classroom/Student objects and an acting uid this function was never
- * given, and which auto-revokes an active automatic award on its own
- * when the withdrawal makes the notebook no longer complete-and-on-time
- * — never gated behind a separate withdrawal-specific function.
+ * This function itself has no concept of badges at all. Under the
+ * permanent, per-inspection Readiness Champion redesign (2026-11-07,
+ * see services/notebookReadinessChampionService.js's own header
+ * comment), a withdrawal (or any other change here) never triggers any
+ * Readiness Champion re-evaluation at all — a permanent badge, once
+ * earned, is never revoked, and the only award trigger left is a fresh
+ * checkpoint's own creation (ui/views/NotebookCheckpointsView.js's own
+ * onSaveCheckpoint create branch). This function's own caller has
+ * nothing further to do here for that badge type.
  */
 export function setSubmission(checkpoint, studentId, { status, submittedDate = null }) {
   const record = findOrCreateRecord(checkpoint, studentId);

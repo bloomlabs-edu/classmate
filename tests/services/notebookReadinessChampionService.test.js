@@ -1,16 +1,17 @@
 /**
  * tests/services/notebookReadinessChampionService.test.js
  *
- * Full coverage for the notebook-level Readiness Champion redesign
- * (2026-11-06): a student earns this badge once per entire subject
- * notebook (every checkpoint currently configured under one
- * subjectId/notebookTypeId pair), only once EVERY required checkpoint
- * has been submitted on or before its own due date — never per
- * individual checkpoint. See services/notebookReadinessChampionService.js's
- * own header comment for the full design rationale (why the old
- * per-checkpoint model was wrong, the three-source-pool ledger, and the
- * disclosed checkpoint-deletion structural limitation this shares with
- * the historical audit in notebookReadinessChampionAuditService.js).
+ * Full coverage for the PERMANENT, PER-INSPECTION Readiness Champion
+ * redesign (2026-11-07): creating a fresh checkpoint (a new unit) in a
+ * subject notebook is the one and only inspection event. At that
+ * moment, every student whose previously-assigned required checkpoints
+ * (the brand-new one excluded) are all complete earns one permanent
+ * badge for that exact event — timeliness is irrelevant, and the badge
+ * is never revoked by anything that happens afterward. See
+ * services/notebookReadinessChampionService.js's own header comment for
+ * the full design rationale, including why the prior notebook-level
+ * model (2026-11-06, net-summed, auto-revoking) was superseded and how
+ * its own legacy data is preserved untouched.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -47,7 +48,9 @@ function submit(checkpoint, studentId, submittedDate) {
 }
 
 // ---------------------------------------------------------------------
-// computeNotebookCompleteness — the shared ground truth
+// computeNotebookCompleteness — the shared ground truth. Unchanged by
+// the 2026-11-07 redesign except for the additive `excludeCheckpointIds`
+// option (its own section further down) — every test here still holds.
 // ---------------------------------------------------------------------
 
 test('computeNotebookCompleteness: a notebook with zero checkpoints is never complete (vacuous-truth guard)', () => {
@@ -153,625 +156,303 @@ test('computeNotebookCompleteness: two different notebooks (different subjectId/
 });
 
 // ---------------------------------------------------------------------
-// evaluateReadinessChampionForNotebook — the live automatic award/revoke
-// lifecycle.
+// computeNotebookCompleteness — excludeCheckpointIds (new, 2026-11-07):
+// used by the live inspection path to evaluate "every PREVIOUSLY
+// assigned required checkpoint," excluding the brand-new one by its own
+// id rather than by date (same-day siblings would be ambiguous by date).
 // ---------------------------------------------------------------------
 
-test('evaluateReadinessChampionForNotebook: one on-time checkpoint out of several still-pending ones — no badge', () => {
+test('computeNotebookCompleteness: excludeCheckpointIds drops the excluded checkpoint from totalRequired entirely', () => {
   const { classroom, student } = buildClassroomWithStudent();
   const cp1 = addCheckpoint(classroom, { title: 'Unit 1' });
-  addCheckpoint(classroom, { title: 'Unit 2' });
+  const cp2 = addCheckpoint(classroom, { title: 'Unit 2' }); // left pending
   submit(cp1, student.id, '2026-09-08');
 
-  const result = notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  assert.equal(result, null);
-  assert.equal(student.notebookBadgeCounts?.['readiness-champion'] ?? 0, 0);
+  const result = notebookReadinessChampionService.computeNotebookCompleteness(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student.id, {
+    excludeCheckpointIds: [cp2.id],
+  });
+  assert.equal(result.totalRequired, 1, 'the excluded, still-pending checkpoint never counts toward the required set');
+  assert.equal(result.isComplete, true);
 });
 
-test('evaluateReadinessChampionForNotebook: the FINAL required checkpoint being submitted on time completes the notebook and awards exactly once', () => {
+test('computeNotebookCompleteness: excluding a same-day sibling checkpoint by id is exact, where date-based filtering would be ambiguous', () => {
   const { classroom, student } = buildClassroomWithStudent();
   const cp1 = addCheckpoint(classroom, { title: 'Unit 1' });
-  const cp2 = addCheckpoint(classroom, { title: 'Unit 2' });
   submit(cp1, student.id, '2026-09-08');
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  assert.equal(student.notebookBadgeCounts?.['readiness-champion'] ?? 0, 0, 'sanity: still incomplete after the first checkpoint alone');
+  const sameDaySibling = addCheckpoint(classroom, { title: 'Unit 2 (same day)' }); // same createdAt date-key as any checkpoint created "today" in this test run
 
-  submit(cp2, student.id, '2026-09-09'); // the final required checkpoint, also on time
-  const count = notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
+  const result = notebookReadinessChampionService.computeNotebookCompleteness(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student.id, {
+    excludeCheckpointIds: [sameDaySibling.id],
+  });
+  assert.equal(result.totalRequired, 1, 'only the sibling is excluded, by its own id -- cp1 is still required and already satisfied');
+  assert.equal(result.isComplete, true);
+});
 
-  assert.equal(count, 1);
+// ---------------------------------------------------------------------
+// inspectReadinessChampionOnNewCheckpoint — THE one live award trigger.
+// ---------------------------------------------------------------------
+
+test('inspectReadinessChampionOnNewCheckpoint: a student with all previously-assigned checkpoints complete earns a permanent badge at the new checkpoint\'s own creation', () => {
+  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
+  const prior = addCheckpoint(classroom, { title: 'Unit 1' });
+  submit(prior, student.id, '2026-09-08');
+  const freshUnit = addCheckpoint(classroom, { title: 'Unit 2' });
+
+  notebookReadinessChampionService.inspectReadinessChampionOnNewCheckpoint(classroom, freshUnit, TEACHER_UID);
+
+  assert.equal(notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(student), 1);
   assert.equal(student.notebookBadgeCounts['readiness-champion'], 1);
 });
 
-test('evaluateReadinessChampionForNotebook: all required checkpoints on time from the start — exactly one badge, not one per checkpoint', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const checkpoints = [addCheckpoint(classroom, { title: 'Unit 1' }), addCheckpoint(classroom, { title: 'Unit 2' }), addCheckpoint(classroom, { title: 'Unit 3' })];
-  checkpoints.forEach((cp) => submit(cp, student.id, '2026-09-08'));
+test('inspectReadinessChampionOnNewCheckpoint: an incomplete prior checkpoint prevents the new award', () => {
+  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
+  addCheckpoint(classroom, { title: 'Unit 1' }); // never submitted
+  const freshUnit = addCheckpoint(classroom, { title: 'Unit 2' });
 
-  // Re-evaluating once per checkpoint submission, exactly as the real UI
-  // does (one call per onQuickMarkSubmitted) — must still land on exactly
-  // ONE active award, never three.
-  checkpoints.forEach(() => notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID));
+  notebookReadinessChampionService.inspectReadinessChampionOnNewCheckpoint(classroom, freshUnit, TEACHER_UID);
 
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1, 'one on-time, all-complete notebook is exactly ONE badge, regardless of checkpoint count');
+  assert.equal(notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(student), 0);
 });
 
-test('evaluateReadinessChampionForNotebook: one late required checkpoint among otherwise-complete ones — no badge', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const onTime = addCheckpoint(classroom, { title: 'Unit 1' });
-  const late = addCheckpoint(classroom, { title: 'Unit 2' });
-  submit(onTime, student.id, '2026-09-08');
-  submit(late, student.id, '2026-09-20');
+test('inspectReadinessChampionOnNewCheckpoint: historical lateness is irrelevant -- a late-but-completed prior checkpoint still qualifies', () => {
+  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
+  const prior = addCheckpoint(classroom, { title: 'Unit 1', dueDate: '2026-09-10' });
+  submit(prior, student.id, '2026-09-25'); // submitted, but well after the due date
+  const freshUnit = addCheckpoint(classroom, { title: 'Unit 2' });
 
-  const result = notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  assert.equal(result, null);
-  assert.equal(student.notebookBadgeCounts?.['readiness-champion'] ?? 0, 0);
+  notebookReadinessChampionService.inspectReadinessChampionOnNewCheckpoint(classroom, freshUnit, TEACHER_UID);
+
+  assert.equal(notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(student), 1, 'submitted late is still submitted -- lateness never blocks the new-model award');
 });
 
-test('evaluateReadinessChampionForNotebook: one pending (never submitted) required checkpoint among otherwise-complete, on-time ones — no badge', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const onTime = addCheckpoint(classroom, { title: 'Unit 1' });
-  addCheckpoint(classroom, { title: 'Unit 2' }); // never touched -- pending
-  submit(onTime, student.id, '2026-09-08');
+test('inspectReadinessChampionOnNewCheckpoint: a student who was absent/late but has since caught up on every prior checkpoint qualifies at the next inspection', () => {
+  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
+  const unit1 = addCheckpoint(classroom, { title: 'Unit 1' }); // nothing submitted yet
+  const unit2 = addCheckpoint(classroom, { title: 'Unit 2' });
+  notebookReadinessChampionService.inspectReadinessChampionOnNewCheckpoint(classroom, unit2, TEACHER_UID);
+  assert.equal(notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(student), 0, 'unit1 was still pending at unit2\'s own inspection -- no badge yet');
 
-  const result = notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  assert.equal(result, null);
-  assert.equal(student.notebookBadgeCounts?.['readiness-champion'] ?? 0, 0);
+  submit(unit1, student.id, '2026-10-01'); // catches up late, well after unit2 already existed
+  submit(unit2, student.id, '2026-10-01');
+  const unit3 = addCheckpoint(classroom, { title: 'Unit 3' }); // the NEXT inspection
+
+  notebookReadinessChampionService.inspectReadinessChampionOnNewCheckpoint(classroom, unit3, TEACHER_UID);
+
+  assert.equal(notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(student), 1, 'now caught up on both prior units, the student qualifies at the next inspection');
 });
 
-test('evaluateReadinessChampionForNotebook: calling it repeatedly once already complete-and-on-time never stacks a second award', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const cp = addCheckpoint(classroom);
-  submit(cp, student.id, '2026-09-08');
+test('inspectReadinessChampionOnNewCheckpoint: two distinct qualifying checkpoint-creation events produce two independent, permanent badges for the same notebook', () => {
+  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
+  const unit1 = addCheckpoint(classroom, { title: 'Unit 1' });
+  submit(unit1, student.id, '2026-09-08');
+  const unit2 = addCheckpoint(classroom, { title: 'Unit 2' });
+  notebookReadinessChampionService.inspectReadinessChampionOnNewCheckpoint(classroom, unit2, TEACHER_UID); // qualifies: unit1 complete
 
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  const second = notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  const third = notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
+  submit(unit2, student.id, '2026-09-15');
+  const unit3 = addCheckpoint(classroom, { title: 'Unit 3' });
+  notebookReadinessChampionService.inspectReadinessChampionOnNewCheckpoint(classroom, unit3, TEACHER_UID); // qualifies again: unit1 + unit2 both complete
 
-  assert.equal(second, null);
-  assert.equal(third, null);
+  assert.equal(notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(student), 2, 'two qualifying inspections -- two permanent badges, never capped at one per notebook');
+  assert.equal(student.notebookBadgeCounts['readiness-champion'], 2);
+});
+
+test('inspectReadinessChampionOnNewCheckpoint: duplicate handling of the SAME creation event (e.g. a retried save) never double-awards', () => {
+  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
+  const prior = addCheckpoint(classroom, { title: 'Unit 1' });
+  submit(prior, student.id, '2026-09-08');
+  const freshUnit = addCheckpoint(classroom, { title: 'Unit 2' });
+
+  notebookReadinessChampionService.inspectReadinessChampionOnNewCheckpoint(classroom, freshUnit, TEACHER_UID);
+  notebookReadinessChampionService.inspectReadinessChampionOnNewCheckpoint(classroom, freshUnit, TEACHER_UID); // same checkpoint object, called again
+  notebookReadinessChampionService.inspectReadinessChampionOnNewCheckpoint(classroom, freshUnit, TEACHER_UID);
+
+  assert.equal(notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(student), 1, 'one inspection event, exactly one permanent entry, regardless of how many times it is (re)handled');
   assert.equal(student.notebookBadgeCounts['readiness-champion'], 1);
 });
 
-test('evaluateReadinessChampionForNotebook: WITHDRAWAL -- walking a submission back to not_submitted after the badge was earned auto-revokes it', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const cp1 = addCheckpoint(classroom, { title: 'Unit 1' });
-  const cp2 = addCheckpoint(classroom, { title: 'Unit 2' });
-  submit(cp1, student.id, '2026-09-08');
-  submit(cp2, student.id, '2026-09-08');
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1, 'sanity check: awarded first');
+test('inspectReadinessChampionOnNewCheckpoint: new, still-incomplete work never reduces a previously earned badge', () => {
+  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
+  const unit1 = addCheckpoint(classroom, { title: 'Unit 1' });
+  submit(unit1, student.id, '2026-09-08');
+  const unit2 = addCheckpoint(classroom, { title: 'Unit 2' });
+  notebookReadinessChampionService.inspectReadinessChampionOnNewCheckpoint(classroom, unit2, TEACHER_UID);
+  assert.equal(notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(student), 1);
 
-  checkpointService.setSubmission(cp1, student.id, { status: 'not_submitted' }); // withdrawal of ONE of the two checkpoints
-  const result = notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
+  // unit2 is left pending (never submitted) -- a THIRD inspection must
+  // never retroactively touch the badge already earned at unit2's own
+  // creation, even though the notebook is now incomplete again.
+  const unit3 = addCheckpoint(classroom, { title: 'Unit 3' });
+  notebookReadinessChampionService.inspectReadinessChampionOnNewCheckpoint(classroom, unit3, TEACHER_UID);
 
-  assert.equal(result, null);
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 0, 'the notebook is no longer complete, so the automatic award must not survive');
+  assert.equal(notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(student), 1, 'no NEW badge (unit2 still pending), but the one already earned is untouched');
+  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1, 'the legacy flat counter is never decremented by this path either');
 });
 
-test('evaluateReadinessChampionForNotebook: a resubmission that turns a previously on-time checkpoint late auto-revokes an already-active award, with no explicit withdrawal step', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const cp = addCheckpoint(classroom);
-  submit(cp, student.id, '2026-09-05');
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1);
+test('inspectReadinessChampionOnNewCheckpoint: a notebook with no prior checkpoints at all (the very first checkpoint ever created) never awards on its own creation', () => {
+  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
+  const firstEver = addCheckpoint(classroom, { title: 'Unit 1' });
 
-  submit(cp, student.id, '2026-09-20'); // corrected to late, status stays 'submitted' throughout
-  const result = notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
+  notebookReadinessChampionService.inspectReadinessChampionOnNewCheckpoint(classroom, firstEver, TEACHER_UID);
 
-  assert.equal(result, null);
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 0);
+  assert.equal(notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(student), 0, 'nothing was "previously assigned" yet -- nothing to be ready for');
 });
 
-test('evaluateReadinessChampionForNotebook: resubmitting after a withdrawal, still on time, earns a fresh award -- the earlier revoked entry never blocks it', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const cp = addCheckpoint(classroom);
-  submit(cp, student.id, '2026-09-05');
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  checkpointService.setSubmission(cp, student.id, { status: 'not_submitted' });
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 0);
+test('inspectReadinessChampionOnNewCheckpoint: an unauthorized acting uid awards nothing, for any student, and never throws', () => {
+  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
+  const prior = addCheckpoint(classroom, { title: 'Unit 1' });
+  submit(prior, student.id, '2026-09-08');
+  const freshUnit = addCheckpoint(classroom, { title: 'Unit 2' });
 
-  submit(cp, student.id, '2026-09-08'); // resubmitted, still on time
-  const count = notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-
-  assert.equal(count, 1);
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1);
+  assert.doesNotThrow(() => notebookReadinessChampionService.inspectReadinessChampionOnNewCheckpoint(classroom, freshUnit, VIEWER_UID));
+  assert.equal(notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(student), 0);
 });
 
-test('evaluateReadinessChampionForNotebook: a teacher OVERRIDE is never auto-revoked by re-evaluation, even when the notebook later becomes incomplete or late', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const cp1 = addCheckpoint(classroom, { title: 'Unit 1' });
-  addCheckpoint(classroom, { title: 'Unit 2' }); // left pending on purpose
-  submit(cp1, student.id, '2026-09-20'); // late
-
-  notebookReadinessChampionService.overrideReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1);
-
-  // Re-evaluating (e.g. the same submission event firing again) must never
-  // touch an override -- only an explicit revoke can undo it.
-  const result = notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  assert.equal(result, null);
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1, 'the override must survive automatic re-evaluation');
-});
-
-// ---------------------------------------------------------------------
-// REVOCATION EVIDENCE POLICY (post-review hardening, 2026-11-06): an
-// active automatic award may only be auto-revoked on CONFIRMED evidence
-// (a pending or genuinely late required checkpoint) -- never merely
-// because eligibility can no longer be ESTABLISHED (a missing or
-// malformed due date). Inability to establish eligibility is not proof
-// of ineligibility.
-// ---------------------------------------------------------------------
-
-test('evaluateReadinessChampionForNotebook: a VALID due date becoming MALFORMED afterward never revokes an already-active automatic award', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const cp = addCheckpoint(classroom, { dueDate: '2026-09-10' });
-  submit(cp, student.id, '2026-09-05');
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1, 'sanity check: awarded first');
-
-  cp.dueDate = '2026-13-40'; // corrupted after the fact -- non-empty, malformed
-  const result = notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-
-  assert.equal(result, null, 'no new award, but also no revocation -- insufficient evidence alone is never revocation grounds');
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1, 'the award must survive a due date becoming unreadable');
-  const reversal = student.history.find((e) => e.kind === 'readiness-champion' && e.delta === -1);
-  assert.equal(reversal, undefined, 'no reversal entry should ever be appended for insufficient evidence alone');
-});
-
-test('evaluateReadinessChampionForNotebook: a MISSING (cleared, not malformed) due date never revokes -- an empty due date can never be late, by construction', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const cp = addCheckpoint(classroom, { dueDate: '2026-09-10' });
-  submit(cp, student.id, '2026-09-05');
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-
-  cp.dueDate = ''; // cleared, not malformed
-  const result = notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-
-  assert.equal(result, null);
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1, 'untouched');
-});
-
-test('evaluateReadinessChampionForNotebook: a CONFIRMED late required checkpoint still correctly revokes an active automatic award (concrete violation, not mere insufficient evidence)', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const cp = addCheckpoint(classroom, { dueDate: '2026-09-10' });
-  submit(cp, student.id, '2026-09-05');
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-
-  submit(cp, student.id, '2026-09-20'); // confirmed late -- both dates well-formed
-  const result = notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-
-  assert.equal(result, null);
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 0, 'a confirmed violation still correctly revokes');
-  const reversal = student.history.find((e) => e.kind === 'readiness-champion' && e.delta === -1);
-  assert.equal(reversal.reason, 'notebook_late');
-});
-
-test('evaluateReadinessChampionForNotebook: a CONFIRMED incomplete notebook (withdrawn required checkpoint) still correctly revokes an active automatic award', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const cp = addCheckpoint(classroom);
-  submit(cp, student.id, '2026-09-05');
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-
-  checkpointService.setSubmission(cp, student.id, { status: 'not_submitted' }); // confirmed pending again
-  const result = notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-
-  assert.equal(result, null);
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 0);
-  const reversal = student.history.find((e) => e.kind === 'readiness-champion' && e.delta === -1);
-  assert.equal(reversal.reason, 'notebook_incomplete');
-});
-
-test('evaluateReadinessChampionForNotebook: MIXED CASE -- a confirmed pending checkpoint still correctly revokes even while a SEPARATE required checkpoint in the same notebook has insufficient evidence (malformed due date)', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const confirmedPendingCp = addCheckpoint(classroom, { title: 'Unit 1' }); // never submitted -- confirmed violation
-  const insufficientEvidenceCp = addCheckpoint(classroom, { title: 'Unit 2', dueDate: '2026-13-40' }); // malformed, unrelated to the pending one
-  submit(insufficientEvidenceCp, student.id, '2026-09-05');
-
-  // Can never actually reach an active award with the pending checkpoint
-  // present (isCompleteAndOnTime requires pendingCount === 0), so
-  // construct the "was already awarded, then this state arose" scenario
-  // directly -- exactly the way a real resubmission-to-not-submitted
-  // event would leave things, without relying on a prior evaluate() call
-  // that could never have fired here.
-  const workItemRef = notebookReadinessChampionService.buildNotebookReadinessWorkItemRef({ subjectId: SUBJECT_ID, notebookTypeId: NOTEBOOK_TYPE_ID });
-  student.history = [{ id: 'h1', kind: 'readiness-champion', label: 'Readiness Champion', delta: 1, source: 'automatic', workItemRef, recordedAt: '2026-09-01T00:00:00.000Z' }];
-  student.notebookBadgeCounts = { 'readiness-champion': 1 };
-
-  const completenessBefore = notebookReadinessChampionService.computeNotebookCompleteness(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student.id);
-  assert.equal(completenessBefore.pendingCount, 1, 'sanity check: the confirmed violation is genuinely present');
-  assert.equal(completenessBefore.hasInsufficientEvidence, true, 'sanity check: insufficient evidence is ALSO genuinely present on a different checkpoint');
-
-  const result = notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-
-  assert.equal(result, null);
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 0, 'the confirmed pending violation revokes the award regardless of the co-occurring insufficient evidence elsewhere in the same notebook');
-  const reversal = student.history.find((e) => e.kind === 'readiness-champion' && e.delta === -1);
-  assert.equal(reversal.reason, 'notebook_incomplete', 'the confirmed violation, never the insufficient evidence, is reported as the reason');
-  assert.equal(checkpointService.getRecordForStudent(confirmedPendingCp, student.id), null, 'sanity check: this checkpoint was genuinely never submitted at all');
-});
-
-test('evaluateReadinessChampionForNotebook: RESTORATION -- correcting a malformed due date back to a valid one, with the notebook genuinely complete-and-on-time, awards it on the very next re-evaluation', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const cp = addCheckpoint(classroom, { dueDate: '2026-09-10' });
-  submit(cp, student.id, '2026-09-05');
-
-  cp.dueDate = '2026-13-40'; // malformed BEFORE the first evaluation ever runs
-  const firstAttempt = notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  assert.equal(firstAttempt, null, 'insufficient evidence never auto-awards either -- never guessed as eligible');
-  assert.equal(student.notebookBadgeCounts?.['readiness-champion'] ?? 0, 0);
-
-  cp.dueDate = '2026-09-10'; // corrected back to a real, well-formed due date
-  const afterRestoration = notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-
-  assert.equal(afterRestoration, 1, 'no separate "restore" action needed -- the very next re-evaluation awards it correctly once the evidence is re-establishable');
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1);
-});
-
-test('evaluateReadinessChampionForNotebook: REPEATED RE-EVALUATION while evidence remains insufficient never produces a duplicate award or a spurious reversal', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const cp = addCheckpoint(classroom, { dueDate: '2026-13-40' }); // malformed from the start
-  submit(cp, student.id, '2026-09-05');
-
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-
-  assert.equal(student.notebookBadgeCounts?.['readiness-champion'] ?? 0, 0);
-  assert.equal(student.history.filter((e) => e.kind === 'readiness-champion').length, 0, 'repeated re-evaluation in an unresolvable state is a pure no-op every time, never appending anything');
-});
-
-test('evaluateReadinessChampionForNotebook: an unauthorized acting uid silently skips the award -- never throws, never disrupts the submission it reacted to', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const cp = addCheckpoint(classroom);
-  submit(cp, student.id, '2026-09-05');
-
-  let threw = false;
-  let result;
-  try {
-    result = notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, VIEWER_UID);
-  } catch {
-    threw = true;
-  }
-  assert.equal(threw, false);
-  assert.equal(result, null);
-  assert.equal(student.notebookBadgeCounts?.['readiness-champion'] ?? 0, 0);
-});
-
-test('evaluateReadinessChampionForNotebook: MULTIPLE SUBJECT NOTEBOOKS -- completing one never awards or blocks the other; each tracks its own independent badge instance', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const mathCp = addCheckpoint(classroom, { subjectId: 'math', notebookTypeId: 'class-work' });
-  const scienceCp1 = addCheckpoint(classroom, { subjectId: 'science', notebookTypeId: 'class-work' });
-  addCheckpoint(classroom, { subjectId: 'science', notebookTypeId: 'class-work', title: 'Unit 2' }); // left pending
-
-  submit(mathCp, student.id, '2026-09-08');
-  submit(scienceCp1, student.id, '2026-09-08');
-
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, 'math', 'class-work', student, TEACHER_UID);
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, 'science', 'class-work', student, TEACHER_UID);
-
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1, 'math alone is complete and on time -- science is still pending one checkpoint');
-
-  // Now complete science too -- the count must become 2, a genuinely
-  // SECOND, independent award, not a no-op blocked by math's own active
-  // entry.
-  const secondScienceCheckpoint = checkpointService.listCheckpointsForNotebook(classroom, 'science', 'class-work')[1];
-  submit(secondScienceCheckpoint, student.id, '2026-09-09');
-  const count = notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, 'science', 'class-work', student, TEACHER_UID);
-
-  assert.equal(count, 2, 'awardNotebookBadge() returns the NEW total aggregate count (already 1 from math, now incremented to 2 for science)');
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 2, 'both notebooks are now independently active -- math\'s own award is untouched by science completing separately');
-});
-
-test('evaluateReadinessChampionForNotebook: performs zero writes when nothing applies -- an untouched notebook leaves the classroom byte-for-byte unchanged', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  addCheckpoint(classroom);
-  const before = JSON.stringify(classroom);
-
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-
-  assert.equal(JSON.stringify(classroom), before);
-});
-
-// ---------------------------------------------------------------------
-// overrideReadinessChampionForNotebook / revokeReadinessChampionForNotebook
-// -- explicit teacher actions.
-// ---------------------------------------------------------------------
-
-test('overrideReadinessChampionForNotebook: throws for an unauthorized uid', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  addCheckpoint(classroom);
-  assert.throws(
-    () => notebookReadinessChampionService.overrideReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, VIEWER_UID),
-    /Not authorized/
-  );
-});
-
-test('overrideReadinessChampionForNotebook: throws if an award is already active (from any source) -- never stacks a second one', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const cp = addCheckpoint(classroom);
-  submit(cp, student.id, '2026-09-05');
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-
-  assert.throws(
-    () => notebookReadinessChampionService.overrideReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID),
-    /already been awarded/
-  );
-});
-
-test('overrideReadinessChampionForNotebook: awards despite a pending/late notebook the automatic rule would never grant', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const cp1 = addCheckpoint(classroom, { title: 'Unit 1' });
-  addCheckpoint(classroom, { title: 'Unit 2' }); // pending
-  submit(cp1, student.id, '2026-09-20'); // late
-
-  assert.equal(notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID), null);
-
-  const count = notebookReadinessChampionService.overrideReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  assert.equal(count, 1);
-  assert.ok(notebookReadinessChampionService.getActiveReadinessSourcesForNotebook(student, notebookReadinessChampionService.buildNotebookReadinessWorkItemRef({ subjectId: SUBJECT_ID, notebookTypeId: NOTEBOOK_TYPE_ID })).includes('override'));
-});
-
-test('revokeReadinessChampionForNotebook: throws for an unauthorized uid', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const cp = addCheckpoint(classroom);
-  submit(cp, student.id, '2026-09-05');
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-
-  assert.throws(
-    () => notebookReadinessChampionService.revokeReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, VIEWER_UID),
-    /Not authorized/
-  );
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1, 'untouched');
-});
-
-test('revokeReadinessChampionForNotebook: throws when nothing is active to revoke', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  addCheckpoint(classroom);
-  assert.throws(
-    () => notebookReadinessChampionService.revokeReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID),
-    /No active Readiness Champion award/
-  );
-});
-
-test('revokeReadinessChampionForNotebook: revoking an automatic award decrements the count exactly once and preserves append-only history', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const cp = addCheckpoint(classroom);
-  submit(cp, student.id, '2026-09-05');
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  const historyLengthBefore = student.history.length;
-
-  const count = notebookReadinessChampionService.revokeReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, OWNER_UID);
-
-  assert.equal(count, 0);
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 0);
-  // Two entries are appended, never fewer: the readiness-champion
-  // ledger's own reversal entry (appendReadinessEntry(), what this
-  // file's duplicate-prevention net-sum actually reads) PLUS
-  // notebookBadgeService.revokeNotebookBadge()'s own generic
-  // 'notebook-badge-revoked' Participation History entry (the same
-  // audit trail every notebook badge revocation leaves) -- never fewer
-  // than that, and the original award entry is never removed or edited.
-  assert.equal(student.history.length, historyLengthBefore + 2, 'both the readiness-champion ledger entry and notebookBadgeService\'s own generic audit entry are appended; nothing is removed');
-  const reversal = student.history.find((e) => e.kind === 'readiness-champion' && e.delta === -1);
-  assert.ok(reversal, 'the readiness-champion ledger must carry its own -1 reversal entry');
-  assert.equal(reversal.reason, 'teacher_revoked');
-  assert.equal(reversal.revokedBy, OWNER_UID);
-  const original = student.history.find((e) => e.kind === 'readiness-champion' && e.delta === 1);
-  assert.ok(original, 'the original +1 award entry is preserved, never removed');
-});
-
-test('revokeReadinessChampionForNotebook: after revoking, overriding the SAME notebook is not blocked by the earlier revoked entry', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const cp = addCheckpoint(classroom);
-  submit(cp, student.id, '2026-09-05');
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  notebookReadinessChampionService.revokeReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-
-  const count = notebookReadinessChampionService.overrideReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  assert.equal(count, 1);
-});
-
-// ---------------------------------------------------------------------
-// COUNTER INTEGRITY under MULTIPLE simultaneously-active pools
-// (post-review hardening, 2026-11-06). Today's reachable application
-// code paths never actually produce more than one net-positive pool at
-// once (every award function checks isReadinessChampionActiveForNotebook()
-// -- any pool -- before awarding), so this state is deliberately
-// constructed directly on `student.history`/`notebookBadgeCounts` below,
-// exactly as a future backfill-applying migration step could one day
-// produce it, rather than waiting for a real code path to exist first.
-// ---------------------------------------------------------------------
-
-test('revokeReadinessChampionForNotebook: with TWO simultaneously-active pools (automatic + override), one call revokes BOTH and decrements the counter by exactly two, never one', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const workItemRef = notebookReadinessChampionService.buildNotebookReadinessWorkItemRef({ subjectId: SUBJECT_ID, notebookTypeId: NOTEBOOK_TYPE_ID });
-  // Two independent award entries, as if two separate earlier calls each
-  // incremented the aggregate counter once -- deliberately bypassing the
-  // normal single-award guard to exercise the multi-pool case directly.
-  student.history = [
-    { id: 'h1', kind: 'readiness-champion', label: 'Readiness Champion', delta: 1, source: 'automatic', workItemRef, recordedAt: '2026-09-05T00:00:00.000Z' },
-    { id: 'h2', kind: 'readiness-champion', label: 'Readiness Champion (override)', delta: 1, source: 'override', workItemRef, recordedAt: '2026-09-06T00:00:00.000Z' },
-  ];
-  student.notebookBadgeCounts = { 'readiness-champion': 2 }; // each of the two awards above had incremented this once
-  assert.deepEqual(
-    notebookReadinessChampionService.getActiveReadinessSourcesForNotebook(student, workItemRef).sort(),
-    ['automatic', 'override'],
-    'sanity check: both pools are genuinely active before revoking'
-  );
-
-  const count = notebookReadinessChampionService.revokeReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-
-  assert.equal(count, 0, 'the counter must be decremented once PER active pool (two), landing at 0, never left at 1');
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 0);
-  assert.deepEqual(notebookReadinessChampionService.getActiveReadinessSourcesForNotebook(student, workItemRef), [], 'both pools are now net-zero');
-
-  const reversals = student.history.filter((e) => e.kind === 'readiness-champion' && e.delta === -1);
-  assert.equal(reversals.length, 2, 'each pool gets its own, individually-labeled, append-only reversal entry -- never collapsed into one');
-  assert.deepEqual(reversals.map((r) => r.source).sort(), ['automatic', 'override']);
-  reversals.forEach((r) => assert.equal(r.reason, 'teacher_revoked'));
-
-  // The two original +1 award entries are still there, untouched --
-  // append-only, never deleted or edited.
-  const originals = student.history.filter((e) => e.kind === 'readiness-champion' && e.delta === 1);
-  assert.equal(originals.length, 2);
-});
-
-test('revokeReadinessChampionForNotebook: with two active pools, calling it a SECOND time throws (idempotent-safe, never double-decrements below zero)', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const workItemRef = notebookReadinessChampionService.buildNotebookReadinessWorkItemRef({ subjectId: SUBJECT_ID, notebookTypeId: NOTEBOOK_TYPE_ID });
-  student.history = [
-    { id: 'h1', kind: 'readiness-champion', label: 'Readiness Champion', delta: 1, source: 'automatic', workItemRef, recordedAt: '2026-09-05T00:00:00.000Z' },
-    { id: 'h2', kind: 'readiness-champion', label: 'Readiness Champion (override)', delta: 1, source: 'override', workItemRef, recordedAt: '2026-09-06T00:00:00.000Z' },
-  ];
-  student.notebookBadgeCounts = { 'readiness-champion': 2 };
-
-  notebookReadinessChampionService.revokeReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 0);
-
-  assert.throws(
-    () => notebookReadinessChampionService.revokeReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID),
-    /No active Readiness Champion award/,
-    'nothing left active the second time -- throws rather than silently no-opping or decrementing again'
-  );
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 0, 'never driven negative or decremented a second time');
-});
-
-test('evaluateReadinessChampionForNotebook: automatic re-evaluation with two active pools (automatic + override) only ever auto-revokes the AUTOMATIC one, never the override, even via the multi-pool path', () => {
-  const { classroom, student } = buildClassroomWithStudent();
-  const cp1 = addCheckpoint(classroom, { title: 'Unit 1' });
-  addCheckpoint(classroom, { title: 'Unit 2' }); // left pending -- notebook is incomplete
-  submit(cp1, student.id, '2026-09-05');
-  const workItemRef = notebookReadinessChampionService.buildNotebookReadinessWorkItemRef({ subjectId: SUBJECT_ID, notebookTypeId: NOTEBOOK_TYPE_ID });
-  student.history = [
-    { id: 'h1', kind: 'readiness-champion', label: 'Readiness Champion', delta: 1, source: 'automatic', workItemRef, recordedAt: '2026-09-05T00:00:00.000Z' },
-    { id: 'h2', kind: 'readiness-champion', label: 'Readiness Champion (override)', delta: 1, source: 'override', workItemRef, recordedAt: '2026-09-06T00:00:00.000Z' },
-  ];
-  student.notebookBadgeCounts = { 'readiness-champion': 2 };
-
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1, 'only the automatic pool is revoked (counter 2 -> 1); the override pool is untouched');
-  assert.deepEqual(
-    notebookReadinessChampionService.getActiveReadinessSourcesForNotebook(student, workItemRef),
-    ['override'],
-    'override survives automatic re-evaluation even in the multi-pool case'
-  );
-});
-
-// ---------------------------------------------------------------------
-// reevaluateReadinessChampionForAllStudents -- structural changes to the
-// notebook itself (checkpoint added/removed/due-date edited).
-// ---------------------------------------------------------------------
-
-test('reevaluateReadinessChampionForAllStudents: re-checks every student on the roster against one notebook', () => {
+test('inspectReadinessChampionOnNewCheckpoint: multiple students on the roster are each evaluated independently against the same inspection event', () => {
   const { classroom } = buildClassroomWithStudent();
-  const studentA = createStudent({ id: 'a', name: 'Anjali' });
-  const studentB = createStudent({ id: 'b', name: 'Bhavesh' });
-  classroom.teams = [createTeam({ id: 'team1', name: 'Team A', students: [studentA, studentB] })];
+  const caughtUp = createStudent({ id: 'a', name: 'Anjali' });
+  const stillPending = createStudent({ id: 'b', name: 'Bhavesh' });
+  classroom.teams = [createTeam({ id: 'team1', name: 'Team A', students: [caughtUp, stillPending] })];
 
-  const cp = addCheckpoint(classroom);
-  submit(cp, studentA.id, '2026-09-08'); // on time
-  submit(cp, studentB.id, '2026-09-20'); // late
+  const prior = addCheckpoint(classroom, { title: 'Unit 1' });
+  submit(prior, caughtUp.id, '2026-09-08');
+  // stillPending never submits unit 1
+  const freshUnit = addCheckpoint(classroom, { title: 'Unit 2' });
 
-  notebookReadinessChampionService.reevaluateReadinessChampionForAllStudents(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, TEACHER_UID);
+  notebookReadinessChampionService.inspectReadinessChampionOnNewCheckpoint(classroom, freshUnit, TEACHER_UID);
 
-  assert.equal(studentA.notebookBadgeCounts['readiness-champion'], 1);
-  assert.equal(studentB.notebookBadgeCounts?.['readiness-champion'] ?? 0, 0);
+  assert.equal(notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(caughtUp), 1);
+  assert.equal(notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(stillPending), 0);
 });
 
-test('reevaluateReadinessChampionForAllStudents: a newly-added required checkpoint can turn an already-awarded notebook incomplete again for every affected student', () => {
+test('inspectReadinessChampionOnNewCheckpoint: no submission, review, withdrawal, edit, or deletion event in this service awards or revokes anything -- only this function does', () => {
   const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
-  const cp1 = addCheckpoint(classroom, { title: 'Unit 1' });
-  submit(cp1, student.id, '2026-09-08');
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1);
+  const prior = addCheckpoint(classroom, { title: 'Unit 1' });
+  submit(prior, student.id, '2026-09-08');
+  const freshUnit = addCheckpoint(classroom, { title: 'Unit 2' });
+  notebookReadinessChampionService.inspectReadinessChampionOnNewCheckpoint(classroom, freshUnit, TEACHER_UID);
+  assert.equal(notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(student), 1);
 
-  addCheckpoint(classroom, { title: 'Unit 2' }); // a teacher adds a new required checkpoint -- nobody has submitted it yet
-  notebookReadinessChampionService.reevaluateReadinessChampionForAllStudents(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, TEACHER_UID);
+  // Withdraw the already-submitted prior checkpoint, submit/resubmit
+  // freshUnit, and delete freshUnit entirely -- none of this is routed
+  // through any readiness function at all (this service exposes no
+  // "on submission" or "on delete" hook for the new model), so the
+  // permanent badge is structurally untouched by construction.
+  checkpointService.setSubmission(prior, student.id, { status: 'not_submitted', submittedDate: '' });
+  submit(freshUnit, student.id, '2026-09-09');
+  checkpointService.deleteCheckpoint(classroom, freshUnit.id);
 
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 0, 'the notebook is no longer complete now that a second required checkpoint exists');
-});
-
-test('reevaluateReadinessChampionForAllStudents: deleting the one remaining pending checkpoint can newly complete the notebook', () => {
-  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
-  const cp1 = addCheckpoint(classroom, { title: 'Unit 1' });
-  const cp2 = addCheckpoint(classroom, { title: 'Unit 2' });
-  submit(cp1, student.id, '2026-09-08');
-  // cp2 left pending
-
-  checkpointService.deleteCheckpoint(classroom, cp2.id);
-  notebookReadinessChampionService.reevaluateReadinessChampionForAllStudents(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, TEACHER_UID);
-
-  assert.equal(student.notebookBadgeCounts['readiness-champion'], 1, 'with the pending checkpoint gone, the one submitted on time is now the whole notebook');
+  assert.equal(notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(student), 1, 'still exactly 1 -- nothing in this file reacts to any of the above');
 });
 
 // ---------------------------------------------------------------------
-// countActiveReadinessChampionNotebooksForStudent (production display-
-// discrepancy fix, 2026-11-07) -- the real, ledger-derived source
-// ui/views/NotebookCheckpointsView.js's own row-level badge chip must
-// use instead of the legacy, disconnected student.notebookBadgeCounts
-// aggregate. Exercised here via the REAL live award/revoke functions,
-// never synthetic history, so these tests also prove the counting
-// function agrees with whatever the live lifecycle actually produces.
+// countReadinessChampionAchievementsForStudent / listReadinessChampionAchievementsForNotebook
 // ---------------------------------------------------------------------
 
-test('countActiveReadinessChampionNotebooksForStudent: a student with no Readiness Champion history at all counts 0, regardless of a disconnected legacy counter', () => {
+test('countReadinessChampionAchievementsForStudent: a student with no history at all counts 0, even with a disconnected legacy counter', () => {
   const { student } = buildClassroomWithStudent();
-  student.notebookBadgeCounts = { 'readiness-champion': 1 }; // simulates a stale, orphaned legacy count
-
-  assert.equal(notebookReadinessChampionService.countActiveReadinessChampionNotebooksForStudent(student), 0);
+  student.notebookBadgeCounts = { 'readiness-champion': 3 }; // simulates a stale, unrelated legacy count
+  assert.equal(notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(student), 0);
 });
 
-test('countActiveReadinessChampionNotebooksForStudent: one genuinely earned notebook counts 1', () => {
+test('countReadinessChampionAchievementsForStudent: never counts OLD-shape legacy entries, only new per-inspection entries', () => {
+  const { student } = buildClassroomWithStudent();
+  const legacyRef = notebookReadinessChampionService.buildNotebookReadinessWorkItemRef({ subjectId: SUBJECT_ID, notebookTypeId: NOTEBOOK_TYPE_ID });
+  student.history = [{ id: 'legacy-1', kind: 'readiness-champion', label: 'Readiness Champion', delta: 1, source: 'automatic', workItemRef: legacyRef, recordedAt: '2026-10-01T00:00:00.000Z' }];
+
+  assert.equal(notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(student), 0, 'a legacy, old-shape entry is never counted as a new achievement');
+});
+
+test('countReadinessChampionAchievementsForStudent: can be scoped to one notebook', () => {
   const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
-  const cp1 = addCheckpoint(classroom, { title: 'Unit 1' });
-  submit(cp1, student.id, '2026-09-08');
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
+  const priorA = addCheckpoint(classroom, { title: 'A1', subjectId: 'subj-A', notebookTypeId: 'type-A' });
+  submit(priorA, student.id, '2026-09-08');
+  const freshA = addCheckpoint(classroom, { title: 'A2', subjectId: 'subj-A', notebookTypeId: 'type-A' });
+  notebookReadinessChampionService.inspectReadinessChampionOnNewCheckpoint(classroom, freshA, TEACHER_UID);
+
+  const priorB = addCheckpoint(classroom, { title: 'B1', subjectId: 'subj-B', notebookTypeId: 'type-B' });
+  submit(priorB, student.id, '2026-09-08');
+  const freshB = addCheckpoint(classroom, { title: 'B2', subjectId: 'subj-B', notebookTypeId: 'type-B' });
+  notebookReadinessChampionService.inspectReadinessChampionOnNewCheckpoint(classroom, freshB, TEACHER_UID);
+
+  assert.equal(notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(student), 2, 'unscoped -- both notebooks');
+  assert.equal(notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(student, { subjectId: 'subj-A', notebookTypeId: 'type-A' }), 1);
+  assert.equal(notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(student, { subjectId: 'subj-B', notebookTypeId: 'type-B' }), 1);
+});
+
+test('listReadinessChampionAchievementsForNotebook: lists every inspection-event entry for one notebook, each carrying its own triggering checkpointId', () => {
+  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
+  const unit1 = addCheckpoint(classroom, { title: 'Unit 1' });
+  submit(unit1, student.id, '2026-09-08');
+  const unit2 = addCheckpoint(classroom, { title: 'Unit 2' });
+  notebookReadinessChampionService.inspectReadinessChampionOnNewCheckpoint(classroom, unit2, TEACHER_UID);
+  submit(unit2, student.id, '2026-09-15');
+  const unit3 = addCheckpoint(classroom, { title: 'Unit 3' });
+  notebookReadinessChampionService.inspectReadinessChampionOnNewCheckpoint(classroom, unit3, TEACHER_UID);
+
+  const achievements = notebookReadinessChampionService.listReadinessChampionAchievementsForNotebook(student, SUBJECT_ID, NOTEBOOK_TYPE_ID);
+  assert.equal(achievements.length, 2);
+  assert.deepEqual(
+    achievements.map((a) => a.workItemRef.checkpointId).sort(),
+    [unit2.id, unit3.id].sort()
+  );
+});
+
+// ---------------------------------------------------------------------
+// wouldQualifyAtNextInspection — read-only preview, awards nothing.
+// ---------------------------------------------------------------------
+
+test('wouldQualifyAtNextInspection: true once every currently-required checkpoint is complete, false otherwise, and never writes anything', () => {
+  const { classroom, student } = buildClassroomWithStudent();
+  const cp = addCheckpoint(classroom, { title: 'Unit 1' });
+  assert.equal(notebookReadinessChampionService.wouldQualifyAtNextInspection(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student.id), false);
+
+  submit(cp, student.id, '2026-09-25'); // late, but lateness is irrelevant
+  assert.equal(notebookReadinessChampionService.wouldQualifyAtNextInspection(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student.id), true);
+  assert.equal(student.history.length, 0, 'a read-only preview -- never appends anything');
+});
+
+// ---------------------------------------------------------------------
+// Legacy (old-model) read helpers — exercised here directly against
+// OLD-shape history entries (never via the new inspection path), to
+// confirm the "Previous system" display helpers still read pre-
+// redesign data correctly and in complete isolation from the new
+// per-inspection ledger. These entries are never produced by any live
+// code path any more; they simulate data written before this redesign.
+// ---------------------------------------------------------------------
+
+test('countActiveReadinessChampionNotebooksForStudent / listLegacyReadinessChampionEntriesForNotebook: read OLD-shape history faithfully, never touching the new achievement count', () => {
+  const { student } = buildClassroomWithStudent();
+  const legacyRef = notebookReadinessChampionService.buildNotebookReadinessWorkItemRef({ subjectId: SUBJECT_ID, notebookTypeId: NOTEBOOK_TYPE_ID });
+  student.history = [
+    { id: 'legacy-1', kind: 'readiness-champion', label: 'Readiness Champion', delta: 1, source: 'automatic', workItemRef: legacyRef, recordedAt: '2026-09-01T00:00:00.000Z' },
+    { id: 'legacy-2', kind: 'readiness-champion', label: 'Readiness Champion Reversed', delta: -1, source: 'automatic', workItemRef: legacyRef, recordedAt: '2026-09-15T00:00:00.000Z', reason: 'notebook_incomplete' },
+  ];
+
+  assert.equal(notebookReadinessChampionService.countActiveReadinessChampionNotebooksForStudent(student), 0, 'net-zero under the old model -- the award and its own reversal cancel out');
+  assert.equal(notebookReadinessChampionService.listLegacyReadinessChampionEntriesForNotebook(student, SUBJECT_ID, NOTEBOOK_TYPE_ID).length, 2, 'both historical records remain visible, undeduplicated, exactly as written');
+  assert.equal(notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(student), 0, 'never merged into the new per-inspection total');
+});
+
+test('countActiveReadinessChampionNotebooksForStudent: a still-net-active legacy award (never reversed) counts 1 under the old model\'s own terms', () => {
+  const { student } = buildClassroomWithStudent();
+  const legacyRef = notebookReadinessChampionService.buildNotebookReadinessWorkItemRef({ subjectId: SUBJECT_ID, notebookTypeId: NOTEBOOK_TYPE_ID });
+  student.history = [{ id: 'legacy-1', kind: 'readiness-champion', label: 'Readiness Champion', delta: 1, source: 'automatic', workItemRef: legacyRef, recordedAt: '2026-09-01T00:00:00.000Z' }];
 
   assert.equal(notebookReadinessChampionService.countActiveReadinessChampionNotebooksForStudent(student), 1);
+  assert.equal(notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(student), 0, 'still never merged into the new total, even though it is net-active under the old model');
 });
 
-test('countActiveReadinessChampionNotebooksForStudent: two independently-earned subject notebooks count 2', () => {
-  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
-  const cpA = addCheckpoint(classroom, { title: 'Unit 1', subjectId: 'subj-A', notebookTypeId: 'type-A' });
-  const cpB = addCheckpoint(classroom, { title: 'Unit 1', subjectId: 'subj-B', notebookTypeId: 'type-B' });
-  submit(cpA, student.id, '2026-09-08');
-  submit(cpB, student.id, '2026-09-08');
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, 'subj-A', 'type-A', student, TEACHER_UID);
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, 'subj-B', 'type-B', student, TEACHER_UID);
-
-  assert.equal(notebookReadinessChampionService.countActiveReadinessChampionNotebooksForStudent(student), 2);
-});
-
-test('countActiveReadinessChampionNotebooksForStudent: repeated evaluation of the same already-awarded notebook never inflates the count past 1', () => {
-  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
-  const cp1 = addCheckpoint(classroom, { title: 'Unit 1' });
-  submit(cp1, student.id, '2026-09-08');
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-
-  assert.equal(notebookReadinessChampionService.countActiveReadinessChampionNotebooksForStudent(student), 1);
-});
-
-test('countActiveReadinessChampionNotebooksForStudent: a notebook whose award was later revoked (confirmed violation) drops back out of the count', () => {
-  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
-  const cp1 = addCheckpoint(classroom, { title: 'Unit 1' });
-  submit(cp1, student.id, '2026-09-08');
-  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
-  assert.equal(notebookReadinessChampionService.countActiveReadinessChampionNotebooksForStudent(student), 1);
-
-  addCheckpoint(classroom, { title: 'Unit 2' }); // a new required checkpoint, left pending -- confirmed violation
-  notebookReadinessChampionService.reevaluateReadinessChampionForAllStudents(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, TEACHER_UID);
-
-  assert.equal(notebookReadinessChampionService.countActiveReadinessChampionNotebooksForStudent(student), 0);
-});
-
-test('countActiveReadinessChampionNotebooksForStudent: an incomplete notebook (never evaluated, no history at all) is never counted', () => {
-  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
-  addCheckpoint(classroom, { title: 'Unit 1' }); // left pending, never submitted, never evaluated
-
-  assert.equal(notebookReadinessChampionService.countActiveReadinessChampionNotebooksForStudent(student), 0);
-});
+// ---------------------------------------------------------------------
+// Legacy live lifecycle (evaluateReadinessChampionForNotebook / override
+// / revoke / reevaluateReadinessChampionForAllStudents) — retained in
+// services/notebookReadinessChampionService.js ONLY so the archived
+// services/notebookReadinessChampionAuditService.js and
+// services/legacyReadinessChampionMigrationService.js, and their own
+// test fixtures, keep working unmodified; see that file's own "LEGACY
+// (old model) live lifecycle" section header. No longer reachable from
+// any UI (ui/views/NotebookCheckpointsView.js's own call sites are
+// gone) and out of scope for this redesign's own coverage -- their
+// behavior is unchanged from before and remains exercised indirectly by
+// tests/services/notebookReadinessChampionAuditService.test.js and
+// tests/services/legacyReadinessChampionMigrationService.test.js.
+// ---------------------------------------------------------------------
