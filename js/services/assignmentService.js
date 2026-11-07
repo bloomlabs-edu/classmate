@@ -10,10 +10,16 @@
  * subjectId/notebookTypeId — and its own generalized ratings tracking
  * instead of Checkpoint's hardcoded submission/review).
  *
- * Deliberately has NO scoreboard-point integration — nothing in the
- * Assignments brief asked for automatic scoring, and inventing one
- * here would be exactly the kind of unrequested parallel feature this
- * task explicitly warns against.
+ * `ratings`/`teacherNote` above have NO scoreboard-point integration of
+ * their own — nothing in the original Assignments brief asked for
+ * automatic scoring from them. The one exception is `completionStatus`
+ * (Workstream 4C, see setCompletionStatus()/getCompletionStatus() below
+ * and models/StudentAssignmentRecord.js's own header comment for why
+ * it's a third, independent axis) — its Done/Not Done toggle DOES drive
+ * an automatic Completion Star, via services/recognitionService.js's
+ * own recordAssignmentCompletion(), which wraps setCompletionStatus()
+ * here exactly like every other wrapper in that file wraps its own
+ * underlying service call.
  */
 
 import { createAssignment } from '../models/Assignment.js';
@@ -21,6 +27,27 @@ import { createStudentAssignmentRecord } from '../models/StudentAssignmentRecord
 import * as assignmentConfigService from './assignmentConfigService.js';
 import { generateWorksheetCode } from './worksheetCodeService.js';
 import { getCurrentIsoDate } from '../utils/dateHelpers.js';
+
+/**
+ * Same structural-limitation shape as checkpointService.js's own
+ * CHECKPOINT_DELETION_STRUCTURAL_LIMITATION, for the same reason:
+ * deleteAssignment() below is a hard, in-place array filter — no
+ * tombstone, no `deletedAt`, no trace left anywhere else. An Assignment
+ * that no longer appears in `classroom.assignments` is indistinguishable
+ * from one that never existed, so services/recognitionService.js's own
+ * Completion Star audit (auditCompletionStarsForClassroom()) can never
+ * treat "this assignment can't be found" as proof that an active
+ * assignment-completion star is wrong — it is reported as
+ * structurally unverifiable, never as a concrete rule violation, and is
+ * never, on its own, grounds to revoke an existing award.
+ */
+export const ASSIGNMENT_DELETION_STRUCTURAL_LIMITATION =
+  'Assignment deletion is undetectable in this data model: deleteAssignment() removes an ' +
+  'assignment and every student record attached to it with no tombstone, no deletedAt flag, ' +
+  'and no trace left anywhere else. This audit cannot confirm whether a deleted assignment\'s ' +
+  'own completion status was still genuinely "done" at the time it was removed. This is a ' +
+  'structural limitation of the entire historical audit, not evidence that any individual ' +
+  'award below is incorrect, and is never, on its own, grounds to revoke an existing award.';
 
 export function listAssignmentsForCategory(classroom, categoryId) {
   return (classroom.assignments || [])
@@ -140,6 +167,35 @@ export function setTeacherNote(assignment, studentId, note) {
   const record = findOrCreateRecord(assignment, studentId);
   record.teacherNote = note;
   record.updatedAt = getCurrentIsoDate();
+}
+
+/**
+ * Assignment-level completion — a THIRD, independent tracking axis
+ * from `ratings` above and from AssignmentCheckpoint's own submission/
+ * review (see models/StudentAssignmentRecord.js's own `completionStatus`
+ * field comment). `status` is 'done' | 'not_done'; passing `null`
+ * clears it back to "Not Recorded." The one place this field is ever
+ * written, mirroring setRating()'s own lazy-create-on-real-action
+ * convention exactly.
+ */
+export function setCompletionStatus(assignment, studentId, status) {
+  const record = findOrCreateRecord(assignment, studentId);
+  record.completionStatus = status;
+  record.updatedAt = getCurrentIsoDate();
+  return record;
+}
+
+/** 'done' | 'not_done' | 'not_recorded' — the sparse "no record, or no explicit status yet, means Not Recorded" read, mirroring checkpointService.js's own getRecordForStudent() null-means-nothing-happened convention. */
+export function getCompletionStatus(assignment, studentId) {
+  const record = getRecordForStudent(assignment, studentId);
+  return record?.completionStatus || 'not_recorded';
+}
+
+/** Classroom-wide Done/Not Done/Not Recorded counts for one assignment — `roster` is required (unlike getAssignmentSummary()'s optional one) since "Not Recorded" can only be known by comparing against who exists at all, exactly like checkpointService.js's own notSubmittedCount derivation. */
+export function getAssignmentCompletionSummary(assignment, roster) {
+  const doneCount = roster.filter((student) => getCompletionStatus(assignment, student.id) === 'done').length;
+  const notDoneCount = roster.filter((student) => getCompletionStatus(assignment, student.id) === 'not_done').length;
+  return { doneCount, notDoneCount, notRecordedCount: roster.length - doneCount - notDoneCount };
 }
 
 /**

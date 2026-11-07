@@ -328,7 +328,7 @@ function createAssignmentsSection(assignmentProgress) {
 
   const list = document.createElement('div');
   list.className = 'profile-notebook-activity';
-  entries.forEach(({ assignment, category, status, checkpointProgress }) => {
+  entries.forEach(({ assignment, category, status, checkpointProgress, completionStatus }) => {
     const card = document.createElement('div');
     card.className = 'profile-notebook-activity__card';
 
@@ -342,6 +342,18 @@ function createAssignmentsSection(assignmentProgress) {
     chip.className = `work-request-roster__chip work-request-roster__chip--${meta.chipClass}`;
     chip.textContent = `Overall: ${meta.label}`;
     card.appendChild(chip);
+
+    // Workstream 4C — mirrors ui/views/StudentProfileView.js's own
+    // teacher-facing createAssignmentEvidenceCard() exactly, so this
+    // student sees the identical Done/Not Done signal their teacher
+    // does. Omitted for "not_recorded" — nothing shown until something
+    // real has happened, same rule the checkpoint chip below follows.
+    if (completionStatus !== 'not_recorded') {
+      const completionChip = document.createElement('span');
+      completionChip.className = `work-request-roster__chip work-request-roster__chip--${completionStatus === 'done' ? 'green' : 'red'}`;
+      completionChip.textContent = completionStatus === 'done' ? 'Marked Done' : 'Marked Not Done';
+      card.appendChild(completionChip);
+    }
 
     if (checkpointProgress.totalCount > 0) {
       const checkpointChip = document.createElement('span');

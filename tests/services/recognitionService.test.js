@@ -11,6 +11,8 @@ import assert from 'node:assert/strict';
 import * as recognitionService from '../../js/services/recognitionService.js';
 import * as checkpointService from '../../js/services/checkpointService.js';
 import * as assignmentCheckpointService from '../../js/services/assignmentCheckpointService.js';
+import * as assignmentService from '../../js/services/assignmentService.js';
+import * as assignmentConfigService from '../../js/services/assignmentConfigService.js';
 import { createStudent } from '../../js/models/Student.js';
 import { createTeam } from '../../js/models/Team.js';
 import { createClassroom } from '../../js/models/Classroom.js';
@@ -843,4 +845,167 @@ test('auditCompletionStarsForClassroom: scans every student across every team, n
   const { incorrectActiveStars } = recognitionService.auditCompletionStarsForClassroom(classroom);
   assert.equal(incorrectActiveStars.length, 1);
   assert.equal(incorrectActiveStars[0].studentId, studentA.id); // only the incorrect one, studentB's genuine star is untouched
+});
+
+// ---------------------------------------------------------------------
+// recordAssignmentCompletion (Workstream 4C) — a worksheet's own
+// direct, manual Done/Not Done toggle, entirely independent of both
+// checkpoint systems above: its own `assignment_completion` workItemRef
+// type (buildAssignmentCompletionWorkItemRef()), no due-date/timeliness
+// concept at all (unlike record*CheckpointReview() above).
+// ---------------------------------------------------------------------
+
+function buildAssignmentCompletionFixture() {
+  const { classroom, student } = buildPermissionedClassroom();
+  classroom.assignmentConfig = { categories: [] };
+  classroom.assignments = [];
+  const category = assignmentConfigService.addCategory(classroom, 'Worksheets');
+  const assignment = assignmentService.createNewAssignment(classroom, { categoryId: category.id, title: 'WS 1' });
+  return { classroom, assignment, student };
+}
+
+test('recordAssignmentCompletion: marking Done awards exactly one star and persists the status', () => {
+  const { classroom, assignment, student } = buildAssignmentCompletionFixture();
+
+  recognitionService.recordAssignmentCompletion(classroom, assignment, student.id, 'done', TEACHER_UID);
+
+  assert.equal(student.score, 1);
+  assert.equal(assignmentService.getCompletionStatus(assignment, student.id), 'done');
+  const ref = recognitionService.buildAssignmentCompletionWorkItemRef({ assignmentId: assignment.id });
+  assert.equal(recognitionService.getAutomaticStarNetForWorkItem(student, ref), 1);
+});
+
+test('recordAssignmentCompletion: marking Not Done never awards a star', () => {
+  const { classroom, assignment, student } = buildAssignmentCompletionFixture();
+
+  recognitionService.recordAssignmentCompletion(classroom, assignment, student.id, 'not_done', TEACHER_UID);
+
+  assert.equal(student.score, 0);
+  assert.equal(assignmentService.getCompletionStatus(assignment, student.id), 'not_done');
+});
+
+test('recordAssignmentCompletion: Done -> Not Done reverses the star; Not Done -> Done never double-reverses or no-ops incorrectly', () => {
+  const { classroom, assignment, student } = buildAssignmentCompletionFixture();
+
+  recognitionService.recordAssignmentCompletion(classroom, assignment, student.id, 'done', TEACHER_UID);
+  assert.equal(student.score, 1);
+  recognitionService.recordAssignmentCompletion(classroom, assignment, student.id, 'not_done', TEACHER_UID);
+  assert.equal(student.score, 0, 'transitioning AWAY from done must reverse the star even when landing on not_done, not just null');
+});
+
+test('recordAssignmentCompletion: Done -> null (cleared back to Not Recorded) also reverses the star', () => {
+  const { classroom, assignment, student } = buildAssignmentCompletionFixture();
+
+  recognitionService.recordAssignmentCompletion(classroom, assignment, student.id, 'done', TEACHER_UID);
+  recognitionService.recordAssignmentCompletion(classroom, assignment, student.id, null, TEACHER_UID);
+
+  assert.equal(student.score, 0);
+  assert.equal(assignmentService.getCompletionStatus(assignment, student.id), 'not_recorded');
+});
+
+test('recordAssignmentCompletion: repeated Done calls never double-award (idempotent, same net-of-append-only-entries mechanism as every other star)', () => {
+  const { classroom, assignment, student } = buildAssignmentCompletionFixture();
+
+  recognitionService.recordAssignmentCompletion(classroom, assignment, student.id, 'done', TEACHER_UID);
+  recognitionService.recordAssignmentCompletion(classroom, assignment, student.id, 'done', TEACHER_UID);
+  recognitionService.recordAssignmentCompletion(classroom, assignment, student.id, 'done', TEACHER_UID);
+
+  assert.equal(student.score, 1);
+  assert.equal(student.history.filter((e) => e.delta > 0).length, 1);
+});
+
+test('recordAssignmentCompletion: re-marking Done after Undo awards a fresh star, append-only history preserved', () => {
+  const { classroom, assignment, student } = buildAssignmentCompletionFixture();
+
+  recognitionService.recordAssignmentCompletion(classroom, assignment, student.id, 'done', TEACHER_UID); // +1
+  recognitionService.recordAssignmentCompletion(classroom, assignment, student.id, null, TEACHER_UID); // -1
+  recognitionService.recordAssignmentCompletion(classroom, assignment, student.id, 'done', TEACHER_UID); // +1
+
+  assert.equal(student.score, 1);
+  assert.equal(student.history.filter((e) => e.source === 'auto').length, 3);
+});
+
+test('recordAssignmentCompletion: an unauthorized (VIEWER) acting uid still records the real Done status, but never awards a star -- the write itself is never blocked, only the award (same pattern every other automatic-star path in this file uses)', () => {
+  const { classroom, assignment, student } = buildAssignmentCompletionFixture();
+
+  recognitionService.recordAssignmentCompletion(classroom, assignment, student.id, 'done', VIEWER_UID);
+
+  assert.equal(assignmentService.getCompletionStatus(assignment, student.id), 'done', 'the real classroom fact is still recorded');
+  assert.equal(student.score, 0, 'no star for an unauthorized uid');
+});
+
+test('recordAssignmentCompletion: OWNER/TEACHER acting uid awards the star; an unauthorized acting uid never blocks the REVERSAL half, since a reversal is a data-integrity correction, never a discretionary grant', () => {
+  const { classroom, assignment, student } = buildAssignmentCompletionFixture();
+
+  recognitionService.recordAssignmentCompletion(classroom, assignment, student.id, 'done', TEACHER_UID);
+  assert.equal(student.score, 1);
+
+  recognitionService.recordAssignmentCompletion(classroom, assignment, student.id, 'not_done', VIEWER_UID);
+  assert.equal(student.score, 0, 'the reversal must succeed even though VIEWER could never have awarded it in the first place');
+});
+
+test('REGRESSION: recordAssignmentCompletion has no due-date concept at all, unlike the checkpoint review wrappers -- only authorization gates the award, never timeliness', () => {
+  const { classroom, assignment, student } = buildAssignmentCompletionFixture();
+
+  recognitionService.recordAssignmentCompletion(classroom, assignment, student.id, 'done', TEACHER_UID);
+
+  assert.equal(student.score, 1);
+});
+
+test('REGRESSION: an assignment-completion star and a checkpoint star for the SAME assignmentId are completely independent work items, never conflated by workItemRefsEqual()', () => {
+  const { classroom, assignment, student } = buildAssignmentCompletionFixture();
+  const checkpointRef = recognitionService.buildAssignmentCheckpointWorkItemRef({ assignmentId: assignment.id, checkpointId: 'cp-1' });
+
+  recognitionService.recordAssignmentCompletion(classroom, assignment, student.id, 'done', TEACHER_UID);
+  recognitionService.awardAutomaticCompletionStar(student, checkpointRef);
+
+  assert.equal(student.score, 2, 'both stars are real, independent +1 entries for the same assignmentId');
+  const completionRef = recognitionService.buildAssignmentCompletionWorkItemRef({ assignmentId: assignment.id });
+  assert.equal(recognitionService.getAutomaticStarNetForWorkItem(student, completionRef), 1);
+  assert.equal(recognitionService.getAutomaticStarNetForWorkItem(student, checkpointRef), 1);
+});
+
+test('auditCompletionStarsForClassroom: a genuinely eligible, active assignment-completion star (status still "done") is never flagged', () => {
+  const { classroom, assignment, student } = buildAssignmentCompletionFixture();
+  recognitionService.recordAssignmentCompletion(classroom, assignment, student.id, 'done', TEACHER_UID);
+
+  const { incorrectActiveStars, unverifiableActiveStars } = recognitionService.auditCompletionStarsForClassroom(classroom);
+
+  assert.equal(incorrectActiveStars.length, 0);
+  assert.equal(unverifiableActiveStars.length, 0);
+});
+
+test('auditCompletionStarsForClassroom: an active assignment-completion star whose tracked status no longer reads "done" is a CONCRETE violation, never unverifiable', () => {
+  const { classroom, assignment, student } = buildAssignmentCompletionFixture();
+  const ref = recognitionService.buildAssignmentCompletionWorkItemRef({ assignmentId: assignment.id });
+  // Simulates a pre-existing active star whose underlying status was
+  // since changed by some path other than recordAssignmentCompletion()
+  // itself (bypassing the wrapper on purpose, same convention every
+  // other audit test here already uses).
+  recognitionService.awardAutomaticCompletionStar(student, ref);
+  assignmentService.setCompletionStatus(assignment, student.id, 'not_done');
+
+  const { incorrectActiveStars, unverifiableActiveStars } = recognitionService.auditCompletionStarsForClassroom(classroom);
+
+  assert.equal(incorrectActiveStars.length, 1);
+  assert.equal(incorrectActiveStars[0].reason, 'completion_status_not_done');
+  assert.equal(unverifiableActiveStars.length, 0);
+});
+
+test('auditCompletionStarsForClassroom: an assignment-completion star whose assignment was since deleted is UNVERIFIABLE, never a concrete violation, and carries its own ASSIGNMENT-specific structural-limitation text (never the checkpoint one)', () => {
+  const { classroom, assignment, student } = buildAssignmentCompletionFixture();
+  recognitionService.recordAssignmentCompletion(classroom, assignment, student.id, 'done', TEACHER_UID);
+  classroom.assignments = []; // the assignment itself is gone -- deletion leaves no trace
+
+  const { incorrectActiveStars, unverifiableActiveStars } = recognitionService.auditCompletionStarsForClassroom(classroom);
+
+  assert.equal(incorrectActiveStars.length, 0, 'a missing assignment is not concrete evidence of a rule violation');
+  assert.equal(unverifiableActiveStars.length, 1);
+  assert.equal(unverifiableActiveStars[0].reason, 'assignment_deleted');
+  assert.equal(unverifiableActiveStars[0].structuralLimitation, assignmentService.ASSIGNMENT_DELETION_STRUCTURAL_LIMITATION);
+  assert.notEqual(
+    unverifiableActiveStars[0].structuralLimitation,
+    checkpointService.CHECKPOINT_DELETION_STRUCTURAL_LIMITATION,
+    'an assignment deletion must never be disclosed using the CHECKPOINT deletion caveat text -- they are different structural facts'
+  );
 });

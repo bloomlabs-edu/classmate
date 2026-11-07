@@ -236,3 +236,77 @@ test('getStudentAssignmentSummary counts only this student\'s own statuses, clas
   const summary = assignmentService.getStudentAssignmentSummary(classroom, 's1');
   assert.deepEqual(summary, { inProgressCount: 0, needsAttentionCount: 1, completeCount: 1 });
 });
+
+// ---------------------------------------------------------------------
+// completionStatus (Workstream 4C) — the assignment-LEVEL Done/Not Done
+// axis, a third, independent tracking dimension from `ratings` above.
+// ---------------------------------------------------------------------
+
+test('getCompletionStatus: a fresh assignment with no record at all reads "not_recorded", never guessed as done/not_done', () => {
+  const { classroom, category } = buildClassroomWithCategory();
+  const assignment = assignmentService.createNewAssignment(classroom, { categoryId: category.id, title: 'WS 1' });
+
+  assert.equal(assignmentService.getCompletionStatus(assignment, 's1'), 'not_recorded');
+});
+
+test('setCompletionStatus: persists "done", lazily creating a record exactly like setRating() does', () => {
+  const { classroom, category } = buildClassroomWithCategory();
+  const assignment = assignmentService.createNewAssignment(classroom, { categoryId: category.id, title: 'WS 1' });
+
+  const record = assignmentService.setCompletionStatus(assignment, 's1', 'done');
+
+  assert.equal(record.completionStatus, 'done');
+  assert.equal(assignmentService.getCompletionStatus(assignment, 's1'), 'done');
+  assert.equal(assignment.records.length, 1, 'exactly one record created, same lazy-create convention as every other wrapper here');
+});
+
+test('setCompletionStatus: repeated calls with the same status are a safe no-op on the read side, never duplicating records', () => {
+  const { classroom, category } = buildClassroomWithCategory();
+  const assignment = assignmentService.createNewAssignment(classroom, { categoryId: category.id, title: 'WS 1' });
+
+  assignmentService.setCompletionStatus(assignment, 's1', 'done');
+  assignmentService.setCompletionStatus(assignment, 's1', 'done');
+  assignmentService.setCompletionStatus(assignment, 's1', 'done');
+
+  assert.equal(assignmentService.getCompletionStatus(assignment, 's1'), 'done');
+  assert.equal(assignment.records.length, 1, 'repeated sets on the same student never create a second record');
+});
+
+test('setCompletionStatus: toggling done -> not_done -> null (back to Not Recorded) persists each transition correctly', () => {
+  const { classroom, category } = buildClassroomWithCategory();
+  const assignment = assignmentService.createNewAssignment(classroom, { categoryId: category.id, title: 'WS 1' });
+
+  assignmentService.setCompletionStatus(assignment, 's1', 'done');
+  assert.equal(assignmentService.getCompletionStatus(assignment, 's1'), 'done');
+
+  assignmentService.setCompletionStatus(assignment, 's1', 'not_done');
+  assert.equal(assignmentService.getCompletionStatus(assignment, 's1'), 'not_done');
+
+  assignmentService.setCompletionStatus(assignment, 's1', null);
+  assert.equal(assignmentService.getCompletionStatus(assignment, 's1'), 'not_recorded', 'null clears back to Not Recorded, never stored as a separate "not_recorded" value');
+});
+
+test('completionStatus is independent of `ratings` on the exact same record — setting one never touches the other', () => {
+  const { classroom, category } = buildClassroomWithCategory();
+  const assignment = assignmentService.createNewAssignment(classroom, { categoryId: category.id, title: 'WS 1' });
+
+  assignmentService.setRating(assignment, 's1', 'asp-0', 'met');
+  assignmentService.setCompletionStatus(assignment, 's1', 'done');
+
+  const record = assignmentService.getRecordForStudent(assignment, 's1');
+  assert.equal(record.ratings['asp-0'], 'met', 'setCompletionStatus() never clobbers an existing rating on the same record');
+  assert.equal(record.completionStatus, 'done');
+});
+
+test('getAssignmentCompletionSummary: counts Done/Not Done/Not Recorded across the full roster, a student with no record at all counts as Not Recorded', () => {
+  const { classroom, category } = buildClassroomWithCategory();
+  const assignment = assignmentService.createNewAssignment(classroom, { categoryId: category.id, title: 'WS 1' });
+  assignmentService.setCompletionStatus(assignment, 's1', 'done');
+  assignmentService.setCompletionStatus(assignment, 's2', 'not_done');
+  // s3 has no record at all for this assignment.
+  const roster = [{ id: 's1' }, { id: 's2' }, { id: 's3' }];
+
+  const summary = assignmentService.getAssignmentCompletionSummary(assignment, roster);
+
+  assert.deepEqual(summary, { doneCount: 1, notDoneCount: 1, notRecordedCount: 1 });
+});

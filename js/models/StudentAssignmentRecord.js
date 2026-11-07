@@ -31,17 +31,35 @@
  *
  * `teacherNote` is independent of `ratings`, same as
  * StudentCheckpointRecord's own `teacherNote`.
+ *
+ * `completionStatus` — 'done' | 'not_done' | null. A THIRD, independent
+ * tracking axis, deliberately never merged with `ratings` above or with
+ * AssignmentCheckpoint's own submission/review axis (see
+ * ui/views/AssignmentDetailView.js's own header comment: "two
+ * independent axes, never merged" — this is that same established
+ * pattern extended to a third). Exists so a plain worksheet can be
+ * marked done/undone directly, with zero checkpoints and with no
+ * category `aspects` configured at all — per explicit product
+ * instruction, a teacher must not have to invent a fake checkpoint just
+ * to record that a task was completed. `null` (or no record at all)
+ * means "Not Recorded" — the same "absence means nothing happened yet"
+ * sparse convention every other record in this app already uses; there
+ * is no separate stored value for "Not Recorded," it is simply the
+ * absence of 'done'/'not_done'. Completion is deliberately NEVER a
+ * proxy for submission, quality, or marks — those stay on `ratings`/
+ * `teacherNote`/AssignmentCheckpoint, untouched by this field.
  */
 
 import { generateId } from '../utils/idGenerator.js';
 import { getCurrentIsoDate } from '../utils/dateHelpers.js';
 
-export function createStudentAssignmentRecord({ id, studentId, ratings = {}, teacherNote = '', updatedAt } = {}) {
+export function createStudentAssignmentRecord({ id, studentId, ratings = {}, teacherNote = '', completionStatus = null, updatedAt } = {}) {
   return {
     id: id || generateId(),
     studentId,
     ratings,
     teacherNote,
+    completionStatus,
     updatedAt: updatedAt || getCurrentIsoDate(),
   };
 }

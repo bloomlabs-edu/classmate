@@ -126,6 +126,7 @@ import * as timelineService from './timelineService.js';
 import * as notebookService from './notebookService.js';
 import * as checkpointService from './checkpointService.js';
 import * as assignmentCheckpointService from './assignmentCheckpointService.js';
+import * as assignmentService from './assignmentService.js';
 import * as badgeService from './badgeService.js';
 import { canPerformAsUid } from './permissionService.js';
 import { PERMISSIONS } from '../config/memberRoles.js';
@@ -158,6 +159,25 @@ export function buildAssignmentCheckpointWorkItemRef({ assignmentId, checkpointI
  */
 export function buildNotebookCheckpointWorkItemRef({ subjectId, notebookTypeId, checkpointId }) {
   return { type: 'notebook_checkpoint', subjectId, notebookTypeId, checkpointId };
+}
+
+/**
+ * Workstream 4C's own addition — a worksheet/Assignment's own
+ * assignment-LEVEL completion (services/assignmentService.js's own
+ * setCompletionStatus()), as distinct from
+ * buildAssignmentCheckpointWorkItemRef() above (one specific checkpoint
+ * WITHIN an assignment). An assignment with zero checkpoints is
+ * identified here by its own `assignmentId` alone — there is no
+ * checkpoint to key against — so this is its own `type`, never
+ * conflated with the checkpoint ref shape even for an assignment that
+ * also happens to have checkpoints (both can independently earn their
+ * own stars; see recordAssignmentCompletion() below). Has no due-date
+ * or review concept at all — never touched by the timeliness gate
+ * record*CheckpointReview() enforces, by construction, since nothing
+ * here is a checkpoint submission.
+ */
+export function buildAssignmentCompletionWorkItemRef({ assignmentId }) {
+  return { type: 'assignment_completion', assignmentId };
 }
 
 /** Deep-equal for the small, flat workItemRef shapes above — deliberately strict about `type` first, so a notebook ref and a checkpoint ref are never accidentally treated as equal even if other keys happened to collide. */
@@ -460,6 +480,57 @@ export function recordAssignmentCheckpointReview(classroom, checkpoint, studentI
   }
 }
 
+// ---------------------------------------------------------------------
+// Assignment-level completion (Workstream 4C) — a worksheet's own
+// direct Done/Not Done toggle, entirely independent of both checkpoint
+// systems above (its own `assignment_completion` workItemRef type —
+// see buildAssignmentCompletionWorkItemRef()'s own header comment).
+// Has no due-date/timeliness concept at all, so it is never gated by
+// isLate() the way record*CheckpointReview() above is — "done" is
+// simply done, there is no "late done."
+// ---------------------------------------------------------------------
+
+/**
+ * Wraps assignmentService.js's own setCompletionStatus() — the exact
+ * same wrapping pattern as every other wrapper in this file. `status`
+ * is 'done' | 'not_done' | null. Only a transition INTO 'done' awards a
+ * star; only a transition AWAY FROM 'done' (to 'not_done' or back to
+ * null/"Not Recorded") reverses it — idempotent and reversible via the
+ * same net-of-append-only-entries mechanism every other automatic star
+ * in this file already uses.
+ *
+ * `actingUid` gates the AWARD only, same as every other automatic-star
+ * path in this file (canManageCompletionStar()'s own header comment):
+ * an unauthorized uid still successfully records the real
+ * Done/Not Done status (the write itself is never blocked — a teacher
+ * marking a worksheet done is a real classroom fact regardless of who's
+ * signed in), it simply never earns a star for it. The REVERSAL branch
+ * is deliberately never gated, for the same reason every other
+ * reversal here isn't: it is a deterministic data-integrity correction,
+ * never a discretionary grant (found and fixed during the Workstream
+ * 4C port's own independent review — the original source branch had no
+ * actingUid parameter at all, inconsistent with this exact file's own
+ * established AWARD_POINTS boundary for every sibling automatic award).
+ */
+export function recordAssignmentCompletion(classroom, assignment, studentId, status, actingUid) {
+  const workItemRef = buildAssignmentCompletionWorkItemRef({ assignmentId: assignment.id });
+  const wasDone = assignmentService.getCompletionStatus(assignment, studentId) === 'done';
+
+  assignmentService.setCompletionStatus(assignment, studentId, status);
+
+  const isNowDone = status === 'done';
+  const found = findStudentById(classroom, studentId);
+  if (found) {
+    if (isNowDone && !wasDone) {
+      if (canManageCompletionStar(classroom, actingUid)) {
+        awardAutomaticCompletionStar(found.student, workItemRef);
+      }
+    } else if (!isNowDone && wasDone) {
+      reverseAutomaticCompletionStar(found.student, workItemRef);
+    }
+  }
+}
+
 function findStudentById(classroom, studentId) {
   for (const team of classroom.teams || []) {
     const student = team.students.find((s) => s.id === studentId);
@@ -496,7 +567,19 @@ function findStudentById(classroom, studentId) {
  * a rule violation — it must never be classified or recommended for
  * revocation the same way a concrete violation is.
  */
-const CONCRETE_VIOLATION_REASONS = new Set(['missing_work_item_ref', 'review_not_complete', 'late_submission', 'unrecognized_work_item_type']);
+const CONCRETE_VIOLATION_REASONS = new Set([
+  'missing_work_item_ref',
+  'review_not_complete',
+  'late_submission',
+  'unrecognized_work_item_type',
+  'completion_status_not_done',
+]);
+
+/** Maps each structurally-unverifiable reason to its own disclosure text — never the same generic text for every deletion shape, since "checkpoint deleted" and "assignment deleted" are genuinely different structural facts about two different services. */
+const STRUCTURAL_LIMITATIONS_BY_REASON = {
+  checkpoint_deleted: () => checkpointService.CHECKPOINT_DELETION_STRUCTURAL_LIMITATION,
+  assignment_deleted: () => assignmentService.ASSIGNMENT_DELETION_STRUCTURAL_LIMITATION,
+};
 
 /**
  * Resolves WHY `entry` (an active, `source: 'auto'`, `kind: 'points'`
@@ -527,6 +610,16 @@ function resolveCompletionStarIneligibilityReason(classroom, entry) {
     const record = assignmentCheckpointService.getRecordForStudent(checkpoint, entry.__studentId);
     if (record?.reviewStatus !== 'complete') return 'review_not_complete';
     if (assignmentCheckpointService.isLate(checkpoint, record)) return 'late_submission';
+    return null; // genuinely eligible
+  }
+  if (ref.type === 'assignment_completion') {
+    // No due-date/review concept at all (see
+    // buildAssignmentCompletionWorkItemRef()'s own header comment) — the
+    // ONLY concrete evidence this axis ever has is whether the tracked
+    // completionStatus still genuinely reads 'done'.
+    const assignment = assignmentService.getAssignmentById(classroom, ref.assignmentId);
+    if (!assignment) return 'assignment_deleted';
+    if (assignmentService.getCompletionStatus(assignment, entry.__studentId) !== 'done') return 'completion_status_not_done';
     return null; // genuinely eligible
   }
   return 'unrecognized_work_item_type'; // 'notebook' (legacy) and any unrecognized type: never eligible under the corrected rule
@@ -578,7 +671,7 @@ export function auditCompletionStarsForClassroom(classroom) {
         if (CONCRETE_VIOLATION_REASONS.has(reason)) {
           incorrectActiveStars.push(finding);
         } else {
-          unverifiableActiveStars.push({ ...finding, structuralLimitation: checkpointService.CHECKPOINT_DELETION_STRUCTURAL_LIMITATION });
+          unverifiableActiveStars.push({ ...finding, structuralLimitation: STRUCTURAL_LIMITATIONS_BY_REASON[reason]() });
         }
       }
     }

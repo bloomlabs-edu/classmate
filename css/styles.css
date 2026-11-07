@@ -17183,6 +17183,46 @@ button.recognition-bento__hero-winner-name {
 .notebook-checkpoints__overall-rating-pill--orange { background-color: #b7691a; }
 .notebook-checkpoints__overall-rating-pill--red { background-color: #D95C5C; }
 
+/* Workstream 4C — the assignment-LEVEL Done/Not Done/Not Recorded
+   toggle (ui/views/AssignmentDetailView.js's own
+   buildCompletionTogglePill()), independent of the checkpoint grid and
+   Overall Rating. */
+.assignment-completion-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.3rem;
+  margin-left: 1.75rem;
+}
+.assignment-completion-toggle__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background-color: var(--color-surface);
+  color: var(--color-muted);
+  font-size: 0.7rem;
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+}
+.assignment-completion-toggle__button--active.assignment-completion-toggle__button--done {
+  background-color: #4FAF78;
+  border-color: #4FAF78;
+  color: #fff;
+}
+.assignment-completion-toggle__button--active.assignment-completion-toggle__button--not-done {
+  background-color: #D95C5C;
+  border-color: #D95C5C;
+  color: #fff;
+}
+.assignment-completion-toggle__not-recorded {
+  font-size: 0.7rem;
+  color: var(--color-muted);
+  font-style: italic;
+}
+
 /* The Assignment's own Type/Subject/date meta-line, shown under this
    screen's own header title (ui/views/AssignmentDetailView.js) —
    plain, muted, single line, same restrained treatment
