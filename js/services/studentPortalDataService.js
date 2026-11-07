@@ -298,6 +298,10 @@ export async function getAssignmentProgressForCurrentStudent() {
   const entries = assignmentService.getAssignmentsForStudent(classroom, student.id).map((entry) => ({
     ...entry,
     checkpointProgress: assignmentCheckpointService.getStudentCheckpointProgress(classroom, entry.assignment.id, student.id),
+    // Workstream 4C — the assignment-level Done/Not Done/Not Recorded
+    // axis (see assignmentService.js's own getCompletionStatus()),
+    // independent of the Overall Rating `status` already on `entry`.
+    completionStatus: assignmentService.getCompletionStatus(entry.assignment, student.id),
   }));
 
   return { summary, entries };

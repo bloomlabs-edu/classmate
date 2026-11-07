@@ -1203,6 +1203,20 @@ function createAssignmentEvidenceCard(classroom, student, { assignment, category
   chip.textContent = `Overall: ${meta.label}`;
   card.appendChild(chip);
 
+  // Workstream 4C — the assignment-LEVEL Done/Not Done toggle (see
+  // ui/views/AssignmentDetailView.js's own buildCompletionTogglePill()),
+  // a third, independent axis from Overall Rating above. Omitted
+  // entirely for "not_recorded" (same "nothing shown until something
+  // real happened" rule the checkpoint chip below already follows) —
+  // not rendered as a 0/empty claim.
+  const completionStatus = assignmentService.getCompletionStatus(assignment, student.id);
+  if (completionStatus !== 'not_recorded') {
+    const completionChip = document.createElement('span');
+    completionChip.className = `work-request-roster__chip work-request-roster__chip--${completionStatus === 'done' ? 'green' : 'red'}`;
+    completionChip.textContent = completionStatus === 'done' ? 'Marked Done' : 'Marked Not Done';
+    card.appendChild(completionChip);
+  }
+
   const checkpointProgress = assignmentCheckpointService.getStudentCheckpointProgress(classroom, assignment.id, student.id);
   if (checkpointProgress.totalCount > 0) {
     const checkpointChip = document.createElement('span');
