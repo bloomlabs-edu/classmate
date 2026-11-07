@@ -106,6 +106,8 @@ import {
   getDisplaySubtitle,
 } from '../../services/classroomService.js';
 import * as memberService from '../../services/memberService.js';
+import { canPerformAsUid } from '../../services/permissionService.js';
+import { PERMISSIONS } from '../../config/memberRoles.js';
 import * as personalHubService from '../../services/personalHubService.js';
 import * as scheduledEventRepository from '../../services/scheduledEventRepository.js';
 import * as taskRepository from '../../repositories/taskRepository.js';
@@ -152,7 +154,7 @@ const FACILITATOR_HEX = getGroupColorHex('purple');
 
 export function renderPersonalHubView(
   container,
-  { classrooms, currentUser, onSelectClassroom, onNewClassroom, onJoinClassroom, onDeleteClassroom, onOpenCurriculumManagement, onOpenTimetable, onOpenWeeklyPlans, onOpenChapterPlans, onOpenMyWork }
+  { classrooms, currentUser, onSelectClassroom, onNewClassroom, onJoinClassroom, onDeleteClassroom, onEditClassroomDetails, onOpenCurriculumManagement, onOpenTimetable, onOpenWeeklyPlans, onOpenChapterPlans, onOpenMyWork }
 ) {
   container.innerHTML = '';
 
@@ -226,6 +228,8 @@ export function renderPersonalHubView(
       onClick: () => onSelectClassroom(classroom.id),
       isOwner: memberService.isOwner(classroom, uid),
       onDeleteClassroom: () => onDeleteClassroom?.(classroom.id),
+      canEditClassroomDetails: canPerformAsUid(classroom, uid, PERMISSIONS.EDIT_CLASSROOM_DETAILS),
+      onEditClassroomDetails: () => onEditClassroomDetails?.(classroom.id),
       actionLabel: managed ? 'Open Classroom' : 'View Classroom',
       // Scoped to My Classrooms only, per explicit product direction —
       // "Other Classrooms" cards stay exactly as they were.

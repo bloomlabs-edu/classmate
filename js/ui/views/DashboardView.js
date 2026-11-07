@@ -70,8 +70,13 @@ import * as goalService from '../../services/goalService.js';
 import * as notificationService from '../../services/notificationService.js';
 import { NOTIFICATION_CATEGORIES } from '../../config/notificationCategories.js';
 import { renderTeachingAssistant } from '../components/TeachingAssistant.js';
-import { getDisplayName, getDisplaySubtitle, getStudentCount, getMemberCount } from '../../services/classroomService.js';
+import { getDisplayName, getDisplaySubtitle, getStudentCount, getMemberCount, updateClassroomDetails } from '../../services/classroomService.js';
+import * as workspaceService from '../../services/workspaceService.js';
+import { canPerformAsUid } from '../../services/permissionService.js';
+import { PERMISSIONS } from '../../config/memberRoles.js';
 import { createClassroomHeaderElement } from '../components/ClassroomHeader.js';
+import { createOverflowMenu } from '../components/OverflowMenu.js';
+import { openEditClassroomDetailsModal } from '../components/EditClassroomDetailsModal.js';
 import { createRecognitionWidgetElement } from '../components/RecognitionWidget.js';
 import { createWeeklySnapshotWidgetElement } from '../components/WeeklySnapshotWidget.js';
 import { createPendingTasksWidgetElement } from '../components/PendingTasksWidget.js';
@@ -250,7 +255,92 @@ export function renderDashboardView(container, props) {
   const title = document.createElement('h1');
   title.className = 'classroom-shell-header__name';
   title.textContent = getDisplayName(classroom);
-  classroomContext.appendChild(title);
+
+  // The header's own "⋮" menu — reuses ui/components/OverflowMenu.js,
+  // this app's one platform-wide standard for management actions on a
+  // standalone object (see that file's own header comment), rather than
+  // inventing a second menu component for the classroom itself. Only
+  // rendered at all for a member who can actually use the one action it
+  // holds today (PERMISSIONS.EDIT_CLASSROOM_DETAILS — OWNER/TEACHER,
+  // never VIEWER) — an empty, do-nothing "⋮" would be worse than no
+  // menu at all.
+  const nameRow = document.createElement('div');
+  nameRow.className = 'classroom-shell-header__name-row';
+  nameRow.appendChild(title);
+
+  if (canPerformAsUid(classroom, currentUser?.uid, PERMISSIONS.EDIT_CLASSROOM_DETAILS)) {
+    nameRow.appendChild(
+      createOverflowMenu({
+        ariaLabel: 'Classroom actions',
+        actions: [
+          {
+            label: 'Edit Classroom Details',
+            onClick: () => {
+              openEditClassroomDetailsModal({
+                classroom,
+                // The one real write path — classroomService.updateClassroomDetails()
+                // merges+re-validates in place (never a parallel update
+                // mechanism), then workspaceService.markDirty()/saveExplicitly()
+                // is the exact same explicit-save pair every other
+                // in-place classroom edit already uses (see
+                // ui/views/ConceptWorkspaceView.js's description editor).
+                // Classroom id, members, memberUids, teams, and every
+                // other field are untouched — only classroomName/
+                // description are ever in `updates`.
+                onSave: async ({ classroomName, description }) => {
+                  // Use updateClassroomDetails()'s OWN return value from
+                  // here on, never the outer `classroom` closure variable
+                  // directly — pre-commit review (2026-10-27) found that
+                  // passing the stale outer reference to saveExplicitly()
+                  // was a real bug: classroomService.upsertClassroom()
+                  // (see that file) REPLACES its in-memory array slot
+                  // with a brand-new object on every incoming Firestore
+                  // snapshot, and ui/views/DashboardView.js is not yet a
+                  // registered workspaceCoordinator "active workspace" (see
+                  // that file's own header comment), so this view's own
+                  // `classroom`/`props` are never refreshed in place while
+                  // mounted. If such a snapshot lands between opening this
+                  // menu and clicking Save, updateClassroomDetails(id, ...)
+                  // would correctly mutate the NEW object (it always
+                  // re-fetches by id internally), but saveExplicitly(classroom)
+                  // would then silently persist the OLD, never-updated one
+                  // instead — writing the stale classroomName/description
+                  // back to Firestore with no error shown. Reading the
+                  // return value instead closes that gap for this write.
+                  const updatedClassroom = updateClassroomDetails(classroom.id, { classroomName, description });
+                  // updateClassroomDetails() returns null if `classroom.id`
+                  // is no longer present in classroomService's in-memory
+                  // list at all (see that function's own doc comment) —
+                  // its one documented failure shape. Verified explicitly
+                  // rather than trusted, so a caller never hands
+                  // markDirty()/saveExplicitly() something that isn't
+                  // actually this classroom; this throws into the modal's
+                  // own existing try/catch (see
+                  // ui/components/EditClassroomDetailsModal.js), which
+                  // already shows "Save failed" + Retry — no new error-
+                  // handling mechanism.
+                  if (!updatedClassroom || updatedClassroom.id !== classroom.id) {
+                    throw new Error('Could not update classroom details — the classroom is no longer available.');
+                  }
+                  workspaceService.markDirty(updatedClassroom.id);
+                  await workspaceService.saveExplicitly(updatedClassroom);
+                  // Re-render in place so the header's name/subtitle
+                  // (both derived from classroom.classroomName) reflect
+                  // the save immediately — same self-re-render idiom
+                  // this file's own openCurriculumManagement()/
+                  // openClassroomManagement() "onBack" callbacks above
+                  // already use.
+                  renderDashboardView(container, props);
+                },
+              });
+            },
+          },
+        ],
+      })
+    );
+  }
+
+  classroomContext.appendChild(nameRow);
 
   const subtitle = document.createElement('p');
   subtitle.className = 'classroom-shell-header__subtitle';

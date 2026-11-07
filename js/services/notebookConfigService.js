@@ -15,6 +15,8 @@
 
 import { createNotebookSubject } from '../models/NotebookSubject.js';
 import { createNotebookType, createDailySettings } from '../models/NotebookType.js';
+import { createNotebookReviewCriterion, DEFAULT_NOTEBOOK_REVIEW_CRITERIA } from '../models/NotebookReviewCriterion.js';
+import { getCurrentIsoDate } from '../utils/dateHelpers.js';
 
 export function listSubjects(classroom) {
   return classroom.notebookConfig.subjects;
@@ -127,4 +129,82 @@ export function removeExcludedDate(classroom, typeId, dateKey) {
   if (!type || !type.dailySettings) return null;
   type.dailySettings.excludedDates = type.dailySettings.excludedDates.filter((d) => d !== dateKey);
   return type;
+}
+
+// ---------------------------------------------------------------------
+// Notebook review criteria (see models/NotebookReviewCriterion.js) — the
+// reusable checklist a WorkRequest notebook review scores against (see
+// services/notebookReviewService.js, the only reader of this catalog
+// besides the Manage Criteria UI itself).
+// ---------------------------------------------------------------------
+
+/**
+ * Lazily seeds the 4 default criteria the first time this classroom's
+ * own `notebookConfig.reviewCriteria` is needed — never a migration.
+ * Idempotent and safe to call on every read: a classroom that already
+ * has its own (possibly teacher-edited) criteria list is left
+ * completely untouched; only a genuinely missing/empty array gets the
+ * defaults. Returns the (possibly just-seeded) array.
+ */
+export function ensureReviewCriteria(classroom) {
+  if (!classroom.notebookConfig.reviewCriteria || classroom.notebookConfig.reviewCriteria.length === 0) {
+    classroom.notebookConfig.reviewCriteria = DEFAULT_NOTEBOOK_REVIEW_CRITERIA.map((defaultCriterion) =>
+      createNotebookReviewCriterion({
+        label: defaultCriterion.label,
+        isSystemDetermined: defaultCriterion.isSystemDetermined,
+        isCustom: false,
+        createdAt: getCurrentIsoDate(),
+      })
+    );
+  }
+  return classroom.notebookConfig.reviewCriteria;
+}
+
+export function listReviewCriteria(classroom) {
+  return ensureReviewCriteria(classroom);
+}
+
+export function getReviewCriterionById(classroom, criterionId) {
+  return ensureReviewCriteria(classroom).find((criterion) => criterion.id === criterionId) || null;
+}
+
+/**
+ * A teacher adding a reusable custom criterion (e.g. "Correctly
+ * labelled diagrams", "Complete answers", "Page numbering") — matches
+ * services/badgeService.js's own addBadgeToCatalog() exactly: trims,
+ * rejects empty/whitespace-only input, and de-duplicates case-
+ * insensitively against every EXISTING label (default or custom alike)
+ * so the same criterion can never be added twice under slightly
+ * different casing. Returns the new criterion, or `null` if rejected.
+ */
+export function addCustomReviewCriterion(classroom, label) {
+  const criteria = ensureReviewCriteria(classroom);
+  const trimmed = (label || '').trim();
+  if (!trimmed) return null;
+
+  const alreadyExists = criteria.some((criterion) => criterion.label.toLowerCase() === trimmed.toLowerCase());
+  if (alreadyExists) return null;
+
+  const criterion = createNotebookReviewCriterion({ label: trimmed, isSystemDetermined: false, isCustom: true, createdAt: getCurrentIsoDate() });
+  criteria.push(criterion);
+  return criterion;
+}
+
+/**
+ * Removes a criterion from the reusable catalog. Never removes the
+ * system-determined "Timely submission" criterion (see
+ * models/NotebookReviewCriterion.js's own header comment) — a no-op,
+ * returning `false`, for that one id specifically. Removing a criterion
+ * never touches any NotebookReview that already awarded it: every award
+ * snapshots the criterion's own `{id, label}` at the time it was given
+ * (see models/NotebookReview.js), so a past award's own meaning is
+ * unaffected by a later catalog change.
+ */
+export function removeReviewCriterion(classroom, criterionId) {
+  const criteria = ensureReviewCriteria(classroom);
+  const target = criteria.find((criterion) => criterion.id === criterionId);
+  if (!target || target.isSystemDetermined) return false;
+
+  classroom.notebookConfig.reviewCriteria = criteria.filter((criterion) => criterion.id !== criterionId);
+  return true;
 }
