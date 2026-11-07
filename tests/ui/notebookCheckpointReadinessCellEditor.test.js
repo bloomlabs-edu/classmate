@@ -1,28 +1,26 @@
 /**
  * tests/ui/notebookCheckpointReadinessCellEditor.test.js
  *
- * Regression coverage for the Readiness Champion override/revoke
- * section inside ui/views/NotebookCheckpointsView.js's own
- * renderCellEditor() — drives that real, exported function directly in
- * a real Chromium page, same reasoning as
- * tests/ui/notebookCheckpointsStudentRow.test.js's own header comment.
+ * Regression coverage for the Readiness Champion section inside
+ * ui/views/NotebookCheckpointsView.js's own renderCellEditor() — drives
+ * that real, exported function directly in a real Chromium page, same
+ * reasoning as tests/ui/notebookCheckpointsStudentRow.test.js's own
+ * header comment.
  *
- * Rewritten for the notebook-level Readiness Champion redesign
- * (2026-11-06): this section now reads the STUDENT's own append-only
- * `history` (via notebookReadinessChampionService.js's own
- * getActiveReadinessSourcesForNotebook()), never the checkpoint
- * record's own (now Organization/Punctuation-only) `badgeAwards`
- * array — see services/notebookReadinessChampionService.js's own
- * header comment for why. `checkpoint` fixtures below accordingly carry
- * `subjectId`/`notebookTypeId` (needed to build the notebook identity),
- * and `student` fixtures carry `history` instead of the checkpoint
- * record carrying `badgeAwards` for this badge type.
- *
- * Organization/Punctuation Champion are deliberately NOT covered here —
- * they're only ever offered via the separate post-Save
- * AwardReviewBadgesModal prompt (see
- * tests/ui/awardReviewBadgesModal.test.js), never from inside this
- * editor itself (see renderCellEditor()'s own comment on exactly why).
+ * Rewritten for the PERMANENT, PER-INSPECTION redesign (2026-11-07):
+ * this section is now entirely READ-ONLY — no override, no revoke, no
+ * action of any kind — and shows two deliberately separate things:
+ *   - "N permanent badge(s) earned for this notebook" plus a per-
+ *     inspection history list, derived from
+ *     notebookReadinessChampionService.listReadinessChampionAchievementsForNotebook(),
+ *     the NEW `notebook_readiness_inspection`-shaped ledger entries.
+ *   - A separate "Previous system — historical awards" note for any
+ *     OLD-shape (`notebook_readiness`) legacy entries, via
+ *     listLegacyReadinessChampionEntriesForNotebook() — never merged
+ *     into the count above, never reinterpreted.
+ * renderCellEditor() now takes a 4th `classroom` argument (needed to
+ * resolve each achievement's own triggering checkpoint's title) — see
+ * that function's own header comment.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -79,148 +77,146 @@ test.after(async () => {
   await new Promise((resolve) => server.close(resolve));
 });
 
-test('a student who has not submitted shows "Not awarded" with no revoke button, but still offers the whole-notebook override', async () => {
+test('no Readiness history at all shows "No Readiness Champion badges yet for this notebook" and no legacy note', async () => {
   const result = await page.evaluate(async () => {
     const { renderCellEditor } = await import('/js/ui/views/NotebookCheckpointsView.js');
     const checkpoint = { id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [] };
+    const classroom = { id: 'c1', checkpoints: [checkpoint] };
     const student = { id: 's1', name: 'Anjali', history: [] };
-    const editor = renderCellEditor(checkpoint, student, {});
+    const editor = renderCellEditor(checkpoint, student, {}, classroom);
     const labels = [...editor.querySelectorAll('.notebook-checkpoints__cell-editor-section-label')].map((el) => el.textContent);
-    const actionsButtons = [...editor.querySelectorAll('button')].map((b) => b.textContent);
-    return { hasReadinessLabel: labels.includes('Readiness Champion (whole notebook)'), actionsButtons };
+    const text = editor.textContent;
+    const buttons = [...editor.querySelectorAll('button')].map((b) => b.textContent);
+    return { hasReadinessLabel: labels.includes('Readiness Champion (whole notebook)'), text, buttons };
   });
   assert.equal(result.hasReadinessLabel, true);
-  assert.ok(!result.actionsButtons.includes('Revoke'));
-  // Override is offered regardless of THIS checkpoint's own submission
-  // status now -- it is a whole-notebook decision, not gated per cell.
-  assert.ok(result.actionsButtons.includes('Award anyway (override)'));
-});
-
-test('a notebook with no Readiness history at all shows "Not awarded" and an "Award anyway (override)" button', async () => {
-  const result = await page.evaluate(async () => {
-    const { renderCellEditor } = await import('/js/ui/views/NotebookCheckpointsView.js');
-    const checkpoint = { id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [{ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-15', reviewStatus: 'not_reviewed', badgeAwards: [] }] };
-    const student = { id: 's1', name: 'Anjali', history: [] };
-    const editor = renderCellEditor(checkpoint, student, {});
-    const text = editor.textContent;
-    const buttons = [...editor.querySelectorAll('button')].map((b) => b.textContent);
-    return { hasNotAwarded: text.includes('Not awarded'), buttons };
-  });
-  assert.equal(result.hasNotAwarded, true);
-  assert.ok(result.buttons.includes('Award anyway (override)'));
+  assert.match(result.text, /No Readiness Champion badges yet for this notebook/);
+  assert.ok(!result.text.includes('Previous system'));
   assert.ok(!result.buttons.includes('Revoke'));
+  assert.ok(!result.buttons.includes('Award anyway (override)'), 'no override action exists any more -- the only way to earn a badge is a fresh checkpoint\'s own creation');
 });
 
-test('an active AUTOMATIC Readiness award (on the STUDENT\'s own history, not this checkpoint\'s record) shows the correct status text and a Revoke button, never an override button', async () => {
+test('one permanent inspection-event achievement shows the count and its own triggering checkpoint title', async () => {
   const result = await page.evaluate(async () => {
     const { renderCellEditor } = await import('/js/ui/views/NotebookCheckpointsView.js');
-    const checkpoint = { id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [{ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-05', reviewStatus: 'not_reviewed', badgeAwards: [] }] };
+    const priorCheckpoint = { id: 'cp1', title: 'Unit 1', dueDate: '2026-09-10', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [] };
+    const triggeringCheckpoint = { id: 'cp2', title: 'Unit 2', dueDate: '2026-09-20', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [] };
+    const classroom = { id: 'c1', checkpoints: [priorCheckpoint, triggeringCheckpoint] };
     const student = {
       id: 's1', name: 'Anjali',
-      history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: { type: 'notebook_readiness', subjectId: 'subj-1', notebookTypeId: 'type-1' }, recordedAt: '2026-09-05T00:00:00.000Z' }],
+      history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: { type: 'notebook_readiness_inspection', subjectId: 'subj-1', notebookTypeId: 'type-1', checkpointId: 'cp2' }, recordedAt: '2026-09-20T00:00:00.000Z' }],
     };
-    const editor = renderCellEditor(checkpoint, student, {});
-    const text = editor.textContent;
-    const buttons = [...editor.querySelectorAll('button')].map((b) => b.textContent);
-    return { text, buttons };
-  });
-  assert.match(result.text, /Awarded \(automatic — notebook complete and on time\)/);
-  assert.ok(result.buttons.includes('Revoke'));
-  assert.ok(!result.buttons.includes('Award anyway (override)'));
-});
-
-test('an active OVERRIDE Readiness award shows "teacher override" in its status text', async () => {
-  const result = await page.evaluate(async () => {
-    const { renderCellEditor } = await import('/js/ui/views/NotebookCheckpointsView.js');
-    const checkpoint = { id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [{ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-15', reviewStatus: 'not_reviewed', badgeAwards: [] }] };
-    const student = {
-      id: 's1', name: 'Anjali',
-      history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'override', workItemRef: { type: 'notebook_readiness', subjectId: 'subj-1', notebookTypeId: 'type-1' }, recordedAt: '2026-09-15T00:00:00.000Z' }],
-    };
-    const editor = renderCellEditor(checkpoint, student, {});
+    const editor = renderCellEditor(priorCheckpoint, student, {}, classroom);
     return editor.textContent;
   });
-  assert.match(result, /Awarded \(teacher override\)/);
+  assert.match(result, /1 permanent badge earned for this notebook/);
+  assert.match(result, /Earned at "Unit 2"/, 'the history line names the checkpoint whose own creation triggered the inspection');
 });
 
-test('an active RETROACTIVE BACKFILL Readiness award shows "retroactive backfill" in its status text', async () => {
+test('two permanent achievements for the same notebook (different triggering checkpoints) are both listed, and pluralize correctly', async () => {
   const result = await page.evaluate(async () => {
     const { renderCellEditor } = await import('/js/ui/views/NotebookCheckpointsView.js');
-    const checkpoint = { id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [{ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-05', reviewStatus: 'not_reviewed', badgeAwards: [] }] };
-    const student = {
-      id: 's1', name: 'Anjali',
-      history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'retroactive_backfill', workItemRef: { type: 'notebook_readiness', subjectId: 'subj-1', notebookTypeId: 'type-1' }, recordedAt: '2026-09-05T00:00:00.000Z' }],
-    };
-    const editor = renderCellEditor(checkpoint, student, {});
-    return editor.textContent;
-  });
-  assert.match(result, /Awarded \(retroactive backfill\)/);
-});
-
-test('a REVOKED award (net zero) is treated as not-active -- shows "Not awarded" and the override button again, not Revoke', async () => {
-  const result = await page.evaluate(async () => {
-    const { renderCellEditor } = await import('/js/ui/views/NotebookCheckpointsView.js');
-    const checkpoint = { id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [{ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-05', reviewStatus: 'not_reviewed', badgeAwards: [] }] };
-    const ref = { type: 'notebook_readiness', subjectId: 'subj-1', notebookTypeId: 'type-1' };
+    const cp1 = { id: 'cp1', title: 'Unit 1', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [] };
+    const cp2 = { id: 'cp2', title: 'Unit 2', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [] };
+    const cp3 = { id: 'cp3', title: 'Unit 3', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [] };
+    const classroom = { id: 'c1', checkpoints: [cp1, cp2, cp3] };
     const student = {
       id: 's1', name: 'Anjali',
       history: [
-        { id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: ref, recordedAt: '2026-09-05T00:00:00.000Z' },
-        { id: 'h2', kind: 'readiness-champion', delta: -1, source: 'automatic', workItemRef: ref, reason: 'teacher_revoked', revokedBy: 'teacher-uid', recordedAt: '2026-09-06T00:00:00.000Z' },
+        { id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: { type: 'notebook_readiness_inspection', subjectId: 'subj-1', notebookTypeId: 'type-1', checkpointId: 'cp2' }, recordedAt: '2026-09-15T00:00:00.000Z' },
+        { id: 'h2', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: { type: 'notebook_readiness_inspection', subjectId: 'subj-1', notebookTypeId: 'type-1', checkpointId: 'cp3' }, recordedAt: '2026-09-25T00:00:00.000Z' },
       ],
     };
-    const editor = renderCellEditor(checkpoint, student, {});
+    const editor = renderCellEditor(cp1, student, {}, classroom);
     const text = editor.textContent;
-    const buttons = [...editor.querySelectorAll('button')].map((b) => b.textContent);
-    return { text, buttons };
+    const items = [...editor.querySelectorAll('.notebook-checkpoints__cell-editor-readiness-history li')].map((li) => li.textContent);
+    return { text, items };
   });
-  assert.match(result.text, /Not awarded/);
-  assert.ok(result.buttons.includes('Award anyway (override)'));
-  assert.ok(!result.buttons.includes('Revoke'));
+  assert.match(result.text, /2 permanent badges earned for this notebook/);
+  assert.equal(result.items.length, 2);
+  assert.ok(result.items.some((t) => t.includes('Unit 2')));
+  assert.ok(result.items.some((t) => t.includes('Unit 3')));
 });
 
-test('a Readiness award recorded against a DIFFERENT notebook (different subjectId) is never shown as active here -- notebooks never cross-contaminate', async () => {
+test('an achievement whose triggering checkpoint was since deleted still displays, without a checkpoint title', async () => {
   const result = await page.evaluate(async () => {
     const { renderCellEditor } = await import('/js/ui/views/NotebookCheckpointsView.js');
-    const checkpoint = { id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [{ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-05', reviewStatus: 'not_reviewed', badgeAwards: [] }] };
+    const cp1 = { id: 'cp1', title: 'Unit 1', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [] };
+    const classroom = { id: 'c1', checkpoints: [cp1] }; // the triggering checkpoint ('cp2') no longer exists
     const student = {
       id: 's1', name: 'Anjali',
-      history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: { type: 'notebook_readiness', subjectId: 'OTHER-SUBJECT', notebookTypeId: 'type-1' }, recordedAt: '2026-09-05T00:00:00.000Z' }],
+      history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: { type: 'notebook_readiness_inspection', subjectId: 'subj-1', notebookTypeId: 'type-1', checkpointId: 'cp2' }, recordedAt: '2026-09-20T00:00:00.000Z' }],
     };
-    const editor = renderCellEditor(checkpoint, student, {});
-    const text = editor.textContent;
-    const buttons = [...editor.querySelectorAll('button')].map((b) => b.textContent);
-    return { text, buttons };
+    const editor = renderCellEditor(cp1, student, {}, classroom);
+    return editor.textContent;
   });
-  assert.match(result.text, /Not awarded/);
-  assert.ok(result.buttons.includes('Award anyway (override)'));
+  assert.match(result, /1 permanent badge earned for this notebook/, 'the permanent badge itself is unaffected by the triggering checkpoint later being deleted');
+  assert.match(result, /triggering unit since removed/);
 });
 
-test('clicking "Award anyway (override)" calls handlers.onOverrideReadiness with the checkpoint and student ids', async () => {
+test('an achievement recorded against a DIFFERENT notebook (different subjectId) is never shown here -- notebooks never cross-contaminate', async () => {
   const result = await page.evaluate(async () => {
     const { renderCellEditor } = await import('/js/ui/views/NotebookCheckpointsView.js');
-    const checkpoint = { id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [{ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-15', reviewStatus: 'not_reviewed', badgeAwards: [] }] };
-    const student = { id: 's1', name: 'Anjali', history: [] };
-    const calls = [];
-    const editor = renderCellEditor(checkpoint, student, { onOverrideReadiness: (checkpointId, studentId) => calls.push([checkpointId, studentId]) });
-    [...editor.querySelectorAll('button')].find((b) => b.textContent === 'Award anyway (override)').click();
-    return calls;
+    const cp1 = { id: 'cp1', title: 'Unit 1', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [] };
+    const classroom = { id: 'c1', checkpoints: [cp1] };
+    const student = {
+      id: 's1', name: 'Anjali',
+      history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: { type: 'notebook_readiness_inspection', subjectId: 'OTHER-SUBJECT', notebookTypeId: 'type-1', checkpointId: 'cp9' }, recordedAt: '2026-09-20T00:00:00.000Z' }],
+    };
+    const editor = renderCellEditor(cp1, student, {}, classroom);
+    return editor.textContent;
   });
-  assert.deepEqual(result, [['cp1', 's1']]);
+  assert.match(result, /No Readiness Champion badges yet for this notebook/);
 });
 
-test('clicking "Revoke" calls handlers.onRevokeReadiness with the checkpoint and student ids', async () => {
+test('a LEGACY (old-shape, pre-redesign) history entry shows as a separate, clearly-labeled "Previous system" note, never merged into the permanent-badge count', async () => {
   const result = await page.evaluate(async () => {
     const { renderCellEditor } = await import('/js/ui/views/NotebookCheckpointsView.js');
-    const checkpoint = { id: 'cp1', title: 'Unit 2', dueDate: '2026-09-10', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [{ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-05', reviewStatus: 'not_reviewed', badgeAwards: [] }] };
+    const cp1 = { id: 'cp1', title: 'Unit 1', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [] };
+    const classroom = { id: 'c1', checkpoints: [cp1] };
     const student = {
       id: 's1', name: 'Anjali',
       history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: { type: 'notebook_readiness', subjectId: 'subj-1', notebookTypeId: 'type-1' }, recordedAt: '2026-09-05T00:00:00.000Z' }],
     };
-    const calls = [];
-    const editor = renderCellEditor(checkpoint, student, { onRevokeReadiness: (checkpointId, studentId) => calls.push([checkpointId, studentId]) });
-    [...editor.querySelectorAll('button')].find((b) => b.textContent === 'Revoke').click();
-    return calls;
+    const editor = renderCellEditor(cp1, student, {}, classroom);
+    return editor.textContent;
   });
-  assert.deepEqual(result, [['cp1', 's1']]);
+  assert.match(result, /No Readiness Champion badges yet for this notebook/, 'the legacy entry is never counted as a new achievement');
+  assert.match(result, /Previous system — historical awards: 1 record on file for this notebook/);
+});
+
+test('a legacy entry and a new achievement can coexist for the same notebook, each shown in its own, separate place', async () => {
+  const result = await page.evaluate(async () => {
+    const { renderCellEditor } = await import('/js/ui/views/NotebookCheckpointsView.js');
+    const cp1 = { id: 'cp1', title: 'Unit 1', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [] };
+    const cp2 = { id: 'cp2', title: 'Unit 2', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [] };
+    const classroom = { id: 'c1', checkpoints: [cp1, cp2] };
+    const student = {
+      id: 's1', name: 'Anjali',
+      history: [
+        { id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: { type: 'notebook_readiness', subjectId: 'subj-1', notebookTypeId: 'type-1' }, recordedAt: '2026-08-01T00:00:00.000Z' },
+        { id: 'h2', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: { type: 'notebook_readiness_inspection', subjectId: 'subj-1', notebookTypeId: 'type-1', checkpointId: 'cp2' }, recordedAt: '2026-09-20T00:00:00.000Z' },
+      ],
+    };
+    const editor = renderCellEditor(cp1, student, {}, classroom);
+    return editor.textContent;
+  });
+  assert.match(result, /1 permanent badge earned for this notebook/);
+  assert.match(result, /Previous system — historical awards: 1 record on file for this notebook/);
+});
+
+test('no action buttons of any kind exist in this section -- it is entirely read-only', async () => {
+  const result = await page.evaluate(async () => {
+    const { renderCellEditor } = await import('/js/ui/views/NotebookCheckpointsView.js');
+    const cp1 = { id: 'cp1', title: 'Unit 1', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [] };
+    const classroom = { id: 'c1', checkpoints: [cp1] };
+    const student = {
+      id: 's1', name: 'Anjali',
+      history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: { type: 'notebook_readiness_inspection', subjectId: 'subj-1', notebookTypeId: 'type-1', checkpointId: 'cp1' }, recordedAt: '2026-09-01T00:00:00.000Z' }],
+    };
+    const editor = renderCellEditor(cp1, student, {}, classroom);
+    return [...editor.querySelectorAll('button')].map((b) => b.textContent);
+  });
+  assert.ok(!result.includes('Revoke'));
+  assert.ok(!result.includes('Award anyway (override)'));
 });

@@ -1,18 +1,19 @@
 /**
  * tests/ui/notebookCheckpointsViewReadinessWiring.test.js
  *
- * Notebook-level Readiness Champion redesign (2026-11-06) — proves
- * ui/views/NotebookCheckpointsView.js's own handlers genuinely route
- * through services/notebookReadinessChampionService.js's
- * evaluateReadinessChampionForNotebook() (never the removed,
- * per-checkpoint notebookBadgeAwardService.evaluateReadinessChampion()),
- * by mounting the real, exported renderNotebookCheckpointsView() in a
- * real Chromium page and driving its actual DOM across a notebook with
- * MULTIPLE checkpoints — the one scenario a per-checkpoint-only test
- * harness can never exercise. Same mount/stub/plain-data-return
- * conventions as tests/ui/notebookCheckpointsViewReviewRecognition.test.js's
- * own header comment describes; not duplicating that file's own
- * Completion Star coverage.
+ * PERMANENT, PER-INSPECTION Readiness Champion redesign (2026-11-07) —
+ * proves ui/views/NotebookCheckpointsView.js's own handlers wire
+ * EXACTLY one Readiness Champion trigger: creating a fresh checkpoint
+ * (the "+ Add Checkpoint" form's create path) calls
+ * services/notebookReadinessChampionService.js's own
+ * inspectReadinessChampionOnNewCheckpoint(). Every other handler that
+ * used to re-evaluate or auto-revoke under the prior notebook-level
+ * model (editing an existing checkpoint, deleting one, quick-marking
+ * submitted, and the detailed cell editor's submission/review/
+ * withdrawal save) must now leave Readiness Champion history
+ * completely untouched — proven here by mounting the real, exported
+ * renderNotebookCheckpointsView() in a real Chromium page and driving
+ * its actual DOM, never a mocked handler.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -80,11 +81,6 @@ test.after(async () => {
 
 const OWNER_UID = 'teacher-1';
 
-// dueDate defaults well into the future relative to "today" -- the quick-mark
-// path (onQuickMarkSubmitted) always submits with getTodayDateKey(), the real
-// wall-clock date, so a fixed past due date would make every quick-marked
-// submission unintentionally late regardless of which real day this suite
-// happens to run on.
 function buildCheckpoint({ id, order = 0, dueDate = '2026-12-31', records = [] } = {}) {
   return { id, subjectId: 'subj-1', notebookTypeId: 'type-1', title: `Unit ${order + 1}`, description: '', givenDate: '2026-09-01', dueDate, order, records };
 }
@@ -122,6 +118,21 @@ async function runInView(classroom, currentUser, run) {
         onSelectStudent: () => {},
         onGoToClassMode: null,
       });
+      // Fills and saves the "+ Add Checkpoint" form -- the ONE live
+      // inspection-event trigger. Defined here (in-page), not at
+      // Node module scope, so it is reachable from `run`'s own
+      // eval'd, in-page body below.
+      window.createCheckpointViaForm = (container, { title, dueDate = '2026-12-31' }) => {
+        container.querySelector('.notebook-checkpoints__add-button').click();
+        const form = container.querySelector('.notebook-checkpoints__form');
+        const titleInput = form.querySelector('input[type="text"]');
+        titleInput.value = title;
+        titleInput.dispatchEvent(new Event('input', { bubbles: true }));
+        const [, dueDateInput] = form.querySelectorAll('input[type="date"]');
+        dueDateInput.value = dueDate;
+        dueDateInput.dispatchEvent(new Event('input', { bubbles: true }));
+        [...form.querySelectorAll('button')].find((b) => b.textContent === 'Save').click();
+      };
       // eslint-disable-next-line no-eval
       const runFn = (0, eval)(run);
       const result = await runFn({ container, classroom });
@@ -132,21 +143,118 @@ async function runInView(classroom, currentUser, run) {
   );
 }
 
-test('QUICK MARK SUBMITTED: one on-time checkpoint out of two leaves the notebook incomplete -- no Readiness Champion badge', async () => {
-  const checkpoints = [buildCheckpoint({ id: 'cp-1', order: 0 }), buildCheckpoint({ id: 'cp-2', order: 1 })];
-  const classroom = buildClassroom({ checkpoints, student: buildStudent() });
+test('CREATE: a fresh checkpoint with all previously-assigned work complete awards exactly one permanent badge', async () => {
+  const cp1 = buildCheckpoint({ id: 'cp-1', order: 0 });
+  cp1.records = [{ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-08', reviewStatus: 'not_reviewed', badgeAwards: [] }];
+  const classroom = buildClassroom({ checkpoints: [cp1], student: buildStudent() });
 
   const result = await runInView(classroom, { uid: OWNER_UID }, async ({ container, classroom }) => {
-    container.querySelector('td[data-checkpoint-id="cp-1"][data-student-id="s1"] .notebook-checkpoints__cell-quick-mark').click();
+    createCheckpointViaForm(container, { title: 'Unit 2' });
     const student = classroom.teams[0].students[0];
-    return { count: student.notebookBadgeCounts['readiness-champion'] ?? 0, readinessEntries: student.history.filter((e) => e.kind === 'readiness-champion').length };
+    return { count: student.notebookBadgeCounts['readiness-champion'] ?? 0, entries: student.history.filter((e) => e.kind === 'readiness-champion').length };
+  });
+
+  assert.equal(result.count, 1, 'exactly one badge for the whole notebook, earned at the new checkpoint\'s own creation');
+  assert.equal(result.entries, 1);
+});
+
+test('CREATE: a pending prior checkpoint prevents the award at the new checkpoint\'s own creation', async () => {
+  const cp1 = buildCheckpoint({ id: 'cp-1', order: 0 }); // never submitted
+  const classroom = buildClassroom({ checkpoints: [cp1], student: buildStudent() });
+
+  const result = await runInView(classroom, { uid: OWNER_UID }, async ({ container, classroom }) => {
+    createCheckpointViaForm(container, { title: 'Unit 2' });
+    const student = classroom.teams[0].students[0];
+    return { count: student.notebookBadgeCounts['readiness-champion'] ?? 0 };
   });
 
   assert.equal(result.count, 0);
-  assert.equal(result.readinessEntries, 0);
 });
 
-test('QUICK MARK SUBMITTED: submitting the FINAL required checkpoint on time completes the notebook and awards Readiness Champion exactly once', async () => {
+test('CREATE: a LATE (but submitted) prior checkpoint still qualifies -- historical lateness is irrelevant under the new rule', async () => {
+  const cp1 = buildCheckpoint({ id: 'cp-1', order: 0, dueDate: '2026-09-10' });
+  cp1.records = [{ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-25', reviewStatus: 'not_reviewed', badgeAwards: [] }];
+  const classroom = buildClassroom({ checkpoints: [cp1], student: buildStudent() });
+
+  const result = await runInView(classroom, { uid: OWNER_UID }, async ({ container, classroom }) => {
+    createCheckpointViaForm(container, { title: 'Unit 2' });
+    const student = classroom.teams[0].students[0];
+    return { count: student.notebookBadgeCounts['readiness-champion'] ?? 0 };
+  });
+
+  assert.equal(result.count, 1);
+});
+
+test('CREATE: two distinct qualifying checkpoint-creation events produce two independent, permanent badges for the same notebook', async () => {
+  const cp1 = buildCheckpoint({ id: 'cp-1', order: 0 });
+  cp1.records = [{ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-08', reviewStatus: 'not_reviewed', badgeAwards: [] }];
+  const classroom = buildClassroom({ checkpoints: [cp1], student: buildStudent() });
+
+  const result = await runInView(classroom, { uid: OWNER_UID }, async ({ container, classroom }) => {
+    createCheckpointViaForm(container, { title: 'Unit 2' }); // qualifies: cp1 complete -- badge #1
+
+    // Submit the newly-created cp2 so the THIRD checkpoint's own creation also qualifies.
+    const cp2 = classroom.checkpoints.find((c) => c.title === 'Unit 2');
+    cp2.records.push({ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-15', reviewStatus: 'not_reviewed', badgeAwards: [] });
+
+    createCheckpointViaForm(container, { title: 'Unit 3' }); // qualifies again -- badge #2
+
+    const student = classroom.teams[0].students[0];
+    return { count: student.notebookBadgeCounts['readiness-champion'] ?? 0, entries: student.history.filter((e) => e.kind === 'readiness-champion' && e.delta === 1).length };
+  });
+
+  assert.equal(result.count, 2, 'two qualifying inspections -- two permanent badges, never capped at one per notebook');
+  assert.equal(result.entries, 2);
+});
+
+test('EDIT (not create): changing an existing checkpoint\'s due date never awards or revokes Readiness Champion', async () => {
+  const cp1 = buildCheckpoint({ id: 'cp-1', order: 0 });
+  cp1.records = [{ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-08', reviewStatus: 'not_reviewed', badgeAwards: [] }];
+  const cp2 = buildCheckpoint({ id: 'cp-2', order: 1 }); // left pending
+  const classroom = buildClassroom({ checkpoints: [cp1, cp2], student: buildStudent() });
+
+  const result = await runInView(classroom, { uid: OWNER_UID }, async ({ container, classroom }) => {
+    // Open cp1's own checkpoint-level overflow menu -> Edit checkpoint
+    // (not the per-student cell editor) and resave it with a different
+    // due date.
+    container.querySelector('th[data-checkpoint-id="cp-1"] .overflow-menu__trigger').click();
+    [...container.querySelectorAll('.overflow-menu__item')].find((b) => b.textContent === 'Edit checkpoint').click();
+    const form = container.querySelector('.notebook-checkpoints__form');
+    if (form) {
+      const [, dueDateInput] = form.querySelectorAll('input[type="date"]');
+      dueDateInput.value = '2026-10-31';
+      dueDateInput.dispatchEvent(new Event('input', { bubbles: true }));
+      [...form.querySelectorAll('button')].find((b) => b.textContent === 'Save')?.click();
+    }
+    const student = classroom.teams[0].students[0];
+    return { count: student.notebookBadgeCounts['readiness-champion'] ?? 0, entries: student.history.filter((e) => e.kind === 'readiness-champion').length, formFound: !!form };
+  });
+
+  assert.equal(result.formFound, true, 'the edit form must actually have been reachable for this test to be meaningful');
+  assert.equal(result.count, 0);
+  assert.equal(result.entries, 0, 'editing is never an inspection event, regardless of what it changes');
+});
+
+test('DELETE: removing a checkpoint never awards or revokes Readiness Champion, even when it newly completes the notebook', async () => {
+  const cp1 = buildCheckpoint({ id: 'cp-1', order: 0 });
+  cp1.records = [{ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-08', reviewStatus: 'not_reviewed', badgeAwards: [] }];
+  const cp2 = buildCheckpoint({ id: 'cp-2', order: 1 }); // left pending
+  const classroom = buildClassroom({ checkpoints: [cp1, cp2], student: buildStudent() });
+
+  const result = await runInView(classroom, { uid: OWNER_UID }, async ({ container, classroom }) => {
+    window.confirm = () => true;
+    container.querySelector('th[data-checkpoint-id="cp-2"] .overflow-menu__trigger').click();
+    [...container.querySelectorAll('.overflow-menu__item')].find((b) => b.textContent === 'Delete checkpoint').click();
+    const student = classroom.teams[0].students[0];
+    return { count: student.notebookBadgeCounts['readiness-champion'] ?? 0, entries: student.history.filter((e) => e.kind === 'readiness-champion').length, remaining: classroom.checkpoints.length };
+  });
+
+  assert.equal(result.remaining, 1, 'the delete must actually have happened for this test to be meaningful');
+  assert.equal(result.count, 0);
+  assert.equal(result.entries, 0, 'deletion is never an inspection event');
+});
+
+test('QUICK MARK SUBMITTED: submitting the final required checkpoint never awards anything by itself -- only the NEXT checkpoint\'s own creation can', async () => {
   const checkpoints = [buildCheckpoint({ id: 'cp-1', order: 0 }), buildCheckpoint({ id: 'cp-2', order: 1 })];
   const classroom = buildClassroom({ checkpoints, student: buildStudent() });
 
@@ -154,63 +262,35 @@ test('QUICK MARK SUBMITTED: submitting the FINAL required checkpoint on time com
     container.querySelector('td[data-checkpoint-id="cp-1"][data-student-id="s1"] .notebook-checkpoints__cell-quick-mark').click();
     container.querySelector('td[data-checkpoint-id="cp-2"][data-student-id="s1"] .notebook-checkpoints__cell-quick-mark').click();
     const student = classroom.teams[0].students[0];
-    return {
-      count: student.notebookBadgeCounts['readiness-champion'] ?? 0,
-      activeEntries: student.history.filter((e) => e.kind === 'readiness-champion' && e.delta === 1).length,
-    };
+    return { count: student.notebookBadgeCounts['readiness-champion'] ?? 0, entries: student.history.filter((e) => e.kind === 'readiness-champion').length };
   });
 
-  assert.equal(result.count, 1, 'exactly one badge for the whole notebook, not one per checkpoint');
-  assert.equal(result.activeEntries, 1);
+  assert.equal(result.count, 0, 'submitting is never an inspection event under the new rule, regardless of what it completes');
+  assert.equal(result.entries, 0);
 });
 
-test('WITHDRAWAL: walking the only remaining required checkpoint back to Not Submitted auto-revokes an already-earned Readiness Champion badge', async () => {
-  const checkpoints = [buildCheckpoint({ id: 'cp-1', order: 0 }), buildCheckpoint({ id: 'cp-2', order: 1 })];
-  const classroom = buildClassroom({ checkpoints, student: buildStudent() });
+test('WITHDRAWAL via the detailed cell editor never revokes an already-earned permanent badge', async () => {
+  const cp1 = buildCheckpoint({ id: 'cp-1', order: 0 });
+  cp1.records = [{ studentId: 's1', submissionStatus: 'submitted', submittedDate: '2026-09-08', reviewStatus: 'not_reviewed', badgeAwards: [] }];
+  const classroom = buildClassroom({ checkpoints: [cp1], student: buildStudent() });
 
   const result = await runInView(classroom, { uid: OWNER_UID }, async ({ container, classroom }) => {
-    container.querySelector('td[data-checkpoint-id="cp-1"][data-student-id="s1"] .notebook-checkpoints__cell-quick-mark').click();
-    container.querySelector('td[data-checkpoint-id="cp-2"][data-student-id="s1"] .notebook-checkpoints__cell-quick-mark').click();
-    const countAfterAward = classroom.teams[0].students[0].notebookBadgeCounts['readiness-champion'] ?? 0;
+    // Earn the badge first, via a qualifying checkpoint creation.
+    createCheckpointViaForm(container, { title: 'Unit 2' });
+    const student = classroom.teams[0].students[0];
+    const countAfterAward = student.notebookBadgeCounts['readiness-champion'] ?? 0;
 
-    // Withdraw checkpoint 1 via the detailed cell editor (the only UI path
-    // that can walk a submission back to Not Submitted).
+    // Now withdraw cp1's own submission via the detailed cell editor.
     container.querySelector('td[data-checkpoint-id="cp-1"][data-student-id="s1"] .notebook-checkpoints__cell-row').click();
     const [submissionSelect] = container.querySelectorAll('.notebook-checkpoints__cell-editor select');
     submissionSelect.value = 'not_submitted';
     submissionSelect.dispatchEvent(new Event('change', { bubbles: true }));
     [...container.querySelectorAll('button')].find((b) => b.textContent === 'Save').click();
 
-    const student = classroom.teams[0].students[0];
-    return { countAfterAward, countAfterWithdrawal: student.notebookBadgeCounts['readiness-champion'] ?? 0 };
+    return { countAfterAward, countAfterWithdrawal: student.notebookBadgeCounts['readiness-champion'] ?? 0, entriesAfterWithdrawal: student.history.filter((e) => e.kind === 'readiness-champion' && e.delta === -1).length };
   });
 
   assert.equal(result.countAfterAward, 1);
-  assert.equal(result.countAfterWithdrawal, 0, 'the notebook is incomplete again, so the automatic award must not survive the withdrawal');
-});
-
-test('A LATE submission on the final required checkpoint never awards Readiness Champion, even though the notebook becomes fully submitted', async () => {
-  const checkpoints = [buildCheckpoint({ id: 'cp-1', order: 0 }), buildCheckpoint({ id: 'cp-2', order: 1 })];
-  const classroom = buildClassroom({ checkpoints, student: buildStudent() });
-
-  const result = await runInView(classroom, { uid: OWNER_UID }, async ({ container, classroom }) => {
-    container.querySelector('td[data-checkpoint-id="cp-1"][data-student-id="s1"] .notebook-checkpoints__cell-quick-mark').click();
-
-    // Submit checkpoint 2 LATE via the detailed cell editor's own date field.
-    container.querySelector('td[data-checkpoint-id="cp-2"][data-student-id="s1"] .notebook-checkpoints__cell-row').click();
-    const [submissionSelect] = container.querySelectorAll('.notebook-checkpoints__cell-editor select');
-    submissionSelect.value = 'submitted';
-    submissionSelect.dispatchEvent(new Event('change', { bubbles: true }));
-    const dateInput = container.querySelector('.notebook-checkpoints__cell-editor input[type="date"]');
-    dateInput.value = '2027-01-15'; // after the checkpoint's own 2026-12-31 due date
-    dateInput.dispatchEvent(new Event('input', { bubbles: true }));
-    [...container.querySelectorAll('button')].find((b) => b.textContent === 'Save').click();
-
-    const student = classroom.teams[0].students[0];
-    const updatedCp2 = classroom.checkpoints.find((c) => c.id === 'cp-2');
-    return { count: student.notebookBadgeCounts['readiness-champion'] ?? 0, cp2Status: updatedCp2.records.find((r) => r.studentId === 's1')?.submissionStatus };
-  });
-
-  assert.equal(result.cp2Status, 'submitted', 'the submission itself went through');
-  assert.equal(result.count, 0, 'the notebook is complete but not on time, so no badge');
+  assert.equal(result.countAfterWithdrawal, 1, 'the badge, once earned, survives a later withdrawal of the very checkpoint that made it possible');
+  assert.equal(result.entriesAfterWithdrawal, 0, 'no code path in the new model ever writes a delta:-1 entry for this kind');
 });

@@ -157,16 +157,18 @@ test('Completion Star and Readiness Champion sections coexist independently in t
         badgeAwards: [],
       }],
     };
+    const classroom = { id: 'c1', checkpoints: [checkpoint] };
     const student = {
       id: 's1', name: 'Anjali', score: 1,
       // Completion Star NOT awarded (empty points/'auto' history); Readiness
-      // Champion IS active, on the student's own append-only history, never
-      // this checkpoint record's own (now Organization/Punctuation-only)
+      // Champion has one permanent, per-inspection badge on the student's
+      // own append-only history (2026-11-07 redesign), never this
+      // checkpoint record's own (now Organization/Punctuation-only)
       // `badgeAwards` -- see services/notebookReadinessChampionService.js's
       // own header comment for why.
-      history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: { type: 'notebook_readiness', subjectId: 'subj-1', notebookTypeId: 'type-1' }, recordedAt: '2026-09-05T00:00:00.000Z' }],
+      history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: { type: 'notebook_readiness_inspection', subjectId: 'subj-1', notebookTypeId: 'type-1', checkpointId: 'cp1' }, recordedAt: '2026-09-05T00:00:00.000Z' }],
     };
-    const editor = renderCellEditor(checkpoint, student, {});
+    const editor = renderCellEditor(checkpoint, student, {}, classroom);
     const labels = [...editor.querySelectorAll('.notebook-checkpoints__cell-editor-section-label')].map((el) => el.textContent);
     const text = editor.textContent;
     const buttons = [...editor.querySelectorAll('button')].map((b) => b.textContent);
@@ -174,7 +176,7 @@ test('Completion Star and Readiness Champion sections coexist independently in t
   });
   assert.ok(result.labels.includes('Readiness Champion (whole notebook)'));
   assert.ok(result.labels.includes('Completion Star'));
-  assert.match(result.text, /Awarded \(automatic — notebook complete and on time\)/); // Readiness Champion active
-  assert.ok(result.buttons.includes('Revoke')); // Readiness Champion's own action
+  assert.match(result.text, /1 permanent badge earned for this notebook/); // Readiness Champion's own permanent badge
+  assert.ok(!result.buttons.includes('Revoke'), 'a permanent badge has no revoke action any more');
   assert.ok(!result.buttons.includes('Remove')); // Completion Star has nothing to remove
 });

@@ -1,72 +1,78 @@
 /**
  * services/notebookReadinessChampionService.js
  *
- * Readiness Champion, redesigned to recognize completion of an ENTIRE
- * subject notebook — every one of its currently-configured checkpoints
- * submitted on or before its own due date — replacing the previous
- * per-checkpoint model that used to live in notebookBadgeAwardService.js
- * (evaluateReadinessChampion()/overrideReadinessChampion()/
- * revokeReadinessChampion()/revokeReadinessChampionOnWithdrawal(), and
- * the per-checkpoint `badgeAwards[]` array they drove, have all been
- * removed from that file — see its own header comment). This file owns
- * Readiness Champion exclusively from here on; Organization/Punctuation
- * Champion (REVIEW_COMPLETION_BADGE_IDS) remain in
- * notebookBadgeAwardService.js, untouched — a genuinely separate
- * manual-award mechanism this redesign has no bearing on.
+ * Readiness Champion, redesigned a second time (2026-11-07 product
+ * decision) into a PERMANENT, PER-INSPECTION award: creating a fresh
+ * checkpoint (a new unit) in a subject notebook is an inspection event.
+ * At that moment, every student whose PREVIOUSLY assigned required
+ * checkpoints (every checkpoint that existed before the new one) are
+ * all complete earns one badge for that exact event. Historical
+ * lateness is irrelevant. Once earned, a badge is never revoked —
+ * not automatically, and no correction workflow is authorized by this
+ * change. A student can earn multiple badges for the same notebook,
+ * one per qualifying checkpoint-creation event over time.
  *
- * WHY THE PREVIOUS MODEL WAS WRONG: the old evaluateReadinessChampion()
- * awarded on ANY single on-time checkpoint submission, with its own
- * duplicate guard scoped to that ONE checkpoint's own record — a
- * 5-checkpoint notebook with 5 on-time submissions produced 5 separate
- * awards, not 1. Readiness Champion is meant to recognize a student
- * being ready across an entire notebook, not any one unit — submitting
- * one on-time checkpoint must never award a badge while other required
- * checkpoints in the same notebook remain pending.
+ * THIS SUPERSEDES THE PRIOR NOTEBOOK-LEVEL MODEL (2026-11-06), which
+ * tracked a single "currently active or not" boolean per (student,
+ * notebook) via net-summed `delta: +1/-1` entries, auto-revoked on any
+ * later incomplete/late checkpoint, and re-evaluated on every
+ * submission, review, withdrawal, checkpoint edit, and checkpoint
+ * deletion. That entire live lifecycle
+ * (evaluateReadinessChampionForNotebook() / overrideReadinessChampionForNotebook() /
+ * revokeReadinessChampionForNotebook() / reevaluateReadinessChampionForAllStudents(),
+ * see their own "LEGACY (old model) live lifecycle" section below) has
+ * been removed from every live call site in
+ * ui/views/NotebookCheckpointsView.js — it is UNREACHABLE from any UI
+ * as of this redesign, and its auto-revoke behavior is exactly what the
+ * new product rule forbids ("never automatically revoke," "no
+ * submission/review/withdrawal/edit/deletion event may award or
+ * revoke"). The functions themselves remain in this file, unexported-
+ * in-spirit (kept only for the archived audit/migration services' own
+ * test fixtures — see that section's own header for exactly why), so
+ * no live or new code path writes `delta:-1` for this `kind` ever
+ * again.
  *
- * DATA MODEL — moved OFF the old `badgeAwards[]` array (which lived on
- * one checkpoint's own StudentCheckpointRecord — the wrong place to
- * track a notebook-wide fact) and ONTO `student.history`, the same
- * append-only ledger services/recognitionService.js already uses for
- * Completion Star. Every entry has `kind: 'readiness-champion'`, a
- * `workItemRef` of a NEW type, `'notebook_readiness'` (bare
- * `{ subjectId, notebookTypeId }`, no checkpointId/dateKey —
- * recognitionService.js's own three existing workItemRef types
- * (`'notebook'`, `'assignment_checkpoint'`, `'notebook_checkpoint'`)
- * all key to one checkpoint or one dated entry; the closest existing
- * precedent for a whole-notebook identity is actually
- * services/workRequestService.js's own WorkRequest keying, which is
- * exactly this same bare `{subjectId, notebookTypeId}` shape), a
- * `source` (`'automatic'` | `'override'` | `'retroactive_backfill'`),
- * and `delta` (+1 award / -1 reversal) used PURELY for net-sum
- * duplicate-prevention — this never touches `student.score`
- * (timelineService.logEntry() only increments score for
- * `kind: 'points'`). Nothing here is ever mutated in place once
- * written; a correction is always a new, appended, labeled entry.
+ * LEGACY DATA — PRESERVED, NEVER REINTERPRETED: entries already
+ * written under the OLD model (`workItemRef.type === 'notebook_readiness'`,
+ * no `checkpointId` — bare `{subjectId, notebookTypeId}`) remain
+ * exactly as they are on `student.history`, forever. This includes any
+ * `delta: -1` reversal entries the old automatic-revoke branch already
+ * wrote in production before this redesign. Nothing here edits,
+ * deletes, or migrates them. The helpers below that read this OLD
+ * shape (computeNotebookCompleteness's legacy-compatible core,
+ * buildNotebookReadinessWorkItemRef, the net-sum getters,
+ * isReadinessChampionActiveForNotebook, listReadinessChampionNotebookRefsForStudent,
+ * countActiveReadinessChampionNotebooksForStudent, getActiveReadinessSourcesForNotebook)
+ * are retained ONLY so (a) services/notebookReadinessChampionAuditService.js
+ * and services/legacyReadinessChampionMigrationService.js — both kept
+ * as archived, unused-by-the-app code per explicit product decision —
+ * still import successfully, and (b) the UI can display an honest,
+ * clearly-labeled "Previous system — historical awards" count for
+ * these old entries using the OLD model's own terms, WITHOUT asserting
+ * whether they would have qualified under the new per-inspection rule
+ * (no inspection-event checkpoint reference exists on old entries to
+ * check that against — any such claim would be unsupported). Nothing
+ * in this file ever merges an old-shape count into the new
+ * countReadinessChampionAchievementsForStudent() total below; the two
+ * are deliberately kept separate end to end, from the ledger up
+ * through the UI.
  *
- * THREE INDEPENDENT NET-SUM POOLS, one per `source`, mirror
- * recognitionService.getAutomaticStarNetForWorkItem()'s own "sum of
- * deltas for this exact ref, never a boolean flag" idiom exactly, but
- * three parallel pools instead of one — so the automatic re-evaluator
- * below can tell "this notebook's active state came from an automatic
- * award" (safe to auto-revoke if the notebook later becomes
- * incomplete/late) apart from "...from a teacher override or a
- * retroactive backfill" (NEVER auto-revoked; only an explicit teacher
- * revoke action touches those). At most one pool is ever net-positive
- * at a time in practice (evaluateReadinessChampionForNotebook() below
- * never auto-awards on top of an already-active override/backfill),
- * but revokeReadinessChampionForNotebook() (an explicit teacher action)
- * zeroes out whichever pool(s) are positive, robustly, regardless.
- *
- * HISTORICAL-CONFIGURATION LIMITATION — read
- * computeNotebookCompleteness()'s own comment below before touching
- * anything here: checkpointService.deleteCheckpoint() is a hard
- * removal with zero trace anywhere in this codebase (confirmed by an
- * exhaustive search for any audit-log/history mechanism — there is
- * none), so a deleted checkpoint can never be detected. This is a
- * structural limitation of the data itself, explicitly accepted as a
- * disclosed caveat (see notebookReadinessChampionAuditService.js's own
- * header) rather than grounds to refuse every historical
- * classification.
+ * NEW DATA MODEL — one ledger entry per (student, qualifying inspection
+ * event), `kind: 'readiness-champion'`, `delta: 1` always (no reversal
+ * shape exists for this entry type), `source: 'automatic'`, and a
+ * `workItemRef` of type `'notebook_readiness_inspection'`:
+ * `{ type, subjectId, notebookTypeId, checkpointId }` — `checkpointId`
+ * is the id of the NEWLY CREATED checkpoint whose introduction
+ * triggered this exact inspection, making each entry's own identity
+ * unique per event (two qualifying checkpoint-creation events for the
+ * same notebook produce two independent, permanent entries — this is
+ * the intended "multiple badges per notebook" behavior, not a bug).
+ * recognitionService.workItemRefsEqual() compares type AND every key,
+ * including key count, so an old-shape ref (3 keys, type
+ * 'notebook_readiness') can never accidentally match a new-shape ref
+ * (4 keys, type 'notebook_readiness_inspection') — the two ledgers
+ * coexist on the same `student.history` array without risk of
+ * cross-contamination.
  */
 
 import * as checkpointService from './checkpointService.js';
@@ -78,44 +84,58 @@ import { isValidDateKey } from '../utils/dateHelpers.js';
 
 export { READINESS_CHAMPION_BADGE_ID };
 
+/** LEGACY (old model) ref shape — retained only for reading pre-redesign history and for services/notebookReadinessChampionAuditService.js + services/legacyReadinessChampionMigrationService.js, both archived and unused by the live app. Never written to again by any live code path. */
 export function buildNotebookReadinessWorkItemRef({ subjectId, notebookTypeId }) {
   return { type: 'notebook_readiness', subjectId, notebookTypeId };
 }
 
+/** The new per-inspection-event ref shape — one distinct identity per (subjectId, notebookTypeId, checkpointId), where checkpointId is the newly-created checkpoint that triggered this exact inspection. */
+export function buildNotebookReadinessInspectionWorkItemRef({ subjectId, notebookTypeId, checkpointId }) {
+  return { type: 'notebook_readiness_inspection', subjectId, notebookTypeId, checkpointId };
+}
+
 /**
- * The single source of truth for "is this notebook complete, and was
- * every required checkpoint submitted on or before its own due date" —
- * reused identically by the live lifecycle below AND by
- * notebookReadinessChampionAuditService.js's historical audit, so the
- * two can never silently diverge on what "complete and on time" means.
+ * The single source of truth for "is this notebook's required work
+ * complete, and was it on time" — shared by the live award path below,
+ * the archived legacy audit service, and the archived legacy migration
+ * service, so none of them can silently diverge on what "complete"
+ * means for the same classroom data.
  *
- * `referenceDate` (optional, a date-key string) restricts the required
- * set to checkpoints whose own `createdAt` is on or before that date —
- * exposed for callers that have a meaningful historical reference point
- * of their own; the live lifecycle below never passes this (the current
- * full checkpoint list IS the reference point when asking "is this
- * notebook complete right now"), and the audit in
- * notebookReadinessChampionAuditService.js also does not pass one by
- * default (see that file's own header for why no automatic choice of
- * reference date is reliable enough to pick on a caller's behalf).
+ * `excludeCheckpointIds` (new, 2026-11-07) drops specific checkpoints
+ * from the required set BY ID — used by the live inspection path below
+ * to evaluate "every PREVIOUSLY assigned required checkpoint" by
+ * excluding the brand-new checkpoint that triggered this exact
+ * inspection. Deliberately an id-based exclusion rather than a
+ * date-based one: `referenceDate` (below) only has day granularity, so
+ * two checkpoints created on the same calendar day would be
+ * indistinguishable by date alone — excluding by id is exact regardless
+ * of how many checkpoints were created on the same day.
+ *
+ * `referenceDate` (optional, a date-key string, pre-existing) restricts
+ * the required set to checkpoints whose own `createdAt` is on or before
+ * that date — used only by the archived legacy migration service's own
+ * historical reference-date reconstruction. The live inspection path
+ * below never passes this; it uses `excludeCheckpointIds` instead, for
+ * the exact-id reason above.
  *
  * A checkpoint with NO due date (`''`, unset) is treated as compatible
  * with "on time" — never late, by the exact same construction as
- * checkpointService.isLate() itself ("a submission cannot be classified
- * as late if there is no due date"); this function stays consistent
- * with that existing rule rather than inventing a stricter one. A
- * checkpoint whose due date IS set but is not a well-formed date key
- * (malformed data), or a submitted record whose own submittedDate is
- * not a well-formed date key, makes that one checkpoint's own
- * timeliness UNRESOLVABLE — contributes to `insufficientEvidenceCount`,
- * never guessed either way.
+ * checkpointService.isLate() itself. A checkpoint whose due date IS set
+ * but malformed, or a submitted record whose own submittedDate is
+ * malformed, makes that one checkpoint's own timeliness UNRESOLVABLE —
+ * contributes to `insufficientEvidenceCount`, never guessed either way
+ * (this still matters for `isCompleteAndOnTime`, kept for any caller —
+ * such as the archived legacy audit/migration services — that still
+ * needs it; the new live inspection path itself uses `isComplete`
+ * only, since lateness is explicitly irrelevant to the new rule).
  *
  * A notebook with zero required checkpoints is never "complete" —
  * nothing to be champion of — guarding the vacuous-truth case
  * explicitly rather than leaving an empty-array edge case undefined.
  */
-export function computeNotebookCompleteness(classroom, subjectId, notebookTypeId, studentId, { referenceDate = null } = {}) {
-  const allCheckpoints = checkpointService.listCheckpointsForNotebook(classroom, subjectId, notebookTypeId);
+export function computeNotebookCompleteness(classroom, subjectId, notebookTypeId, studentId, { referenceDate = null, excludeCheckpointIds = [] } = {}) {
+  const excludeSet = new Set(excludeCheckpointIds);
+  const allCheckpoints = checkpointService.listCheckpointsForNotebook(classroom, subjectId, notebookTypeId).filter((cp) => !excludeSet.has(cp.id));
   const requiredCheckpoints = referenceDate
     ? allCheckpoints.filter((cp) => !cp.createdAt || cp.createdAt.slice(0, 10) <= referenceDate)
     : allCheckpoints;
@@ -163,6 +183,12 @@ export function computeNotebookCompleteness(classroom, subjectId, notebookTypeId
   };
 }
 
+// ---------------------------------------------------------------------
+// LEGACY (old model) read helpers — retained for the archived audit and
+// migration services and for an honest, separately-labeled "Previous
+// system" display only. Never written to by any live code path below.
+// ---------------------------------------------------------------------
+
 function getNetForSource(student, workItemRef, source) {
   return (student.history || [])
     .filter((e) => e.kind === 'readiness-champion' && e.source === source && workItemRefsEqual(e.workItemRef, workItemRef))
@@ -179,7 +205,7 @@ export function getBackfillReadinessNetForNotebook(student, workItemRef) {
   return getNetForSource(student, workItemRef, 'retroactive_backfill');
 }
 
-/** True if ANY of the three source-pools is currently net-active for this exact notebook — the one check every awarding path below consults before pushing a new entry. */
+/** LEGACY. True if any OLD-model source-pool is currently net-active for this exact notebook. */
 export function isReadinessChampionActiveForNotebook(student, workItemRef) {
   return (
     getAutomaticReadinessNetForNotebook(student, workItemRef) >= 1 ||
@@ -188,20 +214,11 @@ export function isReadinessChampionActiveForNotebook(student, workItemRef) {
   );
 }
 
-/**
- * Every distinct notebook this student has ANY Readiness Champion
- * history for at all (not just currently-active ones), each tagged with
- * `active` (same `isReadinessChampionActiveForNotebook()` check above).
- * Exported specifically so services/legacyReadinessChampionMigrationService.js's
- * own counter-reconciliation step can derive "how many notebooks are
- * genuinely active for this student, across every notebook, right now"
- * directly from this file's own net-sum ledger truth, rather than
- * re-deriving or guessing at it independently.
- */
+/** LEGACY. Every distinct notebook this student has any OLD-model Readiness Champion history for, each tagged with `active`. Used by the archived legacy migration service's own counter-reconciliation preview, and by countActiveReadinessChampionNotebooksForStudent() below for the UI's "Previous system" display. */
 export function listReadinessChampionNotebookRefsForStudent(student) {
   const seen = new Map();
   for (const entry of student.history || []) {
-    if (entry.kind !== 'readiness-champion' || !entry.workItemRef) continue;
+    if (entry.kind !== 'readiness-champion' || entry.workItemRef?.type !== 'notebook_readiness') continue;
     const key = `${entry.workItemRef.subjectId}::${entry.workItemRef.notebookTypeId}`;
     if (!seen.has(key)) seen.set(key, { subjectId: entry.workItemRef.subjectId, notebookTypeId: entry.workItemRef.notebookTypeId });
   }
@@ -209,74 +226,49 @@ export function listReadinessChampionNotebookRefsForStudent(student) {
 }
 
 /**
- * Count of distinct subject notebooks CURRENTLY carrying an active
- * Readiness Champion award for this student, from ANY of the three
- * source pools — one notebook with both an active override AND stray
- * history from a different, already-net-zero source still counts once,
- * never per history entry and never per pool. This is the single
- * source of truth ui/views/NotebookCheckpointsView.js's own row-level
- * badge chip must read for this badge type, instead of the legacy,
- * disconnected `student.notebookBadgeCounts['readiness-champion']`
- * aggregate (found during the 2026-11-07 production display-
- * discrepancy investigation: that legacy counter is only ever written
- * by the old, now-deleted per-checkpoint award functions and by this
- * file's own live award/revoke calls into notebookBadgeService.js —
- * never by anything that reads it back out, so a student whose
- * notebook was never re-evaluated after this redesign shipped, or
- * whose legacy count has no corresponding entry in this file's own
- * ledger, shows a stale or entirely disconnected number). Reuses
- * listReadinessChampionNotebookRefsForStudent() above rather than
- * re-deriving the same net-sum logic a second time.
+ * LEGACY. Count of distinct subject notebooks still net-active under
+ * the OLD model's own terms, for this student — the one, faithful,
+ * never-reinterpreted number the UI may show under a clearly separate
+ * "Previous system — historical awards" label (see
+ * ui/views/NotebookCheckpointsView.js's own badge-chip code). This is
+ * never added to countReadinessChampionAchievementsForStudent()'s own
+ * total below, and never used to infer whether any individual old
+ * entry would qualify under the new per-inspection rule.
  */
 export function countActiveReadinessChampionNotebooksForStudent(student) {
   return listReadinessChampionNotebookRefsForStudent(student).filter((ref) => ref.active).length;
 }
 
-/** Returns, for this student+notebook, which of the three source labels currently has a net-active pool (there is normally at most one) — used by the cell editor UI to describe how an active award was granted. */
+/** LEGACY. Which OLD-model source label(s) are currently net-active for this student+notebook — used by the archived legacy audit service's hasPriorAwardHistory bucket. */
 export function getActiveReadinessSourcesForNotebook(student, workItemRef) {
   return ['automatic', 'override', 'retroactive_backfill'].filter((source) => getNetForSource(student, workItemRef, source) >= 1);
 }
 
-function appendReadinessEntry(student, { label, delta, source, workItemRef, ...meta }) {
-  return logEntry(student, { kind: 'readiness-champion', label, delta, source, workItemRef, ...meta });
+/** LEGACY. Every OLD-model Readiness Champion history entry (award OR reversal, any source) for this exact notebook, undeduplicated — for an honest, separate "Previous system" display only. Never used to infer anything about the new per-inspection rule. */
+export function listLegacyReadinessChampionEntriesForNotebook(student, subjectId, notebookTypeId) {
+  return (student.history || []).filter(
+    (e) => e.kind === 'readiness-champion' && e.workItemRef?.type === 'notebook_readiness' && e.workItemRef.subjectId === subjectId && e.workItemRef.notebookTypeId === notebookTypeId
+  );
 }
 
-/**
- * Automatic — intended to be re-evaluated after every submission,
- * withdrawal, due-date change, or checkpoint add/delete event touching
- * this notebook (see ui/views/NotebookCheckpointsView.js's own call
- * sites). Never gated on "is this the final required checkpoint" —
- * re-checking full completeness on every event is simpler and exactly
- * as correct, since an award only actually fires once
- * computeNotebookCompleteness() genuinely reports complete-and-on-time.
- * Never throws; every non-applicable case is a silent no-op, matching
- * the old evaluateReadinessChampion()'s own "never abort/roll back the
- * event it's reacting to" contract.
- *
- * REVOCATION EVIDENCE POLICY (post-review hardening, 2026-11-06): an
- * active AUTOMATIC award is only ever auto-revoked here on CONFIRMED
- * evidence the notebook violates the rule — a required checkpoint still
- * pending (never submitted), or a required checkpoint genuinely late
- * (both its own `submittedDate` and the checkpoint's `dueDate`
- * well-formed and `submittedDate` after `dueDate`). `hasInsufficientEvidence`
- * ALONE (some OTHER required checkpoint's `dueDate`/`submittedDate`
- * missing-but-set or malformed, with nothing else confirmed wrong) is
- * explicitly NEVER, on its own, grounds to revoke — inability to
- * establish eligibility is not proof of ineligibility, the same
- * principle the old per-checkpoint evaluateReadinessChampion() already
- * applied to a malformed `dueDate` ("an existing award is never revoked
- * just because a due date was cleared or is malformed — there is no way
- * to tell whether the award was earned honestly"). An earlier draft of
- * this function treated `hasInsufficientEvidence` as revocation grounds
- * just like a confirmed violation, silently narrowing that old
- * protection to cover only a malformed `submittedDate`, not a malformed
- * `dueDate` — corrected here. If the evidence later becomes
- * re-establishable (a due date is corrected back to something
- * well-formed) and the notebook genuinely is complete-and-on-time, the
- * very next re-evaluation (this same function, called again) awards it
- * exactly as if nothing had ever gone wrong — no separate "restore"
- * action is needed.
- */
+// ---------------------------------------------------------------------
+// LEGACY (old model) live lifecycle — UNREACHABLE FROM ANY LIVE UI as of
+// the 2026-11-07 permanent per-inspection redesign. Every call site in
+// ui/views/NotebookCheckpointsView.js has been removed (checkpoint
+// create/edit/delete, submission, review, withdrawal, and save-cell all
+// trigger nothing here any more). Retained ONLY because
+// services/notebookReadinessChampionAuditService.js and
+// services/legacyReadinessChampionMigrationService.js — both themselves
+// archived and unused by the live app, per explicit 2026-11-07 product
+// decision — and their own test fixtures still construct OLD-shape
+// ledger entries by calling these functions directly. Not exported for
+// any new use; do not wire these into any UI. In particular,
+// evaluateReadinessChampionForNotebook()'s own auto-revoke branch is
+// exactly the automatic-revocation behavior the new rule forbids
+// ("never automatically revoke a Readiness Champion award") — it is
+// safe only because nothing live calls it any more.
+// ---------------------------------------------------------------------
+
 export function evaluateReadinessChampionForNotebook(classroom, subjectId, notebookTypeId, student, actingUid) {
   const workItemRef = buildNotebookReadinessWorkItemRef({ subjectId, notebookTypeId });
   const completeness = computeNotebookCompleteness(classroom, subjectId, notebookTypeId, student.id);
@@ -285,20 +277,12 @@ export function evaluateReadinessChampionForNotebook(classroom, subjectId, noteb
   const backfillActive = getBackfillReadinessNetForNotebook(student, workItemRef) >= 1;
 
   if (completeness.isCompleteAndOnTime) {
-    if (automaticNet >= 1 || overrideActive || backfillActive) return null; // already active from some source
+    if (automaticNet >= 1 || overrideActive || backfillActive) return null;
     if (!canAwardNotebookBadge(classroom, actingUid)) return null;
     appendReadinessEntry(student, { label: 'Readiness Champion', delta: 1, source: 'automatic', workItemRef });
     return notebookBadgeService.awardNotebookBadge(classroom, student, READINESS_CHAMPION_BADGE_ID);
   }
 
-  // Not currently complete-and-on-time. A CONFIRMED violation (pending or
-  // late) revokes an active AUTOMATIC award, deterministically and
-  // ungated — the same shape as the old evaluateReadinessChampion()'s own
-  // re-validation-on-every-call behavior. Insufficient evidence alone
-  // (see this function's own header comment) never reaches this branch.
-  // A teacher OVERRIDE or a retroactive BACKFILL is never touched by this
-  // automatic re-check regardless; only an explicit teacher revoke action
-  // can undo those.
   const hasConfirmedViolation = completeness.pendingCount > 0 || completeness.lateCount > 0;
   if (automaticNet >= 1 && hasConfirmedViolation) {
     const reason = completeness.pendingCount > 0 ? 'notebook_incomplete' : 'notebook_late';
@@ -308,12 +292,6 @@ export function evaluateReadinessChampionForNotebook(classroom, subjectId, noteb
   return null;
 }
 
-/**
- * Teacher override — awards despite the automatic rule not applying
- * (e.g. the teacher has an independent reason to treat an incomplete or
- * late notebook as earning this). Throws on misuse, matching every
- * other explicit teacher-commanded award/revoke in this app.
- */
 export function overrideReadinessChampionForNotebook(classroom, subjectId, notebookTypeId, student, actingUid) {
   if (!canAwardNotebookBadge(classroom, actingUid)) {
     throw new Error("Not authorized to award Readiness Champion — must be this classroom's owner or a co-teacher.");
@@ -326,35 +304,6 @@ export function overrideReadinessChampionForNotebook(classroom, subjectId, noteb
   return notebookBadgeService.awardNotebookBadge(classroom, student, READINESS_CHAMPION_BADGE_ID);
 }
 
-/**
- * Explicit teacher revoke — revokes whichever pool(s) (automatic/
- * override/retroactive backfill) are currently active for this
- * notebook. Throws if nothing is active, matching this app's "never
- * silently no-op an explicit command" convention.
- *
- * COUNTER INTEGRITY (post-review hardening, 2026-11-06): decrements the
- * displayed count ONCE PER ACTIVE POOL being revoked here, never a flat
- * single decrement — each pool's own earlier award call
- * (evaluateReadinessChampionForNotebook()'s automatic branch,
- * overrideReadinessChampionForNotebook(), or a future backfill-applying
- * function) independently incremented the counter exactly once via
- * notebookBadgeService.awardNotebookBadge(), so reversing N currently-
- * active pools must call notebookBadgeService.revokeNotebookBadge()
- * exactly N times to stay consistent. An earlier draft of this function
- * called revokeNotebookBadge() only once per invocation regardless,
- * relying on the (today still accurate, but not permanently guaranteed)
- * assumption that this codebase's own reachable API surface never
- * produces more than one simultaneously-active pool — corrected here so
- * the invariant holds structurally rather than by the absence of a
- * counter-example, and so it keeps holding if a future backfill-applying
- * function (see the migration work this redesign anticipates) ever adds
- * a `retroactive_backfill` entry alongside an active `automatic` or
- * `override` one. Every pool still gets its own, individually-labeled
- * reversal history entry (append-only, never collapsed into one).
- * Idempotent in the same way every other explicit command in this file
- * is: a second call once nothing is left active throws (`activePools.length
- * === 0` below), it never silently no-ops and never double-decrements.
- */
 export function revokeReadinessChampionForNotebook(classroom, subjectId, notebookTypeId, student, actingUid) {
   if (!canAwardNotebookBadge(classroom, actingUid)) {
     throw new Error("Not authorized to revoke Readiness Champion — must be this classroom's owner or a co-teacher.");
@@ -379,17 +328,93 @@ export function revokeReadinessChampionForNotebook(classroom, subjectId, noteboo
   return count;
 }
 
-/**
- * Re-evaluates every student in the classroom against this one notebook
- * — used after a structural change to the notebook itself (a checkpoint
- * added, deleted, or its due date edited) rather than a single
- * student's own submission event, since any of those can change
- * completeness for every student at once, not just one.
- */
 export function reevaluateReadinessChampionForAllStudents(classroom, subjectId, notebookTypeId, actingUid) {
   for (const team of classroom.teams || []) {
     for (const student of team.students || []) {
       evaluateReadinessChampionForNotebook(classroom, subjectId, notebookTypeId, student, actingUid);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------
+// NEW (permanent, per-inspection) live award path
+// ---------------------------------------------------------------------
+
+function appendReadinessEntry(student, { label, delta, source, workItemRef, ...meta }) {
+  return logEntry(student, { kind: 'readiness-champion', label, delta, source, workItemRef, ...meta });
+}
+
+/** True if this exact inspection event has already produced an entry for this student — the sole duplicate-prevention check for the new model (an existence check, not a net-sum, since this entry shape is never reversed). */
+function hasReadinessInspectionEntry(student, workItemRef) {
+  return (student.history || []).some((e) => e.kind === 'readiness-champion' && workItemRefsEqual(e.workItemRef, workItemRef));
+}
+
+/**
+ * Every permanent Readiness Champion badge this student has earned,
+ * optionally scoped to one subject notebook. A plain count of `+1`
+ * inspection-event entries — never net-summed, never capped at one per
+ * notebook, and never reduced by anything (no entry of this shape is
+ * ever reversed). This is the one number the new UI must show as the
+ * student's Readiness Champion achievement count, entirely separate
+ * from the LEGACY count above.
+ */
+export function countReadinessChampionAchievementsForStudent(student, { subjectId, notebookTypeId } = {}) {
+  return (student.history || []).filter(
+    (e) =>
+      e.kind === 'readiness-champion' &&
+      e.workItemRef?.type === 'notebook_readiness_inspection' &&
+      (!subjectId || e.workItemRef.subjectId === subjectId) &&
+      (!notebookTypeId || e.workItemRef.notebookTypeId === notebookTypeId)
+  ).length;
+}
+
+/** Every permanent inspection-event entry for one notebook, oldest first by insertion order — for the checkpoint editor's own history display (which checkpoint's introduction earned each badge, and when). */
+export function listReadinessChampionAchievementsForNotebook(student, subjectId, notebookTypeId) {
+  return (student.history || []).filter(
+    (e) =>
+      e.kind === 'readiness-champion' &&
+      e.workItemRef?.type === 'notebook_readiness_inspection' &&
+      e.workItemRef.subjectId === subjectId &&
+      e.workItemRef.notebookTypeId === notebookTypeId
+  );
+}
+
+/** Read-only preview: would this student qualify for a badge if a fresh unit were introduced right now. Awards nothing — never appends, never called by the live inspection path itself. */
+export function wouldQualifyAtNextInspection(classroom, subjectId, notebookTypeId, studentId) {
+  return computeNotebookCompleteness(classroom, subjectId, notebookTypeId, studentId).isComplete;
+}
+
+/**
+ * THE one live award trigger in the new model — called exactly once,
+ * for the one newly-created checkpoint, immediately after it is added
+ * to the classroom (see ui/views/NotebookCheckpointsView.js's own
+ * onSaveCheckpoint create branch; never called from any edit, delete,
+ * submission, review, or withdrawal path). For every student in the
+ * classroom, checks whether every OTHER currently-required checkpoint
+ * in this exact notebook (the new one excluded by its own id) is
+ * complete — lateness is irrelevant — and if so appends exactly one
+ * permanent entry and awards the badge. A student already holding an
+ * entry for this exact checkpointId (duplicate handling of the same
+ * creation event, e.g. a retried save) is skipped — never double-
+ * awarded. Never reverses anything, never throws for a student who
+ * doesn't qualify (silent no-op for that student only), and never
+ * awards when `canAwardNotebookBadge` denies the acting user.
+ */
+export function inspectReadinessChampionOnNewCheckpoint(classroom, newCheckpoint, actingUid) {
+  const { subjectId, notebookTypeId, id: checkpointId } = newCheckpoint;
+  const workItemRef = buildNotebookReadinessInspectionWorkItemRef({ subjectId, notebookTypeId, checkpointId });
+
+  if (!canAwardNotebookBadge(classroom, actingUid)) return;
+
+  for (const team of classroom.teams || []) {
+    for (const student of team.students || []) {
+      if (hasReadinessInspectionEntry(student, workItemRef)) continue;
+      const completeness = computeNotebookCompleteness(classroom, subjectId, notebookTypeId, student.id, {
+        excludeCheckpointIds: [checkpointId],
+      });
+      if (completeness.totalRequired === 0 || !completeness.isComplete) continue;
+      appendReadinessEntry(student, { label: 'Readiness Champion', delta: 1, source: 'automatic', workItemRef });
+      notebookBadgeService.awardNotebookBadge(classroom, student, READINESS_CHAMPION_BADGE_ID);
     }
   }
 }

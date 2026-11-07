@@ -1,19 +1,23 @@
 /**
  * tests/ui/notebookCheckpointsReadinessChampionBadgeDisplay.test.js
  *
- * Production display-discrepancy fix (2026-11-07): the student-row
- * badge chip for Readiness Champion (ui/views/NotebookCheckpointsView.js's
- * own populateStudentNameCell()) used to read
- * notebookBadgeService.listEarnedBadges()'s own legacy
- * student.notebookBadgeCounts['readiness-champion'] aggregate — a field
- * the new notebook-level award lifecycle
- * (services/notebookReadinessChampionService.js) never writes to on its
- * own terms and cannot reliably keep in sync for a student who was
- * never re-evaluated after this redesign shipped. This exercises the
- * REAL data-to-UI path (the actual exported populateStudentNameCell(),
- * a real Chromium DOM, a real stylesheet) rather than the counting
- * helper in isolation, same convention as the sibling
- * tests/ui/notebookCheckpointsStudentRow.test.js.
+ * PERMANENT, PER-INSPECTION Readiness Champion redesign (2026-11-07):
+ * the student-row badge chip (ui/views/NotebookCheckpointsView.js's own
+ * populateStudentNameCell()) now shows TWO separate things for this
+ * badge type:
+ *   - "Readiness Champion" — a plain, ever-increasing total of
+ *     permanent per-inspection badges (notebookReadinessChampionService.js's
+ *     own countReadinessChampionAchievementsForStudent()), never capped
+ *     at one per notebook, never net-summed, never reduced.
+ *   - "Previous system — historical awards" — a SEPARATE chip for any
+ *     OLD-shape (pre-redesign, `notebook_readiness`) legacy history
+ *     this student still carries, read in the OLD model's own net-sum
+ *     terms (countActiveReadinessChampionNotebooksForStudent()), never
+ *     merged into the count above.
+ * Exercises the REAL data-to-UI path (the actual exported
+ * populateStudentNameCell(), a real Chromium DOM, a real stylesheet)
+ * rather than the counting helpers in isolation, same convention as the
+ * sibling tests/ui/notebookCheckpointsStudentRow.test.js.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -67,8 +71,10 @@ test.after(async () => {
   await new Promise((resolve) => server.close(resolve));
 });
 
-const READINESS_WORK_ITEM_REF_1 = { type: 'notebook_readiness', subjectId: 's1', notebookTypeId: 'nt1' };
-const READINESS_WORK_ITEM_REF_2 = { type: 'notebook_readiness', subjectId: 's2', notebookTypeId: 'nt1' };
+const INSPECTION_REF_1 = { type: 'notebook_readiness_inspection', subjectId: 's1', notebookTypeId: 'nt1', checkpointId: 'cp-a' };
+const INSPECTION_REF_1_LATER = { type: 'notebook_readiness_inspection', subjectId: 's1', notebookTypeId: 'nt1', checkpointId: 'cp-b' };
+const INSPECTION_REF_2 = { type: 'notebook_readiness_inspection', subjectId: 's2', notebookTypeId: 'nt1', checkpointId: 'cp-c' };
+const LEGACY_REF_1 = { type: 'notebook_readiness', subjectId: 's1', notebookTypeId: 'nt1' };
 
 function buildClassroom() {
   return {
@@ -83,7 +89,6 @@ function buildClassroom() {
   };
 }
 
-/** `history` entries use `kind: 'readiness-champion'` — the real new-ledger shape notebookReadinessChampionService.js itself writes. */
 function buildStudent({ legacyCount = 0, history = [], organizationCount = 0 } = {}) {
   return {
     id: 'student-1',
@@ -111,101 +116,111 @@ async function getBadgeChips(classroom, student) {
   );
 }
 
-test('a legacy counter of 1 with NO active notebook-level award displays 0 (never shows the stale legacy count)', async () => {
-  const student = buildStudent({ legacyCount: 1, history: [] });
+test('no history at all shows no Readiness Champion chip and no legacy chip', async () => {
+  const student = buildStudent({ history: [] });
   const chips = await getBadgeChips(buildClassroom(), student);
-  assert.ok(!chips.some((c) => c.title === 'Readiness Champion'), 'must be entirely absent, not shown with count 0 or the stale legacy value');
+  assert.ok(!chips.some((c) => c.title === 'Readiness Champion'));
+  assert.ok(!chips.some((c) => c.title === 'Previous system — historical awards'));
 });
 
-test('one active notebook-level award (net +1) displays count 1, even though the legacy counter disagrees', async () => {
+test('a disconnected legacy notebookBadgeCounts field is never shown -- only the real ledger-derived counts matter', async () => {
+  const student = buildStudent({ legacyCount: 5, history: [] });
+  const chips = await getBadgeChips(buildClassroom(), student);
+  assert.ok(!chips.some((c) => c.title === 'Readiness Champion'));
+  assert.ok(!chips.some((c) => c.title === 'Previous system — historical awards'));
+});
+
+test('one permanent inspection-event achievement displays "Readiness Champion" with count 1', async () => {
   const student = buildStudent({
-    legacyCount: 0, // legacy counter says 0 -- the new ledger is the one that must win
-    history: [{ id: 'h1', kind: 'readiness-champion', label: 'Readiness Champion', delta: 1, source: 'automatic', workItemRef: READINESS_WORK_ITEM_REF_1 }],
+    history: [{ id: 'h1', kind: 'readiness-champion', label: 'Readiness Champion', delta: 1, source: 'automatic', workItemRef: INSPECTION_REF_1 }],
   });
   const chips = await getBadgeChips(buildClassroom(), student);
   assert.deepEqual(chips.find((c) => c.title === 'Readiness Champion'), { title: 'Readiness Champion', count: '1' });
 });
 
-test('two active awards for two different notebooks display count 2', async () => {
+test('TWO permanent achievements for the SAME notebook (two distinct triggering checkpoints) display count 2 -- never capped at one per notebook', async () => {
   const student = buildStudent({
     history: [
-      { id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: READINESS_WORK_ITEM_REF_1 },
-      { id: 'h2', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: READINESS_WORK_ITEM_REF_2 },
+      { id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: INSPECTION_REF_1 },
+      { id: 'h2', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: INSPECTION_REF_1_LATER },
     ],
   });
   const chips = await getBadgeChips(buildClassroom(), student);
   assert.deepEqual(chips.find((c) => c.title === 'Readiness Champion'), { title: 'Readiness Champion', count: '2' });
 });
 
-test('multiple positive history entries for the SAME notebook never inflate the count past 1 for that notebook', async () => {
+test('two achievements across two different notebooks also display count 2', async () => {
   const student = buildStudent({
     history: [
-      // A genuinely impossible-in-practice but worth-guarding sequence:
-      // two +1 automatic entries for the same notebook with no reversal
-      // in between (e.g. a hypothetical double-write) must still count
-      // as exactly one active notebook, never two.
-      { id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: READINESS_WORK_ITEM_REF_1 },
-      { id: 'h2', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: READINESS_WORK_ITEM_REF_1 },
-    ],
-  });
-  const chips = await getBadgeChips(buildClassroom(), student);
-  assert.deepEqual(chips.find((c) => c.title === 'Readiness Champion'), { title: 'Readiness Champion', count: '1' });
-});
-
-test('a fully reversed award (net back to 0) displays 0', async () => {
-  const student = buildStudent({
-    legacyCount: 1, // simulates the legacy counter never having been decremented in sync
-    history: [
-      { id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: READINESS_WORK_ITEM_REF_1 },
-      { id: 'h2', kind: 'readiness-champion', delta: -1, source: 'automatic', workItemRef: READINESS_WORK_ITEM_REF_1, reason: 'notebook_incomplete' },
-    ],
-  });
-  const chips = await getBadgeChips(buildClassroom(), student);
-  assert.ok(!chips.some((c) => c.title === 'Readiness Champion'));
-});
-
-test('an incomplete notebook with no award history at all never appears in the count', async () => {
-  // No readiness-champion history exists for this notebook at all --
-  // confirms absence-of-award (not merely absence-of-completion) is
-  // what the count reflects; this function never independently
-  // re-evaluates completeness, it only counts what's already been
-  // decided and recorded.
-  const student = buildStudent({ legacyCount: 0, history: [] });
-  const chips = await getBadgeChips(buildClassroom(), student);
-  assert.ok(!chips.some((c) => c.title === 'Readiness Champion'));
-});
-
-test('an OVERRIDE-sourced active award (never automatic) still counts correctly -- the fix must not accidentally only recognize the automatic pool', async () => {
-  const student = buildStudent({
-    history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'override', workItemRef: READINESS_WORK_ITEM_REF_1 }],
-  });
-  const chips = await getBadgeChips(buildClassroom(), student);
-  assert.deepEqual(chips.find((c) => c.title === 'Readiness Champion'), { title: 'Readiness Champion', count: '1' });
-});
-
-test('a RETROACTIVE BACKFILL-sourced active award still counts correctly', async () => {
-  const student = buildStudent({
-    history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'retroactive_backfill', workItemRef: READINESS_WORK_ITEM_REF_1 }],
-  });
-  const chips = await getBadgeChips(buildClassroom(), student);
-  assert.deepEqual(chips.find((c) => c.title === 'Readiness Champion'), { title: 'Readiness Champion', count: '1' });
-});
-
-test('one notebook active via automatic AND a second notebook active via override never double-counts the first notebook or misses the second -- exactly 2', async () => {
-  const student = buildStudent({
-    history: [
-      { id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: READINESS_WORK_ITEM_REF_1 },
-      { id: 'h2', kind: 'readiness-champion', delta: 1, source: 'override', workItemRef: READINESS_WORK_ITEM_REF_2 },
+      { id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: INSPECTION_REF_1 },
+      { id: 'h2', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: INSPECTION_REF_2 },
     ],
   });
   const chips = await getBadgeChips(buildClassroom(), student);
   assert.deepEqual(chips.find((c) => c.title === 'Readiness Champion'), { title: 'Readiness Champion', count: '2' });
+});
+
+test('an exact duplicate inspection-event entry (defensive -- should never occur in practice) still counts every entry present, since this chip is a plain history count, not a dedupe', async () => {
+  // Deliberately distinct from the OLD model's own "never inflate past
+  // 1 per notebook" guarantee -- under the new permanent model, the
+  // duplicate-prevention guarantee lives in
+  // inspectReadinessChampionOnNewCheckpoint() itself (one entry per
+  // exact checkpointId), not in this display count, which simply
+  // counts whatever is genuinely on the ledger.
+  const student = buildStudent({
+    history: [
+      { id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: INSPECTION_REF_1 },
+      { id: 'h2', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: INSPECTION_REF_1 },
+    ],
+  });
+  const chips = await getBadgeChips(buildClassroom(), student);
+  assert.deepEqual(chips.find((c) => c.title === 'Readiness Champion'), { title: 'Readiness Champion', count: '2' });
+});
+
+test('a LEGACY (old-shape, pre-redesign) history entry never counts toward "Readiness Champion" -- it surfaces only as the separate "Previous system" chip', async () => {
+  const student = buildStudent({
+    history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: LEGACY_REF_1 }],
+  });
+  const chips = await getBadgeChips(buildClassroom(), student);
+  assert.ok(!chips.some((c) => c.title === 'Readiness Champion'));
+  assert.deepEqual(chips.find((c) => c.title === 'Previous system — historical awards'), { title: 'Previous system — historical awards', count: '1' });
+});
+
+test('a legacy entry later net-reversed under the old model shows no "Previous system" chip either (net zero)', async () => {
+  const student = buildStudent({
+    history: [
+      { id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: LEGACY_REF_1 },
+      { id: 'h2', kind: 'readiness-champion', delta: -1, source: 'automatic', workItemRef: LEGACY_REF_1, reason: 'notebook_incomplete' },
+    ],
+  });
+  const chips = await getBadgeChips(buildClassroom(), student);
+  assert.ok(!chips.some((c) => c.title === 'Previous system — historical awards'));
+});
+
+test('a legacy chip and a new achievement chip can both appear at once, as two separate chips, never merged into one count', async () => {
+  const student = buildStudent({
+    history: [
+      { id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: LEGACY_REF_1 },
+      { id: 'h2', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: INSPECTION_REF_2 },
+    ],
+  });
+  const chips = await getBadgeChips(buildClassroom(), student);
+  assert.deepEqual(chips.find((c) => c.title === 'Readiness Champion'), { title: 'Readiness Champion', count: '1' });
+  assert.deepEqual(chips.find((c) => c.title === 'Previous system — historical awards'), { title: 'Previous system — historical awards', count: '1' });
+});
+
+test('an OVERRIDE- or RETROACTIVE-BACKFILL-sourced new achievement counts identically to an automatic one -- the display never only recognizes one source', async () => {
+  const student = buildStudent({
+    history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'override', workItemRef: INSPECTION_REF_1 }],
+  });
+  const chips = await getBadgeChips(buildClassroom(), student);
+  assert.deepEqual(chips.find((c) => c.title === 'Readiness Champion'), { title: 'Readiness Champion', count: '1' });
 });
 
 test('existing non-Readiness-Champion badge displays (legacy-counter-driven) remain completely unchanged, including when Readiness Champion is ALSO active in the same render', async () => {
   const student = buildStudent({
     organizationCount: 4,
-    history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: READINESS_WORK_ITEM_REF_1 }],
+    history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: INSPECTION_REF_1 }],
   });
   const chips = await getBadgeChips(buildClassroom(), student);
   assert.deepEqual(
@@ -217,20 +232,28 @@ test('existing non-Readiness-Champion badge displays (legacy-counter-driven) rem
   );
 });
 
-test('the cell-editor Readiness display and the row-level badge count now agree: an active notebook via getActiveReadinessSourcesForNotebook() is exactly the notebook counted here', async () => {
-  const result = await page.evaluate(async ({ classroom, student, workItemRef }) => {
-    const { populateStudentNameCell } = await import('/js/ui/views/NotebookCheckpointsView.js');
-    const notebookReadinessChampionService = await import('/js/services/notebookReadinessChampionService.js');
-    document.body.innerHTML = '';
-    const cell = document.createElement('td');
-    document.body.appendChild(cell);
-    populateStudentNameCell(cell, student, { onSelectStudent: () => {} }, classroom.checkpoints, classroom);
-    const chip = [...cell.querySelectorAll('.notebook-checkpoints__badge-chip')].find((c) => c.title === 'Readiness Champion');
-    const rowCount = chip ? Number(chip.querySelector('.notebook-checkpoints__badge-chip-count').textContent) : 0;
-    const cellEditorSources = notebookReadinessChampionService.getActiveReadinessSourcesForNotebook(student, workItemRef);
-    return { rowCount, cellEditorActiveForThisNotebook: cellEditorSources.length > 0 };
-  }, { classroom: buildClassroom(), student: buildStudent({ history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: READINESS_WORK_ITEM_REF_1 }] }), workItemRef: READINESS_WORK_ITEM_REF_1 });
+test('the cell-editor achievement listing and the row-level badge count now agree on the same notebook', async () => {
+  const result = await page.evaluate(
+    async ({ classroom, student, subjectId, notebookTypeId }) => {
+      const { populateStudentNameCell } = await import('/js/ui/views/NotebookCheckpointsView.js');
+      const notebookReadinessChampionService = await import('/js/services/notebookReadinessChampionService.js');
+      document.body.innerHTML = '';
+      const cell = document.createElement('td');
+      document.body.appendChild(cell);
+      populateStudentNameCell(cell, student, { onSelectStudent: () => {} }, classroom.checkpoints, classroom);
+      const chip = [...cell.querySelectorAll('.notebook-checkpoints__badge-chip')].find((c) => c.title === 'Readiness Champion');
+      const rowCount = chip ? Number(chip.querySelector('.notebook-checkpoints__badge-chip-count').textContent) : 0;
+      const achievementCount = notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(student, { subjectId, notebookTypeId });
+      return { rowCount, achievementCount };
+    },
+    {
+      classroom: buildClassroom(),
+      student: buildStudent({ history: [{ id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: INSPECTION_REF_1 }] }),
+      subjectId: INSPECTION_REF_1.subjectId,
+      notebookTypeId: INSPECTION_REF_1.notebookTypeId,
+    }
+  );
 
   assert.equal(result.rowCount, 1);
-  assert.equal(result.cellEditorActiveForThisNotebook, true);
+  assert.equal(result.achievementCount, 1);
 });

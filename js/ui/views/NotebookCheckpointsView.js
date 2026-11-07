@@ -293,31 +293,33 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
     },
     onSaveCheckpoint: (fields) => {
       if (editingCheckpointId === 'new') {
-        checkpointService.createNewCheckpoint(currentClassroom, { subjectId, notebookTypeId, ...fields });
+        // Creating a checkpoint is the ONE Readiness Champion inspection
+        // event (2026-11-07 permanent per-inspection redesign): every
+        // student whose previously-assigned required checkpoints (this
+        // new one excluded) are all complete earns one permanent badge
+        // for this exact event. See notebookReadinessChampionService.js's
+        // own header comment. Editing an existing checkpoint (the branch
+        // below) is never an inspection event — a due-date change must
+        // never award or revoke anything.
+        const newCheckpoint = checkpointService.createNewCheckpoint(currentClassroom, { subjectId, notebookTypeId, ...fields });
+        notebookReadinessChampionService.inspectReadinessChampionOnNewCheckpoint(currentClassroom, newCheckpoint, currentUser?.uid);
       } else {
         const checkpoint = checkpointService.getCheckpointById(currentClassroom, editingCheckpointId);
         checkpointService.updateCheckpoint(checkpoint, fields);
       }
       editingCheckpointId = null;
       refreshForm();
-      // A new checkpoint adds a required item (can turn an already-complete
-      // notebook incomplete again); editing a due date can turn an
-      // already-on-time notebook late, or vice versa. Either way this is a
-      // structural change to the notebook itself, not one student's own
-      // submission event — re-evaluate every student against this one
-      // notebook, not just whoever happens to be open in the cell editor.
-      notebookReadinessChampionService.reevaluateReadinessChampionForAllStudents(currentClassroom, subjectId, notebookTypeId, currentUser?.uid);
       persistClassroom();
       refreshGrid(); // structural change (a column was added/edited) — genuine full grid rebuild, scroll preserved
     },
     onDeleteCheckpoint: (checkpointId, title) => {
       const confirmed = window.confirm(`Delete "${title}"? This removes every student's own record for it too. This cannot be undone.`);
       if (!confirmed) return;
+      // Deletion never awards or revokes Readiness Champion — a
+      // permanent badge, once earned, is never reconsidered because a
+      // later structural change (including removing the very checkpoint
+      // that triggered it) occurred.
       checkpointService.deleteCheckpoint(currentClassroom, checkpointId);
-      // Removing a required checkpoint can newly complete a notebook that
-      // was only ever pending on this one — same structural-change
-      // reasoning as onSaveCheckpoint above.
-      notebookReadinessChampionService.reevaluateReadinessChampionForAllStudents(currentClassroom, subjectId, notebookTypeId, currentUser?.uid);
       persistClassroom();
       refreshGrid(); // structural change (a column was removed)
     },
@@ -347,13 +349,11 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
         status: 'submitted',
         submittedDate: getTodayDateKey(),
       });
-      // Readiness Champion's own automatic trigger — re-evaluates the
-      // ENTIRE subject notebook's completeness, not just this one
-      // checkpoint. See services/notebookReadinessChampionService.js's
-      // own header comment. Unchanged by WORK-0038 — Completion Star
-      // and Readiness Champion remain entirely separate mechanisms.
-      const student = getSortedStudents().find((s) => s.id === studentId);
-      if (student) notebookReadinessChampionService.evaluateReadinessChampionForNotebook(currentClassroom, checkpoint.subjectId, checkpoint.notebookTypeId, student, currentUser?.uid);
+      // A submission is never a Readiness Champion inspection event
+      // (2026-11-07 permanent per-inspection redesign) — it can only
+      // make a student eligible at the NEXT fresh checkpoint's own
+      // creation, never award anything itself. Completion Star is a
+      // genuinely separate mechanism, unaffected either way.
       persistClassroom();
       updateCellAndColumn(checkpointId, studentId); // one <td> + its column's stat boxes — no grid rebuild
     },
@@ -391,18 +391,12 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
       recognitionService.recordNotebookCheckpointReview(currentClassroom, checkpoint, studentId, review, currentUser?.uid);
       checkpointService.setTeacherNote(checkpoint, studentId, teacherNote);
       const student = getSortedStudents().find((s) => s.id === studentId);
-      // Readiness Champion re-evaluation — unconditional, not branched
-      // on submission.status, because evaluateReadinessChampionForNotebook()
-      // itself decides whether this notebook is now complete-and-on-time
-      // (award), still active but no longer honest (auto-revoke), or
-      // neither (no-op) — covers a fresh on-time submission, a
-      // withdrawal (submitted -> not_submitted), and a corrected date on
-      // an already-submitted record, with the one same call. See
-      // services/notebookReadinessChampionService.js's own header
-      // comment.
-      if (student) {
-        notebookReadinessChampionService.evaluateReadinessChampionForNotebook(currentClassroom, checkpoint.subjectId, checkpoint.notebookTypeId, student, currentUser?.uid);
-      }
+      // Submission, review, and withdrawal are never Readiness Champion
+      // inspection events (2026-11-07 permanent per-inspection redesign)
+      // — no award and no revocation happens here, regardless of what
+      // this save changes. A permanent badge is only ever earned at the
+      // creation of a NEW checkpoint (see onSaveCheckpoint's create
+      // branch above).
       openCellFor = null;
       persistClassroom();
       notifyIfIncomplete(checkpointId, studentId, review.status);
@@ -412,38 +406,14 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
         openReviewCompletionBadgePrompt(checkpoint, student);
       }
     },
-    onOverrideReadiness: (checkpointId, studentId) => {
-      const checkpoint = checkpointService.getCheckpointById(currentClassroom, checkpointId);
-      const student = getSortedStudents().find((s) => s.id === studentId);
-      if (!checkpoint || !student) return;
-      try {
-        notebookReadinessChampionService.overrideReadinessChampionForNotebook(currentClassroom, checkpoint.subjectId, checkpoint.notebookTypeId, student, currentUser?.uid);
-        persistClassroom();
-        updateCellAndColumn(checkpointId, studentId);
-        refreshCellEditor();
-      } catch (error) {
-        window.alert(error.message);
-      }
-    },
-    onRevokeReadiness: (checkpointId, studentId) => {
-      const checkpoint = checkpointService.getCheckpointById(currentClassroom, checkpointId);
-      const student = getSortedStudents().find((s) => s.id === studentId);
-      if (!checkpoint || !student) return;
-      try {
-        notebookReadinessChampionService.revokeReadinessChampionForNotebook(currentClassroom, checkpoint.subjectId, checkpoint.notebookTypeId, student, currentUser?.uid);
-        persistClassroom();
-        updateCellAndColumn(checkpointId, studentId);
-        refreshCellEditor();
-      } catch (error) {
-        window.alert(error.message);
-      }
-    },
     // Explicit teacher removal of an active Completion Star (WORK-0038)
-    // — mirrors onRevokeReadiness above exactly, but for
-    // recognitionService.js's own separate mechanism, never
-    // notebookReadinessChampionService.js's. Reverses the EXACT associated +1
-    // points event via recognitionService.removeCompletionStar()'s own
-    // ledger mechanics; never touches Readiness Champion.
+    // — recognitionService.js's own separate mechanism; Readiness
+    // Champion has no equivalent remove/revoke action any more (a
+    // permanent badge, once earned, is never revoked — see
+    // notebookReadinessChampionService.js's own header comment).
+    // Reverses the EXACT associated +1 points event via
+    // recognitionService.removeCompletionStar()'s own ledger mechanics;
+    // never touches Readiness Champion.
     onRemoveCompletionStar: (checkpointId, studentId) => {
       const checkpoint = checkpointService.getCheckpointById(currentClassroom, checkpointId);
       const student = getSortedStudents().find((s) => s.id === studentId);
@@ -500,7 +470,7 @@ export function renderNotebookCheckpointsView(container, { classroom, currentUse
       const checkpoint = checkpointService.getCheckpointById(currentClassroom, openCellFor.checkpointId);
       const student = getSortedStudents().find((s) => s.id === openCellFor.studentId);
       if (checkpoint && student) {
-        cellEditorSlot.appendChild(renderCellEditor(checkpoint, student, handlers));
+        cellEditorSlot.appendChild(renderCellEditor(checkpoint, student, handlers, currentClassroom));
       }
     }
   }
@@ -923,27 +893,40 @@ export function populateStudentNameCell(nameCell, student, handlers, checkpoints
   // when this student has earned none, per explicit product decision:
   // a student's row must never display a badge they have not earned.
   //
-  // Readiness Champion's own count is corrected here to read the real,
-  // live notebook-level ledger (notebookReadinessChampionService.js's
-  // own countActiveReadinessChampionNotebooksForStudent()) instead of
-  // notebookBadgeService.listEarnedBadges()'s own legacy
-  // student.notebookBadgeCounts lookup for this one badge type —
-  // found during the 2026-11-07 production display-discrepancy
-  // investigation: that legacy counter is disconnected from this
-  // file's own cell-editor Readiness display just below (which already
-  // reads the correct ledger via getActiveReadinessSourcesForNotebook()),
-  // so the two could silently disagree on the same screen. Every OTHER
-  // badge type's own count is untouched, still exactly
-  // notebookBadgeService.listEarnedBadges()'s own legacy-counter read —
-  // this correction is scoped to Readiness Champion alone.
+  // Readiness Champion's own count reads the NEW permanent, per-
+  // inspection ledger (notebookReadinessChampionService.js's own
+  // countReadinessChampionAchievementsForStudent(), 2026-11-07 redesign)
+  // rather than notebookBadgeService.listEarnedBadges()'s own legacy
+  // student.notebookBadgeCounts lookup — a plain, ever-increasing total
+  // of permanent badges, never net-summed or capped per notebook.
+  //
+  // A SEPARATE "Previous system" chip (own id, never merged into the
+  // count above) surfaces any pre-redesign legacy history this student
+  // still carries for this badge type, read in the OLD model's own
+  // terms (countActiveReadinessChampionNotebooksForStudent) — per
+  // explicit product decision, legacy records are preserved and shown
+  // distinctly, never reinterpreted under the new rule and never added
+  // to the new achievement total. Omitted entirely when zero, exactly
+  // like every other badge chip.
+  const readinessChampionType = notebookBadgeService.getBadgeTypeById(classroom, notebookBadgeAwardService.READINESS_CHAMPION_BADGE_ID);
+  const legacyReadinessCount = notebookReadinessChampionService.countActiveReadinessChampionNotebooksForStudent(student);
   const earnedBadges = notebookBadgeService
     .listBadgeTypes(classroom)
     .map((type) =>
       type.id === notebookBadgeAwardService.READINESS_CHAMPION_BADGE_ID
-        ? { ...type, count: notebookReadinessChampionService.countActiveReadinessChampionNotebooksForStudent(student) }
+        ? { ...type, count: notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(student) }
         : { ...type, count: notebookBadgeService.getBadgeCount(student, type.id) }
     )
     .filter((type) => type.count > 0);
+  if (readinessChampionType && legacyReadinessCount > 0) {
+    earnedBadges.push({
+      id: 'readiness-champion-legacy',
+      name: 'Previous system — historical awards',
+      icon: readinessChampionType.icon,
+      theme: readinessChampionType.theme,
+      count: legacyReadinessCount,
+    });
+  }
   if (earnedBadges.length > 0) {
     const badgesRow = document.createElement('div');
     badgesRow.className = 'notebook-checkpoints__student-badges';
@@ -1305,7 +1288,7 @@ function renderCheckpointForm(checkpoint, handlers) {
   return form;
 }
 
-export function renderCellEditor(checkpoint, student, handlers) {
+export function renderCellEditor(checkpoint, student, handlers, classroom) {
   const record = checkpointService.getRecordForStudent(checkpoint, student.id);
 
   const overlay = document.createElement('div');
@@ -1399,64 +1382,62 @@ export function renderCellEditor(checkpoint, student, handlers) {
   noteInput.value = record?.teacherNote || '';
   sheet.appendChild(noteInput);
 
-  // --- Readiness Champion (override/revoke) ---
+  // --- Readiness Champion (read-only — permanent, per-inspection) ---
   // Organization/Punctuation Champion are never shown here — this
   // editor's own review dropdown above is still an UNSAVED, pending
   // value, and those two badges are only ever offered once a review is
   // genuinely, persistently marked Complete (see
   // openReviewCompletionBadgePrompt() above, triggered right after a
-  // real Save). Readiness Champion is different, and — per the
-  // notebook-level redesign — is no longer about THIS checkpoint's own
-  // record at all: it reflects the ENTIRE subject notebook's own
-  // Readiness Champion state (every checkpoint currently configured
-  // under this same subjectId/notebookTypeId), read from the student's
-  // own append-only history via notebookReadinessChampionService.js,
-  // never from this one record's (now-unused-for-this-purpose)
-  // `badgeAwards`. Revoking or overriding from here affects the whole
-  // notebook — identical to doing so from any other checkpoint's own
-  // cell editor within it.
+  // real Save). Readiness Champion is different: it is never about
+  // THIS checkpoint's own record — it reflects the ENTIRE subject
+  // notebook's own permanent award history (2026-11-07 redesign), read
+  // from the student's own append-only history via
+  // notebookReadinessChampionService.js. There is no override/revoke
+  // action here any more — a permanent badge, once earned, cannot be
+  // undone from this editor, and no new one can be manufactured here
+  // either; the only way to earn one is the creation of a fresh
+  // checkpoint (see onSaveCheckpoint's create branch above).
   const readinessLabel = document.createElement('p');
   readinessLabel.className = 'notebook-checkpoints__cell-editor-section-label';
   readinessLabel.textContent = 'Readiness Champion (whole notebook)';
   sheet.appendChild(readinessLabel);
 
-  const readinessWorkItemRef = notebookReadinessChampionService.buildNotebookReadinessWorkItemRef({
-    subjectId: checkpoint.subjectId,
-    notebookTypeId: checkpoint.notebookTypeId,
-  });
-  const activeReadinessSources = notebookReadinessChampionService.getActiveReadinessSourcesForNotebook(student, readinessWorkItemRef);
-  const isReadinessActive = activeReadinessSources.length > 0;
+  const readinessAchievements = notebookReadinessChampionService.listReadinessChampionAchievementsForNotebook(student, checkpoint.subjectId, checkpoint.notebookTypeId);
 
   const readinessStatus = document.createElement('p');
-  readinessStatus.textContent = isReadinessActive
-    ? `Awarded (${
-        activeReadinessSources.includes('automatic')
-          ? 'automatic — notebook complete and on time'
-          : activeReadinessSources.includes('override')
-            ? 'teacher override'
-            : 'retroactive backfill'
-      })`
-    : 'Not awarded';
+  readinessStatus.textContent =
+    readinessAchievements.length > 0
+      ? `${readinessAchievements.length} permanent badge${readinessAchievements.length === 1 ? '' : 's'} earned for this notebook`
+      : 'No Readiness Champion badges yet for this notebook';
   sheet.appendChild(readinessStatus);
 
-  const readinessActions = document.createElement('div');
-  readinessActions.className = 'notebook-checkpoints__cell-editor-actions';
-  if (isReadinessActive) {
-    const revokeButton = document.createElement('button');
-    revokeButton.type = 'button';
-    revokeButton.className = 'btn btn--text';
-    revokeButton.textContent = 'Revoke';
-    revokeButton.addEventListener('click', () => handlers.onRevokeReadiness(checkpoint.id, student.id));
-    readinessActions.appendChild(revokeButton);
-  } else {
-    const overrideButton = document.createElement('button');
-    overrideButton.type = 'button';
-    overrideButton.className = 'btn btn--text';
-    overrideButton.textContent = 'Award anyway (override)';
-    overrideButton.addEventListener('click', () => handlers.onOverrideReadiness(checkpoint.id, student.id));
-    readinessActions.appendChild(overrideButton);
+  if (readinessAchievements.length > 0) {
+    const readinessHistoryList = document.createElement('ul');
+    readinessHistoryList.className = 'notebook-checkpoints__cell-editor-readiness-history';
+    readinessAchievements.forEach((entry) => {
+      const earningCheckpoint = checkpointService.getCheckpointById(classroom, entry.workItemRef.checkpointId);
+      const item = document.createElement('li');
+      item.textContent = earningCheckpoint
+        ? `Earned at "${earningCheckpoint.title}" — ${entry.recordedAt.slice(0, 10)}`
+        : `Earned ${entry.recordedAt.slice(0, 10)} (triggering unit since removed)`;
+      readinessHistoryList.appendChild(item);
+    });
+    sheet.appendChild(readinessHistoryList);
   }
-  sheet.appendChild(readinessActions);
+
+  // Legacy (pre-redesign) award history for this exact notebook —
+  // preserved exactly as recorded, shown separately, never merged into
+  // the permanent-badge count above and never reinterpreted under the
+  // new rule (see notebookReadinessChampionService.js's own header
+  // comment for why no claim about original eligibility can honestly
+  // be made for these entries).
+  const legacyEntries = notebookReadinessChampionService.listLegacyReadinessChampionEntriesForNotebook(student, checkpoint.subjectId, checkpoint.notebookTypeId);
+  if (legacyEntries.length > 0) {
+    const legacyNote = document.createElement('p');
+    legacyNote.className = 'notebook-checkpoints__cell-editor-readiness-legacy-note';
+    legacyNote.textContent = `Previous system — historical awards: ${legacyEntries.length} record${legacyEntries.length === 1 ? '' : 's'} on file for this notebook, preserved as-is and not counted above.`;
+    sheet.appendChild(legacyNote);
+  }
 
   // --- Completion Star (WORK-0038: remove only — awarding/reversal is
   // entirely automatic, tied to the review transition above; there is
