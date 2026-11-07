@@ -21,10 +21,14 @@
  * owns the form and its saving/success/error UI, never
  * classroomService/workspaceService calls directly, so each of the two
  * entry points' own `onSave` is the ONE place it writes a Classroom
- * document, both ultimately going through
- * workspaceService.updateClassroomDetails() (the same function
- * ui/views/SettingsView.js's own General section Save button already
- * uses), matching this app's "no parallel update mechanism" rule.
+ * document. Both entry points deliberately call
+ * classroomService.updateClassroomDetails() + workspaceService's own
+ * explicit markDirty()/saveExplicitly() pair, NOT the convenience
+ * workspaceService.updateClassroomDetails() wrapper
+ * ui/views/SettingsView.js's own General section Save button uses —
+ * that wrapper's own persistClassroom() is fire-and-forget (catches and
+ * only logs a write failure, never rejects), which would make this
+ * modal's own Retry state below unreachable for a real Firestore error.
  * `onSave` rejecting is what puts this modal into its Retry state — the
  * exact saving/failed/retry shape ui/views/ConceptWorkspaceView.js's
  * own "What did we learn?" description editor already established for
