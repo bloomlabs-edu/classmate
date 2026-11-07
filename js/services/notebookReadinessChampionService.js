@@ -208,6 +208,30 @@ export function listReadinessChampionNotebookRefsForStudent(student) {
   return [...seen.values()].map((ref) => ({ ...ref, active: isReadinessChampionActiveForNotebook(student, buildNotebookReadinessWorkItemRef(ref)) }));
 }
 
+/**
+ * Count of distinct subject notebooks CURRENTLY carrying an active
+ * Readiness Champion award for this student, from ANY of the three
+ * source pools — one notebook with both an active override AND stray
+ * history from a different, already-net-zero source still counts once,
+ * never per history entry and never per pool. This is the single
+ * source of truth ui/views/NotebookCheckpointsView.js's own row-level
+ * badge chip must read for this badge type, instead of the legacy,
+ * disconnected `student.notebookBadgeCounts['readiness-champion']`
+ * aggregate (found during the 2026-11-07 production display-
+ * discrepancy investigation: that legacy counter is only ever written
+ * by the old, now-deleted per-checkpoint award functions and by this
+ * file's own live award/revoke calls into notebookBadgeService.js —
+ * never by anything that reads it back out, so a student whose
+ * notebook was never re-evaluated after this redesign shipped, or
+ * whose legacy count has no corresponding entry in this file's own
+ * ledger, shows a stale or entirely disconnected number). Reuses
+ * listReadinessChampionNotebookRefsForStudent() above rather than
+ * re-deriving the same net-sum logic a second time.
+ */
+export function countActiveReadinessChampionNotebooksForStudent(student) {
+  return listReadinessChampionNotebookRefsForStudent(student).filter((ref) => ref.active).length;
+}
+
 /** Returns, for this student+notebook, which of the three source labels currently has a net-active pool (there is normally at most one) — used by the cell editor UI to describe how an active award was granted. */
 export function getActiveReadinessSourcesForNotebook(student, workItemRef) {
   return ['automatic', 'override', 'retroactive_backfill'].filter((source) => getNetForSource(student, workItemRef, source) >= 1);

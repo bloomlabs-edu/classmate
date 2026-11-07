@@ -706,3 +706,72 @@ test('reevaluateReadinessChampionForAllStudents: deleting the one remaining pend
 
   assert.equal(student.notebookBadgeCounts['readiness-champion'], 1, 'with the pending checkpoint gone, the one submitted on time is now the whole notebook');
 });
+
+// ---------------------------------------------------------------------
+// countActiveReadinessChampionNotebooksForStudent (production display-
+// discrepancy fix, 2026-11-07) -- the real, ledger-derived source
+// ui/views/NotebookCheckpointsView.js's own row-level badge chip must
+// use instead of the legacy, disconnected student.notebookBadgeCounts
+// aggregate. Exercised here via the REAL live award/revoke functions,
+// never synthetic history, so these tests also prove the counting
+// function agrees with whatever the live lifecycle actually produces.
+// ---------------------------------------------------------------------
+
+test('countActiveReadinessChampionNotebooksForStudent: a student with no Readiness Champion history at all counts 0, regardless of a disconnected legacy counter', () => {
+  const { student } = buildClassroomWithStudent();
+  student.notebookBadgeCounts = { 'readiness-champion': 1 }; // simulates a stale, orphaned legacy count
+
+  assert.equal(notebookReadinessChampionService.countActiveReadinessChampionNotebooksForStudent(student), 0);
+});
+
+test('countActiveReadinessChampionNotebooksForStudent: one genuinely earned notebook counts 1', () => {
+  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
+  const cp1 = addCheckpoint(classroom, { title: 'Unit 1' });
+  submit(cp1, student.id, '2026-09-08');
+  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
+
+  assert.equal(notebookReadinessChampionService.countActiveReadinessChampionNotebooksForStudent(student), 1);
+});
+
+test('countActiveReadinessChampionNotebooksForStudent: two independently-earned subject notebooks count 2', () => {
+  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
+  const cpA = addCheckpoint(classroom, { title: 'Unit 1', subjectId: 'subj-A', notebookTypeId: 'type-A' });
+  const cpB = addCheckpoint(classroom, { title: 'Unit 1', subjectId: 'subj-B', notebookTypeId: 'type-B' });
+  submit(cpA, student.id, '2026-09-08');
+  submit(cpB, student.id, '2026-09-08');
+  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, 'subj-A', 'type-A', student, TEACHER_UID);
+  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, 'subj-B', 'type-B', student, TEACHER_UID);
+
+  assert.equal(notebookReadinessChampionService.countActiveReadinessChampionNotebooksForStudent(student), 2);
+});
+
+test('countActiveReadinessChampionNotebooksForStudent: repeated evaluation of the same already-awarded notebook never inflates the count past 1', () => {
+  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
+  const cp1 = addCheckpoint(classroom, { title: 'Unit 1' });
+  submit(cp1, student.id, '2026-09-08');
+  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
+  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
+  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
+
+  assert.equal(notebookReadinessChampionService.countActiveReadinessChampionNotebooksForStudent(student), 1);
+});
+
+test('countActiveReadinessChampionNotebooksForStudent: a notebook whose award was later revoked (confirmed violation) drops back out of the count', () => {
+  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
+  const cp1 = addCheckpoint(classroom, { title: 'Unit 1' });
+  submit(cp1, student.id, '2026-09-08');
+  notebookReadinessChampionService.evaluateReadinessChampionForNotebook(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, student, TEACHER_UID);
+  assert.equal(notebookReadinessChampionService.countActiveReadinessChampionNotebooksForStudent(student), 1);
+
+  addCheckpoint(classroom, { title: 'Unit 2' }); // a new required checkpoint, left pending -- confirmed violation
+  notebookReadinessChampionService.reevaluateReadinessChampionForAllStudents(classroom, SUBJECT_ID, NOTEBOOK_TYPE_ID, TEACHER_UID);
+
+  assert.equal(notebookReadinessChampionService.countActiveReadinessChampionNotebooksForStudent(student), 0);
+});
+
+test('countActiveReadinessChampionNotebooksForStudent: an incomplete notebook (never evaluated, no history at all) is never counted', () => {
+  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
+  addCheckpoint(classroom, { title: 'Unit 1' }); // left pending, never submitted, never evaluated
+
+  assert.equal(notebookReadinessChampionService.countActiveReadinessChampionNotebooksForStudent(student), 0);
+});
