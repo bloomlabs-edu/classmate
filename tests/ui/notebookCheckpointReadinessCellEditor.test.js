@@ -220,3 +220,35 @@ test('no action buttons of any kind exist in this section -- it is entirely read
   assert.ok(!result.includes('Revoke'));
   assert.ok(!result.includes('Award anyway (override)'));
 });
+
+test('a Founding Recognition entry for this notebook shows its own, separate, read-only section with no action buttons', async () => {
+  const result = await page.evaluate(async () => {
+    const { renderCellEditor } = await import('/js/ui/views/NotebookCheckpointsView.js');
+    const cp1 = { id: 'cp1', title: 'Unit 1', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [] };
+    const classroom = { id: 'c1', checkpoints: [cp1] };
+    const student = {
+      id: 's1', name: 'Anjali',
+      history: [{ id: 'f1', kind: 'founding-recognition', label: 'Founding Recognition', delta: 1, source: 'historical_transition', workItemRef: { type: 'founding_recognition', subjectId: 'subj-1', notebookTypeId: 'type-1' }, cutoffIso: '2026-11-07T11:48:47Z', recordedAt: '2026-11-08T00:00:00.000Z' }],
+    };
+    const editor = renderCellEditor(cp1, student, {}, classroom);
+    const labels = [...editor.querySelectorAll('.notebook-checkpoints__cell-editor-section-label')].map((el) => el.textContent);
+    return { text: editor.textContent, labels, buttons: [...editor.querySelectorAll('button')].map((b) => b.textContent) };
+  });
+  assert.ok(result.labels.includes('Founding Recognition'));
+  assert.match(result.text, /1 historical achievement recognized for this notebook/);
+  assert.match(result.text, /2026-11-07/);
+  assert.ok(!result.buttons.includes('Revoke'));
+  assert.ok(!result.buttons.includes('Award anyway (override)'));
+});
+
+test('no Founding Recognition history for this notebook shows no Founding Recognition section at all', async () => {
+  const result = await page.evaluate(async () => {
+    const { renderCellEditor } = await import('/js/ui/views/NotebookCheckpointsView.js');
+    const cp1 = { id: 'cp1', title: 'Unit 1', subjectId: 'subj-1', notebookTypeId: 'type-1', records: [] };
+    const classroom = { id: 'c1', checkpoints: [cp1] };
+    const student = { id: 's1', name: 'Anjali', history: [] };
+    const editor = renderCellEditor(cp1, student, {}, classroom);
+    return [...editor.querySelectorAll('.notebook-checkpoints__cell-editor-section-label')].map((el) => el.textContent);
+  });
+  assert.ok(!result.includes('Founding Recognition'));
+});

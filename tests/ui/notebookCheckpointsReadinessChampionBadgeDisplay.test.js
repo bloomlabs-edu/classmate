@@ -257,3 +257,54 @@ test('the cell-editor achievement listing and the row-level badge count now agre
   assert.equal(result.rowCount, 1);
   assert.equal(result.achievementCount, 1);
 });
+
+// ---------------------------------------------------------------------
+// Founding Recognition (2026-11-07) — its own third, separately-labeled
+// chip, never merged into either the "Readiness Champion" or "Previous
+// system" counts above.
+// ---------------------------------------------------------------------
+
+const FOUNDING_REF_1 = { type: 'founding_recognition', subjectId: 's1', notebookTypeId: 'nt1' };
+const FOUNDING_REF_2 = { type: 'founding_recognition', subjectId: 's2', notebookTypeId: 'nt1' };
+
+test('a Founding Recognition entry displays its own chip, separate from "Readiness Champion" and "Previous system"', async () => {
+  const student = buildStudent({
+    history: [{ id: 'f1', kind: 'founding-recognition', label: 'Founding Recognition', delta: 1, source: 'historical_transition', workItemRef: FOUNDING_REF_1, cutoffIso: '2026-11-07T11:48:47Z' }],
+  });
+  const chips = await getBadgeChips(buildClassroom(), student);
+  assert.deepEqual(chips.find((c) => c.title === 'Founding Recognition'), { title: 'Founding Recognition', count: '1' });
+  assert.ok(!chips.some((c) => c.title === 'Readiness Champion'));
+  assert.ok(!chips.some((c) => c.title === 'Previous system — historical awards'));
+});
+
+test('two Founding Recognition entries across two different notebooks display count 2', async () => {
+  const student = buildStudent({
+    history: [
+      { id: 'f1', kind: 'founding-recognition', delta: 1, source: 'historical_transition', workItemRef: FOUNDING_REF_1 },
+      { id: 'f2', kind: 'founding-recognition', delta: 1, source: 'historical_transition', workItemRef: FOUNDING_REF_2 },
+    ],
+  });
+  const chips = await getBadgeChips(buildClassroom(), student);
+  assert.deepEqual(chips.find((c) => c.title === 'Founding Recognition'), { title: 'Founding Recognition', count: '2' });
+});
+
+test('Founding Recognition, new-model Readiness Champion, and legacy chips can all appear at once, each with its own independent count', async () => {
+  const student = buildStudent({
+    legacyCount: 0,
+    history: [
+      { id: 'f1', kind: 'founding-recognition', delta: 1, source: 'historical_transition', workItemRef: FOUNDING_REF_1 },
+      { id: 'h1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: INSPECTION_REF_2 },
+      { id: 'legacy-1', kind: 'readiness-champion', delta: 1, source: 'automatic', workItemRef: LEGACY_REF_1 },
+    ],
+  });
+  const chips = await getBadgeChips(buildClassroom(), student);
+  assert.deepEqual(chips.find((c) => c.title === 'Founding Recognition'), { title: 'Founding Recognition', count: '1' });
+  assert.deepEqual(chips.find((c) => c.title === 'Readiness Champion'), { title: 'Readiness Champion', count: '1' });
+  assert.deepEqual(chips.find((c) => c.title === 'Previous system — historical awards'), { title: 'Previous system — historical awards', count: '1' });
+});
+
+test('no Founding Recognition history at all shows no Founding Recognition chip', async () => {
+  const student = buildStudent({ history: [] });
+  const chips = await getBadgeChips(buildClassroom(), student);
+  assert.ok(!chips.some((c) => c.title === 'Founding Recognition'));
+});

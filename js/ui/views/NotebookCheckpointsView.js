@@ -60,6 +60,7 @@ import * as notebookConfigService from '../../services/notebookConfigService.js'
 import * as notebookBadgeService from '../../services/notebookBadgeService.js';
 import * as notebookBadgeAwardService from '../../services/notebookBadgeAwardService.js';
 import * as notebookReadinessChampionService from '../../services/notebookReadinessChampionService.js';
+import * as notebookFoundingRecognitionService from '../../services/notebookFoundingRecognitionService.js';
 import * as recognitionService from '../../services/recognitionService.js';
 import * as workspaceService from '../../services/workspaceService.js';
 import * as workspaceCoordinator from '../../services/workspaceCoordinator.js';
@@ -927,6 +928,23 @@ export function populateStudentNameCell(nameCell, student, handlers, checkpoints
       count: legacyReadinessCount,
     });
   }
+  // Founding Recognition (2026-11-07) — its own permanent, one-time
+  // historical achievement category (notebookFoundingRecognitionService.js),
+  // deliberately a THIRD, entirely separate count from both the new
+  // per-inspection total above and the legacy chip above it. A
+  // distinct icon/theme (never cloned from the Readiness Champion type
+  // the way the legacy chip above borrows it) makes clear at a glance
+  // that this is its own category, not a variant of either.
+  const foundingRecognitionCount = notebookFoundingRecognitionService.countFoundingRecognitionsForStudent(student);
+  if (foundingRecognitionCount > 0) {
+    earnedBadges.push({
+      id: 'founding-recognition',
+      name: 'Founding Recognition',
+      icon: 'award',
+      theme: 'amber',
+      count: foundingRecognitionCount,
+    });
+  }
   if (earnedBadges.length > 0) {
     const badgesRow = document.createElement('div');
     badgesRow.className = 'notebook-checkpoints__student-badges';
@@ -1437,6 +1455,25 @@ export function renderCellEditor(checkpoint, student, handlers, classroom) {
     legacyNote.className = 'notebook-checkpoints__cell-editor-readiness-legacy-note';
     legacyNote.textContent = `Previous system — historical awards: ${legacyEntries.length} record${legacyEntries.length === 1 ? '' : 's'} on file for this notebook, preserved as-is and not counted above.`;
     sheet.appendChild(legacyNote);
+  }
+
+  // --- Founding Recognition (2026-11-07) — read-only, permanent,
+  // one-time historical achievement, entirely separate from both the
+  // new per-inspection achievements above and the legacy note above
+  // this one. See notebookFoundingRecognitionService.js's own header
+  // comment for the full eligibility rule. Never has an action button
+  // of any kind — there is no award-anyway or revoke for this
+  // category, same as the new model above it.
+  const foundingRecognitions = notebookFoundingRecognitionService.listFoundingRecognitionsForNotebook(student, checkpoint.subjectId, checkpoint.notebookTypeId);
+  if (foundingRecognitions.length > 0) {
+    const foundingLabel = document.createElement('p');
+    foundingLabel.className = 'notebook-checkpoints__cell-editor-section-label';
+    foundingLabel.textContent = 'Founding Recognition';
+    sheet.appendChild(foundingLabel);
+
+    const foundingStatus = document.createElement('p');
+    foundingStatus.textContent = `${foundingRecognitions.length} historical achievement${foundingRecognitions.length === 1 ? '' : 's'} recognized for this notebook — verified complete as of ${foundingRecognitions[0].cutoffIso?.slice(0, 10) ?? 'the historical cutoff'}, never merged with new or legacy Readiness Champion awards.`;
+    sheet.appendChild(foundingStatus);
   }
 
   // --- Completion Star (WORK-0038: remove only — awarding/reversal is
