@@ -3866,7 +3866,11 @@ textarea.reading-editor__block-input {
    distinct pieces of the lesson being assembled. */
 .lesson-plan-builder__dynamic-row {
   display: flex;
-  align-items: center;
+  /* flex-start, not center (WORK-0024): the row's own input is now an
+     auto-growing textarea, not a fixed single-line input -- centering
+     would drift the reorder/remove buttons toward the middle of a tall,
+     multi-line box instead of staying level with its first line. */
+  align-items: flex-start;
   gap: 0.5rem;
   margin-bottom: 0.5rem;
   padding: 0.35rem;
@@ -3897,6 +3901,24 @@ textarea.reading-editor__block-input {
   border-radius: var(--radius-control);
   font-family: inherit;
   font-size: 0.9rem;
+}
+/* The textarea variant only (createDynamicListRow() -- Lesson
+   Objectives + Assessment/evidence items, WORK-0024) -- the Spark
+   title field reuses the bare `.lesson-plan-builder__dynamic-input`
+   class on a plain single-line `<input>` (see this file's own comment
+   a few lines up) and must stay completely unaffected by this. Same
+   resize:none/overflow:hidden/box-sizing contract as
+   `.lesson-plan-builder__textarea` -- height is owned entirely by
+   AutoGrowTextarea.js, never a manual resize handle or an internal
+   scrollbar. line-height matched to the single-line padding above so
+   an un-grown row (short text) renders at the same height as before. */
+textarea.lesson-plan-builder__dynamic-input {
+  width: 100%;
+  min-height: 2.1rem;
+  line-height: 1.4;
+  resize: none;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 /* The Spark title reuses this input style standalone (not inside a
    .dynamic-row), where `flex: 1` has no flex container to size
@@ -4094,10 +4116,22 @@ textarea.reading-editor__block-input {
   margin-bottom: 0.45rem;
 }
 .lesson-plan-builder__interaction-side--teacher .lesson-plan-builder__interaction-side-label {
-  color: #5ea6da;
+  /* Darkened from the shared ICON_CATEGORIES.teacher.icon value
+     (#5ea6da, still used for icon badges elsewhere app-wide, untouched)
+     -- WORK-0022: that lighter shade measured 2.31:1 against this
+     card's own #E6F1FB tint, failing WCAG AA (4.5:1) for this small
+     (0.74rem) bold label text. This darker value measures 4.91:1
+     against the tint and 5.62:1 against white, while staying
+     recognizably the same blue. */
+  color: #3D6C8E;
 }
 .lesson-plan-builder__interaction-side--students .lesson-plan-builder__interaction-side-label {
-  color: #BF5F1A;
+  /* Same WORK-0022 fix, student side: the shared ICON_CATEGORIES.student.icon
+     value (#BF5F1A) measured 3.80:1 against this card's own #FDEEE0
+     tint -- passes WCAG AA for LARGE text (3:1) but not normal-size
+     text (4.5:1), which this label is. This darker value measures
+     4.96:1 against the tint. */
+  color: #A25116;
 }
 .lesson-plan-builder__interaction-side > .lesson-plan-builder__textarea {
   background-color: var(--color-surface, #fff);
@@ -4174,6 +4208,15 @@ textarea.reading-editor__block-input {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.9rem;
+}
+/* WORK-0028: matches this file's own established 3-column responsive
+   convention (see .operational-work-grid above) -- 2 columns at
+   tablet-ish widths rather than staying cramped at 3 all the way down
+   to the 640px mobile breakpoint below. */
+@media (max-width: 960px) {
+  .lesson-plan-builder__differentiation-buckets {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 @media (max-width: 640px) {
   .lesson-plan-builder__differentiation-buckets {
@@ -4942,10 +4985,14 @@ textarea.reading-editor__block-input {
   margin-bottom: 0.3rem;
 }
 .lesson-plan-review__interaction-side--teacher .lesson-plan-review__interaction-side-label {
-  color: #5ea6da;
+  /* WORK-0022 contrast fix -- see the identical comment on
+     .lesson-plan-builder__interaction-side--teacher's own label rule
+     for the measured ratios; this surface shares the exact same
+     tint/label combination. */
+  color: #3D6C8E;
 }
 .lesson-plan-review__interaction-side--students .lesson-plan-review__interaction-side-label {
-  color: #BF5F1A;
+  color: #A25116;
 }
 @media (max-width: 640px) {
   .lesson-plan-review__interaction-pair {
@@ -5948,10 +5995,14 @@ textarea.chapter-plan-editor__field-input {
   margin-bottom: 0.3rem;
 }
 .lesson-content-readonly__interaction-side--teacher .lesson-content-readonly__interaction-side-label {
-  color: #5ea6da;
+  /* WORK-0022 contrast fix -- see the identical comment on
+     .lesson-plan-builder__interaction-side--teacher's own label rule
+     for the measured ratios; this surface shares the exact same
+     tint/label combination. */
+  color: #3D6C8E;
 }
 .lesson-content-readonly__interaction-side--students .lesson-content-readonly__interaction-side-label {
-  color: #BF5F1A;
+  color: #A25116;
 }
 @media (max-width: 640px) {
   .lesson-content-readonly__interaction-pair {
