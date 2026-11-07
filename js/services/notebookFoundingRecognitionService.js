@@ -71,14 +71,46 @@
  * recognize later work; only the live per-inspection trigger can ever
  * do that, and it does so through a completely separate code path.
  *
- * TEST/SANDBOX CLASSROOMS — this data model has NO structural
+ * TEST/SANDBOX CLASSROOMS — CLASSIFICATION REGISTRY (2026-11, Option
+ * B) IS NOW THE AUTHORITATIVE GATE. This data model has NO structural
  * isTest/archived/sandbox field anywhere on Classroom (confirmed by
- * reading the full model). The only available signal is naming
- * convention, which isLikelyTestOrSandboxClassroom() below applies —
- * this is a heuristic, not a guarantee, and is deliberately exposed as
- * its own named, overridable predicate rather than buried silently
- * inside the apply step, so a human can review exactly which
- * classrooms it flagged before a real production run.
+ * reading the full model), and the original name-pattern heuristic
+ * (isLikelyTestOrSandboxClassroom() below) has known, confirmed false
+ * positives ("Trial Bay Public School") and false negatives ("QA
+ * Classroom", "staging", "dummy", "test_classroom") — real gaps found
+ * during independent review, not theoretical. Per explicit product
+ * decision, a human-reviewed classification registry (loaded and
+ * owned entirely OUTSIDE this file — see scripts/
+ * foundingRecognitionClassroomRegistry.js and its own header comment
+ * for exactly why this file never imports it directly: that registry
+ * contains per-classroom reviewer identities, which must never ship to
+ * a browser bundle, so it is deliberately passed INTO
+ * applyFoundingRecognition()/auditFoundingRecognitionEligibility() as
+ * a plain `classification` string + optional `classificationDetail`
+ * object — dependency injection, not a static import, keeping this
+ * service itself free of any registry-loading concern or sensitive
+ * data) now DECIDES whether applyFoundingRecognition() may act at all:
+ *   - `'confirmed_real'` — an administrator has explicitly reviewed
+ *     this classroom and confirmed it is real. Only this value lets
+ *     applyFoundingRecognition() proceed.
+ *   - `'confirmed_test'` — an administrator has explicitly reviewed
+ *     and confirmed this classroom is test/sandbox data. Hard-excluded
+ *     from applyFoundingRecognition(), exactly as before.
+ *   - `'needs_review'` (the default, and what ANY unknown classroom id
+ *     or missing/malformed registry entry resolves to — never guessed
+ *     into either confirmed state) — ALSO hard-excluded. An
+ *     unreviewed classroom is treated exactly like a confirmed test
+ *     one for gating purposes: no award without an explicit human
+ *     "real" confirmation on file.
+ * isLikelyTestOrSandboxClassroom() below is NOT removed and NOT
+ * weakened for genuinely confirmed-test classrooms (registry
+ * classification alone already excludes those) — it is DOWNGRADED
+ * from its own prior role as an independent hard gate to a pure,
+ * non-blocking WARNING: both audit and apply functions still compute
+ * and report it (`isLikelyTestOrSandboxClassroom` stays on every
+ * result shape below), so a reviewer always sees the heuristic's own
+ * opinion alongside the registry's authoritative one, even for a
+ * classroom already confirmed real.
  *
  * CROSS-CLASSROOM IDENTITY — this data model has no concept of one
  * real person existing across two classroom documents; a (classroomId,
@@ -96,6 +128,7 @@ import * as checkpointService from './checkpointService.js';
 import { canAwardNotebookBadge } from './notebookBadgeAwardService.js';
 import { workItemRefsEqual } from './recognitionService.js';
 import { logEntry } from './timelineService.js';
+import { generateId } from '../utils/idGenerator.js';
 
 export const FOUNDING_RECOGNITION_KIND = 'founding-recognition';
 export const FOUNDING_RECOGNITION_WORK_ITEM_TYPE = 'founding_recognition';
@@ -104,22 +137,42 @@ export const MINIMUM_REQUIRED_CHECKPOINTS = 5;
 /** The exact timestamp the production Firebase Hosting deploy for the permanent per-inspection redesign's own merge commit reported success — fixed, never recomputed, never stored as a mutable field. */
 export const FOUNDING_RECOGNITION_CUTOFF_ISO = '2026-11-07T11:48:47Z';
 
+/**
+ * The three valid classroom-classification states the Option B
+ * registry (scripts/foundingRecognitionClassroomRegistry.js) assigns —
+ * defined HERE, the service, as the single source of truth for the
+ * valid string values, so the registry module imports these rather
+ * than duplicating the literals. `NEEDS_REVIEW` is both the default
+ * for any classroom absent from the registry AND the safe fallback for
+ * a present-but-malformed entry (an unrecognized classification string
+ * value) — never guessed into either confirmed state.
+ */
+export const FOUNDING_RECOGNITION_CLASSIFICATIONS = Object.freeze({
+  CONFIRMED_REAL: 'confirmed_real',
+  CONFIRMED_TEST: 'confirmed_test',
+  NEEDS_REVIEW: 'needs_review',
+});
+
 export function buildFoundingRecognitionWorkItemRef({ subjectId, notebookTypeId }) {
   return { type: FOUNDING_RECOGNITION_WORK_ITEM_TYPE, subjectId, notebookTypeId };
 }
 
 /**
- * A best-effort, name-pattern-based heuristic for excluding test/
- * sandbox classrooms from a real production application run — the
- * only signal this data model offers (see this file's own header
- * comment). Matches "test," "trial," "sandbox," or "demo" as a whole
- * word (never a substring of an unrelated real word) in schoolName,
- * classroomName, or gradeSection, case-insensitively, plus the
- * literal "[TEST]" bracket convention already seen in production data.
- * Never used to silently exclude anything from an AUDIT/dry-run (the
- * audit functions below report on every classroom they're given,
- * tagging this flag for visibility) — only applyFoundingRecognition()
- * itself treats a true result as a hard skip.
+ * A best-effort, name-pattern-based heuristic — NO LONGER the gate
+ * applyFoundingRecognition() enforces (see this file's own header
+ * comment on the Option B classification registry, which replaced it
+ * as the authoritative decision); retained purely as a non-blocking
+ * WARNING signal reported alongside the registry's own classification,
+ * on both the audit and apply result shapes, so a reviewer always sees
+ * it — including for a classroom the registry has already confirmed
+ * real, where it might still be worth a second look. Matches "test,"
+ * "trial," "sandbox," or "demo" as a whole word (never a substring of
+ * an unrelated real word) in schoolName, classroomName, or
+ * gradeSection, case-insensitively, plus the literal "[TEST]" bracket
+ * convention already seen in production data. Confirmed, real gaps in
+ * both directions (false positives on names like "Trial Bay Public
+ * School"; false negatives on "QA", "staging", "dummy" naming
+ * conventions) are exactly why this is a warning now, never a gate.
  */
 export function isLikelyTestOrSandboxClassroom(classroom) {
   const haystack = [classroom.schoolName, classroom.classroomName, classroom.gradeSection].filter(Boolean).join(' ');
@@ -250,12 +303,30 @@ function listHistoricalNotebookIdentities(classroom, cutoffIso) {
  * Read-only dry-run audit across one classroom — never writes
  * anything, safe to call repeatedly, including against production
  * data (it only reads `classroom.checkpoints`/`classroom.teams`).
- * Reports on EVERY classroom given to it, including a likely test/
- * sandbox one (`isLikelyTestOrSandboxClassroom`) — visibility here,
- * never silent exclusion; only applyFoundingRecognition() itself
- * refuses to act on a flagged classroom.
+ * Reports on EVERY classroom given to it regardless of classification
+ * or the name heuristic's own opinion — visibility here, never silent
+ * exclusion; only applyFoundingRecognition() itself refuses to act on
+ * a classroom that isn't `confirmed_real`. The eligibility buckets
+ * below (`eligible`/`incomplete`/etc.) are computed purely from the
+ * approved eligibility RULE and never change based on `classification`
+ * — classification is reported as a separate, parallel field so a
+ * reviewer can see "what would this classroom be eligible for" and
+ * "has this classroom actually been cleared to receive it" as the two
+ * genuinely distinct questions they are.
+ *
+ * `classification` (one of FOUNDING_RECOGNITION_CLASSIFICATIONS,
+ * default `NEEDS_REVIEW`) and `classificationDetail` (the registry
+ * entry's own `{reason, reviewedBy, reviewedAt}`, or null) are supplied
+ * BY THE CALLER — this file never loads the registry itself (see this
+ * file's own header comment on why that lives outside `js/` entirely).
+ * A caller that doesn't know or care about classification (e.g. an
+ * existing test asserting purely on eligibility) may omit both and get
+ * the safe default.
  */
-export function auditFoundingRecognitionEligibility(classroom, { cutoffIso = FOUNDING_RECOGNITION_CUTOFF_ISO } = {}) {
+export function auditFoundingRecognitionEligibility(
+  classroom,
+  { cutoffIso = FOUNDING_RECOGNITION_CUTOFF_ISO, classification = FOUNDING_RECOGNITION_CLASSIFICATIONS.NEEDS_REVIEW, classificationDetail = null } = {}
+) {
   const eligible = [];
   const incomplete = [];
   const belowMinimumCheckpoints = [];
@@ -298,6 +369,8 @@ export function auditFoundingRecognitionEligibility(classroom, { cutoffIso = FOU
 
   return {
     cutoffIso,
+    classification,
+    classificationDetail,
     isLikelyTestOrSandboxClassroom: isLikelyTestOrSandboxClassroom(classroom),
     eligible,
     incomplete,
@@ -313,9 +386,20 @@ export function auditFoundingRecognitionEligibility(classroom, { cutoffIso = FOU
  * codebase's own "service mutates, caller persists" convention). Never
  * touches Firestore, a network, or any real classroom on its own.
  *
- * Refuses outright (0 applied, explicit reason) for a classroom
- * isLikelyTestOrSandboxClassroom() flags — the one hard exclusion this
- * file enforces rather than merely reporting.
+ * CLASSIFICATION GATE (Option B, 2026-11) — the one hard exclusion
+ * this function enforces: `classification` must be EXACTLY
+ * `FOUNDING_RECOGNITION_CLASSIFICATIONS.CONFIRMED_REAL`, supplied by
+ * the caller (never loaded by this file — see the registry's own
+ * header comment). Both `NEEDS_REVIEW` (the default, and what any
+ * classroom absent from or malformed in the registry resolves to) and
+ * `CONFIRMED_TEST` refuse outright, with 0 applied and an explicit
+ * `skippedReason` naming the classification that caused it — an
+ * unreviewed classroom gets exactly the same hard refusal as a
+ * positively confirmed test one, never a softer treatment. The name
+ * heuristic (`isLikelyTestOrSandboxClassroom`) no longer gates
+ * anything on its own; it is still computed and returned on every
+ * result shape below as a non-blocking warning, even for a
+ * `confirmed_real` classroom.
  *
  * IDEMPOTENT: always re-runs the audit fresh internally, so a group
  * already `alreadyRecognized` (true on this fresh re-audit, which
@@ -332,17 +416,49 @@ export function auditFoundingRecognitionEligibility(classroom, { cutoffIso = FOU
  * `insufficientEvidence` groups, and never edits, revokes, or deletes
  * anything — this feature has no revoke action at all, matching the
  * live per-inspection model's own "once earned, never revoked" rule.
+ *
+ * MIGRATION ID — when the caller doesn't supply one, the fallback is
+ * `founding-recognition-${cutoffIso}-${generateId()}`, matching
+ * services/legacyReadinessChampionMigrationService.js's own
+ * `` `legacy-readiness-migration-${generateId()}` `` convention
+ * exactly: a UNIQUE id per call, never a fixed, collision-prone string.
+ * `cutoffIso` is a fixed constant in practice, so a fallback built from
+ * it ALONE would be identical across every separate invocation that
+ * omits `migrationId` — making it useless for telling two real runs
+ * apart after the fact purely by this field. An explicitly supplied
+ * `migrationId` is always preserved exactly as given, never altered or
+ * suffixed — this generated form only ever applies to the omitted
+ * case. This has no bearing on idempotency or achievement identity:
+ * duplicate prevention is, and has always been, based solely on
+ * `hasFoundingRecognitionEntry()`'s own workItemRef equality check
+ * below, never on `migrationId` — `migrationId` is audit/attribution
+ * metadata only.
  */
-export function applyFoundingRecognition(classroom, actingUid, { migrationId, cutoffIso = FOUNDING_RECOGNITION_CUTOFF_ISO } = {}) {
+export function applyFoundingRecognition(
+  classroom,
+  actingUid,
+  { migrationId, cutoffIso = FOUNDING_RECOGNITION_CUTOFF_ISO, classification = FOUNDING_RECOGNITION_CLASSIFICATIONS.NEEDS_REVIEW, classificationDetail = null } = {}
+) {
   if (!canAwardNotebookBadge(classroom, actingUid)) {
     throw new Error("Not authorized to apply Founding Recognition — must be this classroom's owner or a co-teacher.");
   }
-  if (isLikelyTestOrSandboxClassroom(classroom)) {
-    return { migrationId: migrationId || null, appliedCount: 0, skippedAlreadyRecognized: 0, skippedReason: 'classroom flagged as likely test/sandbox by isLikelyTestOrSandboxClassroom()', appliedEntries: [] };
+
+  const heuristicWarning = isLikelyTestOrSandboxClassroom(classroom);
+
+  if (classification !== FOUNDING_RECOGNITION_CLASSIFICATIONS.CONFIRMED_REAL) {
+    return {
+      migrationId: migrationId || null,
+      appliedCount: 0,
+      skippedAlreadyRecognized: 0,
+      skippedReason: `classroom registry classification is '${classification}' -- only an explicitly '${FOUNDING_RECOGNITION_CLASSIFICATIONS.CONFIRMED_REAL}' classification may receive Founding Recognition`,
+      classification,
+      heuristicWarning,
+      appliedEntries: [],
+    };
   }
 
-  const resolvedMigrationId = migrationId || `founding-recognition-${cutoffIso}`;
-  const audit = auditFoundingRecognitionEligibility(classroom, { cutoffIso });
+  const resolvedMigrationId = migrationId || `founding-recognition-${cutoffIso}-${generateId()}`;
+  const audit = auditFoundingRecognitionEligibility(classroom, { cutoffIso, classification, classificationDetail });
 
   let appliedCount = 0;
   const appliedEntries = [];
@@ -364,5 +480,5 @@ export function applyFoundingRecognition(classroom, actingUid, { migrationId, cu
     appliedEntries.push({ studentId: group.studentId, subjectId: group.subjectId, notebookTypeId: group.notebookTypeId });
   }
 
-  return { migrationId: resolvedMigrationId, appliedCount, skippedAlreadyRecognized: audit.alreadyRecognized.length, skippedReason: null, appliedEntries };
+  return { migrationId: resolvedMigrationId, appliedCount, skippedAlreadyRecognized: audit.alreadyRecognized.length, skippedReason: null, classification, heuristicWarning, appliedEntries };
 }

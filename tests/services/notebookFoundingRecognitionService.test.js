@@ -31,6 +31,7 @@ const VIEWER_UID = 'viewer-uid';
 const SUBJECT_ID = 'subj-1';
 const NOTEBOOK_TYPE_ID = 'type-1';
 const CUTOFF = notebookFoundingRecognitionService.FOUNDING_RECOGNITION_CUTOFF_ISO; // 2026-11-07T11:48:47Z
+const { CONFIRMED_REAL, CONFIRMED_TEST, NEEDS_REVIEW } = notebookFoundingRecognitionService.FOUNDING_RECOGNITION_CLASSIFICATIONS;
 const BEFORE_CUTOFF = '2026-09-01T09:00:00.000Z';
 const AFTER_CUTOFF = '2026-11-10T09:00:00.000Z';
 
@@ -261,6 +262,21 @@ test('auditFoundingRecognitionEligibility: flags a likely test/sandbox classroom
   assert.equal(audit.eligible.length, 1, 'the audit itself still reports what WOULD be eligible, for visibility -- only apply refuses to act');
 });
 
+test('auditFoundingRecognitionEligibility: defaults to NEEDS_REVIEW classification when the caller supplies none, and reports classificationDetail faithfully when the caller does', () => {
+  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
+  buildFullyEligibleNotebook(classroom, student, 5);
+
+  const defaulted = notebookFoundingRecognitionService.auditFoundingRecognitionEligibility(classroom);
+  assert.equal(defaulted.classification, NEEDS_REVIEW);
+  assert.equal(defaulted.classificationDetail, null);
+
+  const detail = { classification: CONFIRMED_REAL, reason: 'Verified by program staff visit, 2026-11-10.', reviewedBy: 'staff@example.org', reviewedAt: '2026-11-10T00:00:00.000Z' };
+  const withDetail = notebookFoundingRecognitionService.auditFoundingRecognitionEligibility(classroom, { classification: CONFIRMED_REAL, classificationDetail: detail });
+  assert.equal(withDetail.classification, CONFIRMED_REAL);
+  assert.deepEqual(withDetail.classificationDetail, detail);
+  assert.equal(withDetail.eligible.length, defaulted.eligible.length, 'classification never changes the eligibility computation itself -- only what is reported alongside it');
+});
+
 // ---------------------------------------------------------------------
 // applyFoundingRecognition
 // ---------------------------------------------------------------------
@@ -269,7 +285,7 @@ test('applyFoundingRecognition: awards exactly the eligible group and nothing el
   const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
   buildFullyEligibleNotebook(classroom, student, 5);
 
-  const result = notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, { migrationId: 'test-run-1' });
+  const result = notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, { migrationId: 'test-run-1', classification: CONFIRMED_REAL });
 
   assert.equal(result.appliedCount, 1);
   assert.equal(notebookFoundingRecognitionService.countFoundingRecognitionsForStudent(student), 1);
@@ -283,19 +299,45 @@ test('applyFoundingRecognition: awards exactly the eligible group and nothing el
 test('applyFoundingRecognition: never reuses the notebook_readiness_inspection or legacy notebook_readiness work item types', () => {
   const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
   buildFullyEligibleNotebook(classroom, student, 5);
-  notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, {});
+  notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, { classification: CONFIRMED_REAL });
 
   const [entry] = student.history.filter((e) => e.kind === notebookFoundingRecognitionService.FOUNDING_RECOGNITION_KIND);
   assert.notEqual(entry.workItemRef.type, 'notebook_readiness_inspection');
   assert.notEqual(entry.workItemRef.type, 'notebook_readiness');
 });
 
+test('applyFoundingRecognition: an explicitly supplied migrationId is preserved exactly, never altered or suffixed', () => {
+  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
+  buildFullyEligibleNotebook(classroom, student, 5);
+
+  const result = notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, { migrationId: 'founding-recognition-bloom-force-19-2026-11-10', classification: CONFIRMED_REAL });
+
+  assert.equal(result.migrationId, 'founding-recognition-bloom-force-19-2026-11-10');
+  const [entry] = student.history.filter((e) => e.kind === notebookFoundingRecognitionService.FOUNDING_RECOGNITION_KIND);
+  assert.equal(entry.migrationId, 'founding-recognition-bloom-force-19-2026-11-10');
+});
+
+test('applyFoundingRecognition: two SEPARATE invocations that both omit migrationId produce distinct, unique fallback ids -- never the same fixed string twice', () => {
+  const { classroom: classroomOne, student: studentOne } = buildClassroomWithStudent({ withTeam: true });
+  const { classroom: classroomTwo, student: studentTwo } = buildClassroomWithStudent({ withTeam: true });
+  buildFullyEligibleNotebook(classroomOne, studentOne, 5);
+  buildFullyEligibleNotebook(classroomTwo, studentTwo, 5);
+
+  const resultOne = notebookFoundingRecognitionService.applyFoundingRecognition(classroomOne, TEACHER_UID, { classification: CONFIRMED_REAL });
+  const resultTwo = notebookFoundingRecognitionService.applyFoundingRecognition(classroomTwo, TEACHER_UID, { classification: CONFIRMED_REAL });
+
+  assert.ok(resultOne.migrationId, 'a fallback id must still be generated, never left blank');
+  assert.ok(resultTwo.migrationId);
+  assert.notEqual(resultOne.migrationId, resultTwo.migrationId, 'two separate real runs must never collapse onto the same fallback id just because the fixed cutoff is identical');
+  assert.match(resultOne.migrationId, /^founding-recognition-2026-11-07T11:48:47Z-.+/, 'still clearly identifiable as a Founding Recognition run against the real cutoff, with a unique suffix appended');
+});
+
 test('applyFoundingRecognition: idempotent -- a second call against the same classroom applies nothing further', () => {
   const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
   buildFullyEligibleNotebook(classroom, student, 5);
 
-  const first = notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, {});
-  const second = notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, {});
+  const first = notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, { classification: CONFIRMED_REAL });
+  const second = notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, { classification: CONFIRMED_REAL });
 
   assert.equal(first.appliedCount, 1);
   assert.equal(second.appliedCount, 0);
@@ -303,15 +345,78 @@ test('applyFoundingRecognition: idempotent -- a second call against the same cla
   assert.equal(notebookFoundingRecognitionService.countFoundingRecognitionsForStudent(student), 1, 'still exactly one entry after two apply calls');
 });
 
-test('applyFoundingRecognition: refuses outright for a likely test/sandbox classroom, applying nothing', () => {
-  const { classroom, student } = buildClassroomWithStudent({ withTeam: true, schoolName: 'Trial' });
+test('applyFoundingRecognition: CLASSIFICATION REGISTRY -- defaults to NEEDS_REVIEW and refuses outright when the caller supplies no classification at all', () => {
+  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
   buildFullyEligibleNotebook(classroom, student, 5);
 
   const result = notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, {});
 
   assert.equal(result.appliedCount, 0);
-  assert.ok(result.skippedReason);
+  assert.match(result.skippedReason, /needs_review/);
   assert.equal(notebookFoundingRecognitionService.countFoundingRecognitionsForStudent(student), 0);
+});
+
+test('applyFoundingRecognition: CLASSIFICATION REGISTRY -- an explicit NEEDS_REVIEW classification refuses outright, same as the default', () => {
+  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
+  buildFullyEligibleNotebook(classroom, student, 5);
+
+  const result = notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, { classification: NEEDS_REVIEW });
+
+  assert.equal(result.appliedCount, 0);
+  assert.equal(notebookFoundingRecognitionService.countFoundingRecognitionsForStudent(student), 0);
+});
+
+test('applyFoundingRecognition: CLASSIFICATION REGISTRY -- CONFIRMED_TEST refuses outright, identically to NEEDS_REVIEW, never weakened', () => {
+  const { classroom, student } = buildClassroomWithStudent({ withTeam: true, schoolName: 'A Perfectly Real-Sounding School' });
+  buildFullyEligibleNotebook(classroom, student, 5);
+
+  const result = notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, { classification: CONFIRMED_TEST });
+
+  assert.equal(result.appliedCount, 0);
+  assert.match(result.skippedReason, /confirmed_test/);
+  assert.equal(notebookFoundingRecognitionService.countFoundingRecognitionsForStudent(student), 0);
+});
+
+test('applyFoundingRecognition: CLASSIFICATION REGISTRY -- CONFIRMED_REAL proceeds and awards normally', () => {
+  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
+  buildFullyEligibleNotebook(classroom, student, 5);
+
+  const result = notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, { classification: CONFIRMED_REAL });
+
+  assert.equal(result.appliedCount, 1);
+  assert.equal(result.skippedReason, null);
+  assert.equal(notebookFoundingRecognitionService.countFoundingRecognitionsForStudent(student), 1);
+});
+
+test('applyFoundingRecognition: CLASSIFICATION REGISTRY -- an unrecognized/malformed classification string (e.g. a registry entry with a typo) refuses outright, fail-closed, never treated as confirmed_real', () => {
+  const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
+  buildFullyEligibleNotebook(classroom, student, 5);
+
+  const result = notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, { classification: 'CONFIRMED_REAL' }); // wrong case -- not the exact valid string
+
+  assert.equal(result.appliedCount, 0);
+  assert.equal(notebookFoundingRecognitionService.countFoundingRecognitionsForStudent(student), 0);
+});
+
+test('applyFoundingRecognition: HEURISTIC AS WARNING ONLY -- a name-heuristic false positive ("Trial Bay Public School"-style) no longer blocks a classroom the registry has explicitly confirmed real', () => {
+  const { classroom, student } = buildClassroomWithStudent({ withTeam: true, schoolName: 'Trial' }); // the heuristic WOULD flag this
+  buildFullyEligibleNotebook(classroom, student, 5);
+
+  const result = notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, { classification: CONFIRMED_REAL });
+
+  assert.equal(result.heuristicWarning, true, 'the heuristic still fires and is still reported...');
+  assert.equal(result.appliedCount, 1, '...but it no longer blocks the award once the registry has confirmed this classroom real');
+  assert.equal(notebookFoundingRecognitionService.countFoundingRecognitionsForStudent(student), 1);
+});
+
+test('applyFoundingRecognition: HEURISTIC AS WARNING ONLY -- a classroom the heuristic does NOT flag is still refused when classification defaults to NEEDS_REVIEW (a false negative never grants a free pass)', () => {
+  const { classroom, student } = buildClassroomWithStudent({ withTeam: true, schoolName: 'QA Classroom' }); // a confirmed heuristic false-negative naming convention
+  buildFullyEligibleNotebook(classroom, student, 5);
+
+  const result = notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, {});
+
+  assert.equal(result.heuristicWarning, false, 'the heuristic misses this naming convention entirely');
+  assert.equal(result.appliedCount, 0, 'but the registry default (needs_review) still refuses it -- the heuristic missing something is never treated as permission');
 });
 
 test('applyFoundingRecognition: throws for an unauthorized acting uid and applies nothing', () => {
@@ -332,7 +437,7 @@ test('applyFoundingRecognition: never touches incomplete, below-minimum, or insu
   });
   // checkpoints[4] left pending -- incomplete
 
-  notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, {});
+  notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, { classification: CONFIRMED_REAL });
   assert.equal(notebookFoundingRecognitionService.countFoundingRecognitionsForStudent(student), 0);
 });
 
@@ -341,7 +446,7 @@ test('applyFoundingRecognition: multiple notebooks for the same student produce 
   buildFullyEligibleNotebook(classroom, student, 5, { subjectId: 'subj-A', notebookTypeId: 'type-A' });
   buildFullyEligibleNotebook(classroom, student, 6, { subjectId: 'subj-B', notebookTypeId: 'type-B' });
 
-  const result = notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, {});
+  const result = notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, { classification: CONFIRMED_REAL });
 
   assert.equal(result.appliedCount, 2);
   assert.equal(notebookFoundingRecognitionService.countFoundingRecognitionsForStudent(student), 2);
@@ -361,8 +466,8 @@ test('applyFoundingRecognition: duplicate-named students across two SEPARATE cla
   buildFullyEligibleNotebook(classroomOne, studentOne, 5);
   buildFullyEligibleNotebook(classroomTwo, studentTwo, 5);
 
-  const resultOne = notebookFoundingRecognitionService.applyFoundingRecognition(classroomOne, TEACHER_UID, {});
-  const resultTwo = notebookFoundingRecognitionService.applyFoundingRecognition(classroomTwo, TEACHER_UID, {});
+  const resultOne = notebookFoundingRecognitionService.applyFoundingRecognition(classroomOne, TEACHER_UID, { classification: CONFIRMED_REAL });
+  const resultTwo = notebookFoundingRecognitionService.applyFoundingRecognition(classroomTwo, TEACHER_UID, { classification: CONFIRMED_REAL });
 
   assert.equal(resultOne.appliedCount, 1);
   assert.equal(resultTwo.appliedCount, 1);
@@ -378,7 +483,7 @@ test('applyFoundingRecognition: duplicate-named students across two SEPARATE cla
 test('REGRESSION: a Founding Recognition entry is never counted by countReadinessChampionAchievementsForStudent (new-model count)', () => {
   const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
   buildFullyEligibleNotebook(classroom, student, 5);
-  notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, {});
+  notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, { classification: CONFIRMED_REAL });
 
   assert.equal(notebookReadinessChampionService.countReadinessChampionAchievementsForStudent(student), 0);
   assert.equal(notebookFoundingRecognitionService.countFoundingRecognitionsForStudent(student), 1);
@@ -387,7 +492,7 @@ test('REGRESSION: a Founding Recognition entry is never counted by countReadines
 test('REGRESSION: a Founding Recognition entry is never counted by the legacy countActiveReadinessChampionNotebooksForStudent, and vice versa', () => {
   const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
   buildFullyEligibleNotebook(classroom, student, 5);
-  notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, {});
+  notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, { classification: CONFIRMED_REAL });
 
   assert.equal(notebookReadinessChampionService.countActiveReadinessChampionNotebooksForStudent(student), 0);
 
@@ -399,7 +504,7 @@ test('REGRESSION: a Founding Recognition entry is never counted by the legacy co
 test('REGRESSION: a real new-model inspection achievement and a Founding Recognition entry for the SAME notebook coexist without interfering with either count', () => {
   const { classroom, student } = buildClassroomWithStudent({ withTeam: true });
   buildFullyEligibleNotebook(classroom, student, 5);
-  notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, {});
+  notebookFoundingRecognitionService.applyFoundingRecognition(classroom, TEACHER_UID, { classification: CONFIRMED_REAL });
 
   const freshUnit = addHistoricalCheckpoint(classroom, { title: 'Unit 6', createdAt: AFTER_CUTOFF });
   notebookReadinessChampionService.inspectReadinessChampionOnNewCheckpoint(classroom, freshUnit, TEACHER_UID);
