@@ -50,6 +50,7 @@ import {
   handlePollDeviceSignIn,
 } from './src/deviceSignIn/deviceSignInEndpoints.js';
 import { handleVerifyLearnerConnectionRequest } from './src/verifyLearnerConnectionEndpoint.js';
+import { handleGetNotebookObligationsForLearnerRequest } from './src/getNotebookObligationsForLearnerEndpoint.js';
 
 if (getApps().length === 0) {
   initializeApp();
@@ -217,6 +218,54 @@ export const verifyLearnerConnection = onRequest({ cors: false, invoker: 'public
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'method_not_allowed' });
 
   const { httpStatus, body } = await handleVerifyLearnerConnectionRequest({
+    authorizationHeader: req.get('Authorization'),
+    body: await readJsonBody(req),
+    deps: { adminDb: getFirestore() },
+  });
+  res.status(httpStatus).json(body);
+});
+
+// -----------------------------------------------------------------------
+// Notebook Obligations — read-only endpoint Learning Hub calls to show a
+// learner their own outstanding notebook work. See
+// docs/architecture/NOTEBOOK_OBLIGATIONS_ENDPOINT.md for the full
+// security design. Same trust boundary as verifyLearnerConnection
+// above: `invoker: 'public'` because the real security gate is the
+// Learning Hub ID token + ownership check inside
+// handleGetNotebookObligationsForLearnerRequest, not IAM allowlisting —
+// Cloud Run/Functions IAM has no notion of "a valid Learning Hub user,"
+// only "a valid Google Cloud caller identity," which Learning Hub's
+// backend does not have one of to present. No CORS handling — this is a
+// server-to-server call from Learning Hub's own backend, never a
+// browser directly.
+//
+// `Cache-Control: private, no-store` on every response, success or
+// failure: this endpoint's entire response can contain a real learner's
+// notebook status data, and must never be cached by any intermediary or
+// the caller's own HTTP stack.
+//
+// Deliberately NO `serviceAccount` override, matching verifyLearnerConnection
+// above — this function reads ClassMate's own Firestore
+// (learnerClassroomRelationships, classrooms) with the project's normal
+// default runtime identity; the cross-project ownership check inside
+// learnerProfileOwnership.js uses its own separate, narrowly-scoped
+// impersonated identity for that one outbound call only (see that
+// file's own header comment).
+//
+// Never logs req.body, the Authorization header, or the response body —
+// this repo's existing handlers already avoid logging any request
+// content; this endpoint adds no logging of its own.
+//
+// CHECKPOINT-AWARE as of this change: see
+// functions/src/getNotebookObligationsForLearnerEndpoint.js's own
+// header comment for the response shape change (obligations:[] ->
+// status:{summary, items}) this now returns.
+// -----------------------------------------------------------------------
+export const getNotebookObligationsForLearner = onRequest({ cors: false, invoker: 'public' }, async (req, res) => {
+  res.set('Cache-Control', 'private, no-store');
+  if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'method_not_allowed' });
+
+  const { httpStatus, body } = await handleGetNotebookObligationsForLearnerRequest({
     authorizationHeader: req.get('Authorization'),
     body: await readJsonBody(req),
     deps: { adminDb: getFirestore() },
