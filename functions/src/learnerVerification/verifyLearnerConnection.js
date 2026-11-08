@@ -57,31 +57,80 @@ const GENERIC_FAILURE = Object.freeze({ ok: false, error: 'verification_failed' 
  * verification process again" for the REVOKED case.
  */
 /**
+ * Resolves a code a learner typed in Learning Hub's "Join a Classroom"
+ * screen to a classroomId — the ONE unified lookup behind the product
+ * decision that a single classroom code must work in both ClassMate
+ * Student Mode and Learning Hub (see
+ * docs/architecture/CLASSROOM_INVITATION_VERIFICATION_BRIDGE.md's own
+ * "Unified Classroom Code" addendum).
+ *
+ * Resolution order, both read-only, both via the Admin SDK (bypassing
+ * firestore.rules — the same trust boundary this bridge has always
+ * used; nothing here is newly exposed to any client):
+ *
+ *   1. `studentJoinCodes/{code}` — the CANONICAL code going forward.
+ *      This is the exact same top-level collection
+ *      workspaceService.resolveStudentJoinCode() already reads for
+ *      ClassMate's own Student Mode, and the exact same code value
+ *      StudentAccessView.js's single "Invite Students" tile displays
+ *      (classroom.classroomStudentJoinCode). Checked first because
+ *      every classroom — new or existing — already has one of these
+ *      the moment it's created (workspaceService.createClassroom()),
+ *      and a new classroom's Learning Hub code and Student Mode code
+ *      must be the SAME code, not two independently-generated ones.
+ *   2. `classroomInvitationCodes/{code}` — the LEGACY, Learning-Hub-
+ *      only code this bridge used before the unification.
+ *      ConnectLearningHubView.js no longer generates new ones (no
+ *      classroom gets a second, competing code anymore), but a code
+ *      already handed out to real families before this change must
+ *      keep working exactly as before — this is intentionally never
+ *      backfilled into studentJoinCodes or deleted; it just keeps being
+ *      checked, permanently, as a second legal spelling for whichever
+ *      classroom actually issued it.
+ *
+ * Checking (1) before (2) is safe, not just convenient: the two
+ * collections are independently keyed random strings from the same
+ * low-collision alphabet (see utils/idGenerator.js's own
+ * JOIN_CODE_ALPHABET), so a code existing in one essentially never also
+ * exists in the other by chance — this ordering exists for clarity and
+ * cost (one extra read only when (1) misses), not to resolve a
+ * meaningful conflict.
+ */
+export async function resolveInvitationClassroomId(adminDb, code) {
+  const studentJoinCodeSnap = await adminDb.collection('studentJoinCodes').doc(code).get();
+  if (studentJoinCodeSnap.exists) {
+    return studentJoinCodeSnap.data().classroomId || null;
+  }
+
+  const invitationCodeSnap = await adminDb.collection('classroomInvitationCodes').doc(code).get();
+  if (invitationCodeSnap.exists) {
+    const data = invitationCodeSnap.data();
+    if (data.status === 'active' && data.classroomId) {
+      return data.classroomId;
+    }
+  }
+
+  return null;
+}
+
+/**
  * `classroomId` is OPTIONAL here, deliberately — this was a required
  * caller-supplied input originally, but ClassMate's own invitation-
- * sharing UI (ConnectLearningHubView.js's renderInvitationSection(),
- * "On its own, this code identifies your classroom only") never hands
- * the classroom id out alongside the code, only the bare 6-character
- * code itself. Requiring a value the caller structurally cannot have
- * made this function uncallable from the one real, live UI that
- * redeems invitations (Learning Hub's redeemInvitation(), wired to
- * onboarding-ui.js). The invitation code is already the sole, globally
- * unique key into `classroomInvitationCodes` (a top-level collection,
- * keyed by the code itself) — the classroom it belongs to is always
- * resolved FROM the code, never from a client claim. If a caller does
- * independently supply classroomId anyway, it's still checked against
- * the invitation's own real value as defense in depth; it is never
- * treated as the source of truth.
+ * sharing UI never hands the classroom id out alongside the code, only
+ * the bare 6-character code itself. Requiring a value the caller
+ * structurally cannot have made this function uncallable from the one
+ * real, live UI that redeems invitations (Learning Hub's
+ * redeemInvitation(), wired to onboarding-ui.js). The code is always
+ * resolved FROM the code (see resolveInvitationClassroomId() above),
+ * never from a client claim. If a caller does independently supply
+ * classroomId anyway, it's still checked against the resolved value as
+ * defense in depth; it is never treated as the source of truth.
  */
 export async function createConnectionRequest(adminDb, { learnerProfileId, classroomId, invitationCode }) {
   if (!learnerProfileId || !invitationCode) return GENERIC_FAILURE;
 
-  const invitationCodeRef = adminDb.collection('classroomInvitationCodes').doc(invitationCode);
-  const invitationCodeSnap = await invitationCodeRef.get();
-  if (!invitationCodeSnap.exists) return GENERIC_FAILURE;
-  const invitationCodeData = invitationCodeSnap.data();
-  const resolvedClassroomId = invitationCodeData.classroomId;
-  if (invitationCodeData.status !== 'active' || !resolvedClassroomId) return GENERIC_FAILURE;
+  const resolvedClassroomId = await resolveInvitationClassroomId(adminDb, invitationCode);
+  if (!resolvedClassroomId) return GENERIC_FAILURE;
   // Strict `!== undefined`, not a truthy check — a caller passing an
   // empty string must still hit the mismatch check below, not be
   // silently treated as "no value supplied" (independent review caught

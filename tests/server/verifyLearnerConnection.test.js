@@ -19,7 +19,7 @@ import assert from 'node:assert/strict';
 import admin from 'firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';
 import { sha256Hex } from '../../functions/src/learnerVerification/hashUtils.js';
-import { createConnectionRequest, verifyStudentCode } from '../../functions/src/learnerVerification/verifyLearnerConnection.js';
+import { createConnectionRequest, verifyStudentCode, resolveInvitationClassroomId } from '../../functions/src/learnerVerification/verifyLearnerConnection.js';
 import { RELATIONSHIP_STATUS } from '../../js/models/LearnerConnection.js';
 
 process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
@@ -51,6 +51,8 @@ const STUDENT_B1 = 'student-b1-server';
 const LEARNER_1 = 'learner-1-server';
 const LEARNER_2 = 'learner-2-server';
 const INVITATION_CODE_A = 'INVCODEA';
+const STUDENT_JOIN_CODE_A = 'SJCODEA1';
+const STUDENT_JOIN_CODE_B = 'SJCODEB1';
 
 before(() => {
   app = admin.initializeApp({ projectId: PROJECT_ID }, 'verify-learner-connection-tests');
@@ -76,6 +78,19 @@ async function seedClassroom(classroomId, students) {
 
 async function seedInvitationCode(code, classroomId) {
   await db.doc(`classroomInvitationCodes/${code}`).set({ classroomId, invitationId: 'inv-server', status: 'active', createdAt: 'now' });
+}
+
+/**
+ * UNIFIED CLASSROOM CODE — the exact collection
+ * workspaceService.createStudentJoinCodeMapping() writes to for
+ * ClassMate Student Mode's own classroom.classroomStudentJoinCode.
+ * Seeding this directly, with no corresponding classroomInvitationCodes
+ * entry, is what proves resolveInvitationClassroomId() genuinely treats
+ * this AS the canonical Learning Hub lookup now, not just Student
+ * Mode's.
+ */
+async function seedStudentJoinCode(code, classroomId) {
+  await db.doc(`studentJoinCodes/${code}`).set({ classroomId });
 }
 
 /**
@@ -107,6 +122,7 @@ beforeEach(async () => {
   await Promise.all([
     wipeCollection('classrooms'),
     wipeCollection('classroomInvitationCodes'),
+    wipeCollection('studentJoinCodes'),
     wipeCollection('learnerClassroomRelationships'),
   ]);
   // studentVerificationCodes is a subcollection — wiped implicitly by
@@ -174,6 +190,88 @@ test('createConnectionRequest does not disturb an already-ACTIVE relationship', 
   assert.equal(result.status, 'ACTIVE');
   const snap = await db.doc(`learnerClassroomRelationships/${LEARNER_1}_${CLASSROOM_A}`).get();
   assert.equal(snap.data().studentId, STUDENT_A1); // untouched
+});
+
+// --------------------------------------------------------------------
+// UNIFIED CLASSROOM CODE — one code resolves in both ClassMate Student
+// Mode (via workspaceService.resolveStudentJoinCode(), which reads the
+// exact same studentJoinCodes/{code} collection seeded here) and
+// Learning Hub (via this same resolveInvitationClassroomId()/
+// createConnectionRequest()). See functions/src/learnerVerification/
+// verifyLearnerConnection.js's own resolveInvitationClassroomId() header
+// comment for the full resolution-order rationale.
+// --------------------------------------------------------------------
+
+test('UNIFIED CODE: resolveInvitationClassroomId() resolves a classroom.classroomStudentJoinCode-style code via studentJoinCodes — the canonical path, with no classroomInvitationCodes entry at all', async () => {
+  await seedStudentJoinCode(STUDENT_JOIN_CODE_A, CLASSROOM_A);
+  const resolved = await resolveInvitationClassroomId(db, STUDENT_JOIN_CODE_A);
+  assert.equal(resolved, CLASSROOM_A);
+});
+
+test('UNIFIED CODE: the same classroom code Student Mode uses lets a learner create a real pending Learning Hub request end to end', async () => {
+  await seedStudentJoinCode(STUDENT_JOIN_CODE_A, CLASSROOM_A);
+  const result = await createConnectionRequest(db, { learnerProfileId: LEARNER_1, invitationCode: STUDENT_JOIN_CODE_A });
+  assert.equal(result.ok, true);
+  assert.equal(result.status, RELATIONSHIP_STATUS.PENDING);
+  assert.equal(result.classroomId, CLASSROOM_A, 'must resolve to the SAME classroom Student Mode would also resolve this exact code to');
+
+  const snap = await db.doc(`learnerClassroomRelationships/${LEARNER_1}_${CLASSROOM_A}`).get();
+  assert.equal(snap.exists, true);
+  assert.equal(snap.data().status, RELATIONSHIP_STATUS.PENDING);
+  assert.equal(snap.data().invitationCode, STUDENT_JOIN_CODE_A);
+});
+
+test('UNIFIED CODE: a legacy, already-distributed classroomInvitationCodes entry (no matching studentJoinCodes entry) still works — previously handed-out codes must not unexpectedly stop working', async () => {
+  const result = await createConnectionRequest(db, { learnerProfileId: LEARNER_1, invitationCode: INVITATION_CODE_A });
+  assert.equal(result.ok, true);
+  assert.equal(result.classroomId, CLASSROOM_A);
+});
+
+test('UNIFIED CODE: a classroom\'s own student join code and ANOTHER classroom\'s legacy invitation code resolve independently, each to its own classroom — no cross-contamination between the two collections', async () => {
+  await seedStudentJoinCode(STUDENT_JOIN_CODE_B, CLASSROOM_B);
+  // INVITATION_CODE_A (classroomInvitationCodes) still points at CLASSROOM_A from beforeEach.
+  const viaStudentJoinCode = await resolveInvitationClassroomId(db, STUDENT_JOIN_CODE_B);
+  const viaLegacyInvitationCode = await resolveInvitationClassroomId(db, INVITATION_CODE_A);
+  assert.equal(viaStudentJoinCode, CLASSROOM_B);
+  assert.equal(viaLegacyInvitationCode, CLASSROOM_A);
+});
+
+test('UNIFIED CODE: a learner cannot reach another classroom\'s data by presenting classroom A\'s own shared code — it resolves to A, period, never anything caller-claimed', async () => {
+  await seedStudentJoinCode(STUDENT_JOIN_CODE_A, CLASSROOM_A);
+  const result = await createConnectionRequest(db, { learnerProfileId: LEARNER_1, classroomId: CLASSROOM_B, invitationCode: STUDENT_JOIN_CODE_A });
+  assert.equal(result.ok, false, 'a caller-asserted classroomId that disagrees with the code\'s real, resolved classroom must fail closed');
+  const snap = await db.doc(`learnerClassroomRelationships/${LEARNER_1}_${CLASSROOM_B}`).get();
+  assert.equal(snap.exists, false);
+});
+
+test('UNIFIED CODE: an unknown code fails generically whether or not it happens to resemble a real one in either collection', async () => {
+  await seedStudentJoinCode(STUDENT_JOIN_CODE_A, CLASSROOM_A);
+  const result = await createConnectionRequest(db, { learnerProfileId: LEARNER_1, invitationCode: 'NOPE0000' });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'verification_failed');
+});
+
+test('UNIFIED CODE: duplicate Learning Hub join attempts with the same shared code are idempotent (second attempt does not create a second PENDING doc or disturb the first)', async () => {
+  await seedStudentJoinCode(STUDENT_JOIN_CODE_A, CLASSROOM_A);
+  const first = await createConnectionRequest(db, { learnerProfileId: LEARNER_1, invitationCode: STUDENT_JOIN_CODE_A });
+  const second = await createConnectionRequest(db, { learnerProfileId: LEARNER_1, invitationCode: STUDENT_JOIN_CODE_A });
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  assert.equal(second.status, RELATIONSHIP_STATUS.PENDING);
+  const snap = await db.doc(`learnerClassroomRelationships/${LEARNER_1}_${CLASSROOM_A}`).get();
+  assert.equal(snap.data().createdAt, snap.data().createdAt); // single doc, not duplicated — same doc id by construction
+});
+
+test('UNIFIED CODE: an existing ACTIVE relationship is left untouched when the learner re-submits the shared classroom code again', async () => {
+  await seedStudentJoinCode(STUDENT_JOIN_CODE_A, CLASSROOM_A);
+  await db.doc(`learnerClassroomRelationships/${LEARNER_1}_${CLASSROOM_A}`).set({
+    learnerProfileId: LEARNER_1, classroomId: CLASSROOM_A, studentId: STUDENT_A1, status: 'ACTIVE', createdAt: 'now',
+  });
+  const result = await createConnectionRequest(db, { learnerProfileId: LEARNER_1, invitationCode: STUDENT_JOIN_CODE_A });
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'ACTIVE');
+  const snap = await db.doc(`learnerClassroomRelationships/${LEARNER_1}_${CLASSROOM_A}`).get();
+  assert.equal(snap.data().studentId, STUDENT_A1, 'an existing active connection must remain completely untouched by the unification');
 });
 
 // --------------------------------------------------------------------

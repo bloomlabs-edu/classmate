@@ -7,9 +7,9 @@
  * Learning Hub" tile on ui/views/StudentAccessView.js's own Classroom
  * Access bento grid, as its own route (`connectLearningHub` — see
  * ui/router.js) rather than a section of that view, since this screen
- * needs real async Firestore reads (the classroom's own invitation,
- * and the pending-request queue) that StudentAccessView's synchronous,
- * already-loaded-`classroom`-object render was never built to perform.
+ * needs a real async Firestore read (the pending-request queue) that
+ * StudentAccessView's synchronous, already-loaded-`classroom`-object
+ * render was never built to perform.
  *
  * Three things this screen deliberately does NOT do, each one a direct
  * requirement from the architecture doc / this feature's own review:
@@ -56,11 +56,19 @@
  * exists, untouched, as infrastructure — this view just no longer
  * calls it. See services/learnerConnectionActivationService.js's own
  * header comment for the full "why" behind this change.
+ *
+ * UNIFIED CLASSROOM CODE (product decision): this view no longer
+ * generates its own, separate "connection code" — classroomInvitationCodes
+ * is legacy, read-only infrastructure now (still honored server-side,
+ * see functions/src/learnerVerification/verifyLearnerConnection.js's own
+ * resolveInvitationClassroomId()). Learners connect using the exact same
+ * `classroom.classroomStudentJoinCode` StudentAccessView.js's single
+ * "Invite Students" tile already displays for ClassMate Student Mode —
+ * this screen only ever echoes that same value, read-only, never
+ * generates a second one.
  */
 
 import {
-  createClassroomInvitationForClassroom,
-  listClassroomInvitations,
   listRelationshipsForClassroom,
   rejectRelationship,
 } from '../../repositories/firestoreLearnerConnectionRepository.js';
@@ -91,13 +99,11 @@ const GENERIC_ACTION_ERROR = "Something went wrong. Try again.";
 
 export function renderConnectLearningHubView(container, { classroom, currentUser, onBack }) {
   let loadError = null;
-  let invitation = null; // the classroom's one active invitation, or null
   let relationships = null; // null = still loading
   let expandedRelationshipId = null;
   let selectedStudentId = null; // roster-picker draft for the currently expanded row only
   let actionError = null;
   let isSubmittingAction = false;
-  let isGeneratingInvitation = false;
   let notifiedPendingThisSession = false;
 
   const allRosterStudents = classroom.teams.flatMap((team) => team.students.map((student) => ({ student, team })));
@@ -108,31 +114,15 @@ export function renderConnectLearningHubView(container, { classroom, currentUser
       {
         classroom,
         loadError,
-        invitation,
         relationships,
         expandedRelationshipId,
         selectedStudentId,
         actionError,
         isSubmittingAction,
-        isGeneratingInvitation,
         allRosterStudents,
       },
       {
         onBack,
-        onGenerateInvitation: async () => {
-          isGeneratingInvitation = true;
-          actionError = null;
-          rerender();
-          try {
-            const created = await createClassroomInvitationForClassroom(classroom.id, currentUser?.uid);
-            invitation = { id: created.invitationId, classroomId: classroom.id, code: created.code, status: 'active' };
-          } catch (error) {
-            console.error('[ConnectLearningHubView] Failed to generate a connection code:', error);
-            actionError = GENERIC_ACTION_ERROR;
-          }
-          isGeneratingInvitation = false;
-          rerender();
-        },
         onToggleRow: (relationshipId) => {
           expandedRelationshipId = expandedRelationshipId === relationshipId ? null : relationshipId;
           // A fresh expand/collapse always clears any in-progress picker
@@ -253,16 +243,15 @@ export function renderConnectLearningHubView(container, { classroom, currentUser
 
   rerender();
 
-  Promise.all([listClassroomInvitations(classroom.id), listRelationshipsForClassroom(classroom.id)])
-    .then(([invitations, rels]) => {
-      invitation = invitations.find((inv) => inv.status === 'active') || null;
+  listRelationshipsForClassroom(classroom.id)
+    .then((rels) => {
       relationships = rels;
       maybeNotifyPendingRequests();
       rerender();
     })
     .catch((error) => {
       console.error('[ConnectLearningHubView] Failed to load:', error);
-      loadError = "Couldn't load Connect Learning Hub. Check your connection and try again.";
+      loadError = "Couldn't load Learning Hub Requests. Check your connection and try again.";
       rerender();
     });
 }
@@ -284,7 +273,7 @@ function renderConnectLearningHub(container, state, handlers) {
   titleBlock.className = 'tracker-header__title-block';
   const title = document.createElement('h1');
   title.className = 'tracker-header__title';
-  title.textContent = 'Connect Learning Hub';
+  title.textContent = 'Learning Hub Requests';
   const subtitle = document.createElement('p');
   subtitle.className = 'tracker-header__subtitle';
   subtitle.textContent = getDisplayName(state.classroom);
@@ -315,7 +304,7 @@ function renderConnectLearningHub(container, state, handlers) {
     return;
   }
 
-  content.appendChild(renderInvitationSection(state, handlers));
+  content.appendChild(renderInvitationSection(state));
 
   if (state.actionError) {
     const error = document.createElement('p');
@@ -331,48 +320,51 @@ function renderConnectLearningHub(container, state, handlers) {
 }
 
 /**
- * The classroom-wide invitation code — the first half of the bridge
- * (architecture doc §4): identifies this classroom only, never a
- * student, and is meant to be shared with the whole class the same way
- * the existing "Invite Students" code is. Reuses the exact
- * `.invite-students-card__code` display and copyText() helper every
- * other Classroom Access tile already uses.
+ * UNIFIED CLASSROOM CODE (product decision): the SAME code
+ * StudentAccessView.js's "Invite Students" tile already shows for
+ * ClassMate Student Mode — never a second, Learning-Hub-only code.
+ * Read-only echo of `classroom.classroomStudentJoinCode`; this view
+ * never generates one. If a classroom genuinely has none yet (only
+ * possible for a classroom that predates this code existing at all —
+ * see classroomService.createEmptyClassroom()'s own
+ * ensureStudentJoinCode() call for every classroom created since), the
+ * teacher is sent to Classroom Access, the one place that code is ever
+ * generated, rather than duplicating that generation flow here.
  */
-function renderInvitationSection(state, handlers) {
+function renderInvitationSection(state) {
   const section = document.createElement('div');
   section.className = 'connect-learning-hub__section';
 
   const heading = document.createElement('h2');
   heading.className = 'connect-learning-hub__section-heading';
-  heading.textContent = 'Classroom connection code';
+  heading.textContent = 'Your classroom code';
   section.appendChild(heading);
 
   const description = document.createElement('p');
   description.className = 'connect-learning-hub__description';
-  description.textContent = 'Share this with your class so learners can connect their Learning Hub account to this classroom. On its own, this code identifies your classroom only — it never grants access to a specific student.';
+  description.textContent = 'The same code you already share for ClassMate also connects a learner’s Learning Hub account to this classroom — there is nothing separate to generate or hand out.';
   section.appendChild(description);
 
-  if (!state.invitation) {
-    const generateButton = document.createElement('button');
-    generateButton.type = 'button';
-    generateButton.className = 'btn btn--primary';
-    generateButton.textContent = state.isGeneratingInvitation ? 'Generating…' : 'Generate connection code';
-    generateButton.disabled = state.isGeneratingInvitation;
-    generateButton.addEventListener('click', handlers.onGenerateInvitation);
-    section.appendChild(generateButton);
+  const code = state.classroom.classroomStudentJoinCode;
+
+  if (!code) {
+    const missingCodeNote = document.createElement('p');
+    missingCodeNote.className = 'connect-learning-hub__description';
+    missingCodeNote.textContent = 'This classroom doesn’t have a classroom code yet — generate one from Classroom Access first.';
+    section.appendChild(missingCodeNote);
     return section;
   }
 
   const codeDisplay = document.createElement('div');
   codeDisplay.className = 'invite-students-card__code';
-  codeDisplay.textContent = state.invitation.code;
+  codeDisplay.textContent = code;
   section.appendChild(codeDisplay);
 
   const copyButton = document.createElement('button');
   copyButton.type = 'button';
   copyButton.className = 'btn btn--ghost';
   copyButton.textContent = 'Copy Code';
-  copyButton.addEventListener('click', () => copyText(state.invitation.code, 'Connection code copied to clipboard'));
+  copyButton.addEventListener('click', () => copyText(code, 'Classroom code copied to clipboard'));
   section.appendChild(copyButton);
 
   return section;
