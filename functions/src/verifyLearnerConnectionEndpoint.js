@@ -111,6 +111,15 @@ export async function handleVerifyLearnerConnectionRequest({ authorizationHeader
     verifiedUid = null;
   }
   if (!verifiedUid) {
+    // DIAGNOSTIC HARDENING (production incident — a missing
+    // LEARNING_HUB_FIREBASE_PROJECT_ID env var made every real
+    // redemption attempt fail here with no distinguishing signal
+    // anywhere): a single, generic marker that auth was rejected at
+    // this layer — learningHubAuth.js's own verifyLearningHubIdToken()
+    // already logged WHICH category (CONFIGURATION ERROR vs. TOKEN
+    // VERIFICATION FAILED), distinctly, under its own tag. Never logs
+    // the token itself.
+    console.log(JSON.stringify({ endpoint: 'verifyLearnerConnection', event: 'auth_rejected', ts: new Date().toISOString() }));
     return { httpStatus: 401, body: UNAUTHENTICATED };
   }
 

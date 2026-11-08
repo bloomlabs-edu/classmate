@@ -95,3 +95,48 @@ test('LEARNING_HUB_FIREBASE_PROJECT_ID unset fails closed by throwing, rather th
     process.env.LEARNING_HUB_FIREBASE_PROJECT_ID = previous;
   }
 });
+
+// --------------------------------------------------------------------
+// DIAGNOSTIC HARDENING (production incident: a redeploy from a git
+// worktree lacking functions/.env.classmate-302c2 silently dropped
+// LEARNING_HUB_FIREBASE_PROJECT_ID, making every real Learning Hub
+// caller fail as "unauthenticated" with no way for an operator to tell
+// that apart from a genuinely bad token — see
+// docs/architecture/LEARNER_SELF_IDENTITY_CLAIM.md's own incident
+// note). These tests prove the two failure categories are now
+// distinctly tagged in Cloud Logging, without changing either
+// function's own external return-value contract (still proven above:
+// both throw/null exactly as before).
+// --------------------------------------------------------------------
+
+test('DIAGNOSTIC: a missing LEARNING_HUB_FIREBASE_PROJECT_ID logs a distinct "CONFIGURATION ERROR" tag — never the token value', async () => {
+  const previous = process.env.LEARNING_HUB_FIREBASE_PROJECT_ID;
+  delete process.env.LEARNING_HUB_FIREBASE_PROJECT_ID;
+  const originalError = console.error;
+  const logged = [];
+  console.error = (...args) => logged.push(args.map(String).join(' '));
+  try {
+    await assert.rejects(() => verifyLearningHubIdToken('some-real-looking-token-value'));
+  } finally {
+    console.error = originalError;
+    process.env.LEARNING_HUB_FIREBASE_PROJECT_ID = previous;
+  }
+  const combined = logged.join('\n');
+  assert.match(combined, /CONFIGURATION ERROR/);
+  assert.ok(!combined.includes('some-real-looking-token-value'), 'must never log the token value itself');
+});
+
+test('DIAGNOSTIC: a garbage/invalid token (config correctly set) logs a distinct "TOKEN VERIFICATION FAILED" tag, never confused with a configuration error', async () => {
+  const originalError = console.error;
+  const logged = [];
+  console.error = (...args) => logged.push(args.map(String).join(' '));
+  try {
+    const uid = await verifyLearningHubIdToken('garbage-not-a-real-jwt');
+    assert.equal(uid, null);
+  } finally {
+    console.error = originalError;
+  }
+  const combined = logged.join('\n');
+  assert.match(combined, /TOKEN VERIFICATION FAILED/);
+  assert.doesNotMatch(combined, /CONFIGURATION ERROR/);
+});

@@ -134,6 +134,28 @@ test('SUCCESS (canonical code): resolves the classroom via studentJoinCodes and 
   });
 });
 
+// --------------------------------------------------------------------
+// INCIDENT REGRESSION: a deployed function missing
+// LEARNING_HUB_FIREBASE_PROJECT_ID (e.g. redeployed from a git
+// worktree without functions/.env.classmate-302c2) must still fail
+// closed and safely for a REAL, otherwise-valid caller — never crash,
+// never silently succeed, never return an unrelated/malformed response.
+// See docs/architecture/LEARNER_SELF_IDENTITY_CLAIM.md's own incident
+// note and functions/src/learningHubAuth.js's own DIAGNOSTIC HARDENING.
+// --------------------------------------------------------------------
+
+test('INCIDENT REGRESSION: a missing LEARNING_HUB_FIREBASE_PROJECT_ID still fails closed as plain 401 unauthenticated for a genuinely valid, real token — never a crash, never a different/malformed response', async () => {
+  const previous = process.env.LEARNING_HUB_FIREBASE_PROJECT_ID;
+  delete process.env.LEARNING_HUB_FIREBASE_PROJECT_ID;
+  try {
+    const { httpStatus, body } = await callRoster({ invitationCode: STUDENT_JOIN_CODE_A });
+    assert.equal(httpStatus, 401);
+    assert.equal(body.error, 'unauthenticated');
+  } finally {
+    process.env.LEARNING_HUB_FIREBASE_PROJECT_ID = previous;
+  }
+});
+
 test('SUCCESS (legacy fallback): a classroom with ONLY a legacy classroomInvitationCodes entry (no studentJoinCodes at all) still resolves its roster', async () => {
   await db.doc(`classroomInvitationCodes/${LEGACY_INVITATION_CODE_A}`).set({ classroomId: CLASSROOM_A, status: 'active', invitationId: 'x', createdAt: 'now' });
   const { httpStatus, body } = await callRoster({ invitationCode: LEGACY_INVITATION_CODE_A });
