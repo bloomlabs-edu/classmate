@@ -1,18 +1,17 @@
 /**
  * tests/ui/studentAccessViewInviteTile.test.js
  *
- * Regression test for a real production incident: the "Invite Students"
- * bento tile on ui/views/StudentAccessView.js displays
- * classroom.classroomStudentJoinCode — a code that only ever grants
- * access to ClassMate's own built-in Student Portal (#/student). It used
- * to carry no copy distinguishing it from the separate "Connect Learning
- * Hub" tile/code (classroomInvitations, an unrelated Firestore
- * collection), so a teacher handed a learner this tile's code, the
- * learner tried redeeming it in Learning Hub, and it was correctly and
- * deterministically rejected — it was never a Learning Hub invitation
- * code. This suite proves the tile's own text now makes the two codes
- * impossible to confuse, without touching either code's value or
- * generation mechanism.
+ * UNIFIED CLASSROOM CODE (product decision, 2026-11-08): a teacher
+ * generates, remembers, and shares exactly ONE classroom code — it must
+ * work in both ClassMate's own Student Portal and Learning Hub's "Join
+ * a Classroom" screen. This supersedes an earlier, narrower fix to this
+ * same file that only disambiguated two genuinely different codes in
+ * copy (a real incident where a learner was handed
+ * classroom.classroomStudentJoinCode and it failed in Learning Hub,
+ * because at the time it really was a different code). This suite now
+ * proves the tile communicates that the SAME code works everywhere, and
+ * that the separate "Connect Learning Hub" tile no longer displays or
+ * generates a second, competing code.
  *
  * Renders a real headless Chromium page (same pattern as
  * tests/ui/approveDeviceSignInView.test.js's own header comment) rather
@@ -103,30 +102,32 @@ async function renderBento() {
   });
 }
 
-test('Invite Students tile heading no longer reads as a generic, confusable "Invite Students"', async () => {
+test('exactly one tile displays the shared classroom.classroomStudentJoinCode value — no other tile echoes a second, competing student-join code', async () => {
   const tiles = await renderBento();
-  const inviteTile = tiles.find((t) => t.code === 'ZW4R4C');
-  assert.ok(inviteTile, 'expected to find the tile rendering the ClassMate Student Portal code');
-  assert.notEqual(inviteTile.heading, 'Invite Students', 'the old, ambiguous heading must not still be in use');
-  assert.match(inviteTile.heading, /ClassMate/, 'heading should explicitly name ClassMate');
+  const tilesShowingSharedCode = tiles.filter((t) => t.code === 'ZW4R4C');
+  assert.equal(tilesShowingSharedCode.length, 1, 'exactly one tile should display the shared classroom code (other tiles have their own, unrelated codes — Co-Teacher, Program Manager, Visitor — which is expected and untouched by this change)');
 });
 
-test('Invite Students tile description explicitly says this code is not a Learning Hub invitation code', async () => {
+test('the single Invite Students tile communicates that its one code works for BOTH ClassMate and Learning Hub', async () => {
   const tiles = await renderBento();
   const inviteTile = tiles.find((t) => t.code === 'ZW4R4C');
-  assert.match(inviteTile.description, /not a Learning Hub invitation code/i);
+  assert.ok(inviteTile, 'expected to find the tile rendering the shared classroom code');
+  assert.match(inviteTile.description, /Learning Hub/, 'description must mention Learning Hub, not just ClassMate');
+  assert.doesNotMatch(inviteTile.description, /not a Learning Hub invitation code/i, 'must not still claim this code is Learning-Hub-incompatible');
 });
 
-test('Invite Students tile labels its own code as the ClassMate Student Portal code, distinct from Learning Hub', async () => {
+test('the code label confirms this one code works for both student experiences, not "not for Learning Hub"', async () => {
   const tiles = await renderBento();
   const inviteTile = tiles.find((t) => t.code === 'ZW4R4C');
-  assert.match(inviteTile.codeLabel, /ClassMate Student Portal/);
-  assert.match(inviteTile.codeLabel, /not for Learning Hub/i);
+  assert.match(inviteTile.codeLabel, /ClassMate/);
+  assert.match(inviteTile.codeLabel, /Learning Hub/);
+  assert.doesNotMatch(inviteTile.codeLabel, /not for Learning Hub/i);
 });
 
-test('Connect Learning Hub tile remains a separate, clearly-labeled tile (not merged with the Student Portal tile)', async () => {
+test('the Learning Hub tile no longer advertises its own separate code — it is purely a request-review entry point now', async () => {
   const tiles = await renderBento();
-  const learningHubTile = tiles.find((t) => t.heading === 'Connect Learning Hub');
-  assert.ok(learningHubTile, 'the Connect Learning Hub tile must still exist as its own distinct tile');
-  assert.match(learningHubTile.description, /Learning Hub/);
+  const learningHubTile = tiles.find((t) => /Learning Hub/.test(t.heading));
+  assert.ok(learningHubTile, 'a Learning-Hub-related tile must still exist');
+  assert.equal(learningHubTile.code, '', 'this tile must not render its own code display anymore');
+  assert.doesNotMatch(learningHubTile.description, /share a connection code/i, 'must not still describe sharing a separate code');
 });

@@ -163,27 +163,29 @@ function createInvitationActions({ message, shareLabel }) {
 /**
  * The one thing this page leads with now — a single code/link the
  * teacher shares once (board, WhatsApp, projected), replacing forty
- * individual PIN-generation actions with one. Unchanged functionality
- * from before this redesign; only its visual weight (the large,
- * primary Bento tile) changed.
+ * individual PIN-generation actions with one.
  *
- * NAMING FIX (production incident, 2026-11-08): this tile's own code
- * (classroom.classroomStudentJoinCode) only ever grants access to
- * ClassMate's own built-in Student Portal (#/student) — it has no
- * connection whatsoever to the separate Connect Learning Hub tile/code
- * below (classroomInvitations, a different Firestore collection
- * entirely). Both tiles used to read simply "Invite Students" with
- * near-identical "share one code with the whole class" copy and the
- * exact same `.invite-students-card__code` display, so a teacher (and,
- * in the incident this fixes, the support engineer investigating it)
- * could not tell the two codes apart from the UI alone. A real learner
- * was handed this tile's ClassMate Student Portal code and tried
- * redeeming it in Learning Hub, where it was correctly and
- * deterministically rejected — it was never a Learning Hub invitation
- * code, so no lookup, auth, or timeout fix on either backend could ever
- * make it work. This heading/description/code-label change is the
- * actual fix: making the two codes visually and textually impossible to
- * confuse, without changing either code's value or generation mechanism.
+ * UNIFIED CLASSROOM CODE (product decision, 2026-11-08): this tile's
+ * own code (classroom.classroomStudentJoinCode) is now THE one
+ * classroom code — it grants access to ClassMate's own built-in
+ * Student Portal (#/student) AND, via
+ * functions/src/learnerVerification/verifyLearnerConnection.js's own
+ * resolveInvitationClassroomId(), to Learning Hub's "Join a Classroom"
+ * screen as well. A teacher only ever generates, remembers, and shares
+ * ONE code; a learner never needs to know which app resolves it.
+ *
+ * HISTORY: an earlier production incident (the naming-fix predating
+ * this change) found a teacher had handed a learner this tile's own
+ * code expecting it to work in Learning Hub, where it was rejected —
+ * at the time, this code and Learning Hub's own separate
+ * classroomInvitationCodes were genuinely two different, unrelated
+ * values, and the fix was only to disambiguate them in copy. This
+ * later, deeper change is what the disambiguation fix was itself
+ * flagged as a stopgap for: making the two codes be the SAME code,
+ * not just clearly labeled as different ones. classroomInvitationCodes
+ * remains, read-only, as legacy infrastructure honoring codes already
+ * handed out before this change — ConnectLearningHubView.js no longer
+ * generates new ones.
  */
 function createInviteStudentsTile(classroom, rerender) {
   const card = document.createElement('div');
@@ -196,12 +198,12 @@ function createInviteStudentsTile(classroom, rerender) {
 
   const heading = document.createElement('h2');
   heading.className = 'classroom-access-bento__heading';
-  heading.textContent = 'Invite Students to ClassMate';
+  heading.textContent = 'Invite Students';
   card.appendChild(heading);
 
   const description = document.createElement('p');
   description.className = 'classroom-access-bento__description';
-  description.textContent = 'Join my class — share one code with the whole class at once. On the board, over WhatsApp, or projected. No individual invitations needed. This code is only for ClassMate’s own Student Portal — it is not a Learning Hub invitation code (use Connect Learning Hub below for that).';
+  description.textContent = 'Join my class — share one code with the whole class at once. On the board, over WhatsApp, or projected. This one code works in both ClassMate’s own Student Portal and Learning Hub’s Join a Classroom screen — no need to know or ask which one a student uses.';
   card.appendChild(description);
 
   if (!classroom.classroomStudentJoinCode) {
@@ -231,7 +233,7 @@ function createInviteStudentsTile(classroom, rerender) {
 
   const codeLabel = document.createElement('p');
   codeLabel.className = 'invite-students-card__code-label';
-  codeLabel.textContent = 'ClassMate Student Portal code (not for Learning Hub)';
+  codeLabel.textContent = 'Classroom code — works for ClassMate and Learning Hub';
   card.appendChild(codeLabel);
 
   const codeDisplay = document.createElement('div');
@@ -247,7 +249,7 @@ function createInviteStudentsTile(classroom, rerender) {
   shareButton.className = 'btn btn--primary btn--large';
   shareButton.textContent = 'Share with Students';
   shareButton.addEventListener('click', async () => {
-    const shareText = `🎉 You've been invited to join our classroom on ClassMate!\n\nOpen the Student Portal using the link below.\n\nClassroom Code:\n${code}\n\nStudent Portal:\n${link}`;
+    const shareText = `🎉 You've been invited to join our classroom!\n\nClassroom Code:\n${code}\n\nEnter this code in ClassMate's Student Portal or in Learning Hub's "Join a Classroom" screen — either works.\n\nClassMate Student Portal:\n${link}`;
     if (navigator.share) {
       try {
         await navigator.share({ title: 'Join our classroom on ClassMate', text: shareText });
@@ -543,6 +545,13 @@ function createVisitorAccessTile(classroom, currentUser, rerender) {
  * Never routes through, references, or revives Student Mode in any
  * way — this is a distinct, ClassMate-owned connection to a SEPARATE
  * product (Learning Hub), not a Student Mode join flow.
+ *
+ * UNIFIED CLASSROOM CODE (product decision, 2026-11-08): this tile no
+ * longer shares its own code — a learner joins with the exact same
+ * code the "Invite Students" tile above already shows. This tile is
+ * now purely the request-review queue: once a learner enters that code
+ * in Learning Hub, their pending request shows up here for the teacher
+ * to confirm against the real roster.
  */
 function createConnectLearningHubTile(onOpenConnectLearningHub) {
   const card = document.createElement('div');
@@ -555,18 +564,18 @@ function createConnectLearningHubTile(onOpenConnectLearningHub) {
 
   const heading = document.createElement('h2');
   heading.className = 'classroom-access-bento__heading';
-  heading.textContent = 'Connect Learning Hub';
+  heading.textContent = 'Learning Hub Requests';
   card.appendChild(heading);
 
   const description = document.createElement('p');
   description.className = 'classroom-access-bento__description';
-  description.textContent = 'Link learners from Learning Hub to a student in your classroom — share a connection code, then verify each request against your own roster.';
+  description.textContent = 'When a learner joins from Learning Hub using your classroom code (above), review their request here and confirm which student on your roster it belongs to.';
   card.appendChild(description);
 
   const openButton = document.createElement('button');
   openButton.type = 'button';
   openButton.className = 'btn btn--primary';
-  openButton.textContent = 'Open Connect Learning Hub';
+  openButton.textContent = 'Review Learning Hub Requests';
   openButton.addEventListener('click', () => onOpenConnectLearningHub?.());
   card.appendChild(openButton);
 
