@@ -51,6 +51,7 @@ import {
 } from './src/deviceSignIn/deviceSignInEndpoints.js';
 import { handleVerifyLearnerConnectionRequest } from './src/verifyLearnerConnectionEndpoint.js';
 import { handleGetNotebookObligationsForLearnerRequest } from './src/getNotebookObligationsForLearnerEndpoint.js';
+import { handleGetClassroomRosterForLearnerRequest } from './src/getClassroomRosterForLearnerEndpoint.js';
 import { handleActivateLearnerConnectionRequest } from './src/activateLearnerConnectionEndpoint.js';
 
 if (getApps().length === 0) {
@@ -267,6 +268,30 @@ export const getNotebookObligationsForLearner = onRequest({ cors: false, invoker
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'method_not_allowed' });
 
   const { httpStatus, body } = await handleGetNotebookObligationsForLearnerRequest({
+    authorizationHeader: req.get('Authorization'),
+    body: await readJsonBody(req),
+    deps: { adminDb: getFirestore() },
+  });
+  res.status(httpStatus).json(body);
+});
+
+// -----------------------------------------------------------------------
+// Classroom Roster for Learner — LEARNER SELF-IDENTITY CLAIM (see
+// docs/architecture/LEARNER_SELF_IDENTITY_CLAIM.md): read-only endpoint
+// Learning Hub calls right after resolving a classroom code, so a
+// learner can pick their own name off the real roster instead of
+// waiting for a blind teacher review. Same trust boundary as
+// verifyLearnerConnection/getNotebookObligationsForLearner above —
+// `invoker: 'public'` because the real security gate is the Learning
+// Hub ID token check inside handleGetClassroomRosterForLearnerRequest,
+// not IAM allowlisting. No learnerProfileId/ownership check needed —
+// this is a pure, code-gated roster read, implicating no specific
+// learner's own data (see that handler's own header comment).
+// -----------------------------------------------------------------------
+export const getClassroomRosterForLearner = onRequest({ cors: false, invoker: 'public' }, async (req, res) => {
+  if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'method_not_allowed' });
+
+  const { httpStatus, body } = await handleGetClassroomRosterForLearnerRequest({
     authorizationHeader: req.get('Authorization'),
     body: await readJsonBody(req),
     deps: { adminDb: getFirestore() },

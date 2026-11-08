@@ -237,6 +237,82 @@ test('ISOLATION: activating one learner\'s pending relationship never touches a 
   assert.equal(other.data().status, RELATIONSHIP_STATUS.PENDING, 'a different learner\'s own pending relationship must remain untouched');
 });
 
+// --------------------------------------------------------------------
+// LEARNER SELF-IDENTITY CLAIM (see docs/architecture/
+// LEARNER_SELF_IDENTITY_CLAIM.md) — the one new check this function
+// did not previously need: a learner can now claim ANY roster name
+// themselves, so two different Google accounts claiming the exact same
+// student is a real adversarial case, not just a teacher's own
+// hypothetical mistake.
+// --------------------------------------------------------------------
+
+test('STUDENT ALREADY LINKED: a second learner cannot be activated against a student who is already the ACTIVE match for a different learner', async () => {
+  await seedPendingRelationship(LEARNER_1, CLASSROOM_A);
+  const first = await activateRelationshipForStudent(db, {
+    classroomId: CLASSROOM_A, studentId: STUDENT_A1, teacherUid: TEACHER_A, learnerProfileId: LEARNER_1,
+  });
+  assert.equal(first.ok, true);
+
+  await seedPendingRelationship(LEARNER_2, CLASSROOM_A);
+  const second = await activateRelationshipForStudent(db, {
+    classroomId: CLASSROOM_A, studentId: STUDENT_A1, teacherUid: TEACHER_A, learnerProfileId: LEARNER_2,
+  });
+  assert.equal(second.ok, false);
+  assert.equal(second.reason, 'student_already_linked');
+
+  // The FIRST, genuinely active relationship must remain completely untouched.
+  const firstSnap = await db.doc(`learnerClassroomRelationships/${LEARNER_1}_${CLASSROOM_A}`).get();
+  assert.equal(firstSnap.data().status, RELATIONSHIP_STATUS.ACTIVE);
+  assert.equal(firstSnap.data().learnerProfileId, LEARNER_1);
+
+  // The SECOND learner's own relationship must stay exactly PENDING — never silently activated, never corrupted.
+  const secondSnap = await db.doc(`learnerClassroomRelationships/${LEARNER_2}_${CLASSROOM_A}`).get();
+  assert.equal(secondSnap.data().status, RELATIONSHIP_STATUS.PENDING);
+});
+
+test('STUDENT ALREADY LINKED does not false-positive against a DIFFERENT student in the same classroom', async () => {
+  await seedPendingRelationship(LEARNER_1, CLASSROOM_A);
+  await activateRelationshipForStudent(db, { classroomId: CLASSROOM_A, studentId: STUDENT_A1, teacherUid: TEACHER_A, learnerProfileId: LEARNER_1 });
+
+  await seedPendingRelationship(LEARNER_2, CLASSROOM_A);
+  const result = await activateRelationshipForStudent(db, {
+    classroomId: CLASSROOM_A, studentId: STUDENT_A2, teacherUid: TEACHER_A, learnerProfileId: LEARNER_2,
+  });
+  assert.equal(result.ok, true, 'a different, still-unclaimed student in the same classroom must activate normally');
+});
+
+test('STUDENT ALREADY LINKED does not false-positive across different classrooms, even with an identical-looking studentId string', async () => {
+  // STUDENT_B1 is its own distinct id, but this proves the check is
+  // scoped by classroomId, not by studentId alone, against a lazier
+  // implementation that might have forgotten the classroomId filter.
+  await seedPendingRelationship(LEARNER_1, CLASSROOM_A);
+  await activateRelationshipForStudent(db, { classroomId: CLASSROOM_A, studentId: STUDENT_A1, teacherUid: TEACHER_A, learnerProfileId: LEARNER_1 });
+
+  await seedPendingRelationship(LEARNER_2, CLASSROOM_B);
+  const result = await activateRelationshipForStudent(db, {
+    classroomId: CLASSROOM_B, studentId: STUDENT_B1, teacherUid: 'teacher-b-activate', learnerProfileId: LEARNER_2,
+  });
+  assert.equal(result.ok, true);
+});
+
+test('CONCURRENT ACTIVATION (identity race): two DIFFERENT learners\' pending relationships, both confirmed at the same instant against the SAME student, resolve to exactly one ACTIVE winner — never two', async () => {
+  await seedPendingRelationship(LEARNER_1, CLASSROOM_A);
+  await seedPendingRelationship(LEARNER_2, CLASSROOM_A);
+  const [resultA, resultB] = await Promise.all([
+    activateRelationshipForStudent(db, { classroomId: CLASSROOM_A, studentId: STUDENT_A1, teacherUid: TEACHER_A, learnerProfileId: LEARNER_1 }),
+    activateRelationshipForStudent(db, { classroomId: CLASSROOM_A, studentId: STUDENT_A1, teacherUid: TEACHER_A, learnerProfileId: LEARNER_2 }),
+  ]);
+  const successes = [resultA, resultB].filter((r) => r.ok);
+  assert.equal(successes.length, 1, 'exactly one of the two learners racing for the same student must win — never both, never neither');
+
+  const [snap1, snap2] = await Promise.all([
+    db.doc(`learnerClassroomRelationships/${LEARNER_1}_${CLASSROOM_A}`).get(),
+    db.doc(`learnerClassroomRelationships/${LEARNER_2}_${CLASSROOM_A}`).get(),
+  ]);
+  const activeCount = [snap1, snap2].filter((s) => s.data().status === RELATIONSHIP_STATUS.ACTIVE).length;
+  assert.equal(activeCount, 1, 'exactly one relationship doc may end up ACTIVE for this student, never two');
+});
+
 test('CONCURRENT ACTIVATION: two simultaneous activation attempts naming the SAME student for the same pending relationship (e.g. a double-click) resolve to exactly one success', async () => {
   await seedPendingRelationship(LEARNER_1, CLASSROOM_A);
   const [resultA, resultB] = await Promise.all([

@@ -52,8 +52,11 @@ async function postJson(path, idToken, body) {
  * code generated, shown, or transmitted anywhere. Returns `{ok: true,
  * studentId}` on success, or `{ok: false, reason}` (`'unauthenticated'`,
  * `'invalid_request'`, `'forbidden'`, `'student_not_on_roster'`,
- * `'not_pending'`, or `'error'`) for every other case — never throws,
- * matching deviceSignInApprovalService.js's own convention.
+ * `'not_pending'`, `'student_already_linked'` — this exact student is
+ * already the ACTIVE match for a different Learning Hub account, see
+ * activateLearnerConnection.js's own header comment — or `'error'`) for
+ * every other case — never throws, matching
+ * deviceSignInApprovalService.js's own convention.
  */
 export async function activateLearnerConnection(idToken, { classroomId, learnerProfileId, studentId }) {
   if (!idToken) return { ok: false, reason: 'unauthenticated' };

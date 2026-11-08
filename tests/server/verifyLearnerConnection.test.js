@@ -275,6 +275,93 @@ test('UNIFIED CODE: an existing ACTIVE relationship is left untouched when the l
 });
 
 // --------------------------------------------------------------------
+// LEARNER SELF-IDENTITY CLAIM (see docs/architecture/
+// LEARNER_SELF_IDENTITY_CLAIM.md) — createConnectionRequest()'s own
+// `claimedStudentId` parameter: a learner picking their own name off
+// the roster `getClassroomRosterForLearnerEndpoint.js` shows them,
+// instead of submitting a bare code with no candidate student at all.
+// --------------------------------------------------------------------
+
+test('CLAIM: a real, live roster student creates a PENDING relationship carrying the claim, marked claimedByLearner', async () => {
+  await seedStudentJoinCode(STUDENT_JOIN_CODE_A, CLASSROOM_A);
+  const result = await createConnectionRequest(db, { learnerProfileId: LEARNER_1, invitationCode: STUDENT_JOIN_CODE_A, claimedStudentId: STUDENT_A1 });
+  assert.equal(result.ok, true);
+  assert.equal(result.status, RELATIONSHIP_STATUS.PENDING);
+  assert.equal(result.claimedStudentId, STUDENT_A1);
+
+  const snap = await db.doc(`learnerClassroomRelationships/${LEARNER_1}_${CLASSROOM_A}`).get();
+  assert.equal(snap.data().studentId, STUDENT_A1);
+  assert.equal(snap.data().claimedByLearner, true);
+  assert.equal(snap.data().status, RELATIONSHIP_STATUS.PENDING, 'a claim alone must never reach ACTIVE — only activateLearnerConnection.js, via explicit teacher confirmation, can ever do that');
+});
+
+test('CLAIM: a claimed studentId that does not exist on the real, live roster is rejected, not silently accepted', async () => {
+  await seedStudentJoinCode(STUDENT_JOIN_CODE_A, CLASSROOM_A);
+  const result = await createConnectionRequest(db, { learnerProfileId: LEARNER_1, invitationCode: STUDENT_JOIN_CODE_A, claimedStudentId: 'not-a-real-student-id' });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'student_not_on_roster');
+
+  const snap = await db.doc(`learnerClassroomRelationships/${LEARNER_1}_${CLASSROOM_A}`).get();
+  assert.equal(snap.exists, false, 'an invalid claim must never create any relationship document at all');
+});
+
+test('CLAIM: a claimed studentId that is real but belongs to a DIFFERENT classroom\'s roster is rejected (a learner cannot manipulate the request to claim a student from another classroom)', async () => {
+  await seedStudentJoinCode(STUDENT_JOIN_CODE_A, CLASSROOM_A);
+  const result = await createConnectionRequest(db, { learnerProfileId: LEARNER_1, invitationCode: STUDENT_JOIN_CODE_A, claimedStudentId: STUDENT_B1 });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'student_not_on_roster');
+});
+
+test('CLAIM: a student already ACTIVE for a different learner cannot be claimed by a second account — rejected immediately, not merely deferred to the teacher', async () => {
+  await seedStudentJoinCode(STUDENT_JOIN_CODE_A, CLASSROOM_A);
+  await db.doc(`learnerClassroomRelationships/${LEARNER_1}_${CLASSROOM_A}`).set({
+    learnerProfileId: LEARNER_1, classroomId: CLASSROOM_A, studentId: STUDENT_A1, status: RELATIONSHIP_STATUS.ACTIVE, createdAt: 'now',
+  });
+  const result = await createConnectionRequest(db, { learnerProfileId: LEARNER_2, invitationCode: STUDENT_JOIN_CODE_A, claimedStudentId: STUDENT_A1 });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'student_already_linked');
+
+  const snap = await db.doc(`learnerClassroomRelationships/${LEARNER_2}_${CLASSROOM_A}`).get();
+  assert.equal(snap.exists, false, 'a rejected claim must never create a relationship document for the rejected learner');
+});
+
+test('CLAIM: two DIFFERENT learners may each have their own PENDING claim on the SAME student at once (conflicting claims are sent for teacher review, not silently rejected before any teacher sees them)', async () => {
+  await seedStudentJoinCode(STUDENT_JOIN_CODE_A, CLASSROOM_A);
+  const first = await createConnectionRequest(db, { learnerProfileId: LEARNER_1, invitationCode: STUDENT_JOIN_CODE_A, claimedStudentId: STUDENT_A1 });
+  const second = await createConnectionRequest(db, { learnerProfileId: LEARNER_2, invitationCode: STUDENT_JOIN_CODE_A, claimedStudentId: STUDENT_A1 });
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true, 'neither claim is ACTIVE yet, so there is no conflict to reject at claim time — the teacher resolves which one is real');
+  assert.equal(first.status, RELATIONSHIP_STATUS.PENDING);
+  assert.equal(second.status, RELATIONSHIP_STATUS.PENDING);
+});
+
+test('CLAIM: duplicate names on the roster do not cause incorrect identity linking — claiming by id, never by name, keeps two same-named students distinguishable', async () => {
+  await seedClassroom('classroom-duplicate-names', ['dup-student-1', 'dup-student-2']);
+  // Overwrite with two students sharing a display name but distinct ids.
+  await db.doc('classrooms/classroom-duplicate-names').update({
+    teams: [{ id: 't1', name: 'Team', students: [{ id: 'dup-student-1', name: 'Aarav' }, { id: 'dup-student-2', name: 'Aarav' }] }],
+  });
+  await seedStudentJoinCode('DUPNAME1', 'classroom-duplicate-names');
+
+  const result = await createConnectionRequest(db, { learnerProfileId: LEARNER_1, invitationCode: 'DUPNAME1', claimedStudentId: 'dup-student-2' });
+  assert.equal(result.ok, true);
+  const snap = await db.doc(`learnerClassroomRelationships/${LEARNER_1}_classroom-duplicate-names`).get();
+  assert.equal(snap.data().studentId, 'dup-student-2', 'the claim must resolve to the exact id picked, never the first/any student sharing that display name');
+});
+
+test('CLAIM: an already-ACTIVE relationship is returned as-is and never disturbed by a fresh claim attempt, even naming a different student', async () => {
+  await seedStudentJoinCode(STUDENT_JOIN_CODE_A, CLASSROOM_A);
+  await db.doc(`learnerClassroomRelationships/${LEARNER_1}_${CLASSROOM_A}`).set({
+    learnerProfileId: LEARNER_1, classroomId: CLASSROOM_A, studentId: STUDENT_A1, status: RELATIONSHIP_STATUS.ACTIVE, createdAt: 'now',
+  });
+  const result = await createConnectionRequest(db, { learnerProfileId: LEARNER_1, invitationCode: STUDENT_JOIN_CODE_A, claimedStudentId: STUDENT_A2 });
+  assert.equal(result.ok, true);
+  assert.equal(result.status, RELATIONSHIP_STATUS.ACTIVE);
+  const snap = await db.doc(`learnerClassroomRelationships/${LEARNER_1}_${CLASSROOM_A}`).get();
+  assert.equal(snap.data().studentId, STUDENT_A1, 'an already-active relationship must never be re-pointed at a different student by a later claim');
+});
+
+// --------------------------------------------------------------------
 // verifyStudentCode — step two, the actual security-critical operation
 // --------------------------------------------------------------------
 

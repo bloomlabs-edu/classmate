@@ -15,6 +15,15 @@
         { "fieldPath": "programmeId", "order": "ASCENDING" },
         { "fieldPath": "date", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "learnerClassroomRelationships",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "classroomId", "order": "ASCENDING" },
+        { "fieldPath": "studentId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

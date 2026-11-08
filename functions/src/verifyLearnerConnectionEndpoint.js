@@ -41,7 +41,21 @@
  *
  * `studentId` is never an accepted input, by construction: it is not in
  * the destructured field list below, and a request that includes it
- * anyway is rejected outright (not silently ignored) — see step 2.
+ * anyway is rejected outright (not silently ignored) — see step 2. The
+ * one, deliberately differently-named exception is `claimedStudentId`
+ * (see below) — unlike `studentId`, that field name itself signals
+ * "unverified learner assertion," never trusted the way a teacher's own
+ * `studentId` elsewhere in this bridge is.
+ *
+ * `claimedStudentId` (optional, `credentialType: 'invitation'` only) —
+ * the learner's own self-service identity claim (see
+ * docs/architecture/LEARNER_SELF_IDENTITY_CLAIM.md): picking a name off
+ * the roster `getClassroomRosterForLearnerEndpoint.js` already showed
+ * them for this exact code's resolved classroom. Forwarded, unmodified,
+ * to createConnectionRequest()'s own `claimedStudentId` parameter — see
+ * that function's own header comment for the full security reasoning
+ * (never auto-activates; always still requires teacher confirmation for
+ * a FIRST claim).
  */
 
 import { createConnectionRequest, verifyStudentCode } from './learnerVerification/verifyLearnerConnection.js';
@@ -114,7 +128,7 @@ export async function handleVerifyLearnerConnectionRequest({ authorizationHeader
     // change; an outright, unconditional 400 does not.
     return { httpStatus: 400, body: INVALID_REQUEST };
   }
-  const { learnerProfileId, classroomId, credentialType, credential } = body;
+  const { learnerProfileId, classroomId, credentialType, credential, claimedStudentId } = body;
   const credentialTypeValid = credentialType === 'invitation' || credentialType === 'verification';
   // classroomId is required only for 'verification' (see this file's own
   // header comment); for 'invitation' it may be entirely absent, but if
@@ -123,11 +137,18 @@ export async function handleVerifyLearnerConnectionRequest({ authorizationHeader
   // hard failure, never silently ignores a malformed one.
   const classroomIdValid =
     classroomId === undefined ? credentialType !== 'verification' : isBoundedString(classroomId, MAX_ID_LENGTH);
+  // claimedStudentId only ever makes sense alongside a fresh invitation
+  // redemption — a 'verification' request is already scoped to an
+  // existing PENDING relationship (see that branch below), which has no
+  // use for a second, competing identity claim.
+  const claimedStudentIdValid =
+    claimedStudentId === undefined ? true : credentialType === 'invitation' && isBoundedString(claimedStudentId, MAX_ID_LENGTH);
   const shapeIsValid =
     isBoundedString(learnerProfileId, MAX_ID_LENGTH) &&
     classroomIdValid &&
     isBoundedString(credential, MAX_CREDENTIAL_LENGTH) &&
-    credentialTypeValid;
+    credentialTypeValid &&
+    claimedStudentIdValid;
   if (!shapeIsValid) {
     return { httpStatus: 400, body: INVALID_REQUEST };
   }
@@ -154,7 +175,7 @@ export async function handleVerifyLearnerConnectionRequest({ authorizationHeader
   // logic, unchanged from what the prior review already verified.
   const result =
     credentialType === 'invitation'
-      ? await createConnectionRequest(deps.adminDb, { learnerProfileId, classroomId, invitationCode: credential })
+      ? await createConnectionRequest(deps.adminDb, { learnerProfileId, classroomId, invitationCode: credential, claimedStudentId })
       : await verifyStudentCode(deps.adminDb, { learnerProfileId, classroomId, rawCode: credential });
 
   return { httpStatus: 200, body: result };
