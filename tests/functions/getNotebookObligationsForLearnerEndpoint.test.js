@@ -590,6 +590,44 @@ test('RESPONSE SCHEMA ALLOWLIST: every failure response contains exactly {ok, er
 });
 
 // --------------------------------------------------------------------
+// Outer try/catch — a genuine, unguarded exception (review finding)
+// --------------------------------------------------------------------
+
+test('a genuinely malformed classroom shape neither inner guard anticipates forces a real exception through the outer try/catch -- response is the identical generic failure, never the exception, a stack trace, or classroom content', async () => {
+  // notebookConfig.subjects is a truthy NON-ARRAY (a string) -- this is
+  // NOT the missing-notebookConfig case notebookStatusProjection.js's
+  // own documented guard handles (that guard only defaults when
+  // notebookConfig itself is absent; here it IS present, so the guard's
+  // `(classroom.notebookConfig && classroom.notebookConfig.subjects) || []`
+  // short-circuits on the truthy string and returns it unchanged), and
+  // it is NOT the malformed-`entries` case notebookObligationsProjection.js's
+  // guard handles either. listSubjects(classroom).forEach(...) inside
+  // getCheckpointsForStudentAcrossNotebooks() then throws a genuine,
+  // uncaught TypeError ("subjects.forEach is not a function") that
+  // only this endpoint's own outer try/catch can intercept -- exactly
+  // the previously-untested gap this test closes.
+  await seedClassroom(CLASSROOM_A, {
+    students: [STUDENT_1],
+    notebookConfig: { subjects: 'this-should-be-an-array-but-is-not', notebookTypes: [] },
+  });
+  await seedRelationship(LEARNER_1, CLASSROOM_A, { status: 'ACTIVE', studentId: STUDENT_1 });
+
+  const { httpStatus, body } = await handleGetNotebookObligationsForLearnerRequest({
+    authorizationHeader: validBearerToken,
+    body: { learnerProfileId: LEARNER_1, classroomId: CLASSROOM_A },
+    deps: { adminDb: db, verifyLearnerProfileOwnership: ownershipResolverFor(REAL_LEARNING_HUB_UID, LEARNER_1) },
+  });
+
+  assert.equal(httpStatus, 200, 'the generic failure is always 200, never a 500 or any status that would itself leak "something broke"');
+  assert.deepEqual(body, { ok: false, error: 'obligations_unavailable' }, 'must be byte-for-byte the same generic failure every other domain-level rejection uses');
+  assert.deepEqual(new Set(Object.keys(body)), new Set(['ok', 'error']), 'no status/summary/items field of any kind may accompany a failure');
+  const serialized = JSON.stringify(body);
+  assert.ok(!serialized.includes('forEach'), 'the exception message must never leak into the response');
+  assert.ok(!serialized.includes('TypeError'), 'the exception type/name must never leak into the response');
+  assert.ok(!serialized.includes('subjects'), 'no classroom field name or content may leak into the response');
+});
+
+// --------------------------------------------------------------------
 // Dependency contract
 // --------------------------------------------------------------------
 
