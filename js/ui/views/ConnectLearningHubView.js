@@ -38,23 +38,34 @@
  * top of the existing `learnerClassroomRelationships` bridge, not a
  * Student Mode join flow.
  *
- * The verification-code-issuance security binding (a code is only ever
- * redeemable by the exact learnerProfileId whose pending request it
- * was generated against) is enforced server-side — see
- * repositories/firestoreLearnerConnectionRepository.js's own
- * createStudentVerificationCodeForStudent() and
- * server/learnerVerification/verifyLearnerConnection.js's own
- * verifyStudentCode() — not by anything in this file. This view simply
- * always passes the reviewed row's own `learnerProfileId` through.
+ * SINGLE-CODE JOIN A CLASSROOM (product decision): picking a roster
+ * student for a pending request activates the connection DIRECTLY —
+ * no verification code is generated, shown, or transmitted to the
+ * learner anywhere in this flow anymore. The activation itself is
+ * authorized server-side by this teacher's own verified ClassMate
+ * identity (functions/src/activateLearnerConnectionEndpoint.js ->
+ * functions/src/learnerVerification/activateLearnerConnection.js) —
+ * not by anything in this file. This view simply always passes the
+ * reviewed row's own `learnerProfileId` and the picked `studentId`
+ * through; the server independently re-verifies this teacher is a
+ * real member of this exact classroom and that the student is really
+ * on its live roster before ever writing anything.
+ *
+ * The OLDER code-based path (createStudentVerificationCodeForStudent(),
+ * verifyStudentCode(), the studentVerificationCodes collection) still
+ * exists, untouched, as infrastructure — this view just no longer
+ * calls it. See services/learnerConnectionActivationService.js's own
+ * header comment for the full "why" behind this change.
  */
 
 import {
   createClassroomInvitationForClassroom,
   listClassroomInvitations,
   listRelationshipsForClassroom,
-  createStudentVerificationCodeForStudent,
   rejectRelationship,
 } from '../../repositories/firestoreLearnerConnectionRepository.js';
+import { activateLearnerConnection } from '../../services/learnerConnectionActivationService.js';
+import { getIdToken } from '../../services/authService.js';
 import { buildRelationshipId } from '../../models/LearnerConnection.js';
 import {
   statusLabel,
@@ -84,7 +95,6 @@ export function renderConnectLearningHubView(container, { classroom, currentUser
   let relationships = null; // null = still loading
   let expandedRelationshipId = null;
   let selectedStudentId = null; // roster-picker draft for the currently expanded row only
-  let issuedCode = null; // { relationshipId, rawCode, expiresAt } — transient, in-memory only; never persisted, never re-shown once the row changes
   let actionError = null;
   let isSubmittingAction = false;
   let isGeneratingInvitation = false;
@@ -102,7 +112,6 @@ export function renderConnectLearningHubView(container, { classroom, currentUser
         relationships,
         expandedRelationshipId,
         selectedStudentId,
-        issuedCode,
         actionError,
         isSubmittingAction,
         isGeneratingInvitation,
@@ -126,14 +135,9 @@ export function renderConnectLearningHubView(container, { classroom, currentUser
         },
         onToggleRow: (relationshipId) => {
           expandedRelationshipId = expandedRelationshipId === relationshipId ? null : relationshipId;
-          // A fresh expand/collapse always clears any in-progress
-          // picker selection and, critically, any issued code still
-          // showing — the raw code must never be re-displayable once
-          // this row's own review session ends (see this file's own
-          // header comment, and models/LearnerConnection.js's own
-          // createStudentVerificationCode() comment on why).
+          // A fresh expand/collapse always clears any in-progress picker
+          // selection — this row's own review session has ended.
           selectedStudentId = null;
-          issuedCode = null;
           actionError = null;
           rerender();
         },
@@ -141,25 +145,29 @@ export function renderConnectLearningHubView(container, { classroom, currentUser
           selectedStudentId = studentId;
           rerender();
         },
-        onGenerateVerificationCode: async (relationship) => {
+        onActivateConnection: async (relationship) => {
           if (!selectedStudentId) return;
           isSubmittingAction = true;
           actionError = null;
           rerender();
           try {
-            const result = await createStudentVerificationCodeForStudent(
-              classroom.id,
-              selectedStudentId,
-              currentUser?.uid,
-              relationship.learnerProfileId
-            );
-            issuedCode = {
-              relationshipId: buildRelationshipId(relationship.learnerProfileId, relationship.classroomId),
-              rawCode: result.rawCode,
-              expiresAt: result.expiresAt,
-            };
+            const idToken = await getIdToken();
+            const result = await activateLearnerConnection(idToken, {
+              classroomId: classroom.id,
+              learnerProfileId: relationship.learnerProfileId,
+              studentId: selectedStudentId,
+            });
+            if (!result.ok) {
+              console.error('[ConnectLearningHubView] Failed to activate this connection:', result.reason);
+              actionError = GENERIC_ACTION_ERROR;
+            } else {
+              showToast('Connection confirmed.');
+              expandedRelationshipId = null;
+              selectedStudentId = null;
+              await refetchRelationships();
+            }
           } catch (error) {
-            console.error('[ConnectLearningHubView] Failed to generate a verification code:', error);
+            console.error('[ConnectLearningHubView] Failed to activate this connection:', error);
             actionError = GENERIC_ACTION_ERROR;
           }
           isSubmittingAction = false;
@@ -178,7 +186,6 @@ export function renderConnectLearningHubView(container, { classroom, currentUser
             showToast('Request rejected.');
             expandedRelationshipId = null;
             selectedStudentId = null;
-            issuedCode = null;
             await refetchRelationships();
           } catch (error) {
             console.error('[ConnectLearningHubView] Failed to reject this request:', error);
@@ -329,9 +336,7 @@ function renderConnectLearningHub(container, state, handlers) {
  * student, and is meant to be shared with the whole class the same way
  * the existing "Invite Students" code is. Reuses the exact
  * `.invite-students-card__code` display and copyText() helper every
- * other Classroom Access tile already uses — deliberately NOT the
- * "read this aloud" instruction, which only applies to the
- * student-specific verification code below (see renderIssuedCode()).
+ * other Classroom Access tile already uses.
  */
 function renderInvitationSection(state, handlers) {
   const section = document.createElement('div');
@@ -507,11 +512,6 @@ function renderPendingRowDetail(relationship, state, handlers) {
   const detail = document.createElement('div');
   detail.className = 'connect-learning-hub__row-detail';
 
-  if (state.issuedCode) {
-    detail.appendChild(renderIssuedCode(state.issuedCode));
-    return detail;
-  }
-
   const explanation = document.createElement('p');
   explanation.className = 'connect-learning-hub__row-detail-explanation';
   explanation.textContent = "We can't automatically match this Learning Hub learner to a student in your classroom. Select the student this request belongs to.";
@@ -539,13 +539,13 @@ function renderPendingRowDetail(relationship, state, handlers) {
   const actions = document.createElement('div');
   actions.className = 'connect-learning-hub__row-actions';
 
-  const generateButton = document.createElement('button');
-  generateButton.type = 'button';
-  generateButton.className = 'btn btn--primary';
-  generateButton.textContent = state.isSubmittingAction ? 'Generating…' : 'Generate verification code';
-  generateButton.disabled = !state.selectedStudentId || state.isSubmittingAction;
-  generateButton.addEventListener('click', () => handlers.onGenerateVerificationCode(relationship));
-  actions.appendChild(generateButton);
+  const confirmButton = document.createElement('button');
+  confirmButton.type = 'button';
+  confirmButton.className = 'btn btn--primary';
+  confirmButton.textContent = state.isSubmittingAction ? 'Confirming…' : 'Confirm match';
+  confirmButton.disabled = !state.selectedStudentId || state.isSubmittingAction;
+  confirmButton.addEventListener('click', () => handlers.onActivateConnection(relationship));
+  actions.appendChild(confirmButton);
 
   const rejectButton = document.createElement('button');
   rejectButton.type = 'button';
@@ -557,50 +557,4 @@ function renderPendingRowDetail(relationship, state, handlers) {
 
   detail.appendChild(actions);
   return detail;
-}
-
-/**
- * The one-time display of a freshly generated verification code.
- * Deliberately the only place this raw code is ever rendered — it was
- * never written to Firestore (only its SHA-256 hash was, as the
- * document's own id; see createStudentVerificationCodeForStudent()'s
- * own header comment) and this component holds it only in the calling
- * view's own transient, in-memory state, cleared the moment this row
- * is collapsed or another row is expanded (see onToggleRow() above).
- * Both required instructional lines (architecture review item 2/5-6)
- * render as real text, not a tooltip or icon-only hint, and a clear
- * heading precedes the code value itself for screen readers.
- */
-function renderIssuedCode(issuedCode) {
-  const wrapper = document.createElement('div');
-  wrapper.className = 'connect-learning-hub__issued-code';
-
-  const heading = document.createElement('h4');
-  heading.className = 'connect-learning-hub__issued-code-heading';
-  heading.textContent = 'Verification code';
-  wrapper.appendChild(heading);
-
-  const codeDisplay = document.createElement('div');
-  codeDisplay.className = 'invite-students-card__code';
-  codeDisplay.textContent = issuedCode.rawCode;
-  wrapper.appendChild(codeDisplay);
-
-  const copyButton = document.createElement('button');
-  copyButton.type = 'button';
-  copyButton.className = 'btn btn--ghost';
-  copyButton.textContent = 'Copy Code';
-  copyButton.addEventListener('click', () => copyText(issuedCode.rawCode, 'Verification code copied to clipboard'));
-  wrapper.appendChild(copyButton);
-
-  const explainer = document.createElement('p');
-  explainer.className = 'connect-learning-hub__description';
-  explainer.textContent = "Share this code directly with the learner or their family. They'll enter it in their own Learning Hub account to finish connecting — the request stays PENDING until they do; this code alone does not activate it.";
-  wrapper.appendChild(explainer);
-
-  const hint = document.createElement('p');
-  hint.className = 'connect-learning-hub__hint';
-  hint.textContent = "Read this aloud, don't transmit it.";
-  wrapper.appendChild(hint);
-
-  return wrapper;
 }
