@@ -91,3 +91,50 @@ automatically and never re-prompted.
 - ClassMate Student Mode's own join flow is untouched.
 - The unified classroom code (PR #24) and its legacy-code fallback are
   both reused unmodified.
+
+## Incident: missing LEARNING_HUB_FIREBASE_PROJECT_ID broke the roster lookup
+
+Shortly after this feature's first deploy, a real browser test of the
+canonical code against the live roster endpoint failed with the same
+generic `verification_failed` shape a genuinely bad code produces — the
+code itself (`ZW4R4C`) was valid and resolved correctly when tested
+directly against production Firestore, ruling out the code-resolution
+logic.
+
+**Root cause:** `functions/src/learningHubAuth.js`'s own
+`LEARNING_HUB_FIREBASE_PROJECT_ID` environment variable is supplied via
+`functions/.env.classmate-302c2` — a file this repo's own `.gitignore`
+deliberately excludes (`.env.*`, "Per-project local env... deploy-time").
+It only ever existed in the original, long-lived `classroom-tracker`
+checkout. Every dedicated feature/deploy worktree created for this and
+the two prior PRs (#23, #24, #25) lacked it, and `firebase deploy`
+replaces a Gen2 function's env vars with whatever the local `.env.<project>`
+file contains (or clears them if the file is absent) rather than merging
+with whatever was previously configured — so each redeploy of
+`verifyLearnerConnection` and the newly-created
+`getClassroomRosterForLearner` from one of those worktrees silently
+dropped this variable. `verifyLearningHubIdToken()` then fails closed
+(by design) for every real Learning Hub caller, and both endpoints'
+anti-oracle convention collapsed that straight to the same
+`verification_failed` shape a bad code produces — with nothing in the
+response, and nothing in the logs before this incident, to tell the two
+apart.
+
+**Fix:** the env file was restored into the deploy worktree and both
+affected functions redeployed. `learningHubAuth.js` now logs a
+distinctly-tagged `CONFIGURATION ERROR` the moment this env var is
+missing, separate from the also-newly-added `TOKEN VERIFICATION FAILED`
+tag for a merely bad/expired/wrong-audience token — operator-visible
+only, the external response contract for both categories is unchanged
+(still a plain 401 `unauthenticated`, by design). See
+`tests/functions/learningHubAuth.test.js`'s own "DIAGNOSTIC" tests and
+`tests/functions/getClassroomRosterForLearnerEndpoint.test.js`/
+`tests/functions/verifyLearnerConnectionEndpoint.test.js`'s own
+"INCIDENT REGRESSION" tests.
+
+**Operational note for future deploys from a fresh worktree:** copy
+`functions/.env.classmate-302c2` from the main `classroom-tracker`
+checkout into any new deploy worktree before running `firebase deploy`
+for any function that imports `learningHubAuth.js`
+(`verifyLearnerConnection`, `getClassroomRosterForLearner`,
+`getNotebookObligationsForLearner`).

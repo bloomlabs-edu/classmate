@@ -171,6 +171,22 @@ test('a valid token authenticates successfully (proven by reaching past the 401 
   assert.equal(body.error, 'invalid_request');
 });
 
+test('INCIDENT REGRESSION: a missing LEARNING_HUB_FIREBASE_PROJECT_ID still fails closed as plain 401 unauthenticated for a genuinely valid, real token — redemption must never crash or misbehave under this exact misconfiguration (see docs/architecture/LEARNER_SELF_IDENTITY_CLAIM.md\'s own incident note)', async () => {
+  const previous = process.env.LEARNING_HUB_FIREBASE_PROJECT_ID;
+  delete process.env.LEARNING_HUB_FIREBASE_PROJECT_ID;
+  try {
+    const { httpStatus, body } = await handleVerifyLearnerConnectionRequest({
+      authorizationHeader: validBearerToken,
+      body: { learnerProfileId: 'whoever', credentialType: 'invitation', credential: 'ANYCODE1' },
+      deps: { adminDb: db },
+    });
+    assert.equal(httpStatus, 401);
+    assert.equal(body.error, 'unauthenticated');
+  } finally {
+    process.env.LEARNING_HUB_FIREBASE_PROJECT_ID = previous;
+  }
+});
+
 // --------------------------------------------------------------------
 // Request validation
 // --------------------------------------------------------------------
