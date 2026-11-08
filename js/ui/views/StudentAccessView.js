@@ -166,6 +166,24 @@ function createInvitationActions({ message, shareLabel }) {
  * individual PIN-generation actions with one. Unchanged functionality
  * from before this redesign; only its visual weight (the large,
  * primary Bento tile) changed.
+ *
+ * NAMING FIX (production incident, 2026-11-08): this tile's own code
+ * (classroom.classroomStudentJoinCode) only ever grants access to
+ * ClassMate's own built-in Student Portal (#/student) — it has no
+ * connection whatsoever to the separate Connect Learning Hub tile/code
+ * below (classroomInvitations, a different Firestore collection
+ * entirely). Both tiles used to read simply "Invite Students" with
+ * near-identical "share one code with the whole class" copy and the
+ * exact same `.invite-students-card__code` display, so a teacher (and,
+ * in the incident this fixes, the support engineer investigating it)
+ * could not tell the two codes apart from the UI alone. A real learner
+ * was handed this tile's ClassMate Student Portal code and tried
+ * redeeming it in Learning Hub, where it was correctly and
+ * deterministically rejected — it was never a Learning Hub invitation
+ * code, so no lookup, auth, or timeout fix on either backend could ever
+ * make it work. This heading/description/code-label change is the
+ * actual fix: making the two codes visually and textually impossible to
+ * confuse, without changing either code's value or generation mechanism.
  */
 function createInviteStudentsTile(classroom, rerender) {
   const card = document.createElement('div');
@@ -178,12 +196,12 @@ function createInviteStudentsTile(classroom, rerender) {
 
   const heading = document.createElement('h2');
   heading.className = 'classroom-access-bento__heading';
-  heading.textContent = 'Invite Students';
+  heading.textContent = 'Invite Students to ClassMate';
   card.appendChild(heading);
 
   const description = document.createElement('p');
   description.className = 'classroom-access-bento__description';
-  description.textContent = 'Join my class — share one code with the whole class at once. On the board, over WhatsApp, or projected. No individual invitations needed.';
+  description.textContent = 'Join my class — share one code with the whole class at once. On the board, over WhatsApp, or projected. No individual invitations needed. This code is only for ClassMate’s own Student Portal — it is not a Learning Hub invitation code (use Connect Learning Hub below for that).';
   card.appendChild(description);
 
   if (!classroom.classroomStudentJoinCode) {
@@ -210,6 +228,11 @@ function createInviteStudentsTile(classroom, rerender) {
 
   const code = classroom.classroomStudentJoinCode;
   const link = `${APP_BASE_URL}#/student`;
+
+  const codeLabel = document.createElement('p');
+  codeLabel.className = 'invite-students-card__code-label';
+  codeLabel.textContent = 'ClassMate Student Portal code (not for Learning Hub)';
+  card.appendChild(codeLabel);
 
   const codeDisplay = document.createElement('div');
   codeDisplay.className = 'invite-students-card__code';
