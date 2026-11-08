@@ -41,6 +41,7 @@ const REASON = Object.freeze({
   FORBIDDEN: 'forbidden',
   STUDENT_NOT_ON_ROSTER: 'student_not_on_roster',
   NOT_PENDING: 'not_pending',
+  STUDENT_ALREADY_LINKED: 'student_already_linked',
 });
 
 /**
@@ -74,6 +75,21 @@ const REASON = Object.freeze({
  *      expressed as a precondition instead of a special case, since
  *      there is no second credential here that could otherwise be
  *      replayed against an already-resolved relationship.
+ *   5. `studentId` is not ALREADY the ACTIVE match for some OTHER
+ *      learnerProfileId in this same classroom (LEARNER SELF-IDENTITY
+ *      CLAIM, see docs/architecture/LEARNER_SELF_IDENTITY_CLAIM.md) —
+ *      the one check this function did not previously need: every
+ *      PENDING request used to arrive with no candidate student at all,
+ *      so a teacher picking a name themselves naturally never assigned
+ *      the same student twice (they'd simply see it was already
+ *      resolved). Now that a learner can claim ANY roster name
+ *      themselves, two different Google accounts claiming the exact
+ *      same student is a real, expected adversarial case (honest
+ *      mistake or deliberate) this function must reject, not merely
+ *      the teacher's own good judgment. Re-checked here, transactionally,
+ *      as the authoritative gate — createConnectionRequest()'s own
+ *      pre-check at claim time is a cheap, non-authoritative convenience
+ *      only; this is the real guarantee.
  *
  * `verifiedVia: 'teacher-direct-match'` distinguishes this activation
  * path from `'student-verification-code'` in the relationship's own
@@ -88,9 +104,19 @@ export async function activateRelationshipForStudent(adminDb, { classroomId, stu
 
   const classroomRef = adminDb.collection('classrooms').doc(classroomId);
   const relationshipRef = adminDb.collection('learnerClassroomRelationships').doc(buildRelationshipId(learnerProfileId, classroomId));
+  const conflictingActiveQuery = adminDb
+    .collection('learnerClassroomRelationships')
+    .where('classroomId', '==', classroomId)
+    .where('studentId', '==', studentId)
+    .where('status', '==', RELATIONSHIP_STATUS.ACTIVE)
+    .limit(1);
 
   return adminDb.runTransaction(async (tx) => {
-    const [classroomSnap, relationshipSnap] = await Promise.all([tx.get(classroomRef), tx.get(relationshipRef)]);
+    const [classroomSnap, relationshipSnap, conflictingActiveSnap] = await Promise.all([
+      tx.get(classroomRef),
+      tx.get(relationshipRef),
+      tx.get(conflictingActiveQuery),
+    ]);
 
     if (!classroomSnap.exists) return { ok: false, reason: REASON.CLASSROOM_NOT_FOUND };
     const classroom = classroomSnap.data();
@@ -106,6 +132,15 @@ export async function activateRelationshipForStudent(adminDb, { classroomId, stu
 
     if (!relationshipSnap.exists || relationshipSnap.data().status !== RELATIONSHIP_STATUS.PENDING) {
       return { ok: false, reason: REASON.NOT_PENDING };
+    }
+
+    // Excludes this exact relationship doc so a retry/replay of an
+    // already-successful activation (which this same check would
+    // otherwise see as "conflicting with itself") is never blocked —
+    // though in practice the PENDING check above already stops a true
+    // replay, since this doc would already be ACTIVE by then.
+    if (!conflictingActiveSnap.empty && conflictingActiveSnap.docs[0].id !== relationshipRef.id) {
+      return { ok: false, reason: REASON.STUDENT_ALREADY_LINKED };
     }
 
     const now = new Date().toISOString();

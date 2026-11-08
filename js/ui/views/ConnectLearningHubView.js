@@ -124,10 +124,20 @@ export function renderConnectLearningHubView(container, { classroom, currentUser
       {
         onBack,
         onToggleRow: (relationshipId) => {
-          expandedRelationshipId = expandedRelationshipId === relationshipId ? null : relationshipId;
+          const wasExpanded = expandedRelationshipId === relationshipId;
+          expandedRelationshipId = wasExpanded ? null : relationshipId;
           // A fresh expand/collapse always clears any in-progress picker
-          // selection — this row's own review session has ended.
-          selectedStudentId = null;
+          // selection — this row's own review session has ended. EXCEPT
+          // when the learner already made their own claim (LEARNER
+          // SELF-IDENTITY CLAIM — see docs/architecture/
+          // LEARNER_SELF_IDENTITY_CLAIM.md): the picker opens pre-filled
+          // with their claimed student, turning "Confirm match" into a
+          // single tap for the common case — the teacher can still pick
+          // someone else, this is never the source of truth for the
+          // actual write, only a starting point.
+          const justExpanded = !wasExpanded && expandedRelationshipId;
+          const expandedRelationship = justExpanded ? (relationships || []).find((r) => buildRelationshipId(r.learnerProfileId, r.classroomId) === expandedRelationshipId) : null;
+          selectedStudentId = expandedRelationship?.claimedByLearner ? expandedRelationship.studentId : null;
           actionError = null;
           rerender();
         },
@@ -149,7 +159,9 @@ export function renderConnectLearningHubView(container, { classroom, currentUser
             });
             if (!result.ok) {
               console.error('[ConnectLearningHubView] Failed to activate this connection:', result.reason);
-              actionError = GENERIC_ACTION_ERROR;
+              actionError = result.reason === 'student_already_linked'
+                ? 'This student is already connected to a different Learning Hub account. Pick a different student, or resolve the other connection first.'
+                : GENERIC_ACTION_ERROR;
             } else {
               showToast('Connection confirmed.');
               expandedRelationshipId = null;
@@ -504,9 +516,17 @@ function renderPendingRowDetail(relationship, state, handlers) {
   const detail = document.createElement('div');
   detail.className = 'connect-learning-hub__row-detail';
 
+  const claimedEntry = relationship.claimedByLearner
+    ? state.allRosterStudents.find(({ student }) => student.id === relationship.studentId)
+    : null;
+
   const explanation = document.createElement('p');
   explanation.className = 'connect-learning-hub__row-detail-explanation';
-  explanation.textContent = "We can't automatically match this Learning Hub learner to a student in your classroom. Select the student this request belongs to.";
+  explanation.textContent = claimedEntry
+    ? `This learner selected their own name when joining. Confirm it's ${claimedEntry.student.name}, or pick someone else below.`
+    : relationship.claimedByLearner
+      ? "This learner selected a name when joining, but that student is no longer on your live roster. Select the correct student below."
+      : "We can't automatically match this Learning Hub learner to a student in your classroom. Select the student this request belongs to.";
   detail.appendChild(explanation);
 
   const rosterOptions = buildRosterOptions(state.allRosterStudents);

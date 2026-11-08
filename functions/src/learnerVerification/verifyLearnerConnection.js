@@ -113,6 +113,34 @@ export async function resolveInvitationClassroomId(adminDb, code) {
   return null;
 }
 
+/** True if `studentId` is really, currently on this classroom's live roster — identical check to activateLearnerConnection.js's own `rosterStillHasStudent`/verifyStudentCode's own roster check, duplicated locally (same established pattern this file already uses rather than a shared cross-collection helper). */
+function studentIsOnLiveRoster(classroom, studentId) {
+  return (classroom?.teams || []).some((team) => (team.students || []).some((student) => student.id === studentId));
+}
+
+/**
+ * Is `studentId` already the ACTIVE match for some OTHER learner in this
+ * classroom? The authoritative version of this check lives in
+ * activateLearnerConnection.js (the actual ACTIVE-granting write) — this
+ * is a cheap, non-authoritative pre-check purely so a learner gets an
+ * honest "that name's already connected" message immediately, instead
+ * of submitting a claim that can only ever be rejected later at
+ * confirmation time. A race between this check and the real activation
+ * is harmless: activateLearnerConnection.js's own query runs again,
+ * transactionally, immediately before it ever writes ACTIVE.
+ */
+async function studentAlreadyActiveForAnotherLearner(adminDb, { classroomId, studentId, learnerProfileId }) {
+  const snap = await adminDb
+    .collection('learnerClassroomRelationships')
+    .where('classroomId', '==', classroomId)
+    .where('studentId', '==', studentId)
+    .where('status', '==', RELATIONSHIP_STATUS.ACTIVE)
+    .limit(1)
+    .get();
+  if (snap.empty) return false;
+  return snap.docs[0].id !== buildRelationshipId(learnerProfileId, classroomId);
+}
+
 /**
  * `classroomId` is OPTIONAL here, deliberately — this was a required
  * caller-supplied input originally, but ClassMate's own invitation-
@@ -125,8 +153,27 @@ export async function resolveInvitationClassroomId(adminDb, code) {
  * never from a client claim. If a caller does independently supply
  * classroomId anyway, it's still checked against the resolved value as
  * defense in depth; it is never treated as the source of truth.
+ *
+ * `claimedStudentId` (optional) is the NEW self-service identity claim
+ * (see docs/architecture/LEARNER_SELF_IDENTITY_CLAIM.md): the learner's
+ * own, unverified assertion of which roster student they are, made by
+ * picking a name off the roster `getClassroomRosterForLearnerEndpoint.js`
+ * already showed them for this exact resolved classroom. This is
+ * DELIBERATELY NOT the same thing as `findTrustedAutomaticMatch()` below
+ * — an automatic match (if one ever existed) would be trusted enough to
+ * skip teacher review entirely; a learner's own claim never is (see
+ * js/models/LearnerConnection.js's own findTrustedAutomaticMatch()
+ * header comment and docs/architecture/STUDENT_PROFILE_ARCHITECTURE_AUDIT.md
+ * §3.9/§14 for why no roster record carries anything a Google account
+ * could be verified against). A claim only ever produces a PENDING
+ * relationship — exactly like today's code-only path — except now that
+ * PENDING relationship already names a candidate student, letting the
+ * teacher's own Confirm match review become a single tap instead of a
+ * blind pick. The teacher's own activation
+ * (activateLearnerConnection.js) is the one and only path that can ever
+ * set status to ACTIVE; nothing here does.
  */
-export async function createConnectionRequest(adminDb, { learnerProfileId, classroomId, invitationCode }) {
+export async function createConnectionRequest(adminDb, { learnerProfileId, classroomId, invitationCode, claimedStudentId }) {
   if (!learnerProfileId || !invitationCode) return GENERIC_FAILURE;
 
   const resolvedClassroomId = await resolveInvitationClassroomId(adminDb, invitationCode);
@@ -153,12 +200,32 @@ export async function createConnectionRequest(adminDb, { learnerProfileId, class
   // silently assumes a signal that doesn't exist.
   const automaticMatch = findTrustedAutomaticMatch({ learnerProfileId, classroomId: resolvedClassroomId });
 
+  let claimedByLearner = false;
+  let resolvedStudentId = automaticMatch?.studentId ?? null;
+
+  if (claimedStudentId !== undefined) {
+    // A caller-asserted classroomId mismatch already failed closed above
+    // — this read is the one place this function needs the classroom
+    // document at all, so it only ever happens when a claim is actually
+    // being made.
+    const classroomSnap = await adminDb.collection('classrooms').doc(resolvedClassroomId).get();
+    if (!classroomSnap.exists || !studentIsOnLiveRoster(classroomSnap.data(), claimedStudentId)) {
+      return { ok: false, error: 'student_not_on_roster' };
+    }
+    if (await studentAlreadyActiveForAnotherLearner(adminDb, { classroomId: resolvedClassroomId, studentId: claimedStudentId, learnerProfileId })) {
+      return { ok: false, error: 'student_already_linked' };
+    }
+    resolvedStudentId = claimedStudentId;
+    claimedByLearner = true;
+  }
+
   const now = new Date().toISOString();
   await relationshipRef.set(
     {
       learnerProfileId,
       classroomId: resolvedClassroomId,
-      studentId: automaticMatch?.studentId ?? null,
+      studentId: resolvedStudentId,
+      claimedByLearner,
       status: RELATIONSHIP_STATUS.PENDING,
       invitationCode,
       createdAt: existing.exists ? existing.data().createdAt : now,
@@ -167,7 +234,7 @@ export async function createConnectionRequest(adminDb, { learnerProfileId, class
     { merge: false }
   );
 
-  return { ok: true, status: RELATIONSHIP_STATUS.PENDING, classroomId: resolvedClassroomId };
+  return { ok: true, status: RELATIONSHIP_STATUS.PENDING, classroomId: resolvedClassroomId, claimedStudentId: claimedByLearner ? resolvedStudentId : undefined };
 }
 
 /**

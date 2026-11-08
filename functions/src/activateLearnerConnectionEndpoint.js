@@ -55,6 +55,7 @@ const REASON_TO_ERROR = Object.freeze({
   forbidden: 'forbidden',
   student_not_on_roster: 'student_not_on_roster',
   not_pending: 'not_pending',
+  student_already_linked: 'student_already_linked',
 });
 
 function isBoundedString(value, maxLength) {
