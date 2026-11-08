@@ -11311,6 +11311,14 @@ button.recognition-bento__hero-winner-name {
 .invite-students-card {
   text-align: center;
 }
+.invite-students-card__code-label {
+  font-size: var(--font-size-small, 0.8rem);
+  font-weight: var(--font-weight-bold);
+  color: var(--settings-text-secondary, var(--color-muted));
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 1rem 0 -0.5rem;
+}
 .invite-students-card__code {
   font-family: monospace;
   font-size: 2rem;
