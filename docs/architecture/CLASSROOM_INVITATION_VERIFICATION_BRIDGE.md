@@ -656,6 +656,103 @@ Not Done"):
 No service-account JSON, private key, or API secret was created,
 invented, or committed anywhere in this round.
 
+## 31. Single-Code Join a Classroom (Product Decision — Implemented This Round)
+
+The product decision: a learner joining a classroom from Learning Hub
+should enter exactly ONE code (the classroom-wide invitation code from
+§4) and nothing else. The second, learner-facing step described in §6
+— a teacher-issued, per-student verification code the learner has to
+separately obtain and type into Learning Hub — is removed from the
+**learner-facing** experience.
+
+**What did NOT change:**
+- §4 (`createConnectionRequest` / the classroom invitation code) — the
+  learner's one and only code is exactly this one, unchanged.
+- The core invariant from §7/§9: no `create`/`update` branch in
+  `firestore.rules` can ever produce a document whose `status` is
+  `'ACTIVE'`. That remains exclusively an Admin-SDK operation. This
+  round does not touch `firestore.rules` at all.
+- §6's own code-based path (`createStudentVerificationCodeForStudent`,
+  `verifyStudentCode`, the `studentVerificationCodes` collection) — left
+  fully intact as unused infrastructure, not deleted, keeping this
+  change minimal and reversible.
+- The teacher still reviews a PENDING-request queue in
+  `ui/views/ConnectLearningHubView.js` and still has to pick the real
+  roster student a request belongs to — §8's "no trusted automatic
+  matching" limitation is unchanged; a human teacher decision is still
+  required for every activation.
+
+**What's new:** `functions/src/learnerVerification/activateLearnerConnection.js`'s
+`activateRelationshipForStudent(adminDb, {classroomId, studentId,
+teacherUid, learnerProfileId})` — a second, parallel way a PENDING
+relationship reaches ACTIVE, with no code generated, shown, or
+transmitted anywhere. Instead of a redemption code, authorization comes
+from the TEACHER's own already-verified ClassMate identity: the
+function independently re-checks, inside one Firestore transaction,
+that (1) the classroom exists, (2) `teacherUid` is a genuine member of
+*this* classroom (`memberUids`), (3) `studentId` is still on the
+classroom's *live* roster right now, and (4) the relationship is
+genuinely PENDING. This is the same category of trusted, Admin-SDK-only
+operation `verifyStudentCode()` already was — just authorized by a
+teacher's own identity instead of possession of a code. Both are real,
+server-verified authorizations; neither is "no authorization." The
+persisted `verifiedVia: 'teacher-direct-match'` field (vs.
+`'student-verification-code'`) records which mechanism actually
+activated any given relationship.
+
+`functions/src/activateLearnerConnectionEndpoint.js` wraps this in an
+HTTP handler authenticated by the teacher's own ClassMate Firebase ID
+token (same-project verification — mirrors
+`functions/src/deviceSignIn/deviceSignInEndpoints.js`'s own
+`verifyTeacherIdToken()` pattern exactly), reached directly from the
+teacher's own browser (manual CORS via `applyCorsIfAllowed`/
+`sendCorsPreflight`, the same pattern the device-sign-in endpoints
+already use, not the plain `cors:false` server-to-server pattern §27
+uses for Learning-Hub-originated calls). Exported from `functions/index.js`
+as `activateLearnerConnection`. Unlike §29's anti-oracle design (the
+caller there is an untrusted Learning Hub learner), this endpoint's
+caller is always an already-authenticated ClassMate teacher acting on
+their own classroom's own queue — so failures are specific
+(`not_found`, `forbidden`, `student_not_on_roster`, `not_pending`), not
+anti-oracle-generic.
+
+`js/ui/views/ConnectLearningHubView.js` changed to call this endpoint
+(via the new `js/services/learnerConnectionActivationService.js`, same
+convention as `js/services/deviceSignInApprovalService.js`) the moment
+a teacher picks a roster student and confirms, instead of generating
+and displaying a one-time code. The "Generate verification code"
+button became "Confirm match"; the one-time code display
+(`renderIssuedCode()`) was deleted along with the `issuedCode` transient
+state it rendered.
+
+**Learning Hub side** (separate repository — see that repo's own
+`ONBOARDING_SINGLE_CODE_JOIN.md` or equivalent for its own half of this
+change): `showJoinClassroom()` now renders a single invitation-code
+input; the second verification-code input, its instructions, and
+`_verifyStudentCode()` were removed. `redeemInvitation()` (§4's own
+call) is unchanged and is now the only call the learner-facing join
+flow ever makes; `redeemStudentCode()` was deleted. A learner whose
+request is still PENDING simply sees that status — there is nothing
+left for them to "finish."
+
+**Tests:** `tests/server/activateLearnerConnection.test.js` (14/14 —
+success, classroom-not-found, forbidden x2, student-not-on-roster x2,
+not-pending x4, cross-learner isolation, concurrent activation x2,
+missing-fields) and `tests/functions/activateLearnerConnectionEndpoint.test.js`
+(13/13 — unauthenticated x3, invalid-request x4, success, forbidden,
+student-not-on-roster, not-pending, classroom-not-found, no-sensitive-
+logging). Combined with the pre-existing §12 bridge suite (86/86 across
+`tests/server/verifyLearnerConnection.test.js`,
+`tests/server/activateLearnerConnection.test.js`,
+`tests/functions/verifyLearnerConnectionEndpoint.test.js`,
+`tests/functions/activateLearnerConnectionEndpoint.test.js`,
+`tests/functions/learningHubAuth.test.js`, and the model/shared-constant
+parity suites), all green. No new UI-level (DOM/Playwright) test was
+added for `ConnectLearningHubView.js` — none existed for this view
+before this change either, so this preserves rather than regresses
+existing test coverage for that file; its button/handler wiring was
+instead verified by direct code reading and `node --check`.
+
 ## What Was Not Done (Explicit, Per Task Instruction)
 
 - **Not committed. Not pushed. Not deployed.** See final `git status`

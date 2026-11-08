@@ -51,6 +51,7 @@ import {
 } from './src/deviceSignIn/deviceSignInEndpoints.js';
 import { handleVerifyLearnerConnectionRequest } from './src/verifyLearnerConnectionEndpoint.js';
 import { handleGetNotebookObligationsForLearnerRequest } from './src/getNotebookObligationsForLearnerEndpoint.js';
+import { handleActivateLearnerConnectionRequest } from './src/activateLearnerConnectionEndpoint.js';
 
 if (getApps().length === 0) {
   initializeApp();
@@ -269,6 +270,46 @@ export const getNotebookObligationsForLearner = onRequest({ cors: false, invoker
     authorizationHeader: req.get('Authorization'),
     body: await readJsonBody(req),
     deps: { adminDb: getFirestore() },
+  });
+  res.status(httpStatus).json(body);
+});
+
+// -----------------------------------------------------------------------
+// Activate Learner Connection — single-code Join a Classroom (product
+// decision): a classroom's own teacher, reviewing the pending-request
+// queue in ui/views/ConnectLearningHubView.js, calls this directly to
+// activate a pending request once they've picked the real roster
+// student it belongs to — no second, learner-facing code is generated
+// or transmitted anywhere in this path. See
+// functions/src/learnerVerification/activateLearnerConnection.js's own
+// header comment for why this does not weaken the bridge's own
+// documented invariant (ACTIVE is reachable only via Admin SDK — this
+// IS an Admin SDK operation, just authorized by a verified teacher
+// identity instead of a redemption code).
+//
+// Reached directly by the TEACHER's own ClassMate browser (same
+// project, not cross-project) — manual CORS via applyCorsIfAllowed(),
+// the same pattern getDeviceSignInRequestInfo/approveDeviceSignIn/
+// denyDeviceSignIn above already use for this exact reason (a known,
+// fixed ClassMate origin, echoed back only if it matches
+// getAllowedOrigins() — never a wildcard).
+//
+// The old code-based path (createStudentVerificationCodeForStudent(),
+// verifyStudentCode(), studentVerificationCodes) is untouched by this
+// addition — nothing here modifies, revokes, or disables it.
+// -----------------------------------------------------------------------
+export const activateLearnerConnection = onRequest({ cors: false, invoker: 'public' }, async (req, res) => {
+  applyCorsIfAllowed(req, res);
+  if (req.method === 'OPTIONS') return sendCorsPreflight(req, res, { methods: 'POST' });
+  if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'method_not_allowed' });
+
+  const { httpStatus, body } = await handleActivateLearnerConnectionRequest({
+    authorizationHeader: req.get('Authorization'),
+    body: await readJsonBody(req),
+    deps: {
+      adminDb: getFirestore(),
+      verifyIdToken: (idToken) => getAuth().verifyIdToken(idToken).then((decoded) => decoded.uid),
+    },
   });
   res.status(httpStatus).json(body);
 });
