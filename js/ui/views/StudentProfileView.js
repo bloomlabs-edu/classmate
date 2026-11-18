@@ -33,7 +33,9 @@ import { BADGE_THEMES, BADGE_SIZES } from '../../config/badgeDefinitions.js';
 import * as noteService from '../../services/noteService.js';
 import * as timelineService from '../../services/timelineService.js';
 import * as studentProgressService from '../../services/studentProgressService.js';
+import { getPerformanceBucketLabel } from '../../config/assessmentMarksColorConfig.js';
 import { createWeeklyNetPointsSection } from '../components/WeeklyNetPointsGraph.js';
+import { createAssessmentTrajectorySection } from '../components/AssessmentTrajectoryChart.js';
 import * as learningActivityService from '../../services/learningActivityService.js';
 import * as goalService from '../../services/goalService.js';
 import * as studentGoalsService from '../../services/studentGoalsService.js';
@@ -45,7 +47,7 @@ import * as assignmentCheckpointService from '../../services/assignmentCheckpoin
 import * as notebookConfigService from '../../services/notebookConfigService.js';
 import * as notebookStatusService from '../../services/notebookStatusService.js';
 import { renderNotebookStatusSummary } from '../components/NotebookStatusSummary.js';
-import { getStatusMeta } from './WorkRequestRosterView.js';
+import { getStatusMeta, STATUS_META } from './WorkRequestRosterView.js';
 import { getAssignmentCellMeta } from './AssignmentDetailView.js';
 import * as studentEventService from '../../services/studentEventService.js';
 import { STUDENT_EVENT_CATEGORIES } from '../../config/studentEventCategories.js';
@@ -61,9 +63,10 @@ import { openLogParticipationModal } from '../components/LogParticipationModal.j
 import { createBackButton } from '../components/BackButton.js';
 import { canOpenTeamProfile } from '../../services/teamStatisticsService.js';
 
-const TABS = ['overview', 'achievements', 'learning', 'notebooks', 'assignments', 'activity', 'access', 'notes'];
+const TABS = ['overview', 'academics', 'achievements', 'learning', 'notebooks', 'assignments', 'activity', 'access', 'notes'];
 const TAB_LABELS = {
   overview: 'Overview',
+  academics: 'Academic Growth',
   achievements: 'Recognition',
   learning: 'Learning',
   notebooks: 'Notebooks',
@@ -73,7 +76,10 @@ const TAB_LABELS = {
   notes: 'Notes',
 };
 
-export function renderStudentProfileView(container, { classroom, studentId, tab, onBack, onNavigateTab, onOpenStudentAccess, onSelectTeam, weekAnchorDateKey }) {
+export function renderStudentProfileView(
+  container,
+  { classroom, studentId, tab, onBack, onNavigateTab, onOpenStudentAccess, onSelectTeam, weekAnchorDateKey, academicsSubjectId = null, academicsShowTable = false }
+) {
   container.innerHTML = '';
 
   const found = studentService.findStudentInClassroom(classroom, studentId);
@@ -93,7 +99,13 @@ export function renderStudentProfileView(container, { classroom, studentId, tab,
   // rerender() with no argument and must not silently reset the
   // teacher's place in the chart's history); passing a new date key
   // explicitly is how the chart's own Prev/Next/swipe move a week.
-  const rerender = (nextWeekAnchorDateKey) =>
+  //
+  // `overrides` is the same idea, generalized: the Academic Growth
+  // tab's own ephemeral state (which Subject is charted,
+  // chart-vs-table) — any action that doesn't touch these simply
+  // omits them and they're preserved unchanged, exactly like every
+  // existing rerender() call already does for weekAnchorDateKey.
+  const rerender = (nextWeekAnchorDateKey, overrides = {}) =>
     renderStudentProfileView(container, {
       classroom,
       studentId,
@@ -103,6 +115,8 @@ export function renderStudentProfileView(container, { classroom, studentId, tab,
       onOpenStudentAccess,
       onSelectTeam,
       weekAnchorDateKey: nextWeekAnchorDateKey !== undefined ? nextWeekAnchorDateKey : weekAnchorDateKey,
+      academicsSubjectId: overrides.academicsSubjectId !== undefined ? overrides.academicsSubjectId : academicsSubjectId,
+      academicsShowTable: overrides.academicsShowTable !== undefined ? overrides.academicsShowTable : academicsShowTable,
     });
 
   const wrapper = document.createElement('div');
@@ -116,6 +130,7 @@ export function renderStudentProfileView(container, { classroom, studentId, tab,
 
   const tabRenderers = {
     overview: renderOverviewTab,
+    academics: renderAcademicsTab,
     achievements: renderAchievementsTab,
     learning: renderLearningTab,
     notebooks: renderNotebooksTab,
@@ -124,7 +139,7 @@ export function renderStudentProfileView(container, { classroom, studentId, tab,
     access: renderAccessTab,
     notes: renderNotesTab,
   };
-  tabRenderers[activeTab](content, classroom, student, team, rerender, onOpenStudentAccess, weekAnchorDateKey);
+  tabRenderers[activeTab](content, classroom, student, team, rerender, onOpenStudentAccess, weekAnchorDateKey, academicsSubjectId, academicsShowTable);
 
   wrapper.appendChild(content);
   container.appendChild(wrapper);
@@ -581,6 +596,79 @@ function renderOverviewTab(content, classroom, student, team, rerender, _onOpenS
 }
 
 // ---------------------------------------------------------------------
+// Academic Growth — Student Growth Dashboard Phase 1. Reads live
+// through services/studentProgressService.js's own
+// getAcademicTrajectoryForStudent() (never a second copy of exam
+// data); "which Subject is charted" and "chart vs table" are both
+// ephemeral view state threaded through rerender()'s own `overrides`
+// parameter, same convention as the Overview tab's weekAnchorDateKey
+// just above.
+// ---------------------------------------------------------------------
+
+function renderAcademicsTab(content, classroom, student, _team, rerender, _onOpenStudentAccess, _weekAnchorDateKey, academicsSubjectId, academicsShowTable) {
+  const section = document.createElement('div');
+  section.className = 'profile-section';
+
+  const heading = document.createElement('h2');
+  heading.className = 'profile-section__heading';
+  heading.textContent = 'Exam Trajectory';
+  section.appendChild(heading);
+
+  const trajectory = studentProgressService.getAcademicTrajectoryForStudent(classroom, student.id);
+
+  if (trajectory.length === 0) {
+    section.appendChild(createEmptyStateElement({ message: 'No assessment results recorded yet for this student.' }));
+    content.appendChild(section);
+    return;
+  }
+
+  const selectedSubject = trajectory.find((subject) => subject.subjectId === academicsSubjectId) || trajectory[0];
+
+  // Only shown when there's an actual choice to make — a single-Subject
+  // classroom doesn't need a one-option dropdown (same "don't show a
+  // control with nothing to control" instinct the rest of this file
+  // already follows for empty sections).
+  if (trajectory.length > 1) {
+    const subjectSelect = document.createElement('select');
+    subjectSelect.className = 'profile-stat-card__select';
+    subjectSelect.setAttribute('aria-label', 'Subject');
+    trajectory.forEach((subject) => {
+      const option = document.createElement('option');
+      option.value = subject.subjectId;
+      option.textContent = subject.subjectTitle;
+      if (subject.subjectId === selectedSubject.subjectId) option.selected = true;
+      subjectSelect.appendChild(option);
+    });
+    subjectSelect.addEventListener('change', () => {
+      rerender(undefined, { academicsSubjectId: subjectSelect.value });
+    });
+    section.appendChild(subjectSelect);
+  }
+
+  if (selectedSubject.points.length === 0) {
+    // Defensive only — getAcademicTrajectoryForStudent() never
+    // includes a Subject with zero usable points in the first place,
+    // so this branch shouldn't be reachable; kept as a safety net
+    // rather than assuming that invariant forever.
+    section.appendChild(createEmptyStateElement({ compact: true, message: `No assessments recorded yet for ${selectedSubject.subjectTitle}.` }));
+  } else {
+    section.appendChild(
+      createAssessmentTrajectorySection(selectedSubject.points, academicsShowTable, (nextShowTable) =>
+        rerender(undefined, { academicsShowTable: nextShowTable })
+      )
+    );
+
+    const latest = selectedSubject.points[selectedSubject.points.length - 1];
+    const summary = document.createElement('p');
+    summary.className = 'profile-section__meta';
+    summary.textContent = `Latest: ${latest.assessmentTitle} — ${latest.marks}/${latest.maximumMarks} (${latest.percent}%, ${getPerformanceBucketLabel(latest.bucketKey)})`;
+    section.appendChild(summary);
+  }
+
+  content.appendChild(section);
+}
+
+// ---------------------------------------------------------------------
 // Parent Access
 // ---------------------------------------------------------------------
 
@@ -720,6 +808,19 @@ function createStudentBadgeCard(summary) {
   earnedCount.textContent = `Earned ${summary.level} time${summary.level === 1 ? '' : 's'}`;
   card.appendChild(earnedCount);
 
+  // Growth Dashboard Phase 1 — first/last earned dates, already
+  // returned by achievementEngine.summarizeStudentBadges() but not
+  // previously rendered here.
+  if (summary.firstEarnedAt) {
+    const earnedDates = document.createElement('p');
+    earnedDates.className = 'student-badge-card__meta';
+    earnedDates.textContent =
+      summary.firstEarnedAt === summary.lastEarnedAt
+        ? `Earned ${formatDate(summary.firstEarnedAt)}`
+        : `First ${formatDate(summary.firstEarnedAt)} · Last ${formatDate(summary.lastEarnedAt)}`;
+    card.appendChild(earnedDates);
+  }
+
   if (summary.nextMilestone) {
     const milestone = document.createElement('p');
     milestone.className = 'student-badge-card__meta';
@@ -730,8 +831,70 @@ function createStudentBadgeCard(summary) {
   return card;
 }
 
+/**
+ * Recent Recognition — the last 10 star/badge events from this
+ * student's own existing Timeline (services/timelineService.js),
+ * filtered to the two recognition-relevant kinds. Deliberately reads
+ * the SAME data renderActivityTab()'s own Timeline/Participation tab
+ * already shows in full (never a second, independent recognition
+ * log) — this is just a short, recognition-only excerpt of it,
+ * surfaced where a teacher is already looking for recognition
+ * specifically. Does NOT duplicate the Overview tab's own weekly
+ * stars chart (createWeeklyNetPointsSection) here — that chart
+ * already answers "stars over a selectable period" on Overview; a
+ * second copy of the identical widget on this tab would be
+ * redundant, not additive.
+ */
+function renderRecentRecognitionSection(student) {
+  const section = document.createElement('div');
+  section.className = 'profile-section';
+
+  const heading = document.createElement('h2');
+  heading.className = 'profile-section__heading';
+  heading.textContent = 'Recent Recognition';
+  section.appendChild(heading);
+
+  const recentEntries = timelineService
+    .listTimeline(student)
+    .filter((entry) => entry.kind === 'badge' || entry.kind === 'points')
+    .slice(0, 10);
+
+  if (recentEntries.length === 0) {
+    section.appendChild(createEmptyStateElement({ compact: true, message: 'No stars or badges recorded yet.' }));
+    return section;
+  }
+
+  const list = document.createElement('ul');
+  list.className = 'timeline';
+  recentEntries.forEach((entry) => {
+    const item = document.createElement('li');
+    item.className = 'timeline__item';
+
+    const label = document.createElement('span');
+    label.className = 'timeline__label';
+    if (entry.kind === 'badge') {
+      label.textContent = `${entry.label} Badge Awarded`;
+    } else {
+      const sign = entry.delta > 0 ? '+' : '';
+      label.textContent = `${sign}${entry.delta} ${entry.label}`;
+      label.classList.add(entry.delta > 0 ? 'timeline__label--positive' : 'timeline__label--negative');
+    }
+
+    const date = document.createElement('span');
+    date.className = 'timeline__date';
+    date.textContent = formatDate(entry.recordedAt);
+
+    item.append(label, date);
+    list.appendChild(item);
+  });
+  section.appendChild(list);
+
+  return section;
+}
+
 async function renderAchievementsTab(content, classroom, student, team, rerender) {
   content.appendChild(await renderStudentBadgesSection(classroom, student));
+  content.appendChild(renderRecentRecognitionSection(student));
 
   const section = document.createElement('div');
   section.className = 'profile-section';
@@ -990,6 +1153,160 @@ async function renderLearningTab(content, classroom, student) {
 
   section.appendChild(list);
   content.appendChild(section);
+
+  // Student Growth Dashboard Phase 1 — Personal Development.
+  content.appendChild(await renderGoalHistorySection(classroom, student));
+  content.appendChild(renderBucketHistorySection(student));
+}
+
+/**
+ * Goal History — past (non-active) Goal Cycles only; the active
+ * cycle is already shown in full above. Reads live goal
+ * text/completion data the EXACT same way the active-cycle section
+ * above already does: services/studentGoalsService.js's own
+ * getGoalForStudent(classroomId, cycleId, categoryId, studentId), per
+ * category, per cycle — never services/goalCompletionService.js's
+ * own getCompletionHistory(). That function reads
+ * classroom.goalCycles[].completions directly, which is NOT where
+ * real goal-completion data lives anymore: confirmed, by tracing
+ * every write path, that actual goal submissions/completions moved
+ * entirely to their own Firestore collection when
+ * services/studentGoalsService.js was introduced (see that file's own
+ * header comment — "new goal data simply doesn't flow through
+ * [goalService.js's submitGoal()/approveGoal()] anymore for this
+ * feature") and that services/goalCompletionService.js's own
+ * setCompletion() has zero callers anywhere in this codebase today.
+ * Cycle CATEGORIES/title/dates are still read from the classroom
+ * document directly (goalService.js), per that same architectural
+ * seam.
+ */
+async function renderGoalHistorySection(classroom, student) {
+  const section = document.createElement('div');
+  section.className = 'profile-section';
+
+  const heading = document.createElement('h2');
+  heading.className = 'profile-section__heading';
+  heading.textContent = 'Goal History';
+  section.appendChild(heading);
+
+  const activeCycle = goalService.getActiveCycle(classroom);
+  const pastCycles = goalService.listGoalCycles(classroom).filter((cycle) => cycle.id !== activeCycle?.id);
+
+  if (pastCycles.length === 0) {
+    section.appendChild(createEmptyStateElement({ compact: true, message: 'No past Goal Cycles yet.' }));
+    return section;
+  }
+
+  const list = document.createElement('div');
+  list.className = 'activity-list';
+  let hasAnyGoal = false;
+
+  // Newest past cycle first — same "most recent first" convention
+  // every other history view on this profile already follows.
+  const orderedPastCycles = [...pastCycles].sort((a, b) => (b.startDate || b.createdAt || '').localeCompare(a.startDate || a.createdAt || ''));
+
+  for (const cycle of orderedPastCycles) {
+    const categories = goalService.listCategories(cycle);
+    for (const category of categories) {
+      const goal = await studentGoalsService.getGoalForStudent(classroom.id, cycle.id, category.id, student.id);
+      if (!goal) continue; // this student never submitted a goal for this category in this cycle — omitted, never shown as an empty entry
+      hasAnyGoal = true;
+      list.appendChild(createGoalHistoryCard(cycle, category, goal));
+    }
+  }
+
+  if (!hasAnyGoal) {
+    section.appendChild(createEmptyStateElement({ compact: true, message: 'No goals submitted yet in past cycles.' }));
+  } else {
+    section.appendChild(list);
+  }
+
+  return section;
+}
+
+function createGoalHistoryCard(cycle, category, goal) {
+  const card = document.createElement('div');
+  card.className = 'activity-card';
+
+  const titleRow = document.createElement('div');
+  titleRow.className = 'activity-card__title-row';
+  const title = document.createElement('span');
+  title.className = 'activity-card__title';
+  title.textContent = `${cycle.title} · ${category.name}`;
+  const statusLabel = document.createElement('span');
+  statusLabel.className = 'activity-card__type';
+  statusLabel.textContent = goal.status === 'approved' ? 'Approved' : 'Awaiting Approval';
+  titleRow.append(title, statusLabel);
+  card.appendChild(titleRow);
+
+  const text = document.createElement('p');
+  text.className = 'profile-section__meta';
+  text.textContent = `“${goal.text}”`;
+  card.appendChild(text);
+
+  // Raw completed-day count — never an invented rate/percentage.
+  // goal.completions is the real { [dateKey]: true } map this exact
+  // goal document stores (see
+  // repositories/firestoreStudentGoalsRepository.js's own
+  // updateCompletion()) — presence means completed, absence means
+  // not, the same convention goalCompletionService.js's own (unused
+  // for this data source) getCompletionHistory() documents.
+  const completedDates = Object.keys(goal.completions || {}).sort();
+  const completionLine = document.createElement('p');
+  completionLine.className = 'profile-section__meta';
+  completionLine.textContent =
+    completedDates.length > 0
+      ? `Completed on ${completedDates.length} day${completedDates.length === 1 ? '' : 's'} · most recently ${formatDateKey(completedDates[completedDates.length - 1])}`
+      : 'No completions recorded yet.';
+  card.appendChild(completionLine);
+
+  return card;
+}
+
+/**
+ * Learning Bucket History — the bucket-change entries
+ * services/bucketService.js's own assignBucket() already logs into
+ * student.history (kind: 'bucket'), surfaced as their own labeled
+ * list rather than only mixed into the general Participation/Timeline
+ * tab's unfiltered feed. Reuses that tab's own .timeline markup
+ * exactly (see renderActivityTab() below) so this reads as the same
+ * kind of history, not a new visual language.
+ */
+function renderBucketHistorySection(student) {
+  const section = document.createElement('div');
+  section.className = 'profile-section';
+
+  const heading = document.createElement('h2');
+  heading.className = 'profile-section__heading';
+  heading.textContent = 'Learning Bucket History';
+  section.appendChild(heading);
+
+  const bucketChanges = timelineService.listTimeline(student).filter((entry) => entry.kind === 'bucket');
+  if (bucketChanges.length === 0) {
+    section.appendChild(createEmptyStateElement({ compact: true, message: 'No bucket changes recorded yet.' }));
+    return section;
+  }
+
+  const list = document.createElement('ul');
+  list.className = 'timeline';
+  bucketChanges.forEach((entry) => {
+    const item = document.createElement('li');
+    item.className = 'timeline__item';
+
+    const label = document.createElement('span');
+    label.className = 'timeline__label';
+    label.textContent = entry.label;
+
+    const date = document.createElement('span');
+    date.className = 'timeline__date';
+    date.textContent = formatDate(entry.recordedAt);
+
+    item.append(label, date);
+    list.appendChild(item);
+  });
+  section.appendChild(list);
+
+  return section;
 }
 
 // ---------------------------------------------------------------------
@@ -1045,6 +1362,97 @@ function renderNotebooksTab(content, classroom, student) {
   }
 
   content.appendChild(section);
+  content.appendChild(renderNotebookSubmissionHistorySection(classroom, student));
+}
+
+/**
+ * Submission History — Student Growth Dashboard Phase 1's Work Habits
+ * view: this student's own Checkpoint submissions across every
+ * notebook, in due-date order, so a teacher can see the SHAPE of
+ * submission timeliness over a term rather than only the current
+ * status the cards above already show. Reads
+ * services/studentProgressService.js's own
+ * getNotebookSubmissionTimelineForStudent() — deliberately scoped to
+ * the Checkpoint system only (see that function's own doc comment for
+ * why WorkRequest-era history has no honest "late" fact to show).
+ * Status chip meta is imported directly from
+ * ui/views/WorkRequestRosterView.js's own STATUS_META — the exact
+ * same colours/icons the cards above and the WorkRequest roster
+ * already use, never a second, independently-invented chip language.
+ */
+function renderNotebookSubmissionHistorySection(classroom, student) {
+  const section = document.createElement('div');
+  section.className = 'profile-section';
+
+  const heading = document.createElement('h2');
+  heading.className = 'profile-section__heading';
+  heading.textContent = 'Submission History';
+  section.appendChild(heading);
+
+  const timeline = studentProgressService.getNotebookSubmissionTimelineForStudent(classroom, student.id);
+  if (timeline.length === 0) {
+    section.appendChild(createEmptyStateElement({ compact: true, message: 'No checkpoint submissions recorded yet for this student.' }));
+    return section;
+  }
+
+  const list = document.createElement('div');
+  list.className = 'profile-notebook-activity';
+  timeline.forEach((item) => {
+    list.appendChild(createSubmissionHistoryRow(item));
+  });
+  section.appendChild(list);
+
+  return section;
+}
+
+const CHECKPOINT_STATUS_META_KEY = {
+  not_submitted: 'assigned',
+  awaiting_review: 'submitted',
+  needs_correction: 'needs_correction',
+  reviewed: 'reviewed',
+};
+
+function createSubmissionHistoryRow(item) {
+  const card = document.createElement('div');
+  card.className = 'profile-notebook-activity__card';
+
+  const title = document.createElement('p');
+  title.className = 'profile-notebook-activity__title';
+  title.textContent = [item.subjectName, item.notebookTypeName, item.title].filter(Boolean).join(' · ');
+  card.appendChild(title);
+
+  // Same 4-bucket classification notebookStatusService.js's own
+  // classifyCheckpoint() uses (not re-derived independently — mirrored
+  // here only because that function isn't itself exported): no
+  // record/not submitted -> awaiting submission; incomplete review ->
+  // needs correction; complete review -> reviewed; else -> awaiting
+  // review.
+  let statusKey;
+  if (item.submissionStatus === 'not_submitted') statusKey = 'not_submitted';
+  else if (item.reviewStatus === 'incomplete') statusKey = 'needs_correction';
+  else if (item.reviewStatus === 'complete') statusKey = 'reviewed';
+  else statusKey = 'awaiting_review';
+
+  const meta = STATUS_META[CHECKPOINT_STATUS_META_KEY[statusKey]];
+  const chip = document.createElement('span');
+  chip.className = `work-request-roster__chip work-request-roster__chip--${meta.chipClass}`;
+  chip.textContent = `${meta.icon} ${meta.label}`;
+  card.appendChild(chip);
+
+  const supportingLine = document.createElement('p');
+  supportingLine.className = 'profile-notebook-activity__date';
+  const dueText = item.dueDate ? `Due ${formatDateKey(item.dueDate)}` : 'No due date';
+  const submittedText = item.submittedDate ? ` · Submitted ${formatDateKey(item.submittedDate)}` : '';
+  supportingLine.textContent = `${dueText}${submittedText}`;
+  if (item.late) {
+    const lateTag = document.createElement('span');
+    lateTag.className = 'profile-notebook-activity__late-tag';
+    lateTag.textContent = ' · Late';
+    supportingLine.appendChild(lateTag);
+  }
+  card.appendChild(supportingLine);
+
+  return card;
 }
 
 /**

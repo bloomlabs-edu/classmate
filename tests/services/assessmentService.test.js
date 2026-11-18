@@ -651,3 +651,110 @@ test('EDIT DETAILS AND GRADEBOOK STAY SYNCHRONIZED: both are views onto the exac
   assert.equal(assessmentService.getMaximumMarks(science), 75);
   assert.equal(science.maximumMarks, 75);
 });
+
+test('SOFT DELETE: deleteAssessment stamps deletedAt and never removes the Assessment or its marks from classroom.assessments', () => {
+  const classroom = buildClassroomWithScienceOnly();
+  const assessment = assessmentService.createNewAssessment(classroom, { title: 'Mid Term', type: 'Mid Term', academicYear: '2026-2027', date: '2026-09-24', subjectIds: ['record-science'] });
+  const [science] = assessment.assessmentSubjects;
+  assessmentService.recordStudentMarks(science, 's1', { marks: 42 });
+
+  const result = assessmentService.deleteAssessment(classroom, assessment.id);
+
+  assert.equal(result, true);
+  assert.ok(classroom.assessments.includes(assessment), 'the Assessment itself must still be in the array');
+  assert.ok(assessment.deletedAt, 'deletedAt must be stamped');
+  assert.equal(assessmentService.getStudentResult(science, 's1').marks, 42, 'the mark must survive the delete untouched');
+});
+
+test('deleteAssessment on an already-deleted Assessment is a no-op (returns false, does not re-stamp deletedAt)', () => {
+  const classroom = buildClassroomWithScienceOnly();
+  const assessment = assessmentService.createNewAssessment(classroom, { title: 'Mid Term', type: 'Mid Term', academicYear: '2026-2027', date: '2026-09-24', subjectIds: ['record-science'] });
+  assessmentService.deleteAssessment(classroom, assessment.id);
+  const firstDeletedAt = assessment.deletedAt;
+
+  const result = assessmentService.deleteAssessment(classroom, assessment.id);
+
+  assert.equal(result, false);
+  assert.equal(assessment.deletedAt, firstDeletedAt);
+});
+
+test('EXCLUDED BY DEFAULT: a soft-deleted Assessment disappears from getAssessments()/getUpcomingAssessments()/getAssessmentById() by default, but is still reachable with includeDeleted: true', () => {
+  const classroom = buildClassroomWithScienceOnly();
+  const assessment = assessmentService.createNewAssessment(classroom, {
+    title: 'Mid Term',
+    type: 'Mid Term',
+    academicYear: '2026-2027',
+    date: '2000-01-01', // well in the past, so it would also qualify for getUpcomingAssessments() if ever published+future-dated — kept simple/Draft here
+    subjectIds: ['record-science'],
+  });
+  assessmentService.publishAssessment(classroom, assessment);
+  assessment.date = '9999-01-01'; // force it into getUpcomingAssessments()' own date>=today window
+  assessmentService.deleteAssessment(classroom, assessment.id);
+
+  assert.equal(assessmentService.getAssessments(classroom).length, 0);
+  assert.equal(assessmentService.getAssessments(classroom, { includeDeleted: true }).length, 1);
+  assert.equal(assessmentService.getUpcomingAssessments(classroom).length, 0, 'a deleted Assessment must never appear as "upcoming" either');
+  assert.equal(assessmentService.getAssessmentById(classroom, assessment.id), null);
+  assert.equal(assessmentService.getAssessmentById(classroom, assessment.id, { includeDeleted: true }).id, assessment.id);
+});
+
+test('RESTORE: restoreAssessment clears deletedAt and every mark/detail reappears exactly as it was, with no re-entry', () => {
+  const classroom = buildClassroomWithScienceOnly();
+  const assessment = assessmentService.createNewAssessment(classroom, { title: 'Mid Term', type: 'Mid Term', academicYear: '2026-2027', date: '2026-09-24', subjectIds: ['record-science'] });
+  const [science] = assessment.assessmentSubjects;
+  assessmentService.recordStudentMarks(science, 's1', { marks: 87 });
+  assessmentService.deleteAssessment(classroom, assessment.id);
+
+  const result = assessmentService.restoreAssessment(classroom, assessment.id);
+
+  assert.equal(result, true);
+  assert.equal(assessment.deletedAt, null);
+  assert.equal(assessmentService.getAssessments(classroom).length, 1, 'restored Assessment must reappear in the normal list');
+  assert.equal(assessmentService.getAssessmentById(classroom, assessment.id).id, assessment.id);
+  assert.equal(assessmentService.getStudentResult(science, 's1').marks, 87, 'the original mark must be unchanged — nothing was ever re-entered');
+});
+
+test('restoreAssessment on a never-deleted (or already-restored) Assessment is a no-op (returns false)', () => {
+  const classroom = buildClassroomWithScienceOnly();
+  const assessment = assessmentService.createNewAssessment(classroom, { title: 'Mid Term', type: 'Mid Term', academicYear: '2026-2027', date: '2026-09-24', subjectIds: ['record-science'] });
+
+  assert.equal(assessmentService.restoreAssessment(classroom, assessment.id), false, 'never deleted at all');
+
+  assessmentService.deleteAssessment(classroom, assessment.id);
+  assessmentService.restoreAssessment(classroom, assessment.id);
+  assert.equal(assessmentService.restoreAssessment(classroom, assessment.id), false, 'already restored once');
+});
+
+test('getDeletedAssessments: lists only soft-deleted Assessments, most recently deleted first', async () => {
+  const classroom = buildClassroomWithScienceOnly();
+  const first = assessmentService.createNewAssessment(classroom, { title: 'First Mid Term', type: 'Mid Term', academicYear: '2026-2027', date: '2026-08-01', subjectIds: ['record-science'] });
+  const second = assessmentService.createNewAssessment(classroom, { title: 'Second Mid Term', type: 'Mid Term', academicYear: '2026-2027', date: '2026-09-01', subjectIds: ['record-science'] });
+  const stillLive = assessmentService.createNewAssessment(classroom, { title: 'Still Live', type: 'Custom', academicYear: '2026-2027', date: '2026-10-01', subjectIds: ['record-science'] });
+
+  assessmentService.deleteAssessment(classroom, first.id);
+  await new Promise((resolve) => setTimeout(resolve, 2)); // ensure a distinct deletedAt timestamp from `first`'s
+  assessmentService.deleteAssessment(classroom, second.id);
+
+  const deleted = assessmentService.getDeletedAssessments(classroom);
+
+  assert.equal(deleted.length, 2);
+  assert.equal(deleted[0].id, second.id, 'most recently deleted first');
+  assert.equal(deleted[1].id, first.id);
+  assert.ok(!deleted.some((a) => a.id === stillLive.id), 'a live Assessment must never appear in the deleted list');
+});
+
+test('GETLINKEDASSESSMENT EXCLUDES DELETED: a soft-deleted Assessment no longer counts as "linked" to its ScheduledEvent', () => {
+  // Sets scheduledEventId directly on the created record rather than
+  // going through createAssessmentFromScheduledEvent() — isolates this
+  // test to getLinkedAssessment()'s own deletedAt-exclusion filter,
+  // independent of that other function's own behavior.
+  const classroom = buildClassroomWithScienceOnly();
+  const assessment = assessmentService.createNewAssessment(classroom, { title: 'Quarterly', type: 'Quarterly', academicYear: '2026-2027', date: '2026-09-24', subjectIds: ['record-science'] });
+  assessment.scheduledEventId = 'evt-1';
+
+  assert.equal(assessmentService.getLinkedAssessment(classroom, 'evt-1').id, assessment.id, 'sanity check: linked while live');
+
+  assessmentService.deleteAssessment(classroom, assessment.id);
+
+  assert.equal(assessmentService.getLinkedAssessment(classroom, 'evt-1'), null, 'a deleted Assessment must not block re-linking the same ScheduledEvent');
+});

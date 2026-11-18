@@ -29,6 +29,19 @@
  * Assessment was created — there's no reason to force an "Initially
  * editable" state the way a never-saved AssessmentSubject's marks
  * entry does.
+ *
+ * `deletedAt` — null for a live Assessment. "Delete Assessment" (see
+ * services/assessmentService.js's own deleteAssessment()) only ever
+ * stamps this field; it never removes the Assessment or any of its
+ * AssessmentSubjects/StudentResults from the array. Every normal read
+ * path excludes a deletedAt-stamped Assessment by default (so it
+ * disappears from the Gradebook, Scorecard, and any student's own
+ * growth trajectory immediately), but nothing about its marks is ever
+ * destroyed — restoreAssessment() clears this one field and every
+ * reader sees the exact original Assessment again, with zero
+ * re-entry. An existing Assessment created before this field existed
+ * simply has `deletedAt: undefined`, which every check below treats
+ * identically to `null`.
  */
 
 import { generateId } from '../utils/idGenerator.js';
@@ -46,6 +59,7 @@ export function createAssessment({
   detailsLastSavedAt = null,
   assessmentSubjects = [],
   pinnedToDashboard = false,
+  deletedAt = null,
 } = {}) {
   return {
     id: id || generateId(),
@@ -59,5 +73,6 @@ export function createAssessment({
     detailsLastSavedAt,
     assessmentSubjects,
     pinnedToDashboard,
+    deletedAt,
   };
 }

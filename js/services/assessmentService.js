@@ -32,21 +32,40 @@ import { ASSESSMENT_TYPES } from '../config/assessmentTypesConfig.js';
 import { PASS_MARK_PERCENT, getPassMarkForSubject } from '../config/assessmentMarksColorConfig.js';
 import { getCurrentIsoDate } from '../utils/dateHelpers.js';
 
-/** Every Assessment for this classroom, most recently created first. */
-export function getAssessments(classroom) {
-  return [...(classroom.assessments || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+/**
+ * Every Assessment for this classroom, most recently created first.
+ * Excludes soft-deleted Assessments (see deleteAssessment() below) by
+ * default — pass `includeDeleted: true` for the one caller that
+ * genuinely needs to see them (the Deleted Assessments screen).
+ */
+export function getAssessments(classroom, { includeDeleted = false } = {}) {
+  return (classroom.assessments || [])
+    .filter((assessment) => includeDeleted || !assessment.deletedAt)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
-/** Student-facing "upcoming tests" — only Published assessments (a Draft isn't real to students yet) with a real date today or later, soonest first. */
+/** Student-facing "upcoming tests" — only Published assessments (a Draft isn't real to students yet) with a real date today or later, soonest first. Never includes a soft-deleted Assessment. */
 export function getUpcomingAssessments(classroom) {
   const todayKey = getCurrentIsoDate().slice(0, 10);
   return (classroom.assessments || [])
-    .filter((assessment) => assessment.status === 'Published' && assessment.date && assessment.date >= todayKey)
+    .filter((assessment) => !assessment.deletedAt && assessment.status === 'Published' && assessment.date && assessment.date >= todayKey)
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
-export function getAssessmentById(classroom, assessmentId) {
-  return (classroom.assessments || []).find((assessment) => assessment.id === assessmentId) || null;
+/** Excludes a soft-deleted Assessment by default — pass `includeDeleted: true` to look one up regardless (e.g. to restore it). */
+export function getAssessmentById(classroom, assessmentId, { includeDeleted = false } = {}) {
+  return (classroom.assessments || []).find((assessment) => assessment.id === assessmentId && (includeDeleted || !assessment.deletedAt)) || null;
+}
+
+/**
+ * Every soft-deleted Assessment for this classroom, most recently
+ * deleted first — the Deleted Assessments screen's one data source
+ * (see ui/views/AssessmentManagementView.js).
+ */
+export function getDeletedAssessments(classroom) {
+  return (classroom.assessments || [])
+    .filter((assessment) => assessment.deletedAt)
+    .sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt));
 }
 
 /**
@@ -72,10 +91,38 @@ export function createNewAssessment(classroom, { title, type, academicYear, date
   return assessment;
 }
 
+/**
+ * Soft delete — stamps `deletedAt`, never removes the Assessment or
+ * any of its AssessmentSubjects/StudentResults. A deleted Assessment
+ * disappears from every normal read path above (getAssessments(),
+ * getUpcomingAssessments(), getLinkedAssessment()) and from every
+ * student's own growth trajectory (services/studentProgressService.js's
+ * getAcademicTrajectoryForStudent(), which reads through
+ * getAssessments() and so excludes it automatically), but its marks
+ * are preserved exactly as entered and recoverable via
+ * restoreAssessment() below. Returns false for an id that doesn't
+ * resolve to a live (non-deleted) Assessment — deleting an
+ * already-deleted Assessment is a no-op, not a second timestamp.
+ */
 export function deleteAssessment(classroom, assessmentId) {
-  const before = (classroom.assessments || []).length;
-  classroom.assessments = (classroom.assessments || []).filter((assessment) => assessment.id !== assessmentId);
-  return classroom.assessments.length < before;
+  const assessment = getAssessmentById(classroom, assessmentId);
+  if (!assessment) return false;
+  assessment.deletedAt = getCurrentIsoDate();
+  return true;
+}
+
+/**
+ * Reverses deleteAssessment() — clears `deletedAt` so the Assessment
+ * (and every mark/detail it already held) reappears exactly as it
+ * was, with no re-entry. Returns false if the id doesn't resolve to a
+ * currently-deleted Assessment (never-deleted, or already gone) —
+ * restoring something that isn't deleted is a no-op.
+ */
+export function restoreAssessment(classroom, assessmentId) {
+  const assessment = (classroom.assessments || []).find((a) => a.id === assessmentId);
+  if (!assessment || !assessment.deletedAt) return false;
+  assessment.deletedAt = null;
+  return true;
 }
 
 /**
@@ -114,7 +161,7 @@ export function getSubjectTitle(classroom, subjectId) {
  * every page load, which must never re-create anything).
  */
 export function getLinkedAssessment(classroom, scheduledEventId) {
-  return (classroom.assessments || []).find((assessment) => assessment.scheduledEventId === scheduledEventId) || null;
+  return (classroom.assessments || []).find((assessment) => assessment.scheduledEventId === scheduledEventId && !assessment.deletedAt) || null;
 }
 
 /**

@@ -79,6 +79,11 @@
 import * as notebookService from './notebookService.js';
 import * as notebookConfigService from './notebookConfigService.js';
 import * as studentService from './studentService.js';
+import * as assessmentService from './assessmentService.js';
+import * as checkpointService from './checkpointService.js';
+import * as goalService from './goalService.js';
+import * as goalCompletionService from './goalCompletionService.js';
+import { getMarksBucketKey } from '../config/assessmentMarksColorConfig.js';
 import {
   getTodayDateKey,
   getWeekRange,
@@ -571,4 +576,189 @@ export function getRecognitionWinners(classroom, categoryId, period, anchorDateK
   const valueKey = VALUE_KEY_BY_RESOLVER[category.resolverId];
 
   return leaderboard.filter((entry) => entry.rank === 1 && (!valueKey || entry[valueKey] > 0));
+}
+
+/* ---------------------------------------------------------------------
+ * Student Growth Dashboard (Phase 1) — three new read-only aggregators,
+ * each spanning multiple records across a service this file didn't
+ * previously depend on (assessmentService/checkpointService/
+ * goalService/goalCompletionService), consumed only through their own
+ * public exports, never their internal classroom.* shape — the same
+ * discipline this file already applies to notebookService/
+ * timelineService above. All three exist because the Student Profile
+ * (already this file's own documented downstream consumer, per the
+ * architecture note near the top of this file) needs a GROWTH view —
+ * change over time — that none of these services' own single-record
+ * CRUD scope is the right place to own.
+ * ------------------------------------------------------------------- */
+
+/**
+ * This student's own percentage trajectory, one entry per Subject
+ * they have at least one usable (non-absent, non-null) mark in,
+ * across every live (non-deleted — see assessmentService.js's own
+ * deletedAt-exclusion default on getAssessments()) Assessment on the
+ * classroom — oldest point first. A Subject with zero usable marks
+ * for this student is omitted entirely, never shown as an empty/zero
+ * series. Each point carries its OWN assessment's passMarkPercent/
+ * maximumMarks — never reuse one bucket classification across the
+ * whole series, since the exact same percentage can classify
+ * differently on two different Assessments (a deliberately preserved
+ * comparability caveat, not an oversight).
+ *
+ * Single pass over assessmentService.getAssessments(classroom) —
+ * O(assessments x subjectsPerAssessment), never re-scanned per
+ * subject (see getSubjectTrajectory() below, which reuses this same
+ * pass rather than scanning again).
+ */
+export function getAcademicTrajectoryForStudent(classroom, studentId) {
+  const bySubject = new Map(); // subjectId -> { subjectId, subjectTitle, points: [] }
+
+  assessmentService.getAssessments(classroom).forEach((assessment) => {
+    const passMarkPercent = assessmentService.getPassMarkPercent(assessment);
+
+    assessment.assessmentSubjects.forEach((assessmentSubject) => {
+      const result = assessmentService.getStudentResult(assessmentSubject, studentId);
+      if (!result || result.absent || result.marks === null || result.marks === undefined) return;
+
+      const maximumMarks = assessmentService.getMaximumMarks(assessmentSubject);
+      if (!Number.isFinite(maximumMarks) || maximumMarks <= 0) return;
+
+      const percent = Math.round((result.marks / maximumMarks) * 10000) / 100;
+      const bucketKey = getMarksBucketKey(result.marks, maximumMarks, passMarkPercent);
+      const { subjectId } = assessmentSubject;
+
+      if (!bySubject.has(subjectId)) {
+        bySubject.set(subjectId, {
+          subjectId,
+          subjectTitle: assessmentService.getSubjectTitle(classroom, subjectId),
+          points: [],
+        });
+      }
+
+      bySubject.get(subjectId).points.push({
+        assessmentId: assessment.id,
+        assessmentTitle: assessment.title,
+        date: assessment.date || assessment.createdAt,
+        marks: result.marks,
+        maximumMarks,
+        percent,
+        passMarkPercent,
+        bucketKey,
+      });
+    });
+  });
+
+  const subjects = Array.from(bySubject.values());
+  subjects.forEach((subject) => {
+    subject.points.sort((a, b) => (a.date || '').localeCompare(b.date || '') || a.assessmentId.localeCompare(b.assessmentId));
+  });
+  return subjects;
+}
+
+/** Convenience lookup into the same single pass getAcademicTrajectoryForStudent() above already did — never a second independent scan. Returns an empty array for a Subject with no usable marks (never an error). */
+export function getSubjectTrajectory(classroom, studentId, subjectId) {
+  return getAcademicTrajectoryForStudent(classroom, studentId).find((subject) => subject.subjectId === subjectId)?.points ?? [];
+}
+
+/**
+ * This student's own chronological notebook-submission timeline
+ * across every Checkpoint-tracked notebook, oldest due-date first.
+ * Flattens checkpointService.getCheckpointsForStudentAcrossNotebooks()
+ * (which groups by notebook, not time) and reuses its own isLate()
+ * flag directly via that function's own return value — never a
+ * second, independent lateness calculation. Deliberately excludes
+ * WorkRequest-era history: that system has no due-date concept, so
+ * there is no honest "on time" fact to compute for it there (see
+ * workRequestService.getRecentActivityForStudent() for that system's
+ * own, separate activity feed).
+ *
+ * `record` fields reflect checkpointService's own sparse-record
+ * contract (no record yet = not_submitted/not_reviewed) rather than
+ * a fabricated absence.
+ */
+export function getNotebookSubmissionTimelineForStudent(classroom, studentId) {
+  return checkpointService
+    .getCheckpointsForStudentAcrossNotebooks(classroom, studentId)
+    .flatMap(({ subject, notebookType, checkpoints }) =>
+      checkpoints.map(({ checkpoint, record, late }) => ({
+        subjectId: subject.id,
+        subjectName: subject.name,
+        notebookTypeId: notebookType.id,
+        notebookTypeName: notebookType.name,
+        checkpointId: checkpoint.id,
+        title: checkpoint.title,
+        dueDate: checkpoint.dueDate || null,
+        submittedDate: record?.submittedDate ?? null,
+        submissionStatus: record?.submissionStatus ?? 'not_submitted',
+        reviewStatus: record?.reviewStatus ?? 'not_reviewed',
+        late,
+      }))
+    )
+    .sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || '') || a.checkpointId.localeCompare(b.checkpointId));
+}
+
+/**
+ * This student's own goal history across every Goal Cycle (active or
+ * closed — goalService.listGoalCycles() is already unfiltered),
+ * newest cycle first — one entry per goal they actually submitted,
+ * carrying the RAW completed-date array from
+ * goalCompletionService.getCompletionHistory(), never a derived
+ * percentage/score: no "elapsed days" (or any other) denominator is
+ * invented here, per the explicit product rule against inventing
+ * behavioural/participation scores — a plain count of completed days
+ * is for the caller to display if it wants one, not a rate this
+ * function manufactures. A cycle this student submitted zero goals in
+ * is omitted entirely, never shown as an empty cycle.
+ *
+ * KNOWN LIMITATION, discovered during Student Growth Dashboard Phase 1
+ * implementation: this reads classroom.goalCycles[].goals/.completions
+ * directly (via goalService.getGoalsForStudent()/
+ * goalCompletionService.getCompletionHistory()) — but tracing every
+ * real write path confirms actual goal submissions and completions no
+ * longer flow through here. services/studentGoalsService.js's own
+ * header comment states plainly: "models/Goal.js and
+ * services/goalService.js's own submitGoal()/approveGoal() are
+ * untouched and unused by this file — new goal data simply doesn't
+ * flow through them anymore for this feature," and
+ * goalCompletionService.js's own setCompletion() has zero callers
+ * anywhere in this codebase today (confirmed by repo-wide search) —
+ * real completions are written directly onto each goal's own document
+ * in the separate `studentGoals` Firestore collection instead (see
+ * repositories/firestoreStudentGoalsRepository.js's own
+ * updateCompletion()). For that reason,
+ * ui/views/StudentProfileView.js's own Goal History section does NOT
+ * call this function — it reads live via
+ * studentGoalsService.getGoalForStudent() per cycle/category instead
+ * (see renderGoalHistorySection() there for the full reasoning). This
+ * function is kept, not deleted, because classroom.goalCycles[].goals
+ * could still hold genuine legacy data for any cycle created before
+ * studentGoalsService.js's own migration — whether any real classroom
+ * actually has such data is unverified and is flagged as an open
+ * product question, not assumed either way.
+ */
+export function getGoalHistoryForStudent(classroom, studentId) {
+  return goalService
+    .listGoalCycles(classroom)
+    .map((cycle) => {
+      const categories = goalService.listCategories(cycle);
+      const goals = goalService.getGoalsForStudent(cycle, studentId).map((goal) => ({
+        goalId: goal.id,
+        categoryId: goal.categoryId,
+        categoryName: categories.find((category) => category.id === goal.categoryId)?.name ?? null,
+        text: goal.text,
+        status: goal.status,
+        completedDates: goalCompletionService.getCompletionHistory(cycle, goal.id),
+      }));
+
+      return {
+        cycleId: cycle.id,
+        cycleTitle: cycle.title,
+        cycleStatus: cycle.status,
+        startDate: cycle.startDate,
+        endDate: cycle.endDate,
+        goals,
+      };
+    })
+    .filter((cycle) => cycle.goals.length > 0)
+    .sort((a, b) => (b.startDate || '').localeCompare(a.startDate || ''));
 }

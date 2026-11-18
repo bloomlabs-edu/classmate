@@ -13378,6 +13378,35 @@ button.recognition-bento__hero-winner-name {
   color: var(--color-primary-strong);
 }
 
+/* Deleted Assessments restore list — same card tokens as
+   .assessment-scheduled-card above, but a plain row (not a button:
+   "Restore" is the one action, not a whole-row navigate). */
+.assessment-deleted-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background-color: var(--color-surface);
+}
+.assessment-deleted-row__info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.assessment-deleted-row__title {
+  font-weight: var(--font-weight-bold);
+  font-size: 1.05rem;
+  color: var(--color-ink);
+}
+.assessment-deleted-row__meta {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
 .learning-management__curriculum-action {
   margin: 0 0 1.25rem;
 }
@@ -15123,6 +15152,10 @@ button.recognition-bento__hero-winner-name {
   color: var(--color-muted);
   margin: 0;
 }
+.profile-notebook-activity__late-tag {
+  color: var(--color-danger);
+  font-weight: var(--font-weight-medium);
+}
 .profile-notebook-activity__awards {
   margin-top: 0.3rem;
   padding-top: 0.5rem;
@@ -15481,6 +15514,88 @@ button.recognition-bento__hero-winner-name {
 }
 .weekly-net-graph--nav-enter {
   animation: weekly-net-graph-nav-enter var(--duration-fast) var(--ease-standard);
+}
+
+/* Assessment Trajectory chart — see
+   ui/components/AssessmentTrajectoryChart.js's own header comment for
+   why this is built on real SVG DOM nodes (AdminDashboardView's own
+   convention) rather than .weekly-net-graph's innerHTML-string
+   approach. Dot/line colour reuses the exact same tokens
+   .gradebook-cell--high/mid/low already paint with, just applied to
+   a line-chart dot/stroke instead of a table-cell background. */
+.assessment-trajectory-chart {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
+}
+.assessment-trajectory-chart__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.assessment-trajectory-chart__heading {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+}
+.assessment-trajectory-chart__wrap svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.assessment-trajectory-chart__gridline {
+  stroke: var(--color-border);
+  stroke-width: 1;
+}
+.assessment-trajectory-chart__tick {
+  font-size: 10px;
+  fill: var(--color-muted);
+}
+.assessment-trajectory-chart__line {
+  stroke: var(--color-muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.assessment-trajectory-chart__dot {
+  stroke: var(--color-surface);
+  stroke-width: 1.5;
+  cursor: pointer;
+}
+.assessment-trajectory-chart__dot--green {
+  fill: var(--color-success);
+}
+.assessment-trajectory-chart__dot--yellow {
+  fill: var(--color-warning);
+}
+.assessment-trajectory-chart__dot--red {
+  fill: var(--color-danger);
+}
+.assessment-trajectory-chart__dot--none {
+  fill: var(--color-muted);
+}
+.assessment-trajectory-chart__table-scroll {
+  overflow-x: auto;
+}
+.assessment-trajectory-chart__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.assessment-trajectory-chart__table th,
+.assessment-trajectory-chart__table td {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--text-sm);
+}
+.assessment-trajectory-chart__table th {
+  color: var(--color-muted);
+  font-weight: var(--font-weight-medium);
 }
 
 /* Assessment Gradebook — see ui/views/AssessmentManagementView.js's renderGradebookStep() */
