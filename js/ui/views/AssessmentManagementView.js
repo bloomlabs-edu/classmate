@@ -33,6 +33,7 @@ import { openCreateAssessmentModal } from '../components/CreateAssessmentModal.j
 import { openAddSubjectToAssessmentModal } from '../components/AddSubjectToAssessmentModal.js';
 import { createNavigationRow } from '../components/NavigationRow.js';
 import { openUnsavedChangesModal } from '../components/UnsavedChangesModal.js';
+import { createEmptyStateElement } from '../components/EmptyState.js';
 import * as assessmentService from '../../services/assessmentService.js';
 import * as assessmentImportService from '../../services/assessmentImportService.js';
 import * as assessmentTimetableLinkService from '../../services/assessmentTimetableLinkService.js';
@@ -557,11 +558,24 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
       rerender();
     },
     onDeleteAssessment: (assessment) => {
-      const confirmed = window.confirm(`Delete "${assessment.title}"?\n\nThis removes every Subject and every mark recorded in it. This cannot be undone.`);
+      const confirmed = window.confirm(
+        `Remove "${assessment.title}" from your active assessments?\n\nIts marks and details are kept — you can restore it later from "Deleted Assessments" on this screen.`
+      );
       if (!confirmed) return;
       assessmentService.deleteAssessment(classroom, assessment.id);
       workspaceService.save(classroom);
       mode = 'home';
+      rerender();
+    },
+    onGoToDeletedAssessments: () => {
+      navigateAwayGuard(() => {
+        mode = 'deleted';
+        rerender();
+      });
+    },
+    onRestoreAssessment: (assessment) => {
+      assessmentService.restoreAssessment(classroom, assessment.id);
+      workspaceService.save(classroom);
       rerender();
     },
     onRemoveSubjectFromAssessment: (assessmentSubject) => {
@@ -771,7 +785,7 @@ function renderView(container, mode, state, handlers) {
   const backButton = createBackButton(() => {
     if (isEntryStep) return handlers.onBack();
     if (mode === 'import-review') return handlers.onCancelImport();
-    const previous = { assessment: 'gradebook', subject: 'assessment', gradebook: 'home' }[mode];
+    const previous = { assessment: 'gradebook', subject: 'assessment', gradebook: 'home', deleted: 'home' }[mode];
     handlers.onBackTo(previous);
   });
   header.appendChild(backButton);
@@ -804,6 +818,8 @@ function renderView(container, mode, state, handlers) {
     );
   } else if (mode === 'import-review') {
     wrapper.appendChild(renderImportReviewStep(state.selectedAssessment, state.importReview, state.importError, handlers));
+  } else if (mode === 'deleted') {
+    wrapper.appendChild(renderDeletedAssessmentsStep(state.classroom, handlers));
   } else {
     wrapper.appendChild(renderHomeStep(state.classroom, handlers, state.scheduledExamItems));
   }
@@ -880,7 +896,80 @@ function renderHomeStep(classroom, handlers, scheduledExamItems) {
   scorecardButton.addEventListener('click', handlers.onGoToScorecard);
   actionsRow.appendChild(scorecardButton);
 
+  // Only shown once there's actually something to restore — an empty
+  // Trash entry point every teacher would otherwise see forever is
+  // more clutter than it's worth (same "don't show a section with
+  // nothing in it" instinct this file already follows for the
+  // Scheduled-from-Timetable heading above).
+  const deletedCount = assessmentService.getDeletedAssessments(classroom).length;
+  if (deletedCount > 0) {
+    const deletedButton = document.createElement('button');
+    deletedButton.type = 'button';
+    deletedButton.className = 'btn btn--ghost';
+    deletedButton.textContent = `Deleted Assessments (${deletedCount})`;
+    deletedButton.addEventListener('click', handlers.onGoToDeletedAssessments);
+    actionsRow.appendChild(deletedButton);
+  }
+
   section.appendChild(actionsRow);
+
+  return section;
+}
+
+/**
+ * Deleted Assessments — the restore screen for deleteAssessment()'s
+ * soft delete (see services/assessmentService.js's own header comment
+ * on `deletedAt`). Every row here is a real Assessment with every
+ * mark/detail still intact; "Restore" only ever clears `deletedAt` —
+ * nothing is re-created, re-entered, or recalculated.
+ */
+function renderDeletedAssessmentsStep(classroom, handlers) {
+  const section = document.createElement('div');
+  section.className = 'learning-management__section';
+
+  const heading = document.createElement('p');
+  heading.className = 'learning-management__primary-section-heading';
+  heading.textContent = 'Deleted Assessments';
+  section.appendChild(heading);
+
+  const deleted = assessmentService.getDeletedAssessments(classroom);
+  if (deleted.length === 0) {
+    section.appendChild(createEmptyStateElement({ message: 'No deleted assessments.' }));
+    return section;
+  }
+
+  const intro = document.createElement('p');
+  intro.className = 'learning-management__intro';
+  intro.textContent = 'Restoring an assessment brings back every Subject and every mark exactly as it was — nothing needs to be re-entered.';
+  section.appendChild(intro);
+
+  const list = document.createElement('div');
+  list.className = 'learning-management__subject-card-list';
+  deleted.forEach((assessment) => {
+    const row = document.createElement('div');
+    row.className = 'assessment-deleted-row';
+
+    const info = document.createElement('div');
+    info.className = 'assessment-deleted-row__info';
+    const title = document.createElement('span');
+    title.className = 'assessment-deleted-row__title';
+    title.textContent = assessment.title;
+    const meta = document.createElement('span');
+    meta.className = 'assessment-deleted-row__meta';
+    meta.textContent = `Deleted ${formatDate(assessment.deletedAt)}`;
+    info.append(title, meta);
+    row.appendChild(info);
+
+    const restoreButton = document.createElement('button');
+    restoreButton.type = 'button';
+    restoreButton.className = 'btn btn--secondary';
+    restoreButton.textContent = 'Restore';
+    restoreButton.addEventListener('click', () => handlers.onRestoreAssessment(assessment));
+    row.appendChild(restoreButton);
+
+    list.appendChild(row);
+  });
+  section.appendChild(list);
 
   return section;
 }
