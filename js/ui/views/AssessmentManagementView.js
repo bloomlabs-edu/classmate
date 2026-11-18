@@ -39,6 +39,7 @@ import * as assessmentTimetableLinkService from '../../services/assessmentTimeta
 import * as scheduledEventRepository from '../../services/scheduledEventRepository.js';
 import { getEventsByType, SCHEDULED_EVENT_TYPES } from '../../services/scheduledEventService.js';
 import * as workspaceService from '../../services/workspaceService.js';
+import * as workspaceCoordinator from '../../services/workspaceCoordinator.js';
 import { getCurrentIsoDate, getTodayDateKey, shiftDateKey, formatDate, formatDateKey } from '../../utils/dateHelpers.js';
 import { getMarksColorClass, getMarksBucketKey, GREEN_THRESHOLD_PERCENT } from '../../config/assessmentMarksColorConfig.js';
 
@@ -196,6 +197,78 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
     return isEditingMarks || (selectedAssessmentSubject && selectedAssessmentSubject.lastSavedAt === null);
   }
 
+  /**
+   * Re-renders while keeping the Gradebook's own scroll position (both
+   * the page itself and the table's own internal
+   * .assessment-gradebook__scroll box — see that class's own
+   * max-height: 70vh in css/styles.css, which is what makes a long
+   * class list scroll inside the table rather than the page) and the
+   * currently-focused marks cell exactly where they were. Only the
+   * Gradebook table has either a cell worth refocusing or an inner
+   * scroll box of its own; every other mode just reuses the plain
+   * rerender() below. See resyncFromServer() just below for the one
+   * caller that actually needs this — a genuine new snapshot replacing
+   * `classroom`/`selectedAssessment` out from under already-rendered
+   * DOM, which a plain rerender() alone would otherwise jump to the
+   * top for.
+   */
+  function rerenderPreservingGradebookScroll() {
+    if (mode !== 'gradebook') {
+      rerender();
+      return;
+    }
+    const scrollEl = container.querySelector('.assessment-gradebook__scroll');
+    const tableScrollTop = scrollEl ? scrollEl.scrollTop : null;
+    const tableScrollLeft = scrollEl ? scrollEl.scrollLeft : null;
+    const pageScrollY = window.scrollY;
+    const pageScrollX = window.scrollX;
+    const active = document.activeElement;
+    const focusRow = active?.dataset?.row;
+    const focusCol = active?.dataset?.col;
+
+    rerender();
+
+    const newScrollEl = container.querySelector('.assessment-gradebook__scroll');
+    if (newScrollEl && tableScrollTop !== null) {
+      newScrollEl.scrollTop = tableScrollTop;
+      newScrollEl.scrollLeft = tableScrollLeft;
+    }
+    window.scrollTo(pageScrollX, pageScrollY);
+    if (focusRow !== undefined && focusCol !== undefined) {
+      const newInput = container.querySelector(`input[data-row="${focusRow}"][data-col="${focusCol}"]`);
+      newInput?.focus();
+    }
+  }
+
+  /**
+   * The Gradebook's own resyncFromServer() — same pattern
+   * ui/views/LearningManagementView.js already established via
+   * services/workspaceCoordinator.js (registerActiveWorkspace() below),
+   * applied here for the first time. Without this, an incoming
+   * snapshot for this classroom — including this Gradebook's own
+   * debounced autosave write echoing straight back — fell through to
+   * workspaceService.js's coarser onChangeCallback, which tears down
+   * and rebuilds the ENTIRE app shell via main.js's renderRoute(); that
+   * full remount is what actually reset the page's scroll position and
+   * dropped focus on every save, not the Gradebook's own per-cell edit
+   * handler (see applyGradebookMarksEdit() above, which already only
+   * patches the one edited cell directly, never calling rerender()
+   * itself). `classroom`/`selectedAssessment` are swapped to the fresh
+   * objects here (not merely ignored) so a subsequent edit keeps
+   * mutating — and saving — the object the server actually has, same
+   * as resyncFromServer() does for `selectedClassroom`/`selectedSubject`
+   * in LearningManagementView.js.
+   */
+  function resyncFromServer(freshClassroom) {
+    classroom = freshClassroom;
+    if (selectedAssessment) {
+      const freshAssessment = assessmentService.getAssessmentById(freshClassroom, selectedAssessment.id);
+      selectedAssessment = freshAssessment || null;
+      if (!freshAssessment) mode = 'home';
+    }
+    rerenderPreservingGradebookScroll();
+  }
+
   function buildMarksDraftFrom(assessmentSubject) {
     const resultsByStudentId = new Map();
     assessmentService.getClassroomStudents(classroom).forEach((student) => {
@@ -306,10 +379,18 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
       assessmentSubject.lastSavedAt = now;
     });
     dirtySubjectsSinceLastSave.clear();
-    workspaceService.save(classroom);
+    workspaceService.saveExplicitly(classroom).catch(() => {});
   }
 
   function scheduleGradebookSave(assessmentSubject) {
+    // markDirty() here, not only inside the timeout below — the
+    // instant this edit lands is the instant an incoming snapshot
+    // becomes unsafe to apply (see
+    // services/classroomSaveStateMachine.js's own
+    // canApplyIncomingServerState()); waiting for the debounce to fire
+    // would leave that whole window open to exactly the stale-snapshot
+    // overwrite this call exists to prevent.
+    workspaceService.markDirty(classroom.id);
     dirtySubjectsSinceLastSave.add(assessmentSubject);
     if (gradebookSaveTimeoutId !== null) clearTimeout(gradebookSaveTimeoutId);
     gradebookSaveTimeoutId = setTimeout(() => {
@@ -319,7 +400,7 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
         subject.lastSavedAt = now;
       });
       dirtySubjectsSinceLastSave.clear();
-      workspaceService.save(classroom);
+      workspaceService.saveExplicitly(classroom).catch(() => {});
     }, GRADEBOOK_SAVE_DEBOUNCE_MS);
   }
 
@@ -418,7 +499,10 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
       gradebookSearchQuery = '';
       rerender();
     },
-    onBack,
+    onBack: () => {
+      workspaceCoordinator.unregisterActiveWorkspace(classroom.id);
+      onBack();
+    },
     onGoToCreateAssessment: () => {
       openCreateAssessmentModal({
         classroom,
@@ -744,6 +828,19 @@ export function renderAssessmentManagementView(container, { classroom, onBack, i
       rerender();
     },
   };
+
+  // Same services/workspaceCoordinator.js pattern
+  // ui/views/LearningManagementView.js already established — without
+  // this, every Gradebook autosave (see scheduleGradebookSave() above)
+  // eventually echoes back through workspaceService.js's own realtime
+  // classroom listener and, finding nobody registered for this
+  // classroom, falls back to its coarser onChangeCallback, which tears
+  // down and rebuilds the entire app shell via main.js's renderRoute()
+  // — that full remount, not this Gradebook's own per-cell edit
+  // handler, is what reset scroll position and dropped focus on every
+  // save. Unregistered in handlers.onBack above, same as
+  // LearningManagementView.js's own onBack/onChooseClass pair.
+  workspaceCoordinator.registerActiveWorkspace(classroom.id, resyncFromServer);
 
   rerender();
   loadScheduledExamItems();
